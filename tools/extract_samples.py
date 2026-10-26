@@ -24,9 +24,10 @@ sys.path.insert(0, ROOT)
 
 from d2.mpq import MPQSet  # noqa: E402
 
-OUT = os.path.join(ROOT, "d2samples")
-ZIP_PATH = os.path.join(ROOT, "d2samples.zip")
-BUDGET = 45 * 1024 * 1024        # stay well under upload limits
+BATCH = 2 if "--batch2" in sys.argv else 1
+OUT = os.path.join(ROOT, "d2samples" if BATCH == 1 else "d2samples2")
+ZIP_PATH = OUT + ".zip"
+BUDGET = (45 if BATCH == 1 else 30) * 1024 * 1024        # stay well under upload limits
 
 COMPONENTS = ["HD", "TR", "LG", "RA", "LA", "RH", "LH", "SH",
               "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8"]
@@ -268,6 +269,134 @@ class Extractor:
                     n += 1
         print("  %d sounds" % n)
 
+    # ------------------------------------------------------------ batch 2: the rest of Act 1
+    def step2_listfiles(self):
+        print("File lists...")
+        self.known = set()
+        for an, a in self.mpq.archives:
+            try:
+                data = a.read("(listfile)")
+            except Exception:
+                continue
+            names = data.decode("latin-1").splitlines()
+            self.known.update(n.strip() for n in names if n.strip())
+            p = os.path.join(OUT, "listfiles", an + ".txt")
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "wb") as f:
+                f.write(data)
+        print("  %d names known" % len(self.known))
+
+    def _grab_pattern(self, prefix, limit_bytes, exts=None):
+        start = self.total
+        n = 0
+        for name in sorted(self.known):
+            low = name.lower()
+            if low.startswith(prefix) and (exts is None or low.endswith(exts)):
+                if self.total - start > limit_bytes:
+                    break
+                if self.grab(name) is not None:
+                    n += 1
+        return n
+
+    def step2_monsters(self):
+        print("Act 1 monsters, bosses and town NPCs (standing pose)...")
+        stats = {r.get("id", "").lower(): r for r in self.table("MonStats")}
+        stats2 = {r.get("id", "").lower(): r for r in self.table("MonStats2")}
+        ids = set()
+        for r in self.table("Levels"):
+            if r.get("act") == "0":
+                for k, v in r.items():
+                    if k[:3] in ("mon", "nmo", "umo") and k[-1:].isdigit() and v:
+                        ids.add(v.lower())
+        # Act 1 bosses (Griswold, the Smith, Blood Raven, Andariel) and the town NPCs
+        ids |= {"griswold", "smith", "bloodraven", "andariel", "akara", "charsi", "gheed", "kashya",
+                "warriv1", "cain1", "rogue1"}
+        done_tokens = {"ZM", "FA", "FS", "SI", "SK"}
+        tokens = {}
+        for i in sorted(ids):
+            row = stats.get(i)
+            if row and row.get("code") and row["code"].upper() not in done_tokens:
+                tokens.setdefault(row["code"].upper(), row)
+        for tok, row in sorted(tokens.items()):
+            ex = stats2.get((row.get("monstatsex") or row.get("id", "")).lower(), {})
+            arms = {}
+            for comp in COMPONENTS:
+                v = ex.get(comp.lower() + "v", "").replace('"', "")
+                vals = [x.strip() for x in v.split(",") if x.strip() and x.strip() != "0"]
+                arms[comp] = vals[:1] + [a for a in ("lit",) if a not in vals[:1]]
+            modes = ["NU", "DT", "DD"] if len(tokens) > 20 else ["NU", "WL", "A1", "DT", "DD"]
+            n = self._unit("monsters", tok, modes, ["HTH"], arms)
+            print("  %-4s %-18s %3d files" % (tok, row.get("id", ""), n))
+
+    def step2_objects(self):
+        print("Objects (chests, barrels, shrines...)...")
+        keys = ("chest", "barrel", "urn", "casket", "shrine", "torch", "waypoint", "door", "stone",
+                "fire", "bonfire", "corpse", "body", "sarcophagus", "stash", "well", "gibbet", "banner")
+        seen = 0
+        for r in self.table("Objects"):
+            name, tok = r.get("name", "").lower(), r.get("token", "").upper()
+            if not tok or len(tok) > 3 or not any(k in name for k in keys) or seen >= 30:
+                continue
+            arms = {c: ["LIT"] for c in COMPONENTS}
+            n = self._unit("objects", tok, ["NU", "OP", "ON"], ["HTH"], arms)
+            if n:
+                seen += 1
+                print("  %-4s %-18s %3d files" % (tok, name, n))
+
+    def step2_items(self):
+        print("All item graphics...")
+        n = 0
+        for t in ("Weapons", "Armor", "Misc"):
+            for r in self.table(t):
+                for col in ("invfile", "flippyfile", "uniqueinvfile", "setinvfile"):
+                    v = r.get(col, "")
+                    if v and v != "0" and self.grab("data\\global\\items\\%s.dc6" % v) is not None:
+                        n += 1
+        for v in ("invgld1", "invgld2", "invgld3", "invgld4", "flpgld"):
+            if self.grab("data\\global\\items\\%s.dc6" % v) is not None:
+                n += 1
+        for f in ("data\\global\\items\\Palette\\GreyBrown.dat", "data\\global\\monsters\\RandTransforms.dat",
+                  "data\\global\\items\\palette\\invgreybrown.dat"):
+            self.grab(f)
+        print("  %d item graphics" % n)
+
+    def step2_ui(self):
+        print("Interface, fonts and cursors...")
+        n = self._grab_pattern("data\\global\\ui\\panel\\", 6 * 1024 * 1024)
+        n += self._grab_pattern("data\\global\\ui\\cursor\\", 1024 * 1024)
+        n += self._grab_pattern("data\\local\\font\\latin\\", 3 * 1024 * 1024)
+        for f in ["data\\global\\ui\\PANEL\\ctrlpnl7.dc6", "data\\global\\ui\\PANEL\\hlthmana.dc6",
+                  "data\\global\\ui\\PANEL\\overlap.dc6", "data\\global\\ui\\PANEL\\invchar6.dc6",
+                  "data\\global\\ui\\PANEL\\800ctrlpnl7.dc6", "data\\global\\ui\\CURSOR\\ohand.dc6",
+                  "data\\local\\font\\latin\\font16.dc6", "data\\local\\font\\latin\\font16.tbl",
+                  "data\\local\\font\\latin\\font8.dc6", "data\\local\\font\\latin\\font8.tbl",
+                  "data\\local\\font\\latin\\font30.dc6", "data\\local\\font\\latin\\font30.tbl",
+                  "data\\local\\font\\latin\\fontexocet10.dc6", "data\\local\\font\\latin\\fontexocet10.tbl"]:
+            if self.grab(f) is not None:
+                n += 1
+        print("  %d files" % n)
+
+    def step2_missiles_sounds(self):
+        print("Missiles and a few sounds...")
+        n = 0
+        want = ("arrow", "shaman", "fire", "spike", "quill", "cold", "bolt", "blood", "poison")
+        for r in self.table("Missiles"):
+            name = r.get("missile", "").lower()
+            cel = r.get("celfile", "")
+            if cel and any(k in name for k in want) and n < 25:
+                for ext in (".dcc", ".dc6"):
+                    if self.grab("data\\global\\missiles\\%s%s" % (cel, ext)) is not None:
+                        n += 1
+                        break
+        s = 0
+        for r in self.table("Sounds"):
+            nm = r.get("sound", "").lower()
+            fn = r.get("filename", "")
+            if fn and any(nm.startswith(p) for p in ("zombie", "fallen", "barbarian", "item_", "cursor")) and s < 15:
+                if self.grab("data\\global\\sfx\\" + fn) is not None:
+                    s += 1
+        print("  %d missiles, %d sounds" % (n, s))
+
     def finish(self):
         with open(os.path.join(OUT, "manifest.json"), "w") as f:
             json.dump({"files": self.manifest, "missing": self.tried_missing[:3000],
@@ -287,8 +416,9 @@ class Extractor:
 
 
 def find_path():
-    if len(sys.argv) > 1:
-        return sys.argv[1]
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    if args:
+        return args[0]
     cfg = configparser.ConfigParser()
     cfg.read(os.path.join(ROOT, "settings.ini"))
     p = cfg.get("diablo2", "path", fallback="").strip()
@@ -309,7 +439,12 @@ def main():
         shutil.rmtree(OUT)
     os.makedirs(OUT)
     log = []
-    for step in (ex.step_basics, ex.step_tiles, ex.step_units, ex.step_items, ex.step_missiles_ui, ex.step_sounds):
+    if BATCH == 1:
+        steps = (ex.step_basics, ex.step_tiles, ex.step_units, ex.step_items, ex.step_missiles_ui, ex.step_sounds)
+    else:
+        steps = (ex.step2_listfiles, ex.step2_items, ex.step2_ui, ex.step2_missiles_sounds,
+                 ex.step2_objects, ex.step2_monsters)
+    for step in steps:
         try:
             step()
         except Exception:
