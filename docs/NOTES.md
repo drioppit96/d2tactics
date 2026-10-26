@@ -29,6 +29,23 @@ background prebuild of the Den, step-by-step walking with hold-to-walk.
    Blood Raven, Cain/Tristram (Cairn Stones), Forgotten Tower (Countess), Horadric Malus
    (Charsi / Barracks), Andariel. Waypoints. Needs batch 3 samples (outdoor DS1s).
 
+## Skill data (all classes) - already in the batch 1 samples
+
+Skills.txt has all 210 class skills (30 per class: ama sor nec pal bar dru ass) with:
+- damage: `emin/emax` (level 1) + `eminlev1..5 / emaxlev1..5` per level in brackets
+  (levels 2-8, 9-16, 17-22, 23-28, 29+); same for physical `mindam/maxdam`, `minlevdam1..5`
+- units: value << `hitshift` >> 8 (Fire Bolt: emin 6, hitshift 7 -> 3 damage)
+- element `etype` (fire/cold/ltng/pois/mag), length `elen/elevlen1..3` (frames, 25 fps)
+- **synergies**: `edmgsympercalc` / `elensympercalc` / `dmgsympercalc`, e.g.
+  Fire Bolt: `(skill('Fire Ball'.blvl)+skill('Meteor'.blvl))*par8` -> parse skill('X'.blvl)
+  terms and `parN` = Skills.txt `paramN`; result is +% damage
+- `reqskill1-3`, `reqlevel`, `mana`, `lvlmana`, `minmana`, `manashift`, `tohit/levtohit`,
+  `passivestat1-5 / passivecalc1-5` (passives), `aurastat1-6 / aurastatcalc1-6` (auras),
+  `sumsk1-5` (summon skills), `srvmissile*` (Missiles.txt for projectiles)
+- SkillDesc.txt: page/row/column/icon cell for the tree; `descline*` describe the tooltip.
+Combat in this game: player hit chance is D2's formula mapped onto 60-95%
+(`[game] min_hit_chance` in settings.ini; 5 = original D2).
+
 ## Hard-won format facts
 
 - **DT1** tile header: subtile flags are at offset **+40** of the 96-byte tile record

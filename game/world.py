@@ -45,15 +45,25 @@ YELLOW = (255, 230, 90)
 GREY = (170, 170, 170)
 
 
+# D2's melee hit chance is very low early on; in a turn-based game every miss costs a whole
+# action, so the player's attacks get a floor (settings.ini [game] min_hit_chance)
+PLAYER_HIT_FLOOR = 0.60
+
+
 def hit_chance(attacker, defender, ar_bonus_pct=0):
-    """D2's to-hit formula: 200% * AR/(AR+DEF) * alvl/(alvl+dlvl), clamped 5..95."""
+    """D2's to-hit formula: 200% * AR/(AR+DEF) * alvl/(alvl+dlvl), clamped 5..95.
+    Player attacks are rescaled to PLAYER_HIT_FLOOR..95%."""
     ar = attacker.ar * (100 + ar_bonus_pct) / 100
     df = max(0, defender.defense)
     eff = getattr(defender, "effects", {})
     if eff.get("bc"):
         df = df * (100 - eff.get("bc_def", 50)) / 100.0
     chance = 2 * (ar / (ar + df if ar + df else 1)) * (attacker.level / (attacker.level + defender.level))
-    return max(0.05, min(0.95, chance))
+    chance = max(0.05, min(0.95, chance))
+    if getattr(attacker, "is_player", False) and PLAYER_HIT_FLOOR > 0.05:
+        # map D2's 5..95% onto floor..95%
+        chance = PLAYER_HIT_FLOOR + (chance - 0.05) / 0.90 * (0.95 - PLAYER_HIT_FLOOR)
+    return chance
 
 
 class World:

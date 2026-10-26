@@ -21,7 +21,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 def load_settings():
     cfg = configparser.ConfigParser()
     cfg.read_dict({"display": {"width": "1280", "height": "720", "fullscreen": "no", "scale": "auto"},
-                   "diablo2": {"path": ""}, "game": {"difficulty": "normal"}})
+                   "diablo2": {"path": ""}, "game": {"difficulty": "normal", "min_hit_chance": "60"}})
     cfg.read(os.path.join(HERE, "settings.ini"))
     return cfg
 
@@ -42,6 +42,11 @@ def load_assets(cfg, progress=None):
 class Game:
     def __init__(self):
         self.cfg = load_settings()
+        try:
+            import game.world as _gw
+            _gw.PLAYER_HIT_FLOOR = max(5, min(95, self.cfg.getint("game", "min_hit_chance"))) / 100.0
+        except Exception:
+            pass
         pygame.init()
         w = self.cfg.getint("display", "width")
         h = self.cfg.getint("display", "height")
