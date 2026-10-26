@@ -14,3 +14,6 @@ __pycache__/
 cache/
 d2samples2/
 d2samples2.zip
+version.txt
+github_token.txt
+*.new
