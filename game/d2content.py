@@ -388,7 +388,7 @@ class D2Content:
             "missile": miss, "minion": r.get("minion1", "").lower(),
             "party": (_int(r.get("partymin")), _int(r.get("partymax"))),
             "group": (max(1, _int(r.get("mingrp"), 1)), max(1, _int(r.get("maxgrp"), 1))),
-            "color": (150, 150, 150), "unique": unique,
+            "color": (150, 150, 150), "unique": unique, "rarity": max(1, _int(r.get("rarity"), 1)),
         }
         if unique:
             t["hp"] = (t["hp"][0] * 4, t["hp"][1] * 4)

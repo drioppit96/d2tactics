@@ -24,10 +24,10 @@ sys.path.insert(0, ROOT)
 
 from d2.mpq import MPQSet  # noqa: E402
 
-BATCH = 2 if "--batch2" in sys.argv else 1
-OUT = os.path.join(ROOT, "d2samples" if BATCH == 1 else "d2samples2")
+BATCH = 3 if "--batch3" in sys.argv else 2 if "--batch2" in sys.argv else 1
+OUT = os.path.join(ROOT, {1: "d2samples", 2: "d2samples2", 3: "d2samples3"}[BATCH])
 ZIP_PATH = OUT + ".zip"
-BUDGET = (45 if BATCH == 1 else 30) * 1024 * 1024        # stay well under upload limits
+BUDGET = {1: 45, 2: 30, 3: 40}[BATCH] * 1024 * 1024        # stay well under upload limits
 
 COMPONENTS = ["HD", "TR", "LG", "RA", "LA", "RH", "LH", "SH",
               "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8"]
@@ -397,6 +397,39 @@ class Extractor:
                     s += 1
         print("  %d missiles, %d sounds" % (n, s))
 
+    # ------------------------------------------------------------ batch 3: skills, automap, strings, outdoor maps
+    def step3_ui(self):
+        print("Skill icons, skill trees, automap and string tables...")
+        n = self._grab_pattern("data\\global\\ui\\spells\\", 12 * 1024 * 1024)
+        n += self._grab_pattern("data\\global\\ui\\automap\\", 3 * 1024 * 1024)
+        n += self._grab_pattern("data\\local\\ui\\eng\\automap", 1024 * 1024)
+        for t in ("AutoMap", "LvlTypes", "LvlPrest", "Levels", "LvlMaze", "LvlSub", "LvlWarp", "Objects", "ObjGroup",
+                  "MonPreset", "SuperUniques", "Skills", "SkillDesc", "Missiles", "Overlay", "States", "Sounds"):
+            self.table(t)
+        for f in ("data\\local\\lng\\eng\\string.tbl", "data\\local\\lng\\eng\\expansionstring.tbl",
+                  "data\\local\\lng\\eng\\patchstring.tbl"):
+            if self.grab(f) is not None:
+                n += 1
+        print("  %d files" % n)
+
+    def step3_act1_maps(self):
+        print("Act 1 outdoor and dungeon layouts...")
+        n = self._grab_pattern("data\\global\\tiles\\act1\\", 10 * 1024 * 1024, exts=(".ds1",))
+        print("  %d layouts" % n)
+        tiles = 0
+        wanted = set()
+        for row in self.table("LvlTypes"):
+            if row.get("name", "").lower().startswith("act 1"):
+                for k, v in row.items():
+                    if k.startswith("file") and v and v != "0":
+                        wanted.add(v)
+        for v in sorted(wanted):
+            if self.total > BUDGET - 2 * 1024 * 1024:
+                break
+            if self.grab("data\\global\\tiles\\" + v) is not None:
+                tiles += 1
+        print("  %d tile libraries" % tiles)
+
     def finish(self):
         with open(os.path.join(OUT, "manifest.json"), "w") as f:
             json.dump({"files": self.manifest, "missing": self.tried_missing[:3000],
@@ -441,9 +474,11 @@ def main():
     log = []
     if BATCH == 1:
         steps = (ex.step_basics, ex.step_tiles, ex.step_units, ex.step_items, ex.step_missiles_ui, ex.step_sounds)
-    else:
+    elif BATCH == 2:
         steps = (ex.step2_listfiles, ex.step2_items, ex.step2_ui, ex.step2_missiles_sounds,
                  ex.step2_objects, ex.step2_monsters)
+    else:
+        steps = (ex.step2_listfiles, ex.step3_ui, ex.step3_act1_maps)
     for step in steps:
         try:
             step()

@@ -21,29 +21,28 @@ falls back to placeholder art.
 
 ## How to play
 
-You explore freely until monsters spot you, then combat switches to turns (like Fallout).
-Each turn you get **8 Action Points**.
+You start in the Rogue Encampment (talk to Akara to heal) and leave the camp for the Den
+of Evil. You explore freely until monsters spot you, then combat switches to turns (like
+Fallout). Each turn you get **Action Points** (the stamina bar shows them).
 
 | Action | Cost |
 |---|---|
 | Move one cell | 1 AP |
 | Attack (left click a monster) | weapon speed, e.g. Hand Axe 3 AP, Scimitar 2 AP |
-| Bash (right click) | attack + 1 AP, 2 mana: +50% damage, knockback |
+| Right click | your selected right skill (choose it on the right skill button, or F1-F8) |
 | Drink potion (keys 1-4) | 2 AP |
 | Pick up item | 1 AP (free outside combat) |
 
-Hit chance uses D2's real to-hit formula (attack rating vs. defense, level difference).
-Hover a monster to see hit chance and AP cost before you commit.
+**Skills:** one skill point per level, D2's full Barbarian tree (T). Combat skills (Bash, Stun,
+Double Swing, Frenzy, Leap Attack, Whirlwind, Berserk...), warcries (Howl, Shout, Battle
+Orders, Battle Cry, War Cry...) and passives (masteries, Iron Skin, Increased Speed...).
 
-**Keys:** Space = end turn · I = inventory · C = character / stat points · Tab = automap · Alt (hold) or L = item names ·
-G = grid · F = fast animations · mouse wheel = zoom · R = new cave after death · Esc = close / quit
+**Keys:** Space = end turn - I = inventory - C = character - T = skill tree - Tab = automap
+(full / corner / off) - Alt (hold) or L = item names - F = fast animations - F1-F8 = right skill -
+mouse wheel = zoom - Esc = close panels / quit
 
-**Monsters:** Zombies (slow, hit hard), Fallen (fast, scatter when a pack mate dies),
-Fallen Shamans (fireballs, raise dead Fallen - kill them first), Quill Rats (ranged spikes),
-and **Corpsefire** at the bottom of the Den of Evil.
-
-**Loot:** gold, healing potions, white and magic (blue) items with D2 affixes such as
-Jagged, Bronze, Sturdy, of the Fox, of Strength... Boots "of Haste" give +1 AP.
+**Inventory:** D2's 10x4 grid. Click an item to pick it up, click again to place it (or onto an
+equipment slot). Right click equips / drinks. Clicking the world while holding an item drops it.
 
 ## Project layout
 

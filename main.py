@@ -84,7 +84,7 @@ class Game:
     def new_world(self, seed=None):
         """New game: start in the Rogue Encampment when D2 files are available."""
         self.levels = {}
-        self.hud = Hud(self.fonts, self.assets) if not hasattr(self, "hud") else self.hud
+        self.hud = self.make_hud() if not hasattr(self, "hud") else self.hud
         self.hud.minimaps = {}
         content = getattr(self.assets, "content", None)
         if getattr(self.assets, "town_kit", None):
@@ -153,20 +153,67 @@ class Game:
         u = self.world.unit_at(cell)
         return u if u is not None and not u.is_player else None
 
+    def make_hud(self):
+        """D2's own interface when the UI files are available, otherwise the simple one."""
+        if getattr(self.assets, "src", None) is not None:
+            try:
+                from render.d2hud import D2Hud
+                hud = D2Hud(self.fonts, self.assets)
+                try:
+                    pygame.mouse.set_visible(False)       # D2's hand cursor is drawn instead
+                except Exception:
+                    pass
+                return hud
+            except Exception:
+                import traceback
+                traceback.print_exc()
+        return Hud(self.fonts, self.assets)
+
+    def toggle_panel(self, name):
+        h = self.hud
+        if name == "inv":
+            h.show_inv = not h.show_inv
+            if h.show_inv:
+                h.show_skills = False
+        elif name == "char":
+            h.show_char = not h.show_char
+        elif name == "skills":
+            h.show_skills = not getattr(h, "show_skills", False)
+            if h.show_skills:
+                h.show_inv = False
+
+    def cycle_automap(self):
+        h = self.hud
+        if hasattr(h, "automap_mode"):
+            h.automap_mode = (h.automap_mode + 1) % 3
+        else:
+            h.show_automap = not h.show_automap
+
     def handle_click(self, pos, button):
-        ui = self.hud.hit(pos)
+        w = self.world
+        h = self.hud
+        ui = h.hit(pos)
         if ui:
             action, arg = ui
-            w = self.world
+            if action != "pick_skill" and not str(action).startswith("skill_"):
+                h.skill_popup = False if hasattr(h, "skill_popup") else None
             if action == "end_turn" and self.can_act():
                 w.end_player_turn()
-            elif action == "inv":
-                self.hud.show_inv = not self.hud.show_inv
-            elif action == "char":
-                self.hud.show_char = not self.hud.show_char
+            elif action in ("inv", "char", "skills"):
+                self.toggle_panel(action)
+            elif action == "automap":
+                self.cycle_automap()
+            elif action == "minipanel":
+                h.show_minipanel = not h.show_minipanel
+            elif action == "speed":
+                self.scene.speed = 1.0 if self.scene.speed > 1 else 2.5
+            elif action == "menu":
+                h.show_inv = h.show_char = False
+                if hasattr(h, "show_skills"):
+                    h.show_skills = False
             elif action == "potion" and self.can_act():
                 w.use_potion(arg)
-            elif action == "item":
+            elif action == "item":                      # simple HUD
                 if button == 1:
                     w.equip(arg)
                 elif button == 3:
@@ -175,27 +222,95 @@ class Game:
                 w.unequip(arg)
             elif action == "stat":
                 w.add_stat(arg)
+            elif action == "skill_right":
+                h.skill_popup = not h.skill_popup
+            elif action == "pick_skill":
+                w.player.right_skill = None if arg == "attack" else arg
+                h.skill_popup = False
+            elif action == "skill_page":
+                h.skill_page = arg
+            elif action == "learn":
+                p = w.player
+                if button == 3 and p.skills.levels.get(arg) and p.skills.tree[arg].kind != "passive":
+                    p.right_skill = arg
+                elif p.skills.learn(arg, p.level):
+                    p.recalc()
+                    if p.right_skill is None and p.skills.tree[arg].kind != "passive":
+                        p.right_skill = arg
+                    w.log("Learned %s (level %d)." % (arg, p.skills.levels[arg]), (0, 220, 0))
+            elif action == "slot":
+                if w.held is not None:
+                    w.equip_held(arg)
+                elif button == 1:
+                    w.pick_from_slot(arg)
+                elif button == 3:
+                    w.unequip(arg)
+            elif action == "grid":
+                cell = h.grid_cell_at(pos)
+                if cell is None:
+                    return
+                p = w.player
+                if w.held is not None:
+                    gx, gy = h._held_anchor(cell, w.held)
+                    w.place_held(gx, gy)
+                else:
+                    it = p.inv_at(*cell)
+                    if it is not None:
+                        if button == 3:
+                            if it.kind == "potion":
+                                w.use_inventory_potion(it) if hasattr(w, "use_inventory_potion") else w.equip(it)
+                            else:
+                                w.equip(it)
+                        else:
+                            w.pick_from_inventory(it)
             return
-        if pos[1] > self.screen.get_height() - Hud.BAR_H:
+        if hasattr(h, "skill_popup"):
+            h.skill_popup = False
+        if pos[1] > self.screen.get_height() - getattr(h, "BAR_H", 0) and not hasattr(h, "automap_mode"):
+            return
+        if w.held is not None:
+            # D2: clicking the world with an item on the cursor drops it
+            w.drop_held()
             return
         if not self.can_act():
             return
         cell = self.cam.screen_to_cell(*pos)
         m = self.monster_under_mouse(pos) or self.monster_at(cell)
+        p = w.player
+        if button == 3:
+            skill = p.right_skill
+            if skill is None and not getattr(p, "skills", None):
+                skill = None
+            if skill:
+                w.use_skill(skill, target=m, cell=cell if w.grid.in_bounds(*cell) else None)
+            elif m:
+                # no right skill chosen: Bash if learned (old behaviour), else a normal attack
+                if getattr(p, "skills", None) and p.skills.level("Bash"):
+                    w.use_skill("Bash", target=m)
+                elif not getattr(p, "skills", None) or not hasattr(self.assets, "content"):
+                    w.player_attack(m, "bash")
+                else:
+                    w.player_attack(m)
+            return
         if m:
-            self.world.player_attack(m, "bash" if button == 3 else "attack")
-        elif button == 1:
-            g = self.world.grid
-            if cell == self.world.player.pos and cell in self.world.ground:
-                self.world.player_pickup(cell)
+            w.player_attack(m, "attack")
+        else:
+            g = w.grid
+            if cell == p.pos and cell in w.ground:
+                w.player_pickup(cell)
             elif g.in_bounds(*cell) and g.walkable(*cell):
-                self.world.player_move_to(cell)
+                w.player_move_to(cell)
 
     def handle_key(self, key):
         w = self.world
+        h = self.hud
         if key == pygame.K_ESCAPE:
-            if self.hud.show_inv or self.hud.show_char:
-                self.hud.show_inv = self.hud.show_char = False
+            if w.held is not None:
+                w.drop_held()
+            elif h.show_inv or h.show_char or getattr(h, "show_skills", False):
+                h.show_inv = h.show_char = False
+                if hasattr(h, "show_skills"):
+                    h.show_skills = False
             else:
                 self.running = False
         elif key in (pygame.K_SPACE, pygame.K_e) and self.can_act():
@@ -203,17 +318,27 @@ class Game:
         elif key in (pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4) and self.can_act():
             w.use_potion(key - pygame.K_1)
         elif key == pygame.K_i:
-            self.hud.show_inv = not self.hud.show_inv
+            self.toggle_panel("inv")
         elif key == pygame.K_c:
-            self.hud.show_char = not self.hud.show_char
+            self.toggle_panel("char")
+        elif key == pygame.K_t or key == pygame.K_s:
+            self.toggle_panel("skills")
         elif key == pygame.K_g:
             self.scene.show_grid = not self.scene.show_grid
         elif key == pygame.K_TAB:
-            self.hud.show_automap = not self.hud.show_automap      # D2: Tab = automap
+            self.cycle_automap()                                   # D2: Tab = automap
         elif key == pygame.K_l:
             self.scene.show_labels = not self.scene.show_labels    # keep item names on
         elif key == pygame.K_f:
             self.scene.speed = 1.0 if self.scene.speed > 1 else 2.5
+        elif pygame.K_F1 <= key <= pygame.K_F8:
+            p = w.player
+            actives = p.skills.actives() if getattr(p, "skills", None) else []
+            i = key - pygame.K_F1
+            if i == 0:
+                p.right_skill = None
+            elif i - 1 < len(actives):
+                p.right_skill = actives[i - 1]
         elif key == pygame.K_r and ("game_over" in self.scene.flags or "victory" in self.scene.flags):
             self.new_world()
         elif key == pygame.K_n and "victory" in self.scene.flags:
@@ -316,8 +441,9 @@ class Game:
         self.screen.fill((0, 0, 0))
         self.draw_world(cell, highlight, preview)
         self.scene.draw_overlay(self.screen, self.cam)
+        self.hud.world_tip = tip
         self.hud.draw(self.screen, self.world, self.scene, mouse)
-        if tip and not self.hud.hover_lines:
+        if tip and not self.hud.hover_lines and not hasattr(self.hud, "automap_mode"):
             from render.hud import tooltip
             tooltip(self.screen, self.fonts, tip[0], tip[1], mouse)
         self.draw_overlays()

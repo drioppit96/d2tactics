@@ -49,6 +49,9 @@ def hit_chance(attacker, defender, ar_bonus_pct=0):
     """D2's to-hit formula: 200% * AR/(AR+DEF) * alvl/(alvl+dlvl), clamped 5..95."""
     ar = attacker.ar * (100 + ar_bonus_pct) / 100
     df = max(0, defender.defense)
+    eff = getattr(defender, "effects", {})
+    if eff.get("bc"):
+        df = df * (100 - eff.get("bc_def", 50)) / 100.0
     chance = 2 * (ar / (ar + df if ar + df else 1)) * (attacker.level / (attacker.level + defender.level))
     return max(0.05, min(0.95, chance))
 
@@ -76,16 +79,18 @@ class World:
             level_row = content.level_row(level_name) if content else None
             start, monsters = populate(self.grid, self.rng, depth_level, content, level_row)
             if exit_to:
-                # the way back out is right where you came in
-                for dy in range(-2, 3):
-                    for dx in range(-2, 3):
-                        c = (start[0] + dx, start[1] + dy)
-                        if self.grid.walkable(*c) and max(abs(dx), abs(dy)) == 2:
-                            self.exits[c] = exit_to
+                # the entrance cell is the way back out; you arrive a few steps inside (like D2)
+                self.exits[start] = exit_to
+                ring = self.grid.reachable(start, 4)
+                inside = [c for c, d in ring.items() if d == 4 and not any(m.pos == c for m in monsters)]
+                if inside:
+                    start = max(inside, key=lambda c: sum(1 for nb in self.grid.neighbors(*c)))
         self.entry = start
         if player is None:
             self.player = Player(*start)
             if content:
+                from .skills import SkillBook, load_tree
+                self.player.skills = SkillBook(load_tree(content.src))
                 self._d2_starting_gear()
         else:
             self.player = player
@@ -250,6 +255,8 @@ class World:
                 self._regen_steps += 1
                 if self._regen_steps % 2 == 0 and p.hp < p.max_hp:
                     p.hp += 1
+                if self._regen_steps % 10 == 0:
+                    self._tick_buffs()           # buffs also run out while exploring
             self.grid.update_visibility(p.pos, self.sight_radius())
             self._auto_pickup_gold(step)
             was_explore = self.mode == "explore"
@@ -291,8 +298,8 @@ class World:
                 p.gold += it.amount
             elif it.kind == "potion" and len(p.belt) < 4:
                 p.belt.append(it)
-            elif len(p.inventory) < 20:
-                p.inventory.append(it)
+            elif p.inv_add(it):
+                pass
             else:
                 self.log("Your inventory is full.", GREY)
                 continue
@@ -328,17 +335,23 @@ class World:
             self.emit("heal", p, 0)
         return True
 
-    def player_attack(self, target, skill="attack"):
-        """Attack an adjacent monster, walking next to it first if needed (and AP allows)."""
+    def player_attack(self, target, skill="attack", ap_cost=None, mana_cost=0):
+        """Attack (or use a melee skill on) a monster, walking next to it first if AP allows."""
         if getattr(target, "ai", "") == "npc":
             return self.interact(target)
         if not self.player_can_act() or not target.alive:
             return False
         p = self.player
-        if skill == "bash" and p.mana < BASH_MANA:
-            self.log("Not enough mana for Bash.", GREY)
-            skill = "attack"
-        cost = self.attack_cost(skill)
+        if skill == "bash" and ap_cost is None:          # placeholder-mode Bash
+            if p.mana < BASH_MANA:
+                self.log("Not enough mana for Bash.", GREY)
+                skill = "attack"
+            else:
+                mana_cost = BASH_MANA
+        if p.mana < mana_cost:
+            self.log("Not enough mana.", GREY)
+            return False
+        cost = ap_cost if ap_cost is not None else self.attack_cost(skill)
         if chebyshev(p.pos, target.pos) > 1 or not self._adjacent_reachable(p.pos, target.pos):
             path = self.grid.find_path(p.pos, target.pos, blocked=self.occupied(p), allow_goal_blocked=True)
             if not path or len(path) < 2:
@@ -360,12 +373,279 @@ class World:
             target.aware = True
             self.check_awareness_force()
         if p.ap < cost:
-            self.log(f"Need {cost} AP to attack.", GREY)
+            self.log(f"Need {cost} AP for that.", GREY)
             return False
         p.ap -= cost
-        if skill == "bash":
-            p.mana -= BASH_MANA
-        self._resolve_attack(p, target, skill)
+        p.mana -= mana_cost
+        swings = 2 if skill in ("Double Swing", "Frenzy") else 1
+        if skill == "Concentrate":
+            lv = p.skills.level(skill)
+            p.effects["conc_pct"] = 100 + 10 * (lv - 1)
+            self._buff("concentrate", 1)
+        if skill == "Berserk":
+            self._buff("berserk", 1)
+        if skill == "Taunt":
+            lv = p.skills.level(skill)
+            target.aware = True
+            target.effects["taunt"] = 5 + 2 * (lv - 1)
+            target.effects["taunt_turns"] = 4 + lv
+            self.emit("attack", p, target.pos, "cast")
+            self.log("%s is taunted!" % target.name, YELLOW)
+            self._maybe_auto_end()
+            return True
+        for _ in range(swings):
+            if not target.alive:
+                break
+            hit = self._resolve_attack(p, target, skill)
+            if hit and skill == "Frenzy":
+                p.frenzy += 1
+        self._maybe_auto_end()
+        return True
+
+    # ------------------------------------------------------------ skills
+    def _buff(self, name, turns, **extra):
+        p = self.player
+        p.effects[name] = max(p.effects.get(name, 0), turns)
+        p.effects.update(extra)
+        p.recalc()
+
+    def _tick_buffs(self):
+        p = self.player
+        changed = False
+        for k in ("shout", "bo", "bcmd", "concentrate", "berserk"):
+            if p.effects.get(k):
+                p.effects[k] -= 1
+                if p.effects[k] <= 0:
+                    p.effects.pop(k)
+                    changed = True
+                    if k == "bcmd":
+                        p.skills.bonus = 0
+                    if k in ("shout", "bo", "bcmd"):
+                        names = {"shout": "Shout", "bo": "Battle Orders", "bcmd": "Battle Command"}
+                        self.log("%s wears off." % names[k], GREY)
+        self.wards = [(x, y, t - 1) for x, y, t in getattr(self, "wards", []) if t > 1]
+        if changed:
+            hp_frac = p.hp / float(max(1, p.max_hp))
+            p.recalc()
+            p.hp = min(p.max_hp, max(1, int(round(p.max_hp * hp_frac))))
+
+    def skill_cost(self, name):
+        """(AP, mana) for using a learned skill right now."""
+        p = self.player
+        if not name or name == "attack":
+            return p.attack_cost, 0
+        book = p.skills
+        return book.ap_cost(name, p.attack_cost), book.mana_cost(name)
+
+    def use_skill(self, name, target=None, cell=None):
+        """Right mouse button: use the selected skill on a monster, a cell or around you."""
+        p = self.player
+        if not self.player_can_act():
+            return False
+        if not name or name == "attack":
+            return self.player_attack(target) if target is not None else False
+        book = p.skills
+        lv = book.level(name)
+        if lv <= 0:
+            self.log("You haven't learned %s." % name, GREY)
+            return False
+        s = book.tree[name]
+        ap, mana = self.skill_cost(name)
+        if s.kind == "attack":
+            if target is None or getattr(target, "ai", "") == "npc":
+                return False
+            if name == "Double Throw":
+                self.log("Double Throw needs throwing weapons (coming later).", GREY)
+                return False
+            if name == "Leap Attack":
+                return self._leap(cell=None, target=target, ap=ap, mana=mana, lv=lv)
+            return self.player_attack(target, name, ap_cost=ap, mana_cost=mana)
+        if p.mana < mana:
+            self.log("Not enough mana.", GREY)
+            return False
+        if self.mode == "combat" and p.ap < ap:
+            self.log("Need %d AP for %s." % (ap, name), GREY)
+            return False
+        if s.kind == "move":
+            if cell is None and target is not None:
+                cell = target.pos
+            if cell is None:
+                return False
+            if name == "Leap":
+                return self._leap(cell=cell, target=None, ap=ap, mana=mana, lv=lv)
+            return self._whirlwind(cell, ap, mana, lv)
+        if s.kind == "cry":
+            return self._warcry(name, lv, ap, mana)
+        if s.kind == "corpse":
+            return self._corpse_skill(name, cell or (target.pos if target else None), lv, ap, mana)
+        return False
+
+    def _pay(self, ap, mana):
+        p = self.player
+        if self.mode == "combat":
+            p.ap -= ap
+        p.mana -= mana
+
+    def _leap(self, cell, target, ap, mana, lv):
+        p = self.player
+        reach = 4 + (lv - 1) // 3
+        if target is not None:
+            spots = [(target.x + dx, target.y + dy) for dx, dy in DIRS8]
+            spots = [c for c in spots if self.grid.walkable(*c) and c not in self.occupied(p)
+                     and chebyshev(c, p.pos) <= reach]
+            if not spots:
+                self.log("Can't leap there.", GREY)
+                return False
+            cell = min(spots, key=lambda c: chebyshev(c, p.pos))
+        if not self.grid.walkable(*cell) or cell in self.occupied(p) or chebyshev(cell, p.pos) > reach:
+            self.log("Too far to leap (%d cells)." % reach, GREY)
+            return False
+        if self.mode == "explore" and target is not None:
+            target.aware = True
+            self.check_awareness_force()
+        if self.mode == "combat" and p.ap < ap:
+            self.log("Need %d AP." % ap, GREY)
+            return False
+        self._pay(ap, mana)
+        src = p.pos
+        p.face(*cell)
+        p.x, p.y = cell
+        self.emit("knockback", p, src, cell)       # a quick slide reads as a jump
+        self.grid.update_visibility(p.pos, self.sight_radius())
+        if target is None:
+            for m in self.living_monsters():
+                if m.ai != "npc" and chebyshev(m.pos, p.pos) == 1:
+                    self._knockback(p, m, 2)
+        else:
+            self._resolve_attack(p, target, "Leap Attack")
+        self.check_awareness()
+        self._maybe_auto_end()
+        return True
+
+    def _whirlwind(self, cell, ap, mana, lv):
+        p = self.player
+        dist = chebyshev(cell, p.pos)
+        if dist > 6 or dist < 1:
+            self.log("Whirlwind reaches up to 6 cells.", GREY)
+            return False
+        # straight line, passing through monsters; the end cell must be free
+        steps, x, y = [], p.x, p.y
+        while (x, y) != cell:
+            x += (cell[0] > x) - (cell[0] < x)
+            y += (cell[1] > y) - (cell[1] < y)
+            if not self.grid.walkable(x, y):
+                break
+            steps.append((x, y))
+        while steps and steps[-1] in self.occupied(p):
+            steps.pop()
+        if not steps:
+            return False
+        if self.mode == "explore":
+            self.check_awareness_force()
+        self._pay(ap, mana)
+        hit = set()
+        path = []
+        for st in steps:
+            if st in self.occupied(p):
+                continue
+            p.x, p.y = st
+            path.append(st)
+            for m in self.living_monsters():
+                if m.ai != "npc" and id(m) not in hit and chebyshev(m.pos, st) == 1:
+                    hit.add(id(m))
+                    m.aware = True
+                    self._resolve_attack(p, m, "Whirlwind")
+        self.emit("move", p, path)
+        self.grid.update_visibility(p.pos, self.sight_radius())
+        self._maybe_auto_end()
+        return True
+
+    def _warcry(self, name, lv, ap, mana):
+        p = self.player
+        L = lv - 1
+        near = [m for m in self.living_monsters() if m.ai != "npc"]
+        if name in ("Howl", "Battle Cry", "War Cry") and self.mode == "explore":
+            if any(chebyshev(m.pos, p.pos) <= 6 for m in near):
+                self.check_awareness_force()
+        self._pay(ap, mana)
+        self.emit("attack", p, p.pos, "cast")
+        if name == "Howl":
+            r, turns = 4 + L // 2, 2 + L // 4
+            n = 0
+            for m in near:
+                if chebyshev(m.pos, p.pos) <= r:
+                    m.effects["flee"] = turns
+                    n += 1
+            self.log("You howl! %d monsters flee." % n, YELLOW)
+        elif name == "Shout":
+            p.effects["shout_pct"] = 100 + 10 * L
+            self._buff("shout", 6 + L)
+            self.log("Shout: +%d%% defense." % (100 + 10 * L), YELLOW)
+        elif name == "Battle Orders":
+            pct = 35 + 3 * L
+            p.effects["bo_pct"] = pct
+            self._buff("bo", 8 + L)
+            p.hp = min(p.max_hp, p.hp + p.max_hp * pct // (100 + pct))
+            self.log("Battle Orders: +%d%% life and mana." % pct, YELLOW)
+        elif name == "Battle Command":
+            p.skills.bonus = 1
+            self._buff("bcmd", 6 + L)
+            self.log("Battle Command: +1 to all skills.", YELLOW)
+        elif name == "Battle Cry":
+            n = 0
+            for m in near:
+                if chebyshev(m.pos, p.pos) <= 5:
+                    m.effects.update(bc=True, bc_def=min(90, 50 + 2 * L), bc_dmg=min(75, 25 + L), bc_turns=5 + L)
+                    m.aware = True
+                    n += 1
+            self.log("Battle Cry weakens %d monsters." % n, YELLOW)
+        elif name == "War Cry":
+            lo, hi = 20 + 6 * L, 30 + 6 * L
+            for m in list(near):
+                if chebyshev(m.pos, p.pos) <= 3 and m.alive:
+                    m.aware = True
+                    self._damage(m, self.rng.randint(lo, hi), p)
+                    if m.alive:
+                        m.effects["stun"] = 1
+            self.log("War Cry!", YELLOW)
+        self._maybe_auto_end()
+        return True
+
+    def _corpse_skill(self, name, cell, lv, ap, mana):
+        p = self.player
+        L = lv - 1
+        corpse = None
+        for c in self.corpses:
+            if not getattr(c, "searched", False) and chebyshev(c.pos, p.pos) <= 2 and (cell is None or c.pos == cell):
+                corpse = c
+                break
+        if corpse is None:
+            self.log("Stand next to an unsearched corpse.", GREY)
+            return False
+        self._pay(ap, mana)
+        corpse.searched = True
+        self.emit("attack", p, corpse.pos, "cast")
+        if name == "Grim Ward":
+            self.wards = getattr(self, "wards", []) + [(corpse.x, corpse.y, 6 + L)]
+            self.log("A grim ward rises. Monsters keep away from it.", YELLOW)
+            return True
+        found = None
+        if name == "Find Potion" and self.rng.random() * 100 < min(100, 30 + 5 * L):
+            found = self.content.make_potion(max(1, corpse.level), self.rng) if self.content else None
+            if found is None:
+                from .items import make_potion
+                found = make_potion(corpse.level, self.rng)
+        elif name == "Find Item" and self.rng.random() * 100 < min(60, 15 + 3 * L):
+            drops = (self.content.roll_drop(corpse.level, True, self.rng) if self.content
+                     else roll_drop(corpse.level, True, self.rng))
+            found = drops[0] if drops else None
+        if found:
+            cellp = self._drop_cell(corpse.pos)
+            self.ground.setdefault(cellp, []).append(found)
+            self.emit("drop", cellp, found)
+            self.log("You find %s." % found.name, found.color)
+        else:
+            self.log("Nothing found.", GREY)
         self._maybe_auto_end()
         return True
 
@@ -385,6 +665,16 @@ class World:
             self.player.ap = self.player.max_ap
             self.emit("combat_start")
             self.log("You strike first!", YELLOW)
+
+    def use_inventory_potion(self, item):
+        p = self.player
+        if item in p.inventory and len(p.belt) < 4 + 1:
+            p.inventory.remove(item)
+            item.inv_pos = None
+            p.belt.insert(0, item)
+            if not self.use_potion(0):
+                p.belt.pop(0)
+                p.inv_add(item)
 
     def use_potion(self, slot):
         p = self.player
@@ -439,7 +729,9 @@ class World:
             return
         self.round += 1
         p = self.player
-        p.ap = p.max_ap
+        self._tick_buffs()
+        p.ap = p.max_ap + min(3, p.frenzy)
+        p.frenzy = 0
         p.mana = min(p.max_mana, p.mana + 1)
         if getattr(p, "regen", 0):
             p.hp = min(p.max_hp, p.hp + p.regen)
@@ -448,52 +740,165 @@ class World:
         self.check_combat_end()
 
     # ------------------------------------------------------------ inventory
-    def equip(self, inv_index):
+    def _inv_index(self, ref):
         p = self.player
-        if inv_index >= len(p.inventory):
-            return
-        it = p.inventory[inv_index]
+        if isinstance(ref, int):
+            return ref if 0 <= ref < len(p.inventory) else None
+        return p.inventory.index(ref) if ref in p.inventory else None
+
+    def equip(self, ref, slot=None):
+        """Equip an inventory item (index or item); the old one goes back to the backpack."""
+        p = self.player
+        i = self._inv_index(ref)
+        if i is None:
+            return False
+        it = p.inventory[i]
         if it.kind == "potion":
             if len(p.belt) < 4:
-                p.belt.append(p.inventory.pop(inv_index))
-            return
+                p.belt.append(p.inventory.pop(i))
+                it.inv_pos = None
+            return True
         if it.kind != "equip" or not it.slot:
-            return
+            return False
         if it.mod_list is not None and not it.requirements_ok(p):
             self.log("You can't use that yet (requirements).", RED)
-            return
-        slot = it.slot
-        if slot == "ring":
-            slot = "ring1" if p.equipment["ring1"] is None or p.equipment["ring2"] is not None else "ring2"
-        p.inventory.pop(inv_index)
-        old = p.equipment.get(slot)
-        p.equipment[slot] = it
-        if old:
-            p.inventory.append(old)
-        weapon = p.equipment.get("weapon")
-        if slot == "weapon" and it.two_handed and p.equipment.get("shield"):
-            p.inventory.append(p.equipment["shield"])
-            p.equipment["shield"] = None
-        if slot == "shield" and weapon is not None and weapon.two_handed:
-            p.inventory.append(weapon)
-            p.equipment["weapon"] = None
+            return False
+        p.inventory.pop(i)
+        spot = it.inv_pos
+        it.inv_pos = None
+        old = self._put_on(it, slot)
+        for o in old:
+            o.inv_pos = None
+            ok, over = p.inv_fits(o, *spot) if spot else (False, [])
+            if ok and not over:
+                o.inv_pos = spot
+                p.inventory.append(o)
+            elif not p.inv_add(o):
+                self.ground.setdefault(p.pos, []).append(o)
+                self.emit("drop", p.pos, o)
         p.recalc()
         self.log(f"Equipped {it.name}.", it.color)
+        return True
+
+    def _put_on(self, it, slot=None):
+        """Wear an item; returns what had to come off (0-2 items)."""
+        p = self.player
+        if slot is None:
+            slot = it.slot
+            if slot == "ring":
+                slot = "ring1" if p.equipment["ring1"] is None or p.equipment["ring2"] is not None else "ring2"
+        removed = []
+        if p.equipment.get(slot):
+            removed.append(p.equipment[slot])
+        p.equipment[slot] = it
+        weapon = p.equipment.get("weapon")
+        if slot == "weapon" and it.two_handed and p.equipment.get("shield"):
+            removed.append(p.equipment["shield"])
+            p.equipment["shield"] = None
+        if slot == "shield" and weapon is not None and weapon.two_handed:
+            removed.append(weapon)
+            p.equipment["weapon"] = None
+        return removed
+
+    def slot_accepts(self, it, slot):
+        if it is None or it.kind != "equip":
+            return False
+        if slot in ("ring1", "ring2"):
+            return it.slot == "ring"
+        return it.slot == slot
 
     def unequip(self, slot):
         p = self.player
         it = p.equipment.get(slot)
-        if it and len(p.inventory) < 20:
+        if it and p.inv_add(it):
             p.equipment[slot] = None
-            p.inventory.append(it)
             p.recalc()
 
-    def drop_item(self, inv_index):
+    def drop_item(self, ref):
         p = self.player
-        if inv_index < len(p.inventory):
-            it = p.inventory.pop(inv_index)
+        i = self._inv_index(ref)
+        if i is not None:
+            it = p.inventory.pop(i)
+            it.inv_pos = None
             self.ground.setdefault(p.pos, []).append(it)
             self.emit("drop", p.pos, it)
+
+    # ------------------------------------------------------------ the item on the cursor (D2 style)
+    held = None
+
+    def pick_from_inventory(self, item):
+        p = self.player
+        if self.held is not None or item not in p.inventory:
+            return False
+        p.inventory.remove(item)
+        item.inv_pos = None
+        self.held = item
+        return True
+
+    def pick_from_slot(self, slot):
+        p = self.player
+        it = p.equipment.get(slot)
+        if it is None or self.held is not None:
+            return False
+        p.equipment[slot] = None
+        self.held = it
+        p.recalc()
+        return True
+
+    def place_held(self, x0, y0):
+        """Drop the cursor item into the grid; swaps with exactly one overlapped item, like D2."""
+        p, it = self.player, self.held
+        if it is None:
+            return False
+        ok, over = p.inv_fits(it, x0, y0)
+        if not ok or len(over) > 1:
+            return False
+        if over:
+            swap = over[0]
+            p.inventory.remove(swap)
+            swap.inv_pos = None
+        else:
+            swap = None
+        it.inv_pos = (x0, y0)
+        p.inventory.append(it)
+        self.held = swap
+        return True
+
+    def equip_held(self, slot):
+        p, it = self.player, self.held
+        if it is None:
+            return False
+        if it.kind == "potion" and slot == "belt_potion":
+            if len(p.belt) < 4:
+                p.belt.append(it)
+                self.held = None
+            return True
+        if not self.slot_accepts(it, slot):
+            return False
+        if it.mod_list is not None and not it.requirements_ok(p):
+            self.log("You can't use that yet (requirements).", RED)
+            return False
+        removed = self._put_on(it, slot)
+        self.held = None
+        if removed:
+            self.held = removed[0]
+            for extra in removed[1:]:
+                if not p.inv_add(extra):
+                    self.ground.setdefault(p.pos, []).append(extra)
+                    self.emit("drop", p.pos, extra)
+        p.recalc()
+        self.log(f"Equipped {it.name}.", it.color)
+        return True
+
+    def drop_held(self):
+        it = self.held
+        if it is None:
+            return False
+        self.held = None
+        p = self.player
+        self.ground.setdefault(p.pos, []).append(it)
+        self.emit("drop", p.pos, it)
+        return True
 
     def add_stat(self, stat):
         p = self.player
@@ -507,27 +912,60 @@ class World:
         p.hp += max(0, p.max_hp - before)
 
     # ------------------------------------------------------------ combat resolution
+    def _skill_mods(self, attacker, skill):
+        """Damage / attack rating bonuses and effects of a melee skill at its current level."""
+        m = {"dmg": 0, "ar": 0, "knock": False, "stun": 0, "magic": False}
+        if not attacker.is_player or skill in ("attack", None):
+            if skill == "bash":                       # monsters / placeholder Bash
+                m.update(dmg=50, ar=20, knock=True)
+            return m
+        lv = max(1, attacker.skills.level(skill))
+        L = lv - 1
+        if skill in ("Bash", "bash"):
+            m.update(dmg=50 + 5 * L, ar=20 + 5 * L, knock=True)
+        elif skill == "Double Swing":
+            m.update(ar=15 + 5 * L)
+        elif skill == "Stun":
+            m.update(ar=5 + 5 * L, stun=1 + L // 6)
+        elif skill == "Leap Attack":
+            m.update(dmg=100 + 30 * L, ar=50 + 15 * L)
+        elif skill == "Concentrate":
+            m.update(dmg=70 + 5 * L, ar=60 + 10 * L)
+        elif skill == "Frenzy":
+            m.update(dmg=90 + 5 * L, ar=100 + 7 * L)
+        elif skill == "Berserk":
+            m.update(dmg=150 + 15 * L, ar=100 + 15 * L, magic=True)
+        elif skill == "Whirlwind":
+            m.update(dmg=-50 + 8 * L, ar=5 * L)
+        return m
+
     def _resolve_attack(self, attacker, target, skill="attack", ranged_kind=None):
+        """One swing (or shot). Returns True on a hit."""
         attacker.face(*target.pos)
+        mods = self._skill_mods(attacker, skill)
+        anim = "bash" if mods["knock"] else ("resurrect" if skill == "resurrect" else "attack")
         if ranged_kind:
             self.emit("projectile", attacker, attacker.pos, target.pos, ranged_kind)
         else:
-            self.emit("attack", attacker, target.pos, skill)
-        bonus = 20 if skill == "bash" else 0
-        if self.rng.random() > hit_chance(attacker, target, bonus):
+            self.emit("attack", attacker, target.pos, anim)
+        if self.rng.random() > hit_chance(attacker, target, mods["ar"]):
             self.emit("miss", target)
-            return
+            return False
         if target.is_player and getattr(target, "block_chance", 0) and self.rng.random() * 100 < target.block_chance:
             self.emit("miss", target)
             self.log("Blocked!", GREY)
-            return
+            return False
         dmg = self.rng.randint(*attacker.dmg)
-        if skill == "bash":
-            dmg = int(dmg * 1.5) + 1
+        dmg = max(1, int(dmg * (100 + mods["dmg"]) / 100.0))
+        aeff = getattr(attacker, "effects", {})
+        if aeff.get("bc"):
+            dmg = max(1, dmg * (100 - aeff.get("bc_dmg", 25)) // 100)
+        if aeff.get("taunt"):
+            dmg = max(1, dmg * (100 - aeff.get("taunt", 5)) // 100)
         if attacker.is_player:
             for kind, (lo, hi) in getattr(attacker, "elem", {}).items():
                 dmg += self.rng.randint(lo, max(lo, hi))
-        if target.is_player and getattr(target, "dr", 0):
+        if target.is_player and getattr(target, "dr", 0) and not mods["magic"]:
             dmg = max(1, dmg - target.dr)
         self._damage(target, dmg, attacker)
         if attacker.is_player and target is not attacker:
@@ -538,15 +976,23 @@ class World:
         # thorns
         if target.is_player and target.alive and not ranged_kind and target.thorns and attacker.alive:
             self._damage(attacker, target.thorns, target)
-        # bash knockback
-        if skill == "bash" and target.alive:
-            dx = (target.x > attacker.x) - (target.x < attacker.x)
-            dy = (target.y > attacker.y) - (target.y < attacker.y)
+        if mods["stun"] and target.alive and not target.is_player:
+            target.effects["stun"] = max(target.effects.get("stun", 0), mods["stun"])
+            self.log("%s is stunned!" % target.name, YELLOW)
+        if mods["knock"] and target.alive:
+            self._knockback(attacker, target)
+        return True
+
+    def _knockback(self, src_unit, target, cells=1):
+        for _ in range(cells):
+            dx = (target.x > src_unit.x) - (target.x < src_unit.x)
+            dy = (target.y > src_unit.y) - (target.y < src_unit.y)
             dest = (target.x + dx, target.y + dy)
-            if self.grid.walkable(*dest) and dest not in self.occupied():
-                src = target.pos
-                target.x, target.y = dest
-                self.emit("knockback", target, src, dest)
+            if not (self.grid.walkable(*dest) and dest not in self.occupied()):
+                return
+            src = target.pos
+            target.x, target.y = dest
+            self.emit("knockback", target, src, dest)
 
     def _damage(self, unit, amount, source):
         unit.hp -= amount
@@ -599,6 +1045,24 @@ class World:
     def _monster_turn(self, m):
         m.ap = m.max_ap
         p = self.player
+        eff = m.effects
+        for k in ("bc", "taunt"):
+            if eff.get(k + "_turns"):
+                eff[k + "_turns"] -= 1
+                if eff[k + "_turns"] <= 0:
+                    eff.pop(k, None)
+        if eff.get("stun"):
+            eff["stun"] -= 1
+            self.emit("miss", m)          # shows a little "miss" puff: it can't act
+            return
+        if eff.get("flee"):
+            eff["flee"] -= 1
+            self._move_away(m, m.ap)
+            return
+        for wx, wy, turns in getattr(self, "wards", []):
+            if chebyshev(m.pos, (wx, wy)) <= 4:
+                self._move_away(m, m.ap)
+                return
         if m.panic:
             m.panic -= 1
             self._move_away(m, m.ap)

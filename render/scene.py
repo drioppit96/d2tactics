@@ -126,8 +126,8 @@ class Scene:
             v.facing = (max(-1, min(1, target[0] - unit.x)), max(-1, min(1, target[1] - unit.y)))
             if not self._seen(unit):
                 return 0
-            v.mode = "SC" if skill == "resurrect" else "A1"
-            v.t, v.dur = 0.0, 0.3 if skill != "bash" else 0.38
+            v.mode = "SC" if skill in ("resurrect", "cast") else "A1"
+            v.t, v.dur = 0.0, 0.38 if skill in ("bash", "cast") else 0.3
             return None
         if kind == "projectile":
             unit, src, dst, pk = ev[1:]

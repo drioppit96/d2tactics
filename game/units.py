@@ -55,12 +55,64 @@ class Player(Unit):
         self.equipment = {s: None for s in SLOTS}
         self.inventory = []
         self.belt = []          # potions, max 4
+        from .skills import SkillBook, load_tree
+        self.skills = SkillBook(load_tree())
+        self.right_skill = None     # skill used with the right mouse button
+        self.effects = {}           # buffs: name -> turns left
+        self.frenzy = 0             # Frenzy charges -> bonus AP next turn
         self.equipment["weapon"] = Item("Hand Axe", "hax", "weapon", dmg=(3, 6), ap=3)
         self.equipment["armor"] = Item("Quilted Armor", "qui", "armor", defense=9)
         self.recalc()
         self.hp = self.max_hp
         self.mana = self.max_mana
         self.ap = self.max_ap
+
+    # ------------------------------------------------------------ D2 backpack: 10 x 4 cells
+    INV_W, INV_H = 10, 4
+
+    def _size(self, it):
+        return max(1, getattr(it, "invw", 1) or 1), max(1, getattr(it, "invh", 1) or 1)
+
+    def inv_cells(self, ignore=None):
+        taken = {}
+        for it in self.inventory:
+            if it is ignore or getattr(it, "inv_pos", None) is None:
+                continue
+            w, h = self._size(it)
+            x0, y0 = it.inv_pos
+            for y in range(y0, y0 + h):
+                for x in range(x0, x0 + w):
+                    taken[(x, y)] = it
+        return taken
+
+    def inv_fits(self, it, x0, y0, ignore=None):
+        """-> (fits inside the grid, list of items overlapped)"""
+        w, h = self._size(it)
+        if x0 < 0 or y0 < 0 or x0 + w > self.INV_W or y0 + h > self.INV_H:
+            return False, []
+        taken = self.inv_cells(ignore)
+        over = []
+        for y in range(y0, y0 + h):
+            for x in range(x0, x0 + w):
+                o = taken.get((x, y))
+                if o is not None and o not in over:
+                    over.append(o)
+        return True, over
+
+    def inv_add(self, it):
+        """Put an item in the first free spot (columns left to right, like D2). False if full."""
+        w, h = self._size(it)
+        for x0 in range(self.INV_W - w + 1):
+            for y0 in range(self.INV_H - h + 1):
+                ok, over = self.inv_fits(it, x0, y0)
+                if ok and not over:
+                    it.inv_pos = (x0, y0)
+                    self.inventory.append(it)
+                    return True
+        return False
+
+    def inv_at(self, x, y):
+        return self.inv_cells().get((x, y))
 
     def active_items(self):
         """Equipped items whose requirements are met (D2 ignores the rest)."""
@@ -132,9 +184,24 @@ class Player(Unit):
         self.attack_cost = max(2, cost)
         ar = (self.dexterity - 7) * 5 + 20 + self.mod("ar") + (self.level - 1) * 5
         self.ar = int(ar * (100 + self.mod("ar_pct")) / 100)
+        from .skills import passive_bonuses
+        pb = passive_bonuses(self.skills, self) if hasattr(self, "skills") else {"ed": 0, "ar_pct": 0, "def_pct": 0, "ap": 0, "res": 0}
+        if pb["ed"]:
+            mult2 = 1 + bonus + (self.mod("ed") + pb["ed"]) / 100.0
+            self.dmg = (max(1, int(lo * mult2)), max(1, int(hi * mult2)))
+        self.ar = int(self.ar * (100 + pb["ar_pct"]) / 100)
+        eff = getattr(self, "effects", {})
+        def_pct = pb["def_pct"] + (eff.get("shout_pct", 0) if eff.get("shout") else 0) \
+            + (eff.get("conc_pct", 0) if eff.get("concentrate") else 0)
         self.defense = self.dexterity // 4 + sum(it.defense for it in self._active)
+        self.defense = int(self.defense * (100 + def_pct) / 100)
+        if eff.get("berserk"):
+            self.defense = 0
+        if eff.get("bo"):
+            self.max_hp = int(self.max_hp * (100 + eff.get("bo_pct", 0)) / 100)
+            self.max_mana = int(self.max_mana * (100 + eff.get("bo_pct", 0)) / 100)
         frw = self.mod("frw")
-        self.max_ap = 8 + self.mod("ap") + (1 if frw >= 20 else 0) + (1 if frw >= 40 else 0)
+        self.max_ap = 8 + self.mod("ap") + (1 if frw >= 20 else 0) + (1 if frw >= 40 else 0) + pb["ap"]
         self.thorns = self.mod("thorns")
         self.light = 9 + self.mod("light")
         self.regen = self.mod("regen")
@@ -145,7 +212,7 @@ class Player(Unit):
         self.mf = self.mod("mf")
         self.gf = self.mod("gf")
         allres = self.mod("res_all")
-        self.res = {k: min(75, allres + self.mod("res_" + k)) for k in ("fire", "cold", "ltng", "pois")}
+        self.res = {k: min(75, allres + pb["res"] + self.mod("res_" + k)) for k in ("fire", "cold", "ltng", "pois")}
         shield = self.equipment.get("shield")
         if shield and shield in self._active and shield.slot == "shield":
             # D2: (class block factor + shield block) * (dex - 15) / (clvl * 2), max 75%
@@ -175,6 +242,8 @@ class Player(Unit):
         while self.xp >= self.xp_to_next():
             self.level += 1
             self.stat_points += 5
+            if hasattr(self, "skills"):
+                self.skills.points += 1      # D2: one skill point per level
             gained += 1
             self.recalc()
             self.hp = self.max_hp
@@ -223,4 +292,5 @@ class Monster(Unit):
         self.unique = t.get("unique", False)
         self.aware = False
         self.panic = 0       # fallen run away for a turn when a pack mate dies
+        self.effects = {}    # stun / flee / battle cry / taunt: turns left
         self.home = (x, y)

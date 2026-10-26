@@ -90,11 +90,13 @@ def populate(g, rng, depth_level=1, content=None, level_row=None):
         occupied.add(cell)
 
     pack_centres = []
-    candidates = [c for c, d in dist.items() if 12 < d < maxd - 8]
+    candidates = [c for c, d in dist.items() if 10 < d < maxd - 6]
     rng.shuffle(candidates)
-    max_packs = max(9, min(18, len(dist) // 900))
+    # D2's Den of Evil is packed: roughly one group per 450 walkable cells (~25-40 groups)
+    max_packs = max(9, min(40, len(dist) // 450)) if roster else max(9, min(18, len(dist) // 900))
+    spacing = 8 if roster else 10
     for c in candidates:
-        if all(max(abs(c[0] - p[0]), abs(c[1] - p[1])) >= 10 for p in pack_centres):
+        if all(max(abs(c[0] - p[0]), abs(c[1] - p[1])) >= spacing for p in pack_centres):
             pack_centres.append(c)
         if len(pack_centres) >= max_packs:
             break
@@ -104,9 +106,11 @@ def populate(g, rng, depth_level=1, content=None, level_row=None):
         lvl = depth_level + (1 if depth > 0.6 else 0)
         if roster:
             # D2 groups: a monster type from the level's list, its group size and minions
-            mid = rng.choice(roster)
+            weights = [content.monster_template(r)["rarity"] for r in roster]
+            mid = rng.choices(roster, weights=weights)[0]     # D2 picks groups by MonStats rarity
             t = content.monster_template(mid)
-            members = [mid] * rng.randint(*sorted(t["group"]))
+            lo, hi = sorted(t["group"])
+            members = [mid] * rng.randint(max(2, lo), max(3, hi))
             if t["minion"] and t["minion"] in content.monstats:
                 lo, hi = t["party"] if t["party"][1] else (2, 4)
                 members += [t["minion"]] * rng.randint(max(1, lo), max(1, hi))
