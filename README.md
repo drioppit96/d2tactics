@@ -1,6 +1,7 @@
 # D2 Tactics (prototype)
 
-Turn-based, action-point combat in Diablo 2's Den of Evil. The game reads the real
+Turn-based, action-point combat in Diablo 2's Act 1. You start in the Rogue Encampment
+(talk to Akara to heal) and leave the camp for the Den of Evil. The game reads the real
 tiles, room layouts and unit animations straight from your own Diablo II install
 (set the folder in `settings.ini`). No Blizzard files are included in this project.
 
@@ -34,7 +35,7 @@ Each turn you get **8 Action Points**.
 Hit chance uses D2's real to-hit formula (attack rating vs. defense, level difference).
 Hover a monster to see hit chance and AP cost before you commit.
 
-**Keys:** Space = end turn · I = inventory · C = character / stat points · Tab = item labels ·
+**Keys:** Space = end turn · I = inventory · C = character / stat points · Tab = automap · Alt (hold) or L = item names ·
 G = grid · F = fast animations · mouse wheel = zoom · R = new cave after death · Esc = close / quit
 
 **Monsters:** Zombies (slow, hit hard), Fallen (fast, scatter when a pack mate dies),

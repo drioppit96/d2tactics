@@ -28,6 +28,18 @@ PICKUP_AP = 1
 BASH_MANA = 2
 
 RED = (255, 80, 80)
+NPC_NAMES = {"akara": "Akara", "charsi": "Charsi", "gheed": "Gheed", "kashya": "Kashya", "warriv1": "Warriv",
+             "cain1": "Deckard Cain", "rogue1": "Rogue Scout", "navi": "Flavie", "chicken": "Chicken"}
+NPC_LINES = {
+    "akara": "Akara: Rest a moment, I will mend your wounds.",
+    "charsi": "Charsi: My forge isn't ready for trading yet - check back soon!",
+    "gheed": "Gheed: Gambling and trade? Not quite yet, friend. Soon.",
+    "kashya": "Kashya: The Den of Evil is close by. Clear it out, and we'll talk.",
+    "warriv1": "Warriv: The caravan waits for the pass to clear. The road east is closed.",
+    "rogue1": "Rogue Scout: Stay sharp out there.",
+    "navi": "Flavie: The wilderness beyond is crawling with the Fallen.",
+    "chicken": "Cluck.",
+}
 GREEN = (100, 220, 100)
 YELLOW = (255, 230, 90)
 GREY = (170, 170, 170)
@@ -42,19 +54,43 @@ def hit_chance(attacker, defender, ar_bonus_pct=0):
 
 
 class World:
-    def __init__(self, seed=None, depth_level=1, level_builder=None, content=None):
+    def __init__(self, seed=None, depth_level=1, level_builder=None, content=None,
+                 level_id="den", level_name="Den of Evil", town=False, player=None, exit_to=None):
         self.seed = seed if seed is not None else random.randrange(1 << 30)
         self.tilemap = None
+        self.level_id, self.level_name, self.town = level_id, level_name, town
         if level_builder is not None:
             self.grid, self.rng, self.tilemap = level_builder(self.seed)
         else:
             self.grid, self.rng = generate_cave(seed=self.seed)
         self.content = content
-        level_row = content.level_row("Den of Evil") if content else None
-        start, monsters = populate(self.grid, self.rng, depth_level, content, level_row)
-        self.player = Player(*start)
-        if content:
-            self._d2_starting_gear()
+        self.npcs = []
+        self.exits = {}              # cell -> target level id
+        self.pending_exit = None
+        if town:
+            start = self.tilemap.entry or next(iter(self.tilemap.exits))
+            monsters = self._spawn_npcs()
+            for c in self.tilemap.exits:
+                self.exits[c] = exit_to
+        else:
+            level_row = content.level_row(level_name) if content else None
+            start, monsters = populate(self.grid, self.rng, depth_level, content, level_row)
+            if exit_to:
+                # the way back out is right where you came in
+                for dy in range(-2, 3):
+                    for dx in range(-2, 3):
+                        c = (start[0] + dx, start[1] + dy)
+                        if self.grid.walkable(*c) and max(abs(dx), abs(dy)) == 2:
+                            self.exits[c] = exit_to
+        self.entry = start
+        if player is None:
+            self.player = Player(*start)
+            if content:
+                self._d2_starting_gear()
+        else:
+            self.player = player
+            player.x, player.y = start
+            player.alive = True
         self.monsters = monsters
         self.corpses = []            # dead monsters, shamans can raise fallen
         self.ground = {}             # cell -> [items]
@@ -65,9 +101,43 @@ class World:
         self.game_over = False
         self.boss_dead = False
         self._regen_steps = 0
+        self.ambient = 70 if town else 205     # how dark it is outside your light radius
         self.grid.update_visibility(self.player.pos, self.sight_radius())
-        self.log("You enter the Den of Evil. Corpsefire lurks in the depths.", YELLOW)
-        self.log("Left click: move / attack. Right click: Bash. Space: end turn.", GREY)
+        self.enter_message()
+
+    def enter_message(self):
+        if self.town:
+            self.log("Rogue Encampment. Talk to Akara to heal. Leave the camp to fight.", YELLOW)
+            self.log("Left click: move / talk / attack. Right click: Bash. Space: end turn. Tab: map.", GREY)
+        else:
+            self.log("You enter the %s. Corpsefire lurks in the depths." % self.level_name, YELLOW)
+
+    def _spawn_npcs(self):
+        out, seen = [], set()
+        for npc_id, cell in getattr(self.tilemap, "npcs", []):
+            if npc_id == "navi" and npc_id in seen:
+                continue           # one Flavie is enough
+            seen.add(npc_id)
+            t = None
+            if self.content and npc_id in self.content.monstats:
+                t = self.content.monster_template(npc_id)
+                t["name"] = NPC_NAMES.get(npc_id, t["name"])
+            m = Monster("zombie", *cell, rng=self.rng, template=t)
+            m.npc = npc_id
+            m.name = NPC_NAMES.get(npc_id, m.name)
+            m.ai = "npc"
+            m.aware = False
+            out.append(m)
+            self.npcs.append(m)
+        return out
+
+    def relocate_player(self, cell):
+        p = self.player
+        p.x, p.y = cell
+        p.alive = True
+        self.mode, self.turn = "explore", "player"
+        self.pending_exit = None
+        self.grid.update_visibility(p.pos, self.sight_radius())
 
     def _d2_starting_gear(self):
         """D2's Barbarian starts with a Hand Axe, a Buckler and healing potions."""
@@ -118,14 +188,14 @@ class World:
         newly = []
         p = self.player
         for m in self.living_monsters():
-            if m.aware:
+            if m.aware or m.ai == "npc":
                 continue
             if chebyshev(m.pos, p.pos) <= SIGHT and self.grid.line_of_sight(m.pos, p.pos):
                 newly.append(m)
         for m in list(newly):
             m.aware = True
             for o in self.living_monsters():
-                if not o.aware and chebyshev(o.pos, m.pos) <= ALERT_RADIUS:
+                if not o.aware and o.ai != "npc" and chebyshev(o.pos, m.pos) <= ALERT_RADIUS:
                     o.aware = True
                     newly.append(o)
         if newly and self.mode == "explore":
@@ -185,6 +255,9 @@ class World:
             was_explore = self.mode == "explore"
             if self.check_awareness() and was_explore:
                 break   # spotted: stop walking, combat begins
+            if self.mode == "explore" and step in self.exits and self.exits[step]:
+                self.pending_exit = self.exits[step]
+                break
         self.emit("move", p, walked)
         if walked and walked[-1] == cell and cell in self.ground:
             self.player_pickup(cell)
@@ -237,8 +310,28 @@ class World:
         bonus = 20 if skill == "bash" else 0
         return hit_chance(self.player, target, bonus), self.attack_cost(skill)
 
+    def interact(self, npc):
+        """Walk up to an NPC and talk (Akara heals, like in D2)."""
+        p = self.player
+        if chebyshev(p.pos, npc.pos) > 1:
+            path = self.grid.find_path(p.pos, npc.pos, blocked=self.occupied(p), allow_goal_blocked=True)
+            if not path or len(path) < 2:
+                return False
+            self.player_move_to(path[-2])
+            if chebyshev(p.pos, npc.pos) > 1 or self.pending_exit:
+                return True
+        p.face(*npc.pos)
+        npc.face(*p.pos)
+        self.log(NPC_LINES.get(npc.npc, npc.name + ": Hello."), (220, 210, 170))
+        if npc.npc == "akara":
+            p.hp, p.mana = p.max_hp, p.max_mana
+            self.emit("heal", p, 0)
+        return True
+
     def player_attack(self, target, skill="attack"):
         """Attack an adjacent monster, walking next to it first if needed (and AP allows)."""
+        if getattr(target, "ai", "") == "npc":
+            return self.interact(target)
         if not self.player_can_act() or not target.alive:
             return False
         p = self.player
@@ -285,7 +378,7 @@ class World:
     def check_awareness_force(self):
         if self.mode == "explore":
             for o in self.living_monsters():
-                if o.aware is False and chebyshev(o.pos, self.player.pos) <= ALERT_RADIUS:
+                if o.aware is False and o.ai != "npc" and chebyshev(o.pos, self.player.pos) <= ALERT_RADIUS:
                     o.aware = True
             self.mode = "combat"
             self.round = 1
@@ -336,6 +429,12 @@ class World:
                 self._monster_turn(m)
         # monsters that came into view during the enemy phase join next round
         self.check_awareness()
+        # ... and ones that lost you give up the chase (so you can explore freely again)
+        p = self.player
+        for m in self.aware_monsters():
+            d = chebyshev(m.pos, p.pos)
+            if d > 18 or (d > SIGHT + 2 and not self.grid.line_of_sight(m.pos, p.pos)):
+                m.aware = False
         if self.game_over:
             return
         self.round += 1

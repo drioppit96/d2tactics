@@ -26,12 +26,12 @@ def load_settings():
     return cfg
 
 
-def load_assets(cfg):
+def load_assets(cfg, progress=None):
     path = cfg.get("diablo2", "path").strip()
     if path:
         try:
             from render.d2assets import D2Assets
-            return D2Assets(path, cfg.get("game", "difficulty").strip().lower()), None
+            return D2Assets(path, cfg.get("game", "difficulty").strip().lower(), progress), None
         except Exception as e:  # files not found or unreadable
             import traceback
             traceback.print_exc()
@@ -58,7 +58,8 @@ class Game:
             "big": pygame.font.SysFont(serif, 30, bold=True),
             "title": pygame.font.SysFont(serif, 22, bold=True),
         }
-        self.assets, self.asset_warning = load_assets(self.cfg)
+        self.loading("Starting...")
+        self.assets, self.asset_warning = load_assets(self.cfg, self.loading)
         scale = self.cfg.get("display", "scale").strip().lower()
         zoom = getattr(self.assets, "native_scale", 2.0) if scale in ("", "auto") else float(scale)
         self.cam = Camera(w, h, zoom)
@@ -67,15 +68,69 @@ class Game:
         self.new_world()
         self.running = True
 
+    def loading(self, message):
+        """Simple loading screen; also keeps Windows from marking the window 'not responding'."""
+        pygame.event.pump()
+        W, H = self.screen.get_size()
+        self.screen.fill((0, 0, 0))
+        font = pygame.font.SysFont("georgia,palatinolinotype,timesnewroman,serif", 30, bold=True)
+        small = pygame.font.SysFont("georgia,palatinolinotype,timesnewroman,serif", 17)
+        t = font.render("D2 Tactics", True, (199, 179, 119))
+        self.screen.blit(t, (W / 2 - t.get_width() / 2, H / 2 - 50))
+        s = small.render(message, True, (190, 180, 160))
+        self.screen.blit(s, (W / 2 - s.get_width() / 2, H / 2 + 6))
+        pygame.display.flip()
+
     def new_world(self, seed=None):
-        builder = getattr(self.assets, "level_builder", None)
-        self.world = World(seed=seed, level_builder=builder, content=getattr(self.assets, "content", None))
-        self._path_cache = {}
-        self.scene = Scene(self.world, self.assets, self.fonts)
-        self.hud = Hud(self.fonts, self.assets)
+        """New game: start in the Rogue Encampment when D2 files are available."""
+        self.levels = {}
+        self.hud = Hud(self.fonts, self.assets) if not hasattr(self, "hud") else self.hud
+        self.hud.minimaps = {}
+        content = getattr(self.assets, "content", None)
+        if getattr(self.assets, "town_kit", None):
+            self.loading("Building the Rogue Encampment...")
+            self.world = World(seed=seed, level_builder=self.assets.town_builder, content=content,
+                               level_id="town", level_name="Rogue Encampment", town=True, exit_to="den")
+        else:
+            builder = getattr(self.assets, "level_builder", None)
+            self.world = World(seed=seed, level_builder=builder, content=content)
+        self.levels[self.world.level_id] = self.world
+        self._start_scene()
         if self.asset_warning:
             self.world.log(self.asset_warning, (230, 160, 90))
+
+    def _start_scene(self):
+        self._path_cache = {}
+        self.scene = Scene(self.world, self.assets, self.fonts)
+        self.scene.banner = [self.world.level_name, (199, 179, 119), 2.0]
         self.cam.snap(*self.scene.player_world_pos())
+
+    def change_level(self, target):
+        """Walk through an exit: levels are kept, so killed monsters stay dead."""
+        old = self.world
+        old.pending_exit = None
+        old.last_pos = old.player.pos
+        player = old.player
+        if target in self.levels:
+            w = self.levels[target]
+            w.player = player
+            if w.town and getattr(w, "last_pos", None):
+                # step back into the camp, away from the exit you used
+                lx, ly = w.last_pos
+                inside = [c for c in w.grid.reachable(w.entry, 400) if c not in w.exits
+                          and all(max(abs(c[0] - e[0]), abs(c[1] - e[1])) > 3 for e in w.exits)]
+                spot = min(inside, key=lambda c: abs(c[0] - lx) + abs(c[1] - ly)) if inside else w.entry
+            else:
+                spot = w.entry
+            w.relocate_player(spot)
+            w.log("You return to the %s." % w.level_name, (199, 179, 119))
+        else:
+            self.loading("Entering the Den of Evil...")
+            w = World(seed=None, level_builder=self.assets.level_builder, content=getattr(self.assets, "content", None),
+                      level_id=target, level_name="Den of Evil", player=player, exit_to="town")
+            self.levels[target] = w
+        self.world = w
+        self._start_scene()
 
     # ------------------------------------------------------------ input
     def can_act(self):
@@ -133,7 +188,7 @@ class Game:
             g = self.world.grid
             if cell == self.world.player.pos and cell in self.world.ground:
                 self.world.player_pickup(cell)
-            elif g.in_bounds(*cell) and g.explored[cell[1]][cell[0]]:
+            elif g.in_bounds(*cell) and g.walkable(*cell):
                 self.world.player_move_to(cell)
 
     def handle_key(self, key):
@@ -154,7 +209,9 @@ class Game:
         elif key == pygame.K_g:
             self.scene.show_grid = not self.scene.show_grid
         elif key == pygame.K_TAB:
-            self.scene.show_labels = not self.scene.show_labels
+            self.hud.show_automap = not self.hud.show_automap      # D2: Tab = automap
+        elif key == pygame.K_l:
+            self.scene.show_labels = not self.scene.show_labels    # keep item names on
         elif key == pygame.K_f:
             self.scene.speed = 1.0 if self.scene.speed > 1 else 2.5
         elif key == pygame.K_r and ("game_over" in self.scene.flags or "victory" in self.scene.flags):
@@ -187,6 +244,8 @@ class Game:
         tip = None
         preview = None
         key_base = (p.pos, w.mode, p.ap, w.round, len(w.living_monsters()))
+        if m and getattr(m, "ai", "") == "npc":
+            return cell, highlight, None, ([m.name, "Click to talk"], [(90, 200, 255), TEXT])
         if m:
             hc, cost = w.preview_attack(m, "attack")
             hb, bcost = w.preview_attack(m, "bash")
@@ -208,17 +267,20 @@ class Game:
             tip = (lines, [name_col, TEXT, TEXT, TEXT, TEXT])
         else:
             g = w.grid
-            if g.in_bounds(*cell) and g.walkable(*cell) and g.explored[cell[1]][cell[0]] and cell != p.pos:
+            if g.in_bounds(*cell) and g.walkable(*cell) and cell != p.pos:
                 key = ("c", cell) + key_base
                 if key not in self._path_cache:
                     self._trim_cache()
                     self._path_cache[key] = w.path_for_player(cell)
                 path = self._path_cache[key]
-                if path:
-                    preview = [(c, w.mode == "explore" or i < p.ap) for i, c in enumerate(path)]
+                if path and w.mode == "combat":      # outside combat you just walk, no AP to plan
+                    preview = [(c, i < p.ap) for i, c in enumerate(path)]
                     if w.mode == "combat":
                         tip = ([f"{len(path)} AP" + ("" if len(path) <= p.ap else f"  (only {p.ap} left)")],
                                [TEXT if len(path) <= p.ap else (230, 120, 90)])
+            if cell in w.exits and w.exits[cell]:
+                names = {"den": "To the Den of Evil", "town": "To the Rogue Encampment"}
+                tip = ([names.get(w.exits[cell], "Exit")], [(240, 210, 90)])
             items = w.ground.get(cell)
             if items and g.explored[cell[1]][cell[0]]:
                 lines = items[0].describe_lines(p)
@@ -240,7 +302,13 @@ class Game:
             elif ev.type == pygame.MOUSEWHEEL:
                 self.cam.scale = max(1.0, min(3.5, self.cam.scale + ev.y * 0.25))
 
+        try:
+            self.scene.alt_held = bool(pygame.key.get_mods() & pygame.KMOD_ALT)
+        except Exception:
+            self.scene.alt_held = False
         self.scene.update(dt)
+        if self.world.pending_exit and self.scene.idle():
+            self.change_level(self.world.pending_exit)
         self.cam.resize(*self.screen.get_size())
         self.cam.follow(*self.scene.player_world_pos(), dt)
 

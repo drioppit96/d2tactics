@@ -79,6 +79,8 @@ class Hud:
         self.regions = []    # (rect, action, arg) for click handling
         self.hover_lines = None
         self._bar_top = 10 ** 6
+        self.minimaps = {}
+        self.show_automap = False
 
     def hit(self, pos):
         for rect, action, arg in reversed(self.regions):
@@ -170,6 +172,17 @@ class Hud:
         surf.blit(gold_img, (140, H - self.BAR_H + 20))
 
         self._draw_log(surf, scene)
+        mm = self.minimaps.get(id(world))
+        if mm is None:
+            from .minimap import Minimap
+            mm = self.minimaps[id(world)] = Minimap(world)
+        if self.show_automap:
+            mm.draw_overlay(surf)
+        elif not self.show_inv:
+            box = pygame.Rect(W - 236, 8, 228, 150)
+            mm.draw_corner(surf, box)
+            name = self.fonts["small"].render(world.level_name, True, GOLD)
+            surf.blit(name, (box.right - name.get_width() - 6, box.bottom + 2))
         if self.show_inv:
             self._draw_inventory(surf, world, mouse)
         if self.show_char:

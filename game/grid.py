@@ -23,6 +23,7 @@ class Grid:
         self.cells = [[fill] * width for _ in range(height)]
         self.explored = [[False] * width for _ in range(height)]
         self.visible = [[False] * width for _ in range(height)]
+        self.new_explored = []       # cells revealed since the minimap last looked
 
     def in_bounds(self, x, y):
         return 0 <= x < self.w and 0 <= y < self.h
@@ -127,10 +128,14 @@ class Grid:
                     continue
                 if self.line_of_sight(origin, (x, y)):
                     self.visible[y][x] = True
-                    self.explored[y][x] = True
+                    if not self.explored[y][x]:
+                        self.explored[y][x] = True
+                        self.new_explored.append((x, y))
                     # reveal the walls bordering visible floor too
                     for dx, dy in DIRS8:
                         nx, ny = x + dx, y + dy
                         if self.in_bounds(nx, ny) and self.cells[ny][nx] == WALL:
                             self.visible[ny][nx] = True
-                            self.explored[ny][nx] = True
+                            if not self.explored[ny][nx]:
+                                self.explored[ny][nx] = True
+                                self.new_explored.append((nx, ny))

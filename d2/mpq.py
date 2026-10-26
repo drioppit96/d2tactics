@@ -231,12 +231,14 @@ class MPQSet:
     ORDER = ["patch_d2.mpq", "d2exp.mpq", "d2data.mpq", "d2char.mpq", "d2sfx.mpq",
              "d2xtalk.mpq", "d2speech.mpq", "d2music.mpq", "d2xmusic.mpq"]
 
-    def __init__(self, folder):
+    def __init__(self, folder, progress=None):
         import os
         self.archives = []
         files = {f.lower(): f for f in os.listdir(folder)}
         for name in self.ORDER:
             if name in files:
+                if progress:
+                    progress("Opening %s" % name)
                 try:
                     self.archives.append((name, MPQ(os.path.join(folder, files[name]))))
                 except Exception as e:

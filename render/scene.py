@@ -335,8 +335,8 @@ class Scene:
             tx1, ty1 = min(tm.tw - 1, x1 // 5 + 1), min(tm.th - 1, y1 // 5 + 2)
             for ty in range(ty0, ty1 + 1):
                 for tx in range(tx0, tx1 + 1):
-                    if (tx, ty) not in tm.drawn or not self._tile_explored(tx, ty):
-                        continue
+                    if (tx, ty) not in tm.drawn:
+                        continue          # like D2, the terrain around you is always shown
                     ref = tm.floor.get((tx, ty))
                     if ref:
                         assets.draw_tile(surf, ref, tx, ty, cam)
@@ -369,7 +369,7 @@ class Scene:
             self._diamond(surf, cam, *hover_cell, (255, 255, 255, 40), outline=True)
 
         for cell, items in world.ground.items():
-            if g.explored[cell[1]][cell[0]]:
+            if use_tiles or g.explored[cell[1]][cell[0]]:
                 for it in items:
                     if id(it) in self.items_shown:
                         drawables.append((cell[0] + cell[1] - 0.01, 1, "item", (cell, it)))
@@ -401,7 +401,7 @@ class Scene:
                 b = 1.0 if use_tiles else self.brightness(cell[0], cell[1], light)
                 assets.draw_ground_item(surf, it, cam.cell_to_screen(*cell), s, max(b, 0.4),
                                         t=self.clock - self.drop_time.get(id(it), -100.0))
-                if self.show_labels or (hover_cell == cell):
+                if self.show_labels or getattr(self, "alt_held", False) or (hover_cell == cell):
                     self._labels.append((it, cell_to_world(*cell)))
             else:
                 v = obj
@@ -440,9 +440,10 @@ class Scene:
     def _draw_darkness(self, surf, cam, light):
         """D2-style lighting: darkness everywhere except a soft light radius around the player."""
         w, h = surf.get_size()
-        if getattr(self, "_dark", None) is None or self._dark.get_size() != (w, h) or self._light_r != light:
+        self.ambient = getattr(self.world, "ambient", self.AMBIENT)
+        if getattr(self, "_dark", None) is None or self._dark.get_size() != (w, h) or self._light_r != (light, self.ambient):
             self._dark = pygame.Surface((w, h), pygame.SRCALPHA)
-            self._light_r = light
+            self._light_r = (light, self.ambient)
             rw, rh = int(light * 32 * 1.15), int(light * 16 * 1.15)
             # concentric rings, each removing a little darkness -> smooth falloff to the edge
             acc = pygame.Surface((rw * 2, rh * 2), pygame.SRCALPHA)
@@ -452,10 +453,10 @@ class Scene:
                 r = pygame.Rect(0, 0, int(rw * 2 * k), int(rh * 2 * k))
                 r.center = (rw, rh)
                 ring = pygame.Surface((rw * 2, rh * 2), pygame.SRCALPHA)
-                pygame.draw.ellipse(ring, (0, 0, 0, max(1, self.AMBIENT // steps + 1)), r)
+                pygame.draw.ellipse(ring, (0, 0, 0, max(1, self.ambient // steps + 1)), r)
                 acc.blit(ring, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
             self._glow = acc
-        self._dark.fill((0, 0, 0, self.AMBIENT))
+        self._dark.fill((0, 0, 0, self.ambient))
         px, py = cam.to_screen(*self.player_world_pos())
         gw, gh = self._glow.get_size()
         self._dark.blit(self._glow, (int(px - gw / 2), int(py - gh / 2 - 20)), special_flags=pygame.BLEND_RGBA_SUB)
@@ -515,7 +516,7 @@ class Scene:
         g = self.world.grid
         for v in self.views.values():
             u = v.unit
-            if u.is_player or v.dead:
+            if u.is_player or v.dead or getattr(u, "ai", "") == "npc":
                 continue
             cx, cy = int(round(v.rx)), int(round(v.ry))
             if not g.visible[cy][cx]:

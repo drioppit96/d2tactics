@@ -142,10 +142,18 @@ class D2Assets(AssetProvider):
     native_scale = 1.5     # D2 art is drawn for 800x600; 1.5x zoom gives a similar view
     bar_lift = 34          # D2 monsters are taller than the placeholder figures
 
-    def __init__(self, d2_path, difficulty="normal"):
-        self.src = open_source(d2_path)
+    def __init__(self, d2_path, difficulty="normal", progress=None):
+        say = progress or (lambda msg: None)
+        self.src = open_source(d2_path, say)
         self.palette = load_palette(self.src.read("data\\global\\palette\\act1\\pal.dat"))
+        say("Reading cave tiles")
         self.kit = CaveKit(self.src)
+        say("Reading the Rogue Encampment")
+        from game.d2level import TownKit
+        try:
+            self.town_kit = TownKit(self.src)
+        except Exception:
+            self.town_kit = None
         self.placeholder = PlaceholderAssets()
         self.tile_cache = {}
         self.sprites = {}
@@ -157,11 +165,16 @@ class D2Assets(AssetProvider):
         except Exception:
             self.monstats, self.monstats2 = {}, {}
         from game.d2content import D2Content
+        say("Reading items and monsters")
         self.content = D2Content(self.src, difficulty)
 
     # ---------------------------------------------------------------- level
     def level_builder(self, seed):
         return build_cave(self.kit, seed)
+
+    def town_builder(self, seed):
+        from game.d2level import build_town
+        return build_town(self.town_kit, seed)
 
     # ---------------------------------------------------------------- helpers
     def indexed_surface(self, w, h, pixels):

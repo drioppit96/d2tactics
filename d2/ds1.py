@@ -83,6 +83,19 @@ class DS1:
                 row.append(Cell(v, o))
             self.walls.append(row)
         self.shadows = [Cell(v, 13) for v in raw[("shadow", 0)]]
+        # objects: (type, id, x, y) with x/y in subtiles; type 1 = NPC/monster preset, 2 = object
+        self.objects = []
+        try:
+            if self.version >= 2:
+                n_obj = i32()
+                for _ in range(n_obj):
+                    t, oid, ox, oy = struct.unpack_from("<iiii", data, p)
+                    p += 16
+                    if self.version > 5:
+                        p += 4
+                    self.objects.append((t, oid, ox, oy))
+        except struct.error:
+            pass
 
     def cell(self, layer, x, y):
         return layer[y * self.width + x]
