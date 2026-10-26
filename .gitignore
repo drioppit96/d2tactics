@@ -1,0 +1,14 @@
+# Blizzard game files must never be committed
+d2samples/
+d2samples.zip
+*.mpq
+*.dcc
+*.dc6
+*.dt1
+*.ds1
+*.cof
+
+# local stuff
+__pycache__/
+*.pyc
+cache/

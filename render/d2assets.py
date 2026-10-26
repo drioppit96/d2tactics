@@ -1,0 +1,273 @@
+"""Diablo 2 asset provider: real tiles and unit animations from your own install.
+
+Nothing from the game is stored in this project: everything is read from the MPQs
+(or an extracted-files folder) each time the game starts.
+"""
+import math
+
+import pygame
+
+from d2.cof import COF
+from d2.dcc import DCC
+from d2.palette import load_palette
+from d2.source import open_source, read_table
+from game.d2level import CaveKit, build_cave
+from .assets import AssetProvider, PlaceholderAssets
+
+# D2 sprite direction index for each screen direction, clockwise from south (every 22.5 deg)
+_DIR16 = [4, 8, 0, 9, 5, 10, 1, 11, 6, 12, 2, 13, 7, 14, 3, 15]
+
+# our animation names -> D2 mode codes to try, in order
+MODE_MAP = {
+    "NU": ["NU"], "WL": ["WL"], "A1": ["A1"], "SC": ["SC", "A2", "A1"],
+    "GH": ["GH", "NU"], "DD": ["DT"], "DT": ["DD", "DT"],
+}
+
+MONSTER_IDS = {"ZM": "zombie1", "FA": "fallen1", "FS": "fallenshaman1", "SI": "quillrat1", "SK": "skeleton1"}
+
+
+def d2_direction(facing, n_dirs):
+    """Grid facing (dx, dy) -> sprite direction index for a COF with 8 or 16 directions."""
+    fx, fy = facing
+    sx, sy = fx - fy, fx + fy            # screen vector with the iso squash undone
+    if sx == 0 and sy == 0:
+        sy = 1
+    ang = math.degrees(math.atan2(sy, sx))   # 90 = south, 180 = west ...
+    pos = int(round((ang - 90) / 22.5)) % 16
+    if n_dirs == 16:
+        return _DIR16[pos]
+    if n_dirs == 8:
+        return _DIR16[(pos // 2) * 2]
+    return 0
+
+
+class UnitSprites:
+    """All animations of one unit look (token + chosen armour/weapon types)."""
+
+    def __init__(self, assets, folder, token, arms, weapon_class="HTH", hide=()):
+        self.a = assets
+        self.hide = set(hide)
+        self.folder = folder
+        self.token = token.upper()
+        self.arms = arms            # component -> preferred armtype list
+        self.wclass = weapon_class
+        self.cache = {}             # (mode, dir) -> [(surface, x0, y0)]
+        self.cofs = {}
+        self.dccs = {}
+
+    def _cof(self, mode):
+        """First weapon class whose COF exists and whose torso graphics exist too."""
+        for wc in (self.wclass, "HTH"):
+            key = (mode, wc)
+            if key not in self.cofs:
+                name = "data\\global\\%s\\%s\\COF\\%s%s%s.cof" % (self.folder, self.token, self.token, mode, wc)
+                cof = COF(self.a.src.read(name)) if self.a.src.has(name) else None
+                if cof:
+                    comps = [L for L in cof.layers if L.component not in self.hide]
+                    main = [L for L in comps if L.component == "TR"] or comps[:1]
+                    if not main or not self._dcc(main[0].component, mode, main[0].weapon_class or wc):
+                        cof = None
+                self.cofs[key] = (cof, wc) if cof else None
+            if self.cofs[key]:
+                return self.cofs[key]
+        return None
+
+    def _dcc(self, comp, mode, wc):
+        key = (comp, mode, wc)
+        if key in self.dccs:
+            return self.dccs[key]
+        found = None
+        for arm in self.arms.get(comp, []) + ["LIT", "MED", "HVY"]:
+            name = "data\\global\\%s\\%s\\%s\\%s%s%s%s%s.dcc" % (
+                self.folder, self.token, comp, self.token, comp, arm.upper(), mode, wc)
+            if self.a.src.has(name):
+                try:
+                    found = DCC(self.a.src.read(name))
+                except Exception:
+                    found = None
+                break
+        self.dccs[key] = found
+        return found
+
+    def frames(self, our_mode, facing):
+        for mode in MODE_MAP.get(our_mode, [our_mode]):
+            res = self._cof(mode)
+            if not res:
+                continue
+            cof, wc = res
+            d = d2_direction(facing, cof.n_dirs)
+            key = (mode, d)
+            if key not in self.cache:
+                self.cache[key] = self._build(cof, mode, wc, d)
+            return self.cache[key]
+        return None
+
+    def _build(self, cof, mode, wc, d):
+        layers = {}
+        for L in cof.layers:
+            if L.component in self.hide:
+                continue        # e.g. no shield equipped
+            dcc = self._dcc(L.component, mode, L.weapon_class or wc)
+            if dcc:
+                layers[L.component] = (dcc, L)
+        out = []
+        for f in range(cof.frames):
+            parts = []
+            for comp in cof.priority[d][f]:
+                if comp in layers:
+                    dcc, L = layers[comp]
+                    dd = d * dcc.n_dirs // cof.n_dirs if dcc.n_dirs != cof.n_dirs else d
+                    fr = dcc.direction(dd).frames[f % dcc.frames_per_dir]
+                    if fr.width and fr.height:
+                        parts.append((fr, L))
+            if not parts:
+                out.append((None, 0, 0))
+                continue
+            x0 = min(p.xmin for p, _ in parts)
+            y0 = min(p.ymin for p, _ in parts)
+            x1 = max(p.xmax for p, _ in parts)
+            y1 = max(p.ymax for p, _ in parts)
+            comp_surf = pygame.Surface((x1 - x0 + 1, y1 - y0 + 1), pygame.SRCALPHA)
+            for fr, L in parts:
+                img = self.a.indexed_surface(fr.width, fr.height, fr.pixels)
+                if L.transparent:
+                    img.set_alpha(150)
+                comp_surf.blit(img, (fr.xmin - x0, fr.ymin - y0))
+            out.append((comp_surf, x0, y0))
+        return out
+
+
+class D2Assets(AssetProvider):
+    name = "diablo2"
+    native_scale = 1.5     # D2 art is drawn for 800x600; 1.5x zoom gives a similar view
+    bar_lift = 34          # D2 monsters are taller than the placeholder figures
+
+    def __init__(self, d2_path):
+        self.src = open_source(d2_path)
+        self.palette = load_palette(self.src.read("data\\global\\palette\\act1\\pal.dat"))
+        self.kit = CaveKit(self.src)
+        self.placeholder = PlaceholderAssets()
+        self.tile_cache = {}
+        self.sprites = {}
+        self.flash_cache = {}
+        try:
+            self.monstats = {r.get("code", "").upper(): r for r in read_table(self.src, "MonStats")
+                             if r.get("id", "").lower() in MONSTER_IDS.values()}
+            self.monstats2 = {r.get("id", "").lower(): r for r in read_table(self.src, "MonStats2")}
+        except Exception:
+            self.monstats, self.monstats2 = {}, {}
+
+    # ---------------------------------------------------------------- level
+    def level_builder(self, seed):
+        return build_cave(self.kit, seed)
+
+    # ---------------------------------------------------------------- helpers
+    def indexed_surface(self, w, h, pixels):
+        s = pygame.image.frombuffer(bytes(pixels), (w, h), "P")
+        s.set_palette(self.palette)
+        s.set_colorkey(0)
+        out = pygame.Surface((w, h), pygame.SRCALPHA)   # index 0 -> fully transparent
+        out.fill((0, 0, 0, 0))
+        out.blit(s, (0, 0))
+        return out
+
+    def tile_surface(self, ref):
+        f, t = ref
+        key = id(t)
+        if key not in self.tile_cache:
+            w, h, px, x0, y0 = f.decode(t)
+            self.tile_cache[key] = (self.indexed_surface(w, h, px), x0, y0) if w else None
+        return self.tile_cache[key]
+
+    def draw_tile(self, surf, ref, tx, ty, cam, alpha=None):
+        ts = self.tile_surface(ref)
+        if not ts:
+            return
+        img, x0, y0 = ts
+        if alpha is not None:
+            key = (id(ref[1]), "a")
+            if key not in self.tile_cache:
+                faded = img.copy()
+                faded.fill((255, 255, 255, alpha), special_flags=pygame.BLEND_RGBA_MULT)
+                self.tile_cache[key] = faded
+            img = self.tile_cache[key]
+        sx, sy = cam.to_screen((tx - ty) * 80 - 80 + x0, (tx + ty) * 40 - 8 + y0)
+        surf.blit(img, (int(sx), int(sy)))
+
+    def _sprites_for(self, unit):
+        key = (unit.token, unit.unique, unit.is_player)
+        if key not in self.sprites:
+            if unit.is_player:
+                arms = {"HD": ["LIT"], "TR": ["LIT"], "LG": ["LIT"], "RA": ["LIT"], "LA": ["LIT"],
+                        "RH": ["HAX", "AXE"], "S1": ["LIT"], "S2": ["LIT"]}
+                self.sprites[key] = UnitSprites(self, "chars", "BA", arms, "1HS", hide=("LH", "SH"))
+            else:
+                arms = {}
+                ms = self.monstats.get(unit.token.upper(), {})
+                ms2 = self.monstats2.get((ms.get("monstatsex") or MONSTER_IDS.get(unit.token, "")).lower(), {})
+                for comp in ("HD", "TR", "LG", "RA", "LA", "RH", "LH", "SH",
+                             "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8"):
+                    v = ms2.get(comp.lower() + "v", "").replace('"', "")
+                    opts = [x.strip().upper() for x in v.split(",") if x.strip() and x.strip() != "0"]
+                    if unit.unique and len(opts) > 1:
+                        opts = opts[1:] + opts[:1]    # a different look for the boss
+                    arms[comp] = opts
+                self.sprites[key] = UnitSprites(self, "monsters", unit.token, arms, "HTH")
+        return self.sprites[key]
+
+    # ---------------------------------------------------------------- AssetProvider
+    def draw_unit(self, surf, unit, pose, pos, s, b):
+        sprites = self._sprites_for(unit)
+        mode = pose["mode"]
+        frames = sprites.frames(mode, pose.get("facing", unit.facing))
+        if not frames:
+            return self.placeholder.draw_unit(surf, unit, pose, pos, s, b)
+        n = len(frames)
+        phase = pose.get("phase", 0.0)
+        if mode == "NU":
+            i = int(phase * 10) % n
+        elif mode == "WL":
+            i = int(phase * 9) % n
+        elif mode == "DT":
+            i = n - 1
+        else:
+            i = min(n - 1, int(phase * n))
+        img, x0, y0 = frames[i]
+        if img is None:
+            return
+        cx, cy = pos
+        if mode not in ("DD", "DT"):
+            sh = self.placeholder._shadow(1, 16 if unit.token != "SI" else 20)
+            surf.blit(sh, (cx - sh.get_width() / 2, cy - sh.get_height() / 2))
+        if unit.unique and mode not in ("DD", "DT"):
+            glow = pygame.Surface((70, 30), pygame.SRCALPHA)
+            pygame.draw.ellipse(glow, (255, 220, 120, 55), glow.get_rect())
+            surf.blit(glow, (cx - 35, cy - 15))
+        flash = pose.get("flash", 0)
+        if flash > 0.05:
+            k = (id(img), int(flash * 4))
+            if k not in self.flash_cache:
+                if len(self.flash_cache) > 64:
+                    self.flash_cache.clear()
+                f = img.copy()
+                v = int(140 * (int(flash * 4) / 4))
+                f.fill((v, v, v, 0), special_flags=pygame.BLEND_RGBA_ADD)
+                self.flash_cache[k] = f
+            img = self.flash_cache[k]
+        surf.blit(img, (int(cx + x0), int(cy + y0)))
+        return pygame.Rect(int(cx + x0), int(cy + y0), img.get_width(), img.get_height())
+
+    def draw_floor(self, *a, **k):
+        return self.placeholder.draw_floor(*a, **k)
+
+    def draw_wall(self, *a, **k):
+        return self.placeholder.draw_wall(*a, **k)
+
+    def draw_ground_item(self, *a, **k):
+        return self.placeholder.draw_ground_item(*a, **k)
+
+    def draw_item_icon(self, *a, **k):
+        return self.placeholder.draw_item_icon(*a, **k)
+
+    def draw_projectile(self, *a, **k):
+        return self.placeholder.draw_projectile(*a, **k)

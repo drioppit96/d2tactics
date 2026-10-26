@@ -1,0 +1,330 @@
+"""Pull a small set of sample files out of your Diablo 2 MPQs into d2samples.zip.
+
+Usage (from the d2tactics folder):
+    py tools\\extract_samples.py "C:\\Program Files (x86)\\Diablo II"
+
+If you leave the path out, it uses [diablo2] path from settings.ini, or asks.
+
+The zip contains a palette, Act 1 cave + town tiles, Barbarian and monster
+animations, item icons, a few sounds and the game's data tables - only what's
+needed to build and test the loader. Every file is saved twice: decoded (if this
+script could decompress it) and as the raw stored block, so nothing is lost if a
+format turns out different than expected.
+"""
+import configparser
+import json
+import os
+import sys
+import time
+import traceback
+import zipfile
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+
+from d2.mpq import MPQSet  # noqa: E402
+
+OUT = os.path.join(ROOT, "d2samples")
+ZIP_PATH = os.path.join(ROOT, "d2samples.zip")
+BUDGET = 45 * 1024 * 1024        # stay well under upload limits
+
+COMPONENTS = ["HD", "TR", "LG", "RA", "LA", "RH", "LH", "SH",
+              "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8"]
+MONSTER_IDS = ["zombie1", "fallen1", "fallenshaman1", "quillrat1", "skeleton1"]
+MONSTER_MODES = ["NU", "WL", "A1", "GH", "DT", "DD", "SC", "A2"]
+PLAYER_MODES = ["NU", "WL", "A1", "GH", "DT", "DD", "TN", "TW", "SC"]
+PLAYER_CLASSES = ["HTH", "1HS"]
+ITEM_CODES = ["clb", "hax", "ssd", "scm", "mac", "axe", "lsd", "cap", "skp", "qui", "lea",
+              "hla", "lgl", "lbt", "rin", "amu", "hp1", "hp2", "gld", "buc"]
+SOUND_PREFIXES = ["zombie", "fallen", "shaman", "quill", "barbarian", "player_", "item_",
+                  "cursor", "gold", "potion", "weapon", "hit", "bash", "door"]
+EXCEL = ["LvlTypes", "LvlPrest", "Levels", "LvlMaze", "LvlSub", "LvlWarp", "MonStats", "MonStats2",
+         "MonLvl", "MonProp", "SuperUniques", "Weapons", "Armor", "Misc", "ItemTypes",
+         "MagicPrefix", "MagicSuffix", "Skills", "SkillDesc", "CharStats", "Experience",
+         "Sounds", "Missiles", "TreasureClassEx", "UniqueItems", "SetItems", "Runes",
+         "MonSounds", "Overlay", "ObjMode", "Objects", "ItemStatCost", "Properties"]
+
+
+class Extractor:
+    def __init__(self, d2_path):
+        print("Opening archives in", d2_path)
+        self.mpq = MPQSet(d2_path)
+        for name, a in self.mpq.archives:
+            print("  %-14s %6d files" % (name, len([h for h in a.hash_table if h[4] < 0xFFFFFFFE])))
+        self.total = 0
+        self.manifest = []
+        self.tried_missing = []
+        self.done = set()
+        self.tables = {}
+
+    # ------------------------------------------------------------ saving
+    def grab(self, name, required=False):
+        """Save one file (decoded + raw). Returns decoded bytes or None."""
+        name = name.replace("/", "\\").strip()
+        key = name.lower()
+        if key in self.done:
+            return self._cached(key)
+        an, arc = self.mpq.locate(name)
+        if arc is None:
+            self.tried_missing.append(name)
+            if required:
+                print("  missing:", name)
+            return None
+        if self.total > BUDGET:
+            print("  size budget reached, skipping", name)
+            return None
+        self.done.add(key)
+        rel = key.replace("\\", "/")
+        raw, info = arc.read_raw(name)
+        entry = {"name": name, "archive": an, "block": info}
+        raw_path = os.path.join(OUT, "raw", rel + ".blk")
+        os.makedirs(os.path.dirname(raw_path), exist_ok=True)
+        with open(raw_path, "wb") as f:
+            f.write(raw)
+        self.total += len(raw)
+        data = None
+        try:
+            data = arc.read(name)
+            path = os.path.join(OUT, "files", rel)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as f:
+                f.write(data)
+            self.total += len(data)
+            entry["decoded"] = len(data)
+        except Exception as e:
+            entry["error"] = "%s: %s" % (type(e).__name__, e)
+        self.manifest.append(entry)
+        return data
+
+    def _cached(self, key):
+        path = os.path.join(OUT, "files", key.replace("\\", "/"))
+        if os.path.exists(path):
+            with open(path, "rb") as f:
+                return f.read()
+        return None
+
+    # ------------------------------------------------------------ data tables
+    def table(self, name):
+        if name in self.tables:
+            return self.tables[name]
+        rows = []
+        data = self.grab("data\\global\\excel\\%s.txt" % name)
+        if data:
+            lines = data.decode("latin-1").splitlines()
+            if lines:
+                header = lines[0].split("\t")
+                for line in lines[1:]:
+                    cells = line.split("\t")
+                    rows.append({header[i].strip().lower(): (cells[i].strip() if i < len(cells) else "")
+                                 for i in range(len(header))})
+        self.tables[name] = rows
+        return rows
+
+    # ------------------------------------------------------------ steps
+    def step_basics(self):
+        print("Listfiles, palettes and data tables...")
+        for _, a in self.mpq.archives:
+            pass
+        self.grab("(listfile)")
+        for act in range(1, 6):
+            self.grab("data\\global\\palette\\act%d\\pal.dat" % act, required=(act == 1))
+            self.grab("data\\global\\palette\\act%d\\pal.pl2" % act)
+        self.grab("data\\global\\palette\\units\\pal.dat")
+        for t in EXCEL:
+            self.table(t)
+        found = sum(1 for t in EXCEL if self.tables.get(t))
+        print("  %d of %d tables found" % (found, len(EXCEL)))
+
+    def step_tiles(self):
+        print("Act 1 tiles and level layouts...")
+        n = 0
+        for row in self.table("LvlTypes"):
+            nm = row.get("name", "").lower()
+            if nm in ("act 1 - town", "act 1 - cave", "act 1 - wilderness"):
+                for k, v in row.items():
+                    if k.startswith("file") and v and v != "0":
+                        if self.grab("data\\global\\tiles\\" + v) is not None:
+                            n += 1
+        ds1 = 0
+        for row in self.table("LvlPrest"):
+            nm = row.get("name", "").lower()
+            if not (nm.startswith("act 1 - town") or nm.startswith("act 1 - cave")):
+                continue
+            for k in ("file1", "file2", "file3", "file4", "file5", "file6"):
+                v = row.get(k, "")
+                if v and v != "0" and ds1 < 40:
+                    if self.grab("data\\global\\tiles\\" + v) is not None:
+                        ds1 += 1
+        print("  %d tile files, %d layouts" % (n, ds1))
+
+    def _unit(self, folder, token, modes, wclasses, armtypes_by_comp):
+        got = 0
+        for wc in wclasses:
+            for mode in modes:
+                cof_name = "data\\global\\%s\\%s\\COF\\%s%s%s.cof" % (folder, token, token, mode, wc)
+                cof = self.grab(cof_name)
+                if not cof or len(cof) < 28:
+                    continue
+                got += 1
+                n_layers = cof[0]
+                for i in range(n_layers):
+                    off = 28 + i * 9
+                    if off + 9 > len(cof):
+                        break
+                    comp_idx = cof[off]
+                    if comp_idx >= len(COMPONENTS):
+                        continue
+                    comp = COMPONENTS[comp_idx]
+                    lwc = cof[off + 5:off + 9].split(b"\0")[0].decode("latin-1") or wc
+                    for arm in armtypes_by_comp.get(comp, ["LIT"]):
+                        for ext in (".dcc", ".dc6"):
+                            fn = "data\\global\\%s\\%s\\%s\\%s%s%s%s%s%s" % (
+                                folder, token, comp, token, comp, arm.upper(), mode, lwc, ext)
+                            if self.grab(fn) is not None:
+                                got += 1
+                                break
+        return got
+
+    def step_units(self):
+        print("Monster and Barbarian animations...")
+        stats = {r.get("id", "").lower(): r for r in self.table("MonStats")}
+        stats2 = {r.get("id", "").lower(): r for r in self.table("MonStats2")}
+        for mid in MONSTER_IDS:
+            row = stats.get(mid)
+            token = (row or {}).get("code", "")
+            if not token:
+                print("  no MonStats row for", mid)
+                continue
+            ex = stats2.get((row.get("monstatsex") or mid).lower(), {})
+            arms = {}
+            for comp in COMPONENTS:
+                v = ex.get(comp.lower() + "v", "")
+                vals = [x.strip() for x in v.replace('"', "").split(",") if x.strip() and x.strip() != "0"]
+                arms[comp] = (vals or []) + [a for a in ("lit", "med", "hvy") if a not in vals]
+            n = self._unit("monsters", token.upper(), MONSTER_MODES, ["HTH"], arms)
+            print("  %-14s %-3s %3d files" % (mid, token, n))
+        weapon_gfx = set()
+        for t in ("Weapons", "Armor"):
+            for r in self.table(t):
+                if r.get("code", "").lower() in ITEM_CODES:
+                    for col in ("alternategfx", "code"):
+                        if r.get(col):
+                            weapon_gfx.add(r[col].upper())
+        arms = {c: ["LIT", "MED", "HVY"] for c in COMPONENTS}
+        arms["RH"] = sorted(weapon_gfx) + ["LIT"]
+        arms["LH"] = sorted(weapon_gfx) + ["LIT"]
+        arms["SH"] = ["BUC", "LIT"]
+        n = self._unit("chars", "BA", PLAYER_MODES, PLAYER_CLASSES, arms)
+        print("  barbarian          %3d files" % n)
+
+    def step_items(self):
+        print("Item icons...")
+        n = 0
+        for t in ("Weapons", "Armor", "Misc"):
+            for r in self.table(t):
+                if r.get("code", "").lower() not in ITEM_CODES:
+                    continue
+                for col in ("invfile", "flippyfile", "uniqueinvfile", "setinvfile"):
+                    v = r.get(col, "")
+                    if v and v != "0":
+                        if self.grab("data\\global\\items\\%s.dc6" % v) is not None:
+                            n += 1
+        for v in ("invgld1", "invgld2", "invgld3", "invgld4", "flpgld"):
+            if self.grab("data\\global\\items\\%s.dc6" % v) is not None:
+                n += 1
+        print("  %d item graphics" % n)
+
+    def step_missiles_ui(self):
+        print("Missiles and UI bits...")
+        n = 0
+        for r in self.table("Missiles"):
+            name = r.get("missile", "").lower()
+            if any(k in name for k in ("shaman", "quill", "fire")) and n < 12:
+                cel = r.get("celfile", "")
+                if cel:
+                    for ext in (".dcc", ".dc6"):
+                        if self.grab("data\\global\\missiles\\%s%s" % (cel, ext)) is not None:
+                            n += 1
+                            break
+        for f in ["data\\global\\ui\\PANEL\\800ctrlpnl7.dc6", "data\\global\\ui\\PANEL\\hlthmana.dc6",
+                  "data\\global\\ui\\PANEL\\overlap.dc6", "data\\global\\ui\\PANEL\\level.dc6",
+                  "data\\global\\ui\\PANEL\\invchar6.dc6", "data\\global\\ui\\PANEL\\inv_belt.dc6",
+                  "data\\global\\ui\\CURSOR\\ohand.dc6", "data\\local\\font\\latin\\font16.dc6",
+                  "data\\local\\font\\latin\\font16.tbl", "data\\local\\font\\latin\\font30.dc6",
+                  "data\\local\\font\\latin\\font30.tbl", "data\\local\\font\\latin\\fontexocet10.dc6",
+                  "data\\local\\font\\latin\\fontexocet10.tbl"]:
+            if self.grab(f) is not None:
+                n += 1
+        print("  %d files" % n)
+
+    def step_sounds(self):
+        print("Sounds...")
+        n = 0
+        for r in self.table("Sounds"):
+            nm = r.get("sound", "").lower()
+            fn = r.get("filename", "")
+            if fn and any(nm.startswith(p) for p in SOUND_PREFIXES) and n < 45:
+                if self.grab("data\\global\\sfx\\" + fn) is not None:
+                    n += 1
+        print("  %d sounds" % n)
+
+    def finish(self):
+        with open(os.path.join(OUT, "manifest.json"), "w") as f:
+            json.dump({"files": self.manifest, "missing": self.tried_missing[:3000],
+                       "archives": [a for a, _ in self.mpq.archives]}, f, indent=1)
+        errors = [e for e in self.manifest if "error" in e]
+        print("\nSaved %d files (%d could not be decoded here - that's fine, raw copies are kept)."
+              % (len(self.manifest), len(errors)))
+        print("Zipping...")
+        with zipfile.ZipFile(ZIP_PATH, "w", zipfile.ZIP_DEFLATED) as z:
+            for base, _, files in os.walk(OUT):
+                for fn in files:
+                    full = os.path.join(base, fn)
+                    z.write(full, os.path.relpath(full, ROOT))
+        mb = os.path.getsize(ZIP_PATH) / 1024 / 1024
+        print("\nDone: %s (%.1f MB)" % (ZIP_PATH, mb))
+        print("Upload that zip in the chat.")
+
+
+def find_path():
+    if len(sys.argv) > 1:
+        return sys.argv[1]
+    cfg = configparser.ConfigParser()
+    cfg.read(os.path.join(ROOT, "settings.ini"))
+    p = cfg.get("diablo2", "path", fallback="").strip()
+    if p:
+        return p
+    return input("Path to your Diablo II folder: ").strip().strip('"')
+
+
+def main():
+    path = find_path()
+    if not os.path.isdir(path):
+        print("Folder not found:", path)
+        return 1
+    t0 = time.time()
+    ex = Extractor(path)
+    if os.path.isdir(OUT):
+        import shutil
+        shutil.rmtree(OUT)
+    os.makedirs(OUT)
+    log = []
+    for step in (ex.step_basics, ex.step_tiles, ex.step_units, ex.step_items, ex.step_missiles_ui, ex.step_sounds):
+        try:
+            step()
+        except Exception:
+            tb = traceback.format_exc()
+            log.append(tb)
+            print("  step failed (continuing):\n" + tb)
+    with open(os.path.join(OUT, "errors.log"), "w") as f:
+        f.write("\n".join(log))
+    ex.finish()
+    print("Took %.0f seconds." % (time.time() - t0))
+    return 0
+
+
+if __name__ == "__main__":
+    code = main()
+    if os.name == "nt":
+        input("\nPress Enter to close...")
+    sys.exit(code)
