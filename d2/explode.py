@@ -48,7 +48,110 @@ class ExplodeError(Exception):
     pass
 
 
+def _fast_table(h, nsym):
+    """Lookup table: 13 peeked bits (LSB first, as read) -> (symbol, code length)."""
+    table = [None] * (1 << MAXBITS)
+    code = 0
+    idx = 0
+    for ln in range(1, MAXBITS + 1):
+        for _ in range(h.count[ln]):
+            sym = h.symbol[idx]
+            idx += 1
+            # bits as they appear in the stream: MSB of the code first, each bit inverted
+            p = 0
+            for k in range(ln):
+                p |= (((code >> (ln - 1 - k)) & 1) ^ 1) << k
+            step = 1 << ln
+            for fill in range(p, 1 << MAXBITS, step):
+                table[fill] = (sym, ln)
+            code += 1
+        code <<= 1
+    return table
+
+
+_FAST_LIT = _fast_table(_LITCODE, 256)
+_FAST_LEN = _fast_table(_LENCODE, 16)
+_FAST_DIST = _fast_table(_DISTCODE, 64)
+
+
 def explode(data, expected_size=None):
+    """Table-driven decoder (several times faster than the bit-by-bit reference below)."""
+    src = data
+    n = len(src)
+    if n < 2:
+        raise ExplodeError("too short")
+    lit = src[0]
+    dict_bits = src[1]
+    if lit > 1:
+        raise ExplodeError("bad literal flag")
+    if dict_bits < 4 or dict_bits > 6:
+        raise ExplodeError("bad dictionary size")
+    pos = 2
+    bitbuf = 0
+    bitcnt = 0
+    out = bytearray()
+    want = expected_size if expected_size is not None else -1
+    T_LIT, T_LEN, T_DIST = _FAST_LIT, _FAST_LEN, _FAST_DIST
+    BASE, EXTRA = _BASE, _EXTRA
+    MASK13 = (1 << MAXBITS) - 1
+    while True:
+        # keep at least 32 bits in the buffer (pad with zeros past the end)
+        while bitcnt < 32:
+            bitbuf |= (src[pos] if pos < n else 0) << bitcnt
+            pos += 1
+            bitcnt += 8
+        if bitbuf & 1:
+            bitbuf >>= 1
+            bitcnt -= 1
+            sym, ln = T_LEN[bitbuf & MASK13]
+            bitbuf >>= ln
+            bitcnt -= ln
+            e = EXTRA[sym]
+            length = BASE[sym] + (bitbuf & ((1 << e) - 1))
+            bitbuf >>= e
+            bitcnt -= e
+            if length == 519:
+                break
+            while bitcnt < 32:
+                bitbuf |= (src[pos] if pos < n else 0) << bitcnt
+                pos += 1
+                bitcnt += 8
+            sb = 2 if length == 2 else dict_bits
+            dsym, ln = T_DIST[bitbuf & MASK13]
+            bitbuf >>= ln
+            bitcnt -= ln
+            dist = (dsym << sb) + (bitbuf & ((1 << sb) - 1)) + 1
+            bitbuf >>= sb
+            bitcnt -= sb
+            olen = len(out)
+            if dist > olen:
+                raise ExplodeError("distance too far back")
+            start = olen - dist
+            if dist >= length:
+                out += out[start:start + length]
+            else:
+                chunk = bytes(out[start:olen])
+                out += (chunk * (length // dist + 1))[:length]
+        else:
+            bitbuf >>= 1
+            bitcnt -= 1
+            if lit:
+                sym, ln = T_LIT[bitbuf & MASK13]
+                bitbuf >>= ln
+                bitcnt -= ln
+                out.append(sym)
+            else:
+                out.append(bitbuf & 0xFF)
+                bitbuf >>= 8
+                bitcnt -= 8
+        if want >= 0 and len(out) >= want:
+            break
+        if pos > n + 8:
+            raise ExplodeError("ran out of input")
+    return bytes(out)
+
+
+def explode_reference(data, expected_size=None):
     src = data
     n = len(src)
     pos = 0

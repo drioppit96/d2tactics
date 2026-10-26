@@ -95,15 +95,53 @@ class Game:
             builder = getattr(self.assets, "level_builder", None)
             self.world = World(seed=seed, level_builder=builder, content=content)
         self.levels[self.world.level_id] = self.world
+        if hasattr(self.assets, "warm"):
+            import time as _t
+            t0 = _t.time()
+            self.assets.warm(self.world.player, self.loading)
+            for npc in self.world.npcs[:6]:
+                try:
+                    self.assets._sprites_for(npc).frames("NU", npc.facing)
+                except Exception:
+                    pass
+        self._prebuilt = {}
+        self._builders = {}
+        if getattr(self.world, "town", False):
+            self.prebuild("den")
         self._start_scene()
         if self.asset_warning:
             self.world.log(self.asset_warning, (230, 160, 90))
 
     def _start_scene(self):
         self._path_cache = {}
+        self.walk_queue, self.walk_action, self.walk_goal = [], None, None
         self.scene = Scene(self.world, self.assets, self.fonts)
         self.scene.banner = [self.world.level_name, (199, 179, 119), 2.0]
         self.cam.snap(*self.scene.player_world_pos())
+
+    def prebuild(self, target):
+        """Generate a level in the background so entering it needs no loading screen."""
+        import random as _r
+        import threading
+        if target in self.levels or target in self._builders or not hasattr(self.assets, "level_builder"):
+            return
+        seed = _r.randrange(1 << 30)
+
+        content = getattr(self.assets, "content", None)
+
+        def work():
+            try:
+                from game.units import Player
+                w = World(seed=seed, level_builder=self.assets.level_builder, content=content,
+                          level_id=target, level_name="Den of Evil", player=Player(0, 0), exit_to="town")
+                w.events = []
+                self._prebuilt[target] = w
+            except Exception:
+                import traceback
+                traceback.print_exc()
+        t = threading.Thread(target=work, daemon=True)
+        self._builders[target] = t
+        t.start()
 
     def change_level(self, target):
         """Walk through an exit: levels are kept, so killed monsters stay dead."""
@@ -116,18 +154,39 @@ class Game:
             w.player = player
             if w.town and getattr(w, "last_pos", None):
                 # step back into the camp, away from the exit you used
-                lx, ly = w.last_pos
-                inside = [c for c in w.grid.reachable(w.entry, 400) if c not in w.exits
-                          and all(max(abs(c[0] - e[0]), abs(c[1] - e[1])) > 3 for e in w.exits)]
-                spot = min(inside, key=lambda c: abs(c[0] - lx) + abs(c[1] - ly)) if inside else w.entry
+                near_exit = {(ex + dx, ey + dy) for ex, ey in w.exits for dx in range(-3, 4) for dy in range(-3, 4)}
+                from collections import deque
+                seen, q, spot = {w.last_pos}, deque([w.last_pos]), w.entry
+                while q:
+                    c = q.popleft()
+                    if c not in near_exit and w.grid.walkable(*c):
+                        spot = c
+                        break
+                    for nb in w.grid.neighbors(*c):
+                        if nb not in seen:
+                            seen.add(nb)
+                            q.append(nb)
             else:
                 spot = w.entry
             w.relocate_player(spot)
             w.log("You return to the %s." % w.level_name, (199, 179, 119))
         else:
-            self.loading("Entering the Den of Evil...")
-            w = World(seed=None, level_builder=self.assets.level_builder, content=getattr(self.assets, "content", None),
-                      level_id=target, level_name="Den of Evil", player=player, exit_to="town")
+            builder = self.assets.level_builder
+            t = getattr(self, "_builders", {}).get(target)
+            if t is not None and t.is_alive():
+                self.loading("Entering the Den of Evil...")
+                t.join()
+            w = getattr(self, "_prebuilt", {}).pop(target, None)
+            if w is not None:
+                # generated in the background while you were in town: no loading screen
+                w.player = player
+                w.relocate_player(w.entry)
+                w.events = []
+                w.enter_message()
+            else:
+                self.loading("Entering the Den of Evil...")
+                w = World(seed=None, level_builder=builder, content=getattr(self.assets, "content", None),
+                          level_id=target, level_name="Den of Evil", player=player, exit_to="town")
             self.levels[target] = w
         self.world = w
         self._start_scene()
@@ -135,6 +194,75 @@ class Game:
     # ------------------------------------------------------------ input
     def can_act(self):
         return self.scene.idle() and self.world.player_can_act() and "game_over" not in self.scene.flags
+
+    def can_walk(self):
+        """Outside combat you can give new orders while still walking (like D2)."""
+        w = self.world
+        return (w.mode == "explore" and w.player_can_act() and not w.pending_exit
+                and "game_over" not in self.scene.flags and not self.scene.queue
+                and self.scene.current is None)
+
+    # ------------------------------------------------------------ D2-style walking
+    walk_queue = ()
+    walk_goal = None
+    walk_action = None
+
+    def walk_to(self, goal, action=None, adjacent=False):
+        w = self.world
+        p = w.player
+        if adjacent:
+            path = w.grid.find_path(p.pos, goal, blocked=w.occupied(p), allow_goal_blocked=True)
+            path = path[:-1] if path else None
+        else:
+            path = w.path_for_player(goal)
+        self.walk_goal, self.walk_action, self.walk_adjacent = goal, action, adjacent
+        if path is None:
+            self.walk_queue = []
+            return False
+        self.walk_queue = list(path)
+        if not self.walk_queue and action:
+            self._arrive()
+        return True
+
+    def _arrive(self):
+        act, self.walk_action = self.walk_action, None
+        if act:
+            kind, target = act[0], act[1]
+            w = self.world
+            if kind == "attack" and target.alive:
+                w.player_attack(target, "attack")
+            elif kind == "skill" and target.alive:
+                w.use_skill(act[2], target=target)
+            elif kind == "talk":
+                w.interact(target)
+            elif kind == "pickup":
+                w.player_pickup(target)
+
+    def advance_walk(self):
+        w = self.world
+        if not self.walk_queue:
+            return
+        if w.mode != "explore" or w.game_over or w.pending_exit:
+            self.walk_queue, self.walk_action = [], None
+            return
+        v = self.scene.view(w.player)
+        if len(v.path) > 1 or self.scene.queue or self.scene.current is not None:
+            return                  # let the current step play first
+        step = self.walk_queue[0]
+        if chebyshev(step, w.player.pos) != 1 or step in w.occupied(w.player):
+            if not self.walk_to(self.walk_goal, self.walk_action, getattr(self, "walk_adjacent", False)):
+                return
+            if not self.walk_queue:
+                return
+            step = self.walk_queue[0]
+        self.walk_queue.pop(0)
+        last = not self.walk_queue
+        w.player_move_to(step, pickup=last and self.walk_action is None)
+        if w.mode != "explore":
+            self.walk_queue, self.walk_action = [], None
+            return
+        if last and self.walk_action:
+            self._arrive()
 
     def monster_under_mouse(self, pos):
         """A monster whose sprite is under the mouse (front-most first), else None."""
@@ -181,6 +309,10 @@ class Game:
             h.show_skills = not getattr(h, "show_skills", False)
             if h.show_skills:
                 h.show_inv = False
+        elif name == "quests" and hasattr(h, "show_quests"):
+            h.show_quests = not h.show_quests
+            if h.show_quests:
+                h.show_char = False
 
     def cycle_automap(self):
         h = self.hud
@@ -199,7 +331,7 @@ class Game:
                 h.skill_popup = False if hasattr(h, "skill_popup") else None
             if action == "end_turn" and self.can_act():
                 w.end_player_turn()
-            elif action in ("inv", "char", "skills"):
+            elif action in ("inv", "char", "skills", "quests"):
                 self.toggle_panel(action)
             elif action == "automap":
                 self.cycle_automap()
@@ -272,11 +404,32 @@ class Game:
             # D2: clicking the world with an item on the cursor drops it
             w.drop_held()
             return
-        if not self.can_act():
-            return
         cell = self.cam.screen_to_cell(*pos)
         m = self.monster_under_mouse(pos) or self.monster_at(cell)
         p = w.player
+        if w.mode == "explore" and self.can_walk():
+            # D2 style: every click is an order you can change at any time
+            if m is not None and getattr(m, "ai", "") == "npc":
+                self.walk_to(m.pos, ("talk", m), adjacent=True)
+                return
+            if m is not None and button == 1:
+                self.walk_to(m.pos, ("attack", m), adjacent=True)
+                return
+            if m is not None and button == 3 and p.right_skill and p.skills.tree[p.right_skill].kind == "attack" \
+                    and p.right_skill != "Leap Attack":
+                self.walk_to(m.pos, ("skill", m, p.right_skill), adjacent=True)
+                return
+            if button == 1 and m is None:
+                g = w.grid
+                if cell == p.pos and cell in w.ground:
+                    w.player_pickup(cell)
+                elif cell in w.ground:
+                    self.walk_to(cell, ("pickup", cell))
+                elif g.in_bounds(*cell) and g.walkable(*cell):
+                    self.walk_to(cell)
+                return
+        if not self.can_act():
+            return
         if button == 3:
             skill = p.right_skill
             if skill is None and not getattr(p, "skills", None):
@@ -307,10 +460,12 @@ class Game:
         if key == pygame.K_ESCAPE:
             if w.held is not None:
                 w.drop_held()
-            elif h.show_inv or h.show_char or getattr(h, "show_skills", False):
+            elif h.show_inv or h.show_char or getattr(h, "show_skills", False) or getattr(h, "show_quests", False):
                 h.show_inv = h.show_char = False
                 if hasattr(h, "show_skills"):
                     h.show_skills = False
+                if hasattr(h, "show_quests"):
+                    h.show_quests = False
             else:
                 self.running = False
         elif key in (pygame.K_SPACE, pygame.K_e) and self.can_act():
@@ -323,6 +478,8 @@ class Game:
             self.toggle_panel("char")
         elif key == pygame.K_t or key == pygame.K_s:
             self.toggle_panel("skills")
+        elif key == pygame.K_q:
+            self.toggle_panel("quests")
         elif key == pygame.K_g:
             self.scene.show_grid = not self.scene.show_grid
         elif key == pygame.K_TAB:
@@ -343,6 +500,30 @@ class Game:
             self.new_world()
         elif key == pygame.K_n and "victory" in self.scene.flags:
             self.new_world()
+
+    _hold_t = 0.0
+
+    def _hold_walk(self, mouse, dt):
+        """Holding the left button keeps walking towards the cursor (D2)."""
+        try:
+            held = pygame.mouse.get_pressed()[0]
+        except Exception:
+            held = False
+        if not held:
+            self._hold_t = 0.0
+            return
+        self._hold_t += dt
+        if self._hold_t < 0.25:
+            return
+        self._hold_t = 0.15
+        w = self.world
+        if w.mode != "explore" or self.hud.over_ui(mouse) or getattr(w, "held", None) is not None:
+            return
+        cell = self.cam.screen_to_cell(*mouse)
+        if self.monster_under_mouse(mouse) or not w.grid.walkable(*cell) or cell == w.player.pos:
+            return
+        if self.walk_action is None and cell != self.walk_goal:
+            self.walk_to(cell)
 
     def _trim_cache(self):
         if len(self._path_cache) > 60:
@@ -431,6 +612,8 @@ class Game:
             self.scene.alt_held = bool(pygame.key.get_mods() & pygame.KMOD_ALT)
         except Exception:
             self.scene.alt_held = False
+        self._hold_walk(mouse, dt)
+        self.advance_walk()
         self.scene.update(dt)
         if self.world.pending_exit and self.scene.idle():
             self.change_level(self.world.pending_exit)

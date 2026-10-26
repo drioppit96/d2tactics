@@ -111,6 +111,8 @@ class World:
         self.enter_message()
 
     def enter_message(self):
+        from . import quests
+        quests.init(self.player)
         if self.town:
             self.log("Rogue Encampment. Talk to Akara to heal. Leave the camp to fight.", YELLOW)
             self.log("Left click: move / talk / attack. Right click: Bash. Space: end turn. Tab: map.", GREY)
@@ -233,7 +235,7 @@ class World:
     def path_for_player(self, cell):
         return self.grid.find_path(self.player.pos, cell, blocked=self.occupied(self.player))
 
-    def player_move_to(self, cell):
+    def player_move_to(self, cell, pickup=True):
         if not self.player_can_act():
             return False
         path = self.path_for_player(cell)
@@ -266,7 +268,7 @@ class World:
                 self.pending_exit = self.exits[step]
                 break
         self.emit("move", p, walked)
-        if walked and walked[-1] == cell and cell in self.ground:
+        if pickup and walked and walked[-1] == cell and cell in self.ground:
             self.player_pickup(cell)
         self._maybe_auto_end()
         return True
@@ -329,7 +331,13 @@ class World:
                 return True
         p.face(*npc.pos)
         npc.face(*p.pos)
-        self.log(NPC_LINES.get(npc.npc, npc.name + ": Hello."), (220, 210, 170))
+        from . import quests
+        extra = quests.talk(self, npc)
+        if extra:
+            for line in extra:
+                self.log(line, (220, 210, 170))
+        else:
+            self.log(NPC_LINES.get(npc.npc, npc.name + ": Hello."), (220, 210, 170))
         if npc.npc == "akara":
             p.hp, p.mana = p.max_hp, p.max_mana
             self.emit("heal", p, 0)
@@ -1027,6 +1035,8 @@ class World:
             self.boss_dead = True
             self.log("Corpsefire is slain! The Den of Evil is cleansed.", (199, 179, 119))
             self.emit("victory")
+        from . import quests
+        quests.on_monster_killed(self)
         # D2 flavour: fallen scatter when a pack mate dies
         for m in self.living_monsters():
             if m.ai == "fallen" and chebyshev(m.pos, unit.pos) <= 5 and self.rng.random() < 0.5:

@@ -100,6 +100,7 @@ class D2Hud:
         self.show_inv = False
         self.show_char = False
         self.show_skills = False
+        self.show_quests = False
         self.show_automap = False
         self.automap_mode = 0           # 0 off, 1 full, 2 mini
         self.show_minipanel = True
@@ -206,7 +207,9 @@ class D2Hud:
         p = world.player
         self._draw_log(surf, scene)
         self._draw_automap(surf, world)
-        if self.show_char:
+        if self.show_quests:
+            self._draw_quests(surf, p)
+        elif self.show_char:
             self._draw_char(surf, p)
         if self.show_inv:
             self._draw_inventory(surf, world)
@@ -237,7 +240,7 @@ class D2Hud:
     def _draw_log(self, surf, scene):
         lines = [l for l in scene.log if l[2] < 9][-6:]
         y = 6
-        x0 = 330 if self.show_char else 8
+        x0 = 330 if (self.show_char or self.show_quests) else 8
         for text, col, age in lines:
             img = self.f16.render(text, col, self.ind)
             sc = self.S(img)
@@ -275,24 +278,26 @@ class D2Hud:
         self.panel_origin = (px0, py0)
         # globes behind their holders
         pv = scene.view(p)
-        self._globe(surf, 0, px0 + 30, py0 - 16, max(0, pv.shown_hp) / float(max(1, p.max_hp)))
-        self._globe(surf, 1, px0 + 594, py0 - 16, p.mana / float(max(1, p.max_mana)))
+        # D2 order: holders, then the globes resting in their bowls, then the glass rims
         x = px0
         for i in range(6):
             img = cp[i]
             self.put(surf, img, x, py0 + 104 - img.get_height())
             x += img.get_width()
+        GY = 12
+        self._globe(surf, 0, px0 + 30, py0 + GY, max(0, pv.shown_hp) / float(max(1, p.max_hp)))
+        self._globe(surf, 1, px0 + 594, py0 + GY, p.mana / float(max(1, p.max_mana)))
         ov = self.frames.get("overlap")
         if ov:
-            self.put(surf, ov[0], px0 + 29, py0 - 17)
-            self.put(surf, ov[1] if len(ov) > 1 else ov[0], px0 + 593, py0 - 17)
+            self.put(surf, ov[0], px0 + 29, py0 + GY - 1)
+            self.put(surf, ov[1] if len(ov) > 1 else ov[0], px0 + 593, py0 + GY - 1)
         self.region(px0, py0 + 49, 704, 55, "panel")
-        self.region(px0, py0 - 16, 117, 120, "life")
-        self.region(px0 + 587, py0 - 16, 117, 120, "mana")
+        self.region(px0, py0, 117, 104, "life")
+        self.region(px0 + 587, py0, 117, 104, "mana")
         mx, my = self.mouse
-        if pygame.Rect(int(px0 + 30), int(py0 - 16), 80, 80).collidepoint((int(mx), int(my))):
+        if pygame.Rect(int(px0 + 30), int(py0 + 12), 80, 80).collidepoint((int(mx), int(my))):
             self.hover_lines = [("Life: %d / %d" % (max(0, pv.shown_hp), p.max_hp), WHITE)]
-        if pygame.Rect(int(px0 + 594), int(py0 - 16), 80, 80).collidepoint((int(mx), int(my))):
+        if pygame.Rect(int(px0 + 594), int(py0 + 12), 80, 80).collidepoint((int(mx), int(my))):
             self.hover_lines = [("Mana: %d / %d" % (p.mana, p.max_mana), WHITE)]
 
         # experience (thin bar) and action points (the stamina bar)
@@ -338,11 +343,12 @@ class D2Hud:
             btns = self.frames.get("minipanelbtn") or []
             entries = [(0, "char", "Character (C)"), (2, "inv", "Inventory (I)"), (4, "skills", "Skill Tree (T)"),
                        (6, None, "Party"), (8, "automap", "Automap (Tab)"), (10, None, "Message Log"),
-                       (12, None, "Quest Log"), (14, "menu", "Game Menu (Esc)")]
+                       (12, "quests", "Quest Log (Q)"), (14, "menu", "Game Menu (Esc)")]
             for k, (fi, action, label) in enumerate(entries):
                 bx = mpx + 4 + k * 21
                 pressed = (action == "char" and self.show_char) or (action == "inv" and self.show_inv) or \
-                          (action == "skills" and self.show_skills) or (action == "automap" and self.automap_mode)
+                          (action == "skills" and self.show_skills) or (action == "automap" and self.automap_mode) or \
+                          (action == "quests" and self.show_quests)
                 if fi + (1 if pressed else 0) < len(btns):
                     self.put(surf, btns[fi + (1 if pressed else 0)], bx, mpy + 3)
                 if action:
@@ -504,6 +510,32 @@ class D2Hud:
             t(surf, f10, "Remaining", RED, 10, 354, "center", 110)
             t(surf, f16, str(p.stat_points), WHITE, 10, 370, "center", 110)
         self._close_button(surf, CHAR_CLOSE, 0, "char")
+
+    def _draw_quests(self, surf, p):
+        from game.quests import journal
+        self._panel_bg(surf, 0, self.frames.get("blank") or self.frames["invchar6"], 0)
+        self.text(surf, self.f30, "Quests", GOLD, 0, 14, "center", 320)
+        self.text(surf, self.f10, "Act I", WHITE, 0, 46, "center", 320)
+        y = 72
+        for title, status, text in journal(p):
+            col = {"done": GREY, "active": WHITE, "cleared": YELLOW}.get(status, (110, 105, 95))
+            self.text(surf, self.f16, title, GOLD if status != "none" else (120, 110, 90), 20, y)
+            y += 17
+            # wrap the journal line into the panel width
+            words, line = text.split(), ""
+            for wd in words:
+                trial = (line + " " + wd).strip()
+                if self.f10.width(trial) > 280:
+                    self.text(surf, self.f10, line, col, 26, y)
+                    y += 14
+                    line = wd
+                else:
+                    line = trial
+            if line:
+                self.text(surf, self.f10, line, col, 26, y)
+                y += 14
+            y += 12
+        self._close_button(surf, CHAR_CLOSE, 0, "quests")
 
     def _close_button(self, surf, box, ox, action):
         b = self.frames.get("buysellbtn")

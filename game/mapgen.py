@@ -80,7 +80,9 @@ def populate(g, rng, depth_level=1, content=None, level_row=None):
     occupied = {start, boss_cell}
 
     def free_near(c, radius=3):
-        cells = [d for d in dist if d not in occupied and max(abs(d[0] - c[0]), abs(d[1] - c[1])) <= radius]
+        cells = [(x, y) for y in range(c[1] - radius, c[1] + radius + 1)
+                 for x in range(c[0] - radius, c[0] + radius + 1)
+                 if (x, y) in dist and (x, y) not in occupied]
         rng.shuffle(cells)
         return cells
 
@@ -90,11 +92,11 @@ def populate(g, rng, depth_level=1, content=None, level_row=None):
         occupied.add(cell)
 
     pack_centres = []
-    candidates = [c for c, d in dist.items() if 10 < d < maxd - 6]
+    candidates = [c for c, d in dist.items() if 9 < d < maxd - 5]
     rng.shuffle(candidates)
-    # D2's Den of Evil is packed: roughly one group per 450 walkable cells (~25-40 groups)
-    max_packs = max(9, min(40, len(dist) // 450)) if roster else max(9, min(18, len(dist) // 900))
-    spacing = 8 if roster else 10
+    # D2's Den of Evil is packed: about one group per 300 walkable cells
+    max_packs = max(9, min(45, len(dist) // 300)) if roster else max(9, min(18, len(dist) // 900))
+    spacing = 6 if roster else 10
     for c in candidates:
         if all(max(abs(c[0] - p[0]), abs(c[1] - p[1])) >= spacing for p in pack_centres):
             pack_centres.append(c)

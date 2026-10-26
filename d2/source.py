@@ -27,13 +27,13 @@ class FolderSource:
             return f.read()
 
 
-def open_source(path, progress=None):
+def open_source(path, progress=None, cache_dir=None):
     """Accepts a Diablo II install folder or an extracted-files folder."""
     if not os.path.isdir(path):
         raise FileNotFoundError("folder not found: " + path)
     names = {n.lower() for n in os.listdir(path)}
     if "d2data.mpq" in names:
-        return MPQSet(path, progress)
+        return MPQSet(path, progress, cache_dir)
     for cand in (path, os.path.join(path, "files"), os.path.join(path, "d2samples", "files")):
         if os.path.isdir(os.path.join(cand, "data")):
             return FolderSource(cand)

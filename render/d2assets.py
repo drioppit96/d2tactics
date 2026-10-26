@@ -144,7 +144,9 @@ class D2Assets(AssetProvider):
 
     def __init__(self, d2_path, difficulty="normal", progress=None):
         say = progress or (lambda msg: None)
-        self.src = open_source(d2_path, say)
+        import os
+        cache = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cache", "mpq")
+        self.src = open_source(d2_path, say, cache)
         self.palette = load_palette(self.src.read("data\\global\\palette\\act1\\pal.dat"))
         say("Reading cave tiles")
         self.kit = CaveKit(self.src)
@@ -194,6 +196,14 @@ class D2Assets(AssetProvider):
             self.tile_cache[key] = (self.indexed_surface(w, h, px), x0, y0) if w else None
         return self.tile_cache[key]
 
+    def tile_rect(self, ref, tx, ty, cam):
+        ts = self.tile_surface(ref)
+        if not ts:
+            return None
+        img, x0, y0 = ts
+        sx, sy = cam.to_screen((tx - ty) * 80 - 80 + x0, (tx + ty) * 40 - 8 + y0)
+        return pygame.Rect(int(sx), int(sy), img.get_width(), img.get_height())
+
     def draw_tile(self, surf, ref, tx, ty, cam, alpha=None):
         ts = self.tile_surface(ref)
         if not ts:
@@ -239,6 +249,20 @@ class D2Assets(AssetProvider):
             arms["SH"] = [shield.gfx]
             hide.discard("SH")
         return arms, tuple(sorted(hide)), wclass
+
+    def warm(self, unit, progress=None):
+        """Decode a unit's common animations up front (loading screen) instead of mid-game."""
+        sprites = self._sprites_for(unit)
+        facings = [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)]
+        for mode in ("NU", "WL", "A1", "GH"):
+            if progress:
+                progress("Preparing animations (%s)" % {"NU": "standing", "WL": "walking", "A1": "attacking",
+                                                         "GH": "getting hit"}[mode])
+            for f in facings:
+                try:
+                    sprites.frames(mode, f)
+                except Exception:
+                    pass
 
     def _sprites_for(self, unit):
         if unit.is_player:

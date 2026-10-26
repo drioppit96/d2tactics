@@ -116,9 +116,15 @@ class Scene:
             if not self._seen(unit, cells):
                 v.rx, v.ry = cells[-1]
                 return 0
+            explore = getattr(self.world, "mode", "") == "explore"
+            if unit.is_player and explore and v.path and v.mode == "WL":
+                v.path.extend(cells)          # keep walking smoothly, step after step
+                return 0
             v.path = list(cells)
             v.mode = "WL"
-            v.speed = 7.0 if unit.is_player else 9.0
+            v.speed = (9.5 if explore else 7.0) if unit.is_player else 9.0
+            if unit.is_player and explore:
+                return 0                      # free walking doesn't hold up other events
             return None   # wait until the walk finishes
         if kind == "attack":
             unit, target, skill = ev[1], ev[2], ev[3]
@@ -383,13 +389,19 @@ class Scene:
 
         self._labels = []
         self.unit_hits = []      # (world-space rect, unit) for mouse picking, back to front
-        for _, _, kind, obj in drawables:
+        # where the player is on screen: scenery drawn after him that covers him goes see-through
+        ppx, ppy = cam.cell_to_screen(pv.rx, pv.ry)
+        prect = pygame.Rect(int(ppx - 22), int(ppy - 86), 44, 92)
+        player_key = pv.rx + pv.ry
+        for key, _, kind, obj in drawables:
             if kind == "tile":
                 ref, tx, ty = obj
-                # scenery in front of the player turns see-through, like in D2
-                cx, cy = tx * 5 + 2, ty * 5 + 2
-                front = 0 < (cx + cy) - psum < 12 and abs((cx - cy) - (pv.rx - pv.ry)) < 7
-                assets.draw_tile(surf, ref, tx, ty, cam, alpha=110 if front else None)
+                alpha = None
+                if key > player_key and hasattr(assets, "tile_rect"):
+                    r = assets.tile_rect(ref, tx, ty, cam)
+                    if r is not None and r.colliderect(prect):
+                        alpha = 105
+                assets.draw_tile(surf, ref, tx, ty, cam, alpha=alpha)
             elif kind == "wall":
                 x, y = obj
                 b = self.brightness(x, y, light) or 0.22

@@ -163,10 +163,37 @@ def grid_from_tilemap(tm, keep_largest=True):
     return grid, best
 
 
-def build_cave(kit, seed=None, cols=3, rows=3):
+def _grow_cave(n_rooms, rng, cols=4, rows=4, loops=1):
+    """A branching cave of n rooms (D2 grows its maze levels room by room)."""
+    start = (rng.randrange(cols), rng.randrange(rows))
+    rooms = {start: set()}
+    while len(rooms) < n_rooms:
+        frm = rng.choice(list(rooms))
+        d = rng.choice(list(DIRS))
+        nb = (frm[0] + DIRS[d][0], frm[1] + DIRS[d][1])
+        if not (0 <= nb[0] < cols and 0 <= nb[1] < rows) or nb in rooms:
+            continue
+        rooms[frm].add(d)
+        rooms[nb] = {OPP[d]}
+    for _ in range(loops):
+        a = rng.choice(list(rooms))
+        d = rng.choice(list(DIRS))
+        nb = (a[0] + DIRS[d][0], a[1] + DIRS[d][1])
+        if nb in rooms and d not in rooms[a]:
+            rooms[a].add(d)
+            rooms[nb].add(OPP[d])
+    # shift to the origin
+    mx = min(x for x, _ in rooms)
+    my = min(y for _, y in rooms)
+    return {(x - mx, y - my): ex for (x, y), ex in rooms.items()}
+
+
+def build_cave(kit, seed=None, n_rooms=6):
     """Returns (grid, rng, tilemap)."""
     rng = random.Random(seed)
-    layout = _maze(cols, rows, rng)
+    layout = _grow_cave(n_rooms, rng)
+    cols = max(x for x, _ in layout) + 1
+    rows = max(y for _, y in layout) + 1
     tm = TileMap(cols * ROOM_TILES + 1, rows * ROOM_TILES + 1)
     for (rx, ry), ex in layout.items():
         room = rng.choice(kit.rooms[frozenset(ex)])

@@ -231,9 +231,15 @@ class MPQSet:
     ORDER = ["patch_d2.mpq", "d2exp.mpq", "d2data.mpq", "d2char.mpq", "d2sfx.mpq",
              "d2xtalk.mpq", "d2speech.mpq", "d2music.mpq", "d2xmusic.mpq"]
 
-    def __init__(self, folder, progress=None):
+    def __init__(self, folder, progress=None, cache_dir=None):
         import os
         self.archives = []
+        self.cache_dir = cache_dir
+        if cache_dir:
+            try:
+                os.makedirs(cache_dir, exist_ok=True)
+            except OSError:
+                self.cache_dir = None
         files = {f.lower(): f for f in os.listdir(folder)}
         for name in self.ORDER:
             if name in files:
@@ -259,4 +265,25 @@ class MPQSet:
         an, a = self.locate(name)
         if a is None:
             raise KeyError(name)
-        return a.read(name)
+        if not self.cache_dir:
+            return a.read(name)
+        # decompressing in Python is slow: keep a zlib copy of every file we have read once
+        import hashlib
+        import os
+        info = a.block_info(name)
+        stamp = "%s|%s|%d|%d|%d" % (an, name.lower().replace("/", "\\"), info["offset"], info["csize"], info["fsize"])
+        path = os.path.join(self.cache_dir, hashlib.md5(stamp.encode("latin-1")).hexdigest() + ".z")
+        try:
+            with open(path, "rb") as f:
+                return zlib.decompress(f.read())
+        except Exception:
+            pass
+        data = a.read(name)
+        try:
+            tmp = path + ".tmp"
+            with open(tmp, "wb") as f:
+                f.write(zlib.compress(data, 1))
+            os.replace(tmp, path)
+        except Exception:
+            pass
+        return data

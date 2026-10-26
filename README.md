@@ -37,9 +37,11 @@ Fallout). Each turn you get **Action Points** (the stamina bar shows them).
 Double Swing, Frenzy, Leap Attack, Whirlwind, Berserk...), warcries (Howl, Shout, Battle
 Orders, Battle Cry, War Cry...) and passives (masteries, Iron Skin, Increased Speed...).
 
-**Keys:** Space = end turn - I = inventory - C = character - T = skill tree - Tab = automap
+**Keys:** Space = end turn - I = inventory - C = character - T = skill tree - Q = quest log - Tab = automap
 (full / corner / off) - Alt (hold) or L = item names - F = fast animations - F1-F8 = right skill -
 mouse wheel = zoom - Esc = close panels / quit
+
+**Walking:** outside combat, click (or hold the left button) to walk; a new click changes direction at once.
 
 **Inventory:** D2's 10x4 grid. Click an item to pick it up, click again to place it (or onto an
 equipment slot). Right click equips / drinks. Clicking the world while holding an item drops it.
