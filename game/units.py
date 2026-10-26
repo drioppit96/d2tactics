@@ -62,8 +62,31 @@ class Player(Unit):
         self.mana = self.max_mana
         self.ap = self.max_ap
 
+    def active_items(self):
+        """Equipped items whose requirements are met (D2 ignores the rest)."""
+        out = []
+        for it in self.equipment.values():
+            if it and (it.mod_list is None or (self.level >= it.levelreq and self.base_str + self._raw("str") >= it.reqstr
+                                                and self.base_dex + self._raw("dex") >= it.reqdex)):
+                out.append(it)
+        return out
+
+    def _raw(self, stat):
+        return sum(it.mods.get(stat, 0) for it in self.equipment.values()
+                   if it and not isinstance(it.mods.get(stat, 0), tuple))
+
     def mod(self, stat):
-        return sum(it.mods.get(stat, 0) for it in self.equipment.values() if it)
+        return sum(v for it in getattr(self, "_active", []) for k, v in it.mods.items()
+                   if k == stat and not isinstance(v, tuple))
+
+    def mod_range(self, stat):
+        lo = hi = 0
+        for it in getattr(self, "_active", []):
+            v = it.mods.get(stat)
+            if isinstance(v, tuple):
+                lo += v[0]
+                hi += v[1]
+        return lo, hi
 
     @property
     def strength(self):
@@ -77,23 +100,59 @@ class Player(Unit):
     def vitality(self):
         return self.base_vit + self.mod("vit")
 
+    @property
+    def energy(self):
+        return self.base_eng + self.mod("eng")
+
     def recalc(self):
-        """Derived stats, roughly D2's Barbarian formulas."""
+        """Derived stats with D2's Barbarian formulas."""
+        self._active = self.active_items()
         old_max = getattr(self, "max_hp", None)
-        self.max_hp = 55 + (self.vitality - 25) * 4 + (self.level - 1) * 2 + self.mod("life")
-        self.max_mana = 10 + (self.base_eng - 10) + (self.level - 1) * 1 + self.mod("mana")
-        weapon = self.equipment["weapon"]
-        lo, hi = weapon.dmg if weapon else (1, 2)
+        life = 55 + (self.vitality - 25) * 4 + (self.level - 1) * 2 + self.mod("life")
+        self.max_hp = int(life * (100 + self.mod("life_pct")) / 100)
+        mana = 10 + (self.energy - 10) + (self.level - 1) * 1 + self.mod("mana")
+        self.max_mana = int(mana * (100 + self.mod("mana_pct")) / 100)
+        weapon = self.equipment["weapon"] if self.equipment["weapon"] in self._active else None
+        lo, hi = weapon.dmg if weapon and weapon.dmg else (1, 2)
         lo += self.mod("mindmg")
+        hi += self.mod("maxdmg")
+        flo, fhi = self.mod_range("flat_dmg")
+        lo, hi = lo + flo, hi + fhi
         hi = max(hi, lo)
-        mult = 1 + self.strength / 100 + self.mod("ed") / 100
+        if weapon and weapon.mod_list is not None:
+            bonus = (self.strength * weapon.strbonus + self.dexterity * weapon.dexbonus) / 10000.0
+        else:
+            bonus = self.strength / 100.0
+        mult = 1 + bonus + self.mod("ed") / 100.0
         self.dmg = (max(1, int(lo * mult)), max(1, int(hi * mult)))
-        self.attack_cost = weapon.ap if weapon else 3
-        self.ar = (self.dexterity - 7) * 5 + 20 + self.mod("ar") + (self.level - 1) * 5
-        self.defense = self.dexterity // 4 + sum(it.defense for it in self.equipment.values() if it)
-        self.max_ap = 8 + self.mod("ap")
+        self.elem = {k: self.mod_range(k + "_dmg") for k in ("fire", "cold", "ltng", "pois")}
+        self.elem = {k: v for k, v in self.elem.items() if v[1] > 0}
+        cost = weapon.ap if weapon and weapon.ap else 3
+        cost -= self.mod("ias") // 25          # every 25% IAS makes a swing 1 AP cheaper
+        self.attack_cost = max(2, cost)
+        ar = (self.dexterity - 7) * 5 + 20 + self.mod("ar") + (self.level - 1) * 5
+        self.ar = int(ar * (100 + self.mod("ar_pct")) / 100)
+        self.defense = self.dexterity // 4 + sum(it.defense for it in self._active)
+        frw = self.mod("frw")
+        self.max_ap = 8 + self.mod("ap") + (1 if frw >= 20 else 0) + (1 if frw >= 40 else 0)
         self.thorns = self.mod("thorns")
         self.light = 9 + self.mod("light")
+        self.regen = self.mod("regen")
+        self.leech = self.mod("ll")
+        self.mana_leech = self.mod("ml")
+        self.dr = self.mod("dr")
+        self.mdr = self.mod("mdr")
+        self.mf = self.mod("mf")
+        self.gf = self.mod("gf")
+        allres = self.mod("res_all")
+        self.res = {k: min(75, allres + self.mod("res_" + k)) for k in ("fire", "cold", "ltng", "pois")}
+        shield = self.equipment.get("shield")
+        if shield and shield in self._active and shield.slot == "shield":
+            # D2: (class block factor + shield block) * (dex - 15) / (clvl * 2), max 75%
+            blk = (25 + shield.block + self.mod("block")) * max(0, self.dexterity - 15) / (self.level * 2.0)
+            self.block_chance = max(0, min(75, int(blk)))
+        else:
+            self.block_chance = 0
         if old_max is not None:
             self.hp = min(self.hp, self.max_hp)
             self.mana = min(self.mana, self.max_mana)
@@ -134,21 +193,31 @@ MONSTERS = {
 
 
 class Monster(Unit):
-    def __init__(self, kind, x, y, level=1, rng=random):
-        t = MONSTERS[kind]
+    def __init__(self, kind, x, y, level=1, rng=random, template=None):
+        t = template or MONSTERS[kind]
         super().__init__(t["name"], x, y)
         self.kind = kind
+        self.d2id = t.get("id")
+        self.missile = t.get("missile", "")
+        if template:
+            level = t["level"]     # D2 stats already include the monster's level
         self.level = level
         self.token = t["token"]
-        self.max_hp = self.hp = rng.randint(*t["hp"]) + (level - 1) * 2
-        lo, hi = t["dmg"]
-        self.dmg = (lo + (level - 1) // 2, hi + (level - 1) // 2)
-        self.ar = t["ar"] + (level - 1) * 8
-        self.defense = t["df"] + (level - 1) * 2
+        if template:
+            self.max_hp = self.hp = rng.randint(*t["hp"])
+            self.dmg = t["dmg"]
+            self.ar = t["ar"]
+            self.defense = t["df"]
+        else:
+            self.max_hp = self.hp = rng.randint(*t["hp"]) + (level - 1) * 2
+            lo, hi = t["dmg"]
+            self.dmg = (lo + (level - 1) // 2, hi + (level - 1) // 2)
+            self.ar = t["ar"] + (level - 1) * 8
+            self.defense = t["df"] + (level - 1) * 2
         self.max_ap = self.ap = t["ap"]
         self.attack_cost = t["cost"]
         self.range = t["rng"]
-        self.xp_value = t["xp"] + (level - 1) * t["xp"] // 3
+        self.xp_value = t["xp"] if template else t["xp"] + (level - 1) * t["xp"] // 3
         self.color = t["color"]
         self.ai = t["ai"]
         self.unique = t.get("unique", False)

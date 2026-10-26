@@ -72,6 +72,8 @@ class Scene:
         self.show_grid = False
         self.show_labels = False
         self.flags = set()       # game_over / victory
+        self.clock = 0.0
+        self.drop_time = {}
         self.bar_lift = getattr(assets, 'bar_lift', 0)   # taller real sprites -> bars higher
         for u in [world.player] + world.monsters:
             self.views[id(u)] = UnitView(u)
@@ -177,6 +179,7 @@ class Scene:
             return None
         if kind == "drop":
             self.items_shown.add(id(ev[2]))
+            self.drop_time[id(ev[2])] = self.clock
             return 0.04
         if kind == "pickup":
             self.items_shown.discard(id(ev[2]))
@@ -206,6 +209,7 @@ class Scene:
     # ------------------------------------------------------------ update
     def update(self, dt):
         dt *= self.speed
+        self.clock += dt
         self.pull_events()
         for v in self.views.values():
             self._update_view(v, dt)
@@ -395,7 +399,8 @@ class Scene:
             elif kind == "item":
                 cell, it = obj
                 b = 1.0 if use_tiles else self.brightness(cell[0], cell[1], light)
-                assets.draw_ground_item(surf, it, cam.cell_to_screen(*cell), s, max(b, 0.4))
+                assets.draw_ground_item(surf, it, cam.cell_to_screen(*cell), s, max(b, 0.4),
+                                        t=self.clock - self.drop_time.get(id(it), -100.0))
                 if self.show_labels or (hover_cell == cell):
                     self._labels.append((it, cell_to_world(*cell)))
             else:
@@ -486,15 +491,24 @@ class Scene:
         surf.blit(tmp, (cx - w / 2, cy - h / 2))
 
     def _draw_labels(self, surf, labels):
+        """Item names on the ground; overlapping labels get stacked upwards like in D2."""
         font = self.fonts["small"]
-        for it, (x, y) in labels:
-            text = f"{it.amount} Gold" if it.kind == "gold" else it.name
+        placed = []
+        for it, (x, y) in sorted(labels, key=lambda l: -l[1][1]):
+            text = "%d Gold" % it.amount if it.kind == "gold" else it.name
             img = font.render(text, True, it.color)
-            bg = pygame.Surface((img.get_width() + 8, img.get_height() + 2), pygame.SRCALPHA)
+            r = pygame.Rect(0, 0, img.get_width() + 8, img.get_height() + 2)
+            r.center = (int(x), int(y - 26))
+            for _ in range(30):
+                hit = [p for p in placed if p.colliderect(r)]
+                if not hit:
+                    break
+                r.y = min(p.y for p in hit) - r.h - 1
+            placed.append(r)
+            bg = pygame.Surface(r.size, pygame.SRCALPHA)
             bg.fill((0, 0, 0, 170))
-            bx, by = x - bg.get_width() / 2, y - 34
-            surf.blit(bg, (bx, by))
-            surf.blit(img, (bx + 4, by + 1))
+            surf.blit(bg, r.topleft)
+            surf.blit(img, (r.x + 4, r.y + 1))
 
     def _draw_overhead_bars(self, surf, cam):
         """Small HP bars over damaged / aware monsters."""

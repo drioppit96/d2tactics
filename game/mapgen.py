@@ -51,7 +51,7 @@ def generate_cave(w=64, h=64, seed=None):
     return g, rng
 
 
-def populate(g, rng, depth_level=1):
+def populate(g, rng, depth_level=1, content=None, level_row=None):
     floor = [(x, y) for y in range(g.h) for x in range(g.w) if g.cells[y][x] == FLOOR]
     # start in the cell furthest from the cave's centre of mass -> feels like an entrance
     cx = sum(c[0] for c in floor) / len(floor)
@@ -61,7 +61,22 @@ def populate(g, rng, depth_level=1):
     maxd = max(dist.values())
     boss_cell = max(dist, key=dist.get)
 
-    monsters = [Monster("corpsefire", *boss_cell, level=depth_level + 2, rng=rng)]
+    roster = content.roster(level_row) if content and level_row else []
+
+    def spawn(kind_or_id, cell, unique=False, level=1):
+        if roster or (content and kind_or_id in content.monstats):
+            t = content.monster_template(kind_or_id, unique=unique)
+            if unique:
+                t["name"] = "Corpsefire"
+            m = Monster(t["ai"] if t["ai"] in ("fallen", "shaman") else "zombie", *cell, rng=rng, template=t)
+            m.kind = {"fallen": "fallen", "shaman": "shaman"}.get(t["ai"], "d2")
+            m.ai = t["ai"]
+            m.unique = unique
+            return m
+        return Monster(kind_or_id, *cell, level=level, rng=rng)
+
+    boss_id = "zombie1" if roster else "corpsefire"
+    monsters = [spawn(boss_id, boss_cell, unique=bool(roster), level=depth_level + 2)]
     occupied = {start, boss_cell}
 
     def free_near(c, radius=3):
@@ -71,7 +86,7 @@ def populate(g, rng, depth_level=1):
 
     # Corpsefire's zombie escort
     for cell in free_near(boss_cell)[:3]:
-        monsters.append(Monster("zombie", *cell, level=depth_level + 1, rng=rng))
+        monsters.append(spawn("zombie1" if roster else "zombie", cell, level=depth_level + 1))
         occupied.add(cell)
 
     pack_centres = []
@@ -87,6 +102,22 @@ def populate(g, rng, depth_level=1):
     for c in pack_centres:
         depth = dist[c] / maxd
         lvl = depth_level + (1 if depth > 0.6 else 0)
+        if roster:
+            # D2 groups: a monster type from the level's list, its group size and minions
+            mid = rng.choice(roster)
+            t = content.monster_template(mid)
+            members = [mid] * rng.randint(*sorted(t["group"]))
+            if t["minion"] and t["minion"] in content.monstats:
+                lo, hi = t["party"] if t["party"][1] else (2, 4)
+                members += [t["minion"]] * rng.randint(max(1, lo), max(1, hi))
+            members = members[:7]
+            spots = [c] + free_near(c, 4)
+            for mid2, cell in zip(members, spots):
+                if cell in occupied:
+                    continue
+                monsters.append(spawn(mid2, cell))
+                occupied.add(cell)
+            continue
         kind = rng.choice(["fallen", "fallen", "zombie", "quill"])
         if kind == "fallen":
             members = ["fallen"] * rng.randint(3, 4) + (["shaman"] if rng.random() < 0.7 else [])

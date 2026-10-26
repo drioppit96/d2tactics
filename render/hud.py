@@ -11,8 +11,8 @@ EDGE = (92, 78, 52)
 TEXT = (220, 210, 190)
 DIM = (140, 130, 115)
 
-SLOT_NAMES = {"weapon": "Weapon", "helm": "Helm", "armor": "Armor", "gloves": "Gloves", "boots": "Boots",
-              "amulet": "Amulet", "ring1": "Ring", "ring2": "Ring"}
+SLOT_NAMES = {"weapon": "Weapon", "shield": "Shield", "helm": "Helm", "armor": "Armor", "gloves": "Gloves",
+              "belt": "Belt", "boots": "Boots", "amulet": "Amulet", "ring1": "Ring", "ring2": "Ring"}
 
 
 def panel(surf, rect, title=None, fonts=None):
@@ -143,7 +143,7 @@ class Hud:
             if i < len(p.belt):
                 self.assets.draw_item_icon(surf, p.belt[i], rect)
                 if rect.collidepoint(mouse):
-                    self.hover_lines = (p.belt[i].describe(), [p.belt[i].color])
+                    self._item_tip(p.belt[i], p)
             surf.blit(self.fonts["small"].render(str(i + 1), True, DIM), (rect.x + 3, rect.y + 1))
             self.regions.append((rect, "potion", i))
 
@@ -196,53 +196,75 @@ class Hud:
             surf.blit(img, (12, y))
             y += font.get_linesize()
 
+    def _item_tip(self, it, p, compare=None):
+        lines = it.describe_lines(p) if hasattr(it, "describe_lines") else [(l, it.color) for l in it.describe()]
+        if compare is not None:
+            lines = lines + [("", TEXT), ("Currently equipped: " + compare.name, compare.color)]
+        self.hover_lines = ([t for t, _ in lines], [c for _, c in lines])
+
     def _draw_inventory(self, surf, world, mouse):
         W, H = surf.get_size()
         p = world.player
-        rect = pygame.Rect(W - 330, 40, 320, H - self.BAR_H - 50)
+        rect = pygame.Rect(W - 330, 36, 320, min(H - self.BAR_H - 44, 560))
         panel(surf, rect, "Inventory", self.fonts)
         self.regions.append((rect, "panel", None))
         font = self.fonts["small"]
-        y = rect.y + 44
-        surf.blit(font.render("Equipped (click to remove)", True, DIM), (rect.x + 12, y))
+        y = rect.y + 40
+        surf.blit(font.render("Equipped  (click to take off)", True, DIM), (rect.x + 12, y))
         y += 20
-        for slot in SLOTS:
-            it = p.equipment[slot]
-            row = pygame.Rect(rect.x + 8, y, rect.w - 16, 20)
-            if row.collidepoint(mouse):
-                pygame.draw.rect(surf, (40, 34, 26), row)
-                if it:
-                    self.hover_lines = (it.describe(), [it.color])
-            surf.blit(font.render(SLOT_NAMES[slot], True, DIM), (row.x + 4, y + 2))
-            surf.blit(font.render(it.name if it else "-", True, it.color if it else (80, 75, 65)), (row.x + 70, y + 2))
+        # equipment: two columns of boxes, icon + name
+        bw, bh = 148, 42
+        for i, slot in enumerate(SLOTS):
+            col, row = i % 2, i // 2
+            box = pygame.Rect(rect.x + 10 + col * (bw + 4), y + row * (bh + 4), bw, bh)
+            it = p.equipment.get(slot)
+            hot = box.collidepoint(mouse)
+            pygame.draw.rect(surf, (42, 35, 26) if hot else (24, 20, 16), box)
+            pygame.draw.rect(surf, EDGE if it else (52, 46, 36), box, 1)
+            icon = pygame.Rect(box.x + 2, box.y + 2, bh - 4, bh - 4)
             if it:
-                self.regions.append((row, "unequip", slot))
-            y += 21
-        y += 10
-        surf.blit(font.render(f"Backpack {len(p.inventory)}/20  (left: equip, right: drop)", True, DIM), (rect.x + 12, y))
+                self.assets.draw_item_icon(surf, it, icon)
+                name = it.name
+                while font.size(name)[0] > bw - bh - 6 and len(name) > 4:
+                    name = name[:-4] + "..."
+                ok = it.mod_list is None or it.requirements_ok(p)
+                surf.blit(font.render(name, True, it.color if ok else (255, 80, 80)), (box.x + bh, box.y + 4))
+                surf.blit(font.render(SLOT_NAMES[slot], True, DIM), (box.x + bh, box.y + 22))
+                self.regions.append((box, "unequip", slot))
+                if hot:
+                    self._item_tip(it, p)
+            else:
+                surf.blit(font.render(SLOT_NAMES[slot], True, (90, 84, 70)), (box.x + bh, box.y + 13))
+        y += 5 * (bh + 4) + 8
+        surf.blit(font.render("Backpack %d/20  (left: equip / drink, right: drop)" % len(p.inventory), True, DIM),
+                  (rect.x + 12, y))
         y += 20
-        for i, it in enumerate(p.inventory):
-            row = pygame.Rect(rect.x + 8, y, rect.w - 16, 20)
-            if row.bottom > rect.bottom - 4:
+        cell = 58
+        for i in range(20):
+            col, row = i % 5, i // 5
+            box = pygame.Rect(rect.x + 12 + col * (cell + 2), y + row * (cell + 2), cell, cell)
+            if box.bottom > rect.bottom - 2:
                 break
-            if row.collidepoint(mouse):
-                pygame.draw.rect(surf, (40, 34, 26), row)
-                lines = it.describe()
-                cur = p.equipment.get("ring1" if it.slot == "ring" else it.slot) if it.slot else None
-                cols = [it.color]
-                if cur:
-                    lines = lines + ["", "Currently: " + cur.name]
-                    cols = [it.color] + [TEXT] * (len(lines) - 3) + [TEXT, cur.color]
-                self.hover_lines = (lines, cols)
-            icon = pygame.Rect(row.x + 2, y, 20, 20)
-            self.assets.draw_item_icon(surf, it, icon)
-            surf.blit(font.render(it.name, True, it.color), (row.x + 28, y + 2))
-            self.regions.append((row, "item", i))
-            y += 21
+            hot = box.collidepoint(mouse)
+            pygame.draw.rect(surf, (40, 34, 26) if hot else (18, 16, 13), box)
+            pygame.draw.rect(surf, (60, 52, 40), box, 1)
+            if i < len(p.inventory):
+                it = p.inventory[i]
+                if it.rarity == "magic":
+                    pygame.draw.rect(surf, (24, 24, 60), box.inflate(-2, -2))
+                self.assets.draw_item_icon(surf, it, box.inflate(-6, -6))
+                if it.mod_list is not None and not it.requirements_ok(p):
+                    tint = pygame.Surface(box.size, pygame.SRCALPHA)
+                    tint.fill((160, 0, 0, 60))
+                    surf.blit(tint, box.topleft)
+                self.regions.append((box, "item", i))
+                if hot:
+                    cur = p.equipment.get("ring1" if it.slot == "ring" else it.slot) if it.slot else None
+                    self._item_tip(it, p, cur)
 
     def _draw_character(self, surf, world, mouse):
         p = world.player
-        rect = pygame.Rect(10, 40, 300, 380)
+        rect = pygame.Rect(10, 40, 300, 420)
         panel(surf, rect, "Barbarian", self.fonts)
         self.regions.append((rect, "panel", None))
         font = self.fonts["small"]
@@ -264,7 +286,10 @@ class Hud:
         if p.stat_points:
             surf.blit(font.render(f"Points left: {p.stat_points}", True, (255, 230, 90)), (rect.x + 14, y))
         y += 30
+        res = getattr(p, "res", {})
         info = [f"Damage {p.dmg[0]}-{p.dmg[1]}  ({p.attack_cost} AP per swing)",
-                f"Attack Rating {p.ar}", f"Defense {p.defense}", f"Life {p.hp}/{p.max_hp}",
+                f"Attack Rating {p.ar}", f"Defense {p.defense}   Block {getattr(p, 'block_chance', 0)}%",
+                "Resist  F %d  C %d  L %d  P %d" % tuple(res.get(k, 0) for k in ("fire", "cold", "ltng", "pois")),
+                f"Life {p.hp}/{p.max_hp}",
                 f"Action Points {p.max_ap}", "Bash: right click, +50% dmg,", "  knockback, 2 mana, +1 AP"]
         text_lines(surf, font, info, rect.x + 14, y)

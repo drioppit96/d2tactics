@@ -142,7 +142,7 @@ class D2Assets(AssetProvider):
     native_scale = 1.5     # D2 art is drawn for 800x600; 1.5x zoom gives a similar view
     bar_lift = 34          # D2 monsters are taller than the placeholder figures
 
-    def __init__(self, d2_path):
+    def __init__(self, d2_path, difficulty="normal"):
         self.src = open_source(d2_path)
         self.palette = load_palette(self.src.read("data\\global\\palette\\act1\\pal.dat"))
         self.kit = CaveKit(self.src)
@@ -150,12 +150,14 @@ class D2Assets(AssetProvider):
         self.tile_cache = {}
         self.sprites = {}
         self.flash_cache = {}
+        self.item_cache = {}
         try:
-            self.monstats = {r.get("code", "").upper(): r for r in read_table(self.src, "MonStats")
-                             if r.get("id", "").lower() in MONSTER_IDS.values()}
+            self.monstats = {r.get("id", "").lower(): r for r in read_table(self.src, "MonStats")}
             self.monstats2 = {r.get("id", "").lower(): r for r in read_table(self.src, "MonStats2")}
         except Exception:
             self.monstats, self.monstats2 = {}, {}
+        from game.d2content import D2Content
+        self.content = D2Content(self.src, difficulty)
 
     # ---------------------------------------------------------------- level
     def level_builder(self, seed):
@@ -194,26 +196,104 @@ class D2Assets(AssetProvider):
         sx, sy = cam.to_screen((tx - ty) * 80 - 80 + x0, (tx + ty) * 40 - 8 + y0)
         surf.blit(img, (int(sx), int(sy)))
 
-    def _sprites_for(self, unit):
-        key = (unit.token, unit.unique, unit.is_player)
-        if key not in self.sprites:
-            if unit.is_player:
-                arms = {"HD": ["LIT"], "TR": ["LIT"], "LG": ["LIT"], "RA": ["LIT"], "LA": ["LIT"],
-                        "RH": ["HAX", "AXE"], "S1": ["LIT"], "S2": ["LIT"]}
-                self.sprites[key] = UnitSprites(self, "chars", "BA", arms, "1HS", hide=("LH", "SH"))
+    def player_look(self, p):
+        """Barbarian armour/weapon graphics from what is equipped (D2's component system)."""
+        eq = p.equipment
+        tiers = ["LIT", "MED", "HVY"]
+        arms = {c: ["LIT"] for c in ("HD", "TR", "LG", "RA", "LA", "S1", "S2")}
+        hide = {"LH", "SH", "RH"}
+        wclass = "HTH"
+        helm, armor, weapon, shield = eq.get("helm"), eq.get("armor"), eq.get("weapon"), eq.get("shield")
+        if helm and helm.gfx:
+            arms["HD"] = [helm.gfx, "LIT"]
+        if armor and armor.look:
+            lk = armor.look
+            arms["TR"] = [tiers[min(2, lk.get("torso", 0))]]
+            arms["LG"] = [tiers[min(2, lk.get("legs", 0))]]
+            arms["RA"] = [tiers[min(2, lk.get("rarm", 0))]]
+            arms["LA"] = [tiers[min(2, lk.get("larm", 0))]]
+            arms["S1"] = [tiers[min(2, lk.get("rspad", 0))]]
+            arms["S2"] = [tiers[min(2, lk.get("lspad", 0))]]
+        if weapon and weapon.gfx:
+            wclass = (weapon.wclass or "1hs").upper()
+            if wclass in ("BOW", "XBW"):
+                arms["LH"] = [weapon.gfx]
+                hide.discard("LH")
             else:
-                arms = {}
-                ms = self.monstats.get(unit.token.upper(), {})
-                ms2 = self.monstats2.get((ms.get("monstatsex") or MONSTER_IDS.get(unit.token, "")).lower(), {})
-                for comp in ("HD", "TR", "LG", "RA", "LA", "RH", "LH", "SH",
-                             "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8"):
-                    v = ms2.get(comp.lower() + "v", "").replace('"', "")
-                    opts = [x.strip().upper() for x in v.split(",") if x.strip() and x.strip() != "0"]
-                    if unit.unique and len(opts) > 1:
-                        opts = opts[1:] + opts[:1]    # a different look for the boss
-                    arms[comp] = opts
-                self.sprites[key] = UnitSprites(self, "monsters", unit.token, arms, "HTH")
+                arms["RH"] = [weapon.gfx]
+                hide.discard("RH")
+        if shield and shield.gfx:
+            arms["SH"] = [shield.gfx]
+            hide.discard("SH")
+        return arms, tuple(sorted(hide)), wclass
+
+    def _sprites_for(self, unit):
+        if unit.is_player:
+            arms, hide, wclass = self.player_look(unit)
+            key = ("player", wclass, hide, tuple(sorted((k, tuple(v)) for k, v in arms.items())))
+            if key not in self.sprites:
+                self.sprites[key] = UnitSprites(self, "chars", "BA", arms, wclass, hide=hide)
+            return self.sprites[key]
+        key = (unit.token, unit.unique, getattr(unit, "d2id", None))
+        if key not in self.sprites:
+            arms = {}
+            mid = getattr(unit, "d2id", None) or MONSTER_IDS.get(unit.token, "")
+            ms = self.monstats.get((mid or "").lower(), {})
+            ms2 = self.monstats2.get((ms.get("monstatsex") or mid or "").lower(), {})
+            for comp in ("HD", "TR", "LG", "RA", "LA", "RH", "LH", "SH",
+                         "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8"):
+                v = ms2.get(comp.lower() + "v", "").replace('"', "")
+                opts = [x.strip().upper() for x in v.split(",") if x.strip() and x.strip() != "0"]
+                if unit.unique and len(opts) > 1:
+                    opts = opts[1:] + opts[:1]    # a different look for the boss
+                arms[comp] = opts
+            self.sprites[key] = UnitSprites(self, "monsters", unit.token, arms, "HTH")
         return self.sprites[key]
+
+    # ---------------------------------------------------------------- items
+    def _dc6(self, name):
+        key = ("dc6", name.lower())
+        if key not in self.item_cache:
+            path = "data\\global\\items\\%s.dc6" % name
+            frames = None
+            if name and self.src.has(path):
+                try:
+                    from d2.dc6 import DC6
+                    dc = DC6(self.src.read(path))
+                    frames = [(self.indexed_surface(f.width, f.height, f.pixels), f.xoff, f.yoff)
+                              for f in dc.frames if f.width and f.height]
+                except Exception:
+                    frames = None
+            self.item_cache[key] = frames
+        return self.item_cache[key]
+
+    def _inv_name(self, item):
+        if item.kind == "gold":
+            n = item.amount
+            return "invgld1" if n < 30 else "invgld2" if n < 100 else "invgld3" if n < 500 else "invgld4"
+        return item.invfile
+
+    def draw_item_icon(self, surf, item, rect):
+        frames = self._dc6(self._inv_name(item)) if getattr(item, "invfile", "") or item.kind == "gold" else None
+        if not frames:
+            return self.placeholder.draw_item_icon(surf, item, rect)
+        img = frames[0][0]
+        key = ("fit", id(img), rect.w, rect.h)
+        if key not in self.item_cache:
+            w, h = img.get_size()
+            k = min(rect.w / float(w), rect.h / float(h), 1.0 if max(w, h) <= 30 else 2.0)
+            self.item_cache[key] = pygame.transform.smoothscale(img, (max(1, int(w * k)), max(1, int(h * k)))) \
+                if abs(k - 1.0) > 0.01 else img
+        fit = self.item_cache[key]
+        surf.blit(fit, (rect.centerx - fit.get_width() // 2, rect.centery - fit.get_height() // 2))
+
+    def draw_ground_item(self, surf, item, pos, s, b, t=10.0):
+        frames = self._dc6(item.flippy) if getattr(item, "flippy", "") else None
+        if not frames:
+            return self.placeholder.draw_ground_item(surf, item, pos, s, b)
+        i = min(len(frames) - 1, int(t * 25))       # D2 plays the drop "flip" at 25 fps
+        img, xo, yo = frames[i]
+        surf.blit(img, (int(pos[0] + xo), int(pos[1] + yo)))
 
     # ---------------------------------------------------------------- AssetProvider
     def draw_unit(self, surf, unit, pose, pos, s, b):
@@ -262,12 +342,6 @@ class D2Assets(AssetProvider):
 
     def draw_wall(self, *a, **k):
         return self.placeholder.draw_wall(*a, **k)
-
-    def draw_ground_item(self, *a, **k):
-        return self.placeholder.draw_ground_item(*a, **k)
-
-    def draw_item_icon(self, *a, **k):
-        return self.placeholder.draw_item_icon(*a, **k)
 
     def draw_projectile(self, *a, **k):
         return self.placeholder.draw_projectile(*a, **k)

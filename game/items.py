@@ -10,7 +10,47 @@ BLUE = (110, 110, 255)
 GOLD_COLOR = (199, 179, 119)  # D2 unique / gold text colour
 ORANGE = (255, 168, 0)
 
-SLOTS = ["weapon", "helm", "armor", "gloves", "boots", "amulet", "ring1", "ring2"]
+SLOTS = ["weapon", "shield", "helm", "armor", "gloves", "belt", "boots", "amulet", "ring1", "ring2"]
+
+# D2 item name colours
+D2_COLORS = {"normal": (230, 230, 230), "magic": (105, 105, 255), "rare": (255, 255, 100),
+             "set": (0, 252, 0), "unique": (199, 179, 119), "crafted": (255, 168, 0)}
+RED_TEXT = (255, 80, 80)
+
+# D2-style property lines for mods; {0}/{1} = value or min/max
+MOD_TEXT = {
+    "dmg%": "+{0}% Enhanced Damage", "att": "+{0} to Attack Rating", "att%": "{0}% Bonus to Attack Rating",
+    "ac": "+{0} Defense", "ac%": "+{0}% Enhanced Defense", "hp": "+{0} to Life", "mana": "+{0} to Mana",
+    "str": "+{0} to Strength", "dex": "+{0} to Dexterity", "vit": "+{0} to Vitality", "enr": "+{0} to Energy",
+    "light": "+{0} to Light Radius", "thorns": "Attacker Takes Damage of {0}",
+    "dmg-min": "+{0} to Minimum Damage", "dmg-max": "+{0} to Maximum Damage",
+    "move1": "+{0}% Faster Run/Walk", "move2": "+{0}% Faster Run/Walk", "move3": "+{0}% Faster Run/Walk",
+    "swing1": "+{0}% Increased Attack Speed", "swing2": "+{0}% Increased Attack Speed",
+    "swing3": "+{0}% Increased Attack Speed", "regen": "Replenish Life +{0}",
+    "lifesteal": "{0}% Life Stolen per Hit", "manasteal": "{0}% Mana Stolen per Hit",
+    "res-fire": "Fire Resist +{0}%", "res-cold": "Cold Resist +{0}%", "res-ltng": "Lightning Resist +{0}%",
+    "res-pois": "Poison Resist +{0}%", "res-pois-len": "Poison Length Reduced by {0}%", "res-all": "All Resistances +{0}", "red-dam": "Damage Reduced by {0}",
+    "red-mag": "Magic Damage Reduced by {0}", "mag%": "{0}% Better Chance of Getting Magic Items",
+    "gold%": "{0}% Extra Gold from Monsters", "block": "{0}% Increased Chance of Blocking",
+    "block2": "+{0}% Faster Block Rate", "balance1": "+{0}% Faster Hit Recovery",
+    "balance2": "+{0}% Faster Hit Recovery", "balance3": "+{0}% Faster Hit Recovery",
+    "cast1": "+{0}% Faster Cast Rate", "cast2": "+{0}% Faster Cast Rate", "cast3": "+{0}% Faster Cast Rate",
+    "dmg-fire": "Adds {0}-{1} Fire Damage", "dmg-cold": "Adds {0}-{1} Cold Damage",
+    "dmg-ltng": "Adds {0}-{1} Lightning Damage", "dmg-pois": "Adds {0}-{1} Poison Damage",
+    "dmg-norm": "Adds {0}-{1} Magic Damage", "red-dmg": "Damage Reduced by {0}", "stam": "+{0} Maximum Stamina",
+    "regen-stam": "Heal Stamina Plus {0}%", "att-demon": "+{0} to Attack Rating against Demons",
+    "att-undead": "+{0} to Attack Rating against Undead", "mana-kill": "+{0} to Mana after each Kill",
+    "ignore-ac": "Ignore Target's Defense", "dmg-ac": "-{0} to Monster Defense Per Hit",
+    "ac/lvl": "+{0} Defense (Based on Character Level)", "dmg/lvl": "+{0} to Maximum Damage (Based on Character Level)",
+    "mana/lvl": "+{0} to Mana (Based on Character Level)", "dmg": "Adds {0}-{1} Damage", "knock": "Knockback",
+    "nofreeze": "Cannot Be Frozen", "howl": "Hit Causes Monster to Flee {0}%",
+    "hp%": "Increase Maximum Life {0}%", "mana%": "Increase Maximum Mana {0}%",
+    "manarecovery": "Regenerate Mana {0}%", "stamina": "+{0} Maximum Stamina", "dur": "+{0} Maximum Durability",
+    "ease": "Requirements {0}%", "openwounds": "{0}% Chance of Open Wounds", "crush": "{0}% Chance of Crushing Blow",
+    "deadly": "{0}% Deadly Strike", "slow": "Slows Target by {0}%", "stupidity": "Hit Blinds Target",
+    "freeze": "Freezes Target", "rep-dur": "Repairs 1 Durability in {0} Seconds",
+    "rep-quant": "Replenishes Quantity", "dmg-to-mana": "{0}% Damage Taken Goes To Mana",
+}
 
 # name, code, slot, item level, stats
 BASES = [
@@ -74,18 +114,73 @@ class Item:
         self.defense = defense
         self.amount = amount  # gold amount / potion heal
         self.kind = kind      # equip | gold | potion
+        # filled in for items made from D2's tables
+        self.base = None
+        self.mod_list = None
+        self.levelreq = self.reqstr = self.reqdex = 0
+        self.invfile = self.flippy = ""
+        self.invw = self.invh = 1
+        self.two_handed = False
+        self.block = 0
+        self.gfx = ""
+        self.wclass = ""
+        self.look = None
+        self.strbonus = self.dexbonus = 0
+        self.potion = "heal"
 
     @property
     def color(self):
-        if self.kind == "gold":
+        if self.kind in ("gold", "potion"):
             return WHITE
-        if self.rarity == "magic":
-            return BLUE
-        if self.rarity == "unique":
-            return GOLD_COLOR
-        return WHITE
+        return D2_COLORS.get(self.rarity, WHITE)
+
+    def requirements_ok(self, player):
+        return (player.level >= self.levelreq and player.strength >= self.reqstr
+                and player.dexterity >= self.dexterity_req())
+
+    def dexterity_req(self):
+        return self.reqdex
+
+    def describe_lines(self, player=None):
+        """[(text, colour)] in D2's tooltip order."""
+        if self.kind == "gold":
+            return [("%d Gold" % self.amount, WHITE)]
+        if self.kind == "potion":
+            what = {"heal": "Heals %d life", "mana": "Restores %d mana", "rejuv": "Restores %d%% life and mana"}
+            return [(self.name, WHITE), (what.get(self.potion, "%d") % self.amount, WHITE),
+                    ("2 AP to drink (keys 1-4)", (170, 170, 170))]
+        if self.mod_list is None:
+            return [(l, self.color if i == 0 else WHITE) for i, l in enumerate(self.describe())]
+        out = [(self.name, self.color)]
+        if self.dmg:
+            lo, hi = self.dmg
+            if self.two_handed:
+                out.append(("Two-Hand Damage: %d to %d" % (lo, hi), WHITE))
+            else:
+                out.append(("One-Hand Damage: %d to %d" % (lo, hi), WHITE))
+            out.append(("Attack cost: %d AP" % self.ap, (170, 170, 170)))
+        if self.defense:
+            out.append(("Defense: %d" % self.defense, WHITE))
+        if self.block:
+            out.append(("Chance to Block: %d%%" % self.block, WHITE))
+
+        def req(text, ok):
+            out.append((text, WHITE if ok else RED_TEXT))
+        if self.reqdex:
+            req("Required Dexterity: %d" % self.reqdex, player is None or player.dexterity >= self.reqdex)
+        if self.reqstr:
+            req("Required Strength: %d" % self.reqstr, player is None or player.strength >= self.reqstr)
+        if self.levelreq > 1:
+            req("Required Level: %d" % self.levelreq, player is None or player.level >= self.levelreq)
+        for code, v in self.mod_list:
+            fmt = MOD_TEXT.get(code, code + " {0}")
+            text = fmt.format(*v) if isinstance(v, tuple) else fmt.format(v)
+            out.append((text, D2_COLORS["magic"]))
+        return out
 
     def describe(self):
+        if self.mod_list is not None:
+            return [t for t, _ in self.describe_lines()]
         lines = [self.name]
         if self.kind == "gold":
             return [f"{self.amount} Gold"]

@@ -21,7 +21,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 def load_settings():
     cfg = configparser.ConfigParser()
     cfg.read_dict({"display": {"width": "1280", "height": "720", "fullscreen": "no", "scale": "auto"},
-                   "diablo2": {"path": ""}})
+                   "diablo2": {"path": ""}, "game": {"difficulty": "normal"}})
     cfg.read(os.path.join(HERE, "settings.ini"))
     return cfg
 
@@ -31,7 +31,7 @@ def load_assets(cfg):
     if path:
         try:
             from render.d2assets import D2Assets
-            return D2Assets(path), None
+            return D2Assets(path, cfg.get("game", "difficulty").strip().lower()), None
         except Exception as e:  # files not found or unreadable
             import traceback
             traceback.print_exc()
@@ -69,7 +69,7 @@ class Game:
 
     def new_world(self, seed=None):
         builder = getattr(self.assets, "level_builder", None)
-        self.world = World(seed=seed, level_builder=builder)
+        self.world = World(seed=seed, level_builder=builder, content=getattr(self.assets, "content", None))
         self._path_cache = {}
         self.scene = Scene(self.world, self.assets, self.fonts)
         self.hud = Hud(self.fonts, self.assets)
@@ -221,8 +221,8 @@ class Game:
                                [TEXT if len(path) <= p.ap else (230, 120, 90)])
             items = w.ground.get(cell)
             if items and g.explored[cell[1]][cell[0]]:
-                it = items[0]
-                tip = (it.describe(), [it.color])
+                lines = items[0].describe_lines(p)
+                tip = ([t for t, _ in lines], [c for _, c in lines])
         return cell, highlight, preview, tip
 
     # ------------------------------------------------------------ main loop

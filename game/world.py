@@ -42,15 +42,19 @@ def hit_chance(attacker, defender, ar_bonus_pct=0):
 
 
 class World:
-    def __init__(self, seed=None, depth_level=1, level_builder=None):
+    def __init__(self, seed=None, depth_level=1, level_builder=None, content=None):
         self.seed = seed if seed is not None else random.randrange(1 << 30)
         self.tilemap = None
         if level_builder is not None:
             self.grid, self.rng, self.tilemap = level_builder(self.seed)
         else:
             self.grid, self.rng = generate_cave(seed=self.seed)
-        start, monsters = populate(self.grid, self.rng, depth_level)
+        self.content = content
+        level_row = content.level_row("Den of Evil") if content else None
+        start, monsters = populate(self.grid, self.rng, depth_level, content, level_row)
         self.player = Player(*start)
+        if content:
+            self._d2_starting_gear()
         self.monsters = monsters
         self.corpses = []            # dead monsters, shamans can raise fallen
         self.ground = {}             # cell -> [items]
@@ -61,9 +65,23 @@ class World:
         self.game_over = False
         self.boss_dead = False
         self._regen_steps = 0
-        self.grid.update_visibility(self.player.pos, self.player.light)
+        self.grid.update_visibility(self.player.pos, self.sight_radius())
         self.log("You enter the Den of Evil. Corpsefire lurks in the depths.", YELLOW)
         self.log("Left click: move / attack. Right click: Bash. Space: end turn.", GREY)
+
+    def _d2_starting_gear(self):
+        """D2's Barbarian starts with a Hand Axe, a Buckler and healing potions."""
+        c, p = self.content, self.player
+        for slot, code in (("weapon", "hax"), ("shield", "buc"), ("armor", None)):
+            p.equipment[slot] = c.make_item(c.base_by_code[code], 1, self.rng) if code in c.base_by_code else None
+        if "hp1" in c.base_by_code:
+            p.belt = [c.make_item(c.base_by_code["hp1"], 1, self.rng) for _ in range(4)]
+        p.recalc()
+        p.hp, p.mana = p.max_hp, p.max_mana
+
+    def sight_radius(self):
+        # on D2 maps you see terrain well beyond your light radius, like in the game
+        return self.player.light + (6 if self.tilemap is not None else 0)
 
     # ------------------------------------------------------------ helpers
     def log(self, text, color=(220, 220, 220)):
@@ -162,7 +180,7 @@ class World:
                 self._regen_steps += 1
                 if self._regen_steps % 2 == 0 and p.hp < p.max_hp:
                     p.hp += 1
-            self.grid.update_visibility(p.pos, p.light)
+            self.grid.update_visibility(p.pos, self.sight_radius())
             self._auto_pickup_gold(step)
             was_explore = self.mode == "explore"
             if self.check_awareness() and was_explore:
@@ -285,10 +303,19 @@ class World:
                 return False
             p.ap -= POTION_AP
         pot = p.belt.pop(slot)
-        healed = min(pot.amount, p.max_hp - p.hp)
-        p.hp += healed
-        self.emit("heal", p, healed)
-        self.log(f"You drink a {pot.name} (+{healed}).", GREEN)
+        kind = getattr(pot, "potion", "heal")
+        if kind == "mana":
+            got = min(pot.amount, p.max_mana - p.mana)
+            p.mana += got
+            self.log(f"You drink a {pot.name} (+{got} mana).", (120, 140, 255))
+        else:
+            amount = pot.amount if kind == "heal" else p.max_hp * pot.amount // 100
+            healed = min(amount, p.max_hp - p.hp)
+            p.hp += healed
+            if kind == "rejuv":
+                p.mana = min(p.max_mana, p.mana + p.max_mana * pot.amount // 100)
+            self.emit("heal", p, healed)
+            self.log(f"You drink a {pot.name} (+{healed}).", GREEN)
         self._maybe_auto_end()
         return True
 
@@ -315,6 +342,8 @@ class World:
         p = self.player
         p.ap = p.max_ap
         p.mana = min(p.max_mana, p.mana + 1)
+        if getattr(p, "regen", 0):
+            p.hp = min(p.max_hp, p.hp + p.regen)
         self.turn = "player"
         self.emit("turn", "player")
         self.check_combat_end()
@@ -325,16 +354,30 @@ class World:
         if inv_index >= len(p.inventory):
             return
         it = p.inventory[inv_index]
-        if it.kind != "equip":
+        if it.kind == "potion":
+            if len(p.belt) < 4:
+                p.belt.append(p.inventory.pop(inv_index))
+            return
+        if it.kind != "equip" or not it.slot:
+            return
+        if it.mod_list is not None and not it.requirements_ok(p):
+            self.log("You can't use that yet (requirements).", RED)
             return
         slot = it.slot
         if slot == "ring":
             slot = "ring1" if p.equipment["ring1"] is None or p.equipment["ring2"] is not None else "ring2"
         p.inventory.pop(inv_index)
-        old = p.equipment[slot]
+        old = p.equipment.get(slot)
         p.equipment[slot] = it
         if old:
             p.inventory.append(old)
+        weapon = p.equipment.get("weapon")
+        if slot == "weapon" and it.two_handed and p.equipment.get("shield"):
+            p.inventory.append(p.equipment["shield"])
+            p.equipment["shield"] = None
+        if slot == "shield" and weapon is not None and weapon.two_handed:
+            p.inventory.append(weapon)
+            p.equipment["weapon"] = None
         p.recalc()
         self.log(f"Equipped {it.name}.", it.color)
 
@@ -375,10 +418,24 @@ class World:
         if self.rng.random() > hit_chance(attacker, target, bonus):
             self.emit("miss", target)
             return
+        if target.is_player and getattr(target, "block_chance", 0) and self.rng.random() * 100 < target.block_chance:
+            self.emit("miss", target)
+            self.log("Blocked!", GREY)
+            return
         dmg = self.rng.randint(*attacker.dmg)
         if skill == "bash":
             dmg = int(dmg * 1.5) + 1
+        if attacker.is_player:
+            for kind, (lo, hi) in getattr(attacker, "elem", {}).items():
+                dmg += self.rng.randint(lo, max(lo, hi))
+        if target.is_player and getattr(target, "dr", 0):
+            dmg = max(1, dmg - target.dr)
         self._damage(target, dmg, attacker)
+        if attacker.is_player and target is not attacker:
+            if attacker.leech and attacker.hp < attacker.max_hp:
+                attacker.hp = min(attacker.max_hp, attacker.hp + max(1, dmg * attacker.leech // 100))
+            if attacker.mana_leech:
+                attacker.mana = min(attacker.max_mana, attacker.mana + max(1, dmg * attacker.mana_leech // 100))
         # thorns
         if target.is_player and target.alive and not ranged_kind and target.thorns and attacker.alive:
             self._damage(attacker, target.thorns, target)
@@ -413,7 +470,11 @@ class World:
         if gained:
             self.emit("levelup", p.level)
             self.log(f"Level up! You are now level {p.level}. Press C to spend stat points.", YELLOW)
-        for it in roll_drop(unit.level, unit.unique, self.rng):
+        if self.content:
+            drops = self.content.roll_drop(unit.level, unit.unique, self.rng, mf=p.mf, gf=p.gf)
+        else:
+            drops = roll_drop(unit.level, unit.unique, self.rng)
+        for it in drops:
             cell = self._drop_cell(unit.pos)
             self.ground.setdefault(cell, []).append(it)
             self.emit("drop", cell, it)
