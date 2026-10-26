@@ -24,10 +24,10 @@ sys.path.insert(0, ROOT)
 
 from d2.mpq import MPQSet  # noqa: E402
 
-BATCH = 3 if "--batch3" in sys.argv else 2 if "--batch2" in sys.argv else 1
-OUT = os.path.join(ROOT, {1: "d2samples", 2: "d2samples2", 3: "d2samples3"}[BATCH])
+BATCH = 4 if "--batch4" in sys.argv else 3 if "--batch3" in sys.argv else 2 if "--batch2" in sys.argv else 1
+OUT = os.path.join(ROOT, {1: "d2samples", 2: "d2samples2", 3: "d2samples3", 4: "d2samples4"}[BATCH])
 ZIP_PATH = OUT + ".zip"
-BUDGET = {1: 45, 2: 30, 3: 40}[BATCH] * 1024 * 1024        # stay well under upload limits
+BUDGET = {1: 45, 2: 30, 3: 40, 4: 45}[BATCH] * 1024 * 1024        # stay well under upload limits
 
 COMPONENTS = ["HD", "TR", "LG", "RA", "LA", "RH", "LH", "SH",
               "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8"]
@@ -430,6 +430,41 @@ class Extractor:
                 tiles += 1
         print("  %d tile libraries" % tiles)
 
+    # ------------------------------------------------------------ batch 4: all classes + character creation
+    CLASSES = ["AM", "SO", "NE", "PA", "BA", "DZ", "AI"]
+
+    def step4_frontend(self):
+        print("Character creation / select screens...")
+        n = self._grab_pattern("data\\global\\ui\\frontend\\", 12 * 1024 * 1024)
+        print("  %d files" % n)
+
+    def step4_classes(self):
+        print("All seven classes (standing, walking, attacking, hit, casting, dying)...")
+        modes = ("NU", "WL", "A1", "GH", "SC", "DT", "DD", "TN")
+        wclasses = ("HTH", "1HS")
+        per_class = 4 * 1024 * 1024
+        for cls in self.CLASSES:
+            start = self.total
+            n = 0
+            prefix = "data\\global\\chars\\%s\\" % cls.lower()
+            for name in sorted(self.known):
+                low = name.lower()
+                if not low.startswith(prefix) or self.total - start > per_class:
+                    continue
+                base = low.rsplit("\\", 1)[-1]
+                stem = base.rsplit(".", 1)[0]
+                if low.endswith(".cof"):
+                    ok = stem[2:4].upper() in modes and stem[4:].upper() in wclasses
+                elif low.endswith(".dcc"):
+                    # <cls><comp><armtype><mode><wclass>: keep light armour + a few weapons
+                    arm, mode, wc = stem[4:7].upper(), stem[7:9].upper(), stem[9:].upper()
+                    ok = mode in modes and wc in wclasses and (arm in ("LIT", "HAX", "SSD", "BUC", "CLB", "SST", "WND", "KTR", "JAV", "SBW") )
+                else:
+                    ok = False
+                if ok and self.grab(name) is not None:
+                    n += 1
+            print("  %s %4d files" % (cls, n))
+
     def finish(self):
         with open(os.path.join(OUT, "manifest.json"), "w") as f:
             json.dump({"files": self.manifest, "missing": self.tried_missing[:3000],
@@ -477,8 +512,10 @@ def main():
     elif BATCH == 2:
         steps = (ex.step2_listfiles, ex.step2_items, ex.step2_ui, ex.step2_missiles_sounds,
                  ex.step2_objects, ex.step2_monsters)
-    else:
+    elif BATCH == 3:
         steps = (ex.step2_listfiles, ex.step3_ui, ex.step3_act1_maps)
+    else:
+        steps = (ex.step2_listfiles, ex.step4_frontend, ex.step4_classes)
     for step in steps:
         try:
             step()
