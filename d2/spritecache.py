@@ -11,7 +11,7 @@ import os
 import struct
 import zlib
 
-MAGIC = b"D2TC1"
+MAGIC = b"D2TC2"     # bump to ignore every older cache file
 _FRAME = struct.Struct("<9i")
 _dir = None
 
@@ -66,6 +66,8 @@ def load(key, d, frame_cls):
             fr.width, fr.height, fr.xoffset, fr.yoffset = fr_w, fr_h, xo, yo
             fr.bottom_up, fr.xmin, fr.ymin, fr.xmax, fr.ymax = bu, x0, y0, x1, y1
             size = fr_w * fr_h
+            if size < 0 or o + size > len(raw):
+                return None
             fr.pixels = bytearray(raw[o:o + size])
             fr.cells = None
             o += size

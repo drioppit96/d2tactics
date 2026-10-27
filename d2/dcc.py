@@ -14,6 +14,36 @@ except Exception:         # pragma: no cover - numpy missing or broken
     _np = None
 
 STATS = {"decode_ms": 0.0, "decoded": 0}     # for the performance readout (F11)
+_VERIFIED = False      # the numpy path is checked once against the pure Python one per run
+
+
+def _log(text):
+    try:
+        import os
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "errors.log"), "a") as f:
+            f.write(text.rstrip() + "\n")
+    except Exception:
+        pass
+
+
+def _verify_against_python(dcc, d, frames):
+    """First decode of the session: compare with the pure Python decoder; any difference turns
+    numpy off (it must never show wrong pictures)."""
+    global _VERIFIED, _np
+    _VERIFIED = True
+    saved = _np
+    _np = None
+    try:
+        ref = dcc._decode_direction(d).frames
+    finally:
+        _np = saved
+    same = len(ref) == len(frames) and all(
+        bytes(a.pixels) == bytes(b.pixels) and (a.width, a.height, a.xmin, a.ymin) == (b.width, b.height, b.xmin, b.ymin)
+        for a, b in zip(ref, frames))
+    if not same:
+        _log("numpy sprite decoding gave different pictures - disabled")
+        raise ValueError("numpy decode mismatch")
 
 _CRAZY = [0, 1, 2, 4, 6, 8, 10, 12, 14, 16, 20, 24, 26, 28, 30, 32]
 
@@ -196,10 +226,22 @@ class DCC:
                 cy += h
             f.cells = cells
 
+        global _np
         if _np is not None:
-            return Direction(_decode_fast(frames, data, pixel_values, eq_br.pos, eq_size, mask_br.pos,
-                                          enc_br.pos, enc_size, raw_br.pos, code_br.pos,
-                                          dxmin, dymin, dw, dh, ncw, nch))
+            import copy
+            fast_frames = [copy.copy(f) for f in frames]
+            try:
+                out = _decode_fast(fast_frames, data, pixel_values, eq_br.pos, eq_size, mask_br.pos,
+                                   enc_br.pos, enc_size, raw_br.pos, code_br.pos, dxmin, dymin, dw, dh, ncw, nch)
+                if not _VERIFIED:
+                    _verify_against_python(self, d, out)
+                return Direction(out)
+            except Exception:
+                # numpy too old / broken on this PC: use the pure Python decoder from now on
+                import traceback
+                _log("numpy sprite decoding disabled:\n" + traceback.format_exc())
+                _np = None
+                return self._decode_direction(d)
         # stage 1: pixel buffer entries
         last = [None] * (ncw * nch)
         for f in frames:

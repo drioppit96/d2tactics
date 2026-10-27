@@ -9,6 +9,17 @@ import pygame
 from .charcreate import FrontEnd, NAMES, FE, GOLD, WHITE, GREY
 
 CS = "data\\global\\ui\\CharSelect\\"
+
+
+def _log(text):
+    try:
+        import os
+        import time
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "errors.log"), "a") as f:
+            f.write("---- %s\n%s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), text.rstrip()))
+    except Exception:
+        pass
 GREEN = (24, 255, 0)
 SLOT_W, SLOT_H = 272, 93
 COLS_X = (37, 309)
@@ -62,6 +73,8 @@ class CharSelect(FrontEnd):
                 p = build_player(d, self.assets.content)
                 p.facing = (1, 1)
             except Exception:
+                import traceback
+                _log("character select: could not load %s\n%s" % (key, traceback.format_exc()))
                 p = None
             self.players[key] = p
         return self.players[key]
@@ -246,6 +259,10 @@ class CharSelect(FrontEnd):
                     drawn = self.assets.draw_unit(canvas, p, {"mode": "NU", "phase": self.t, "facing": (1, 1),
                                                               "flash": 0}, feet, 1.0, 1.0) is not None
                 except Exception:
+                    if not getattr(self, "_draw_err_logged", False):
+                        self._draw_err_logged = True
+                        import traceback
+                        _log("character select: drawing a hero failed\n" + traceback.format_exc())
                     drawn = False
             if not drawn:
                 pygame.draw.ellipse(canvas, (60, 50, 30), pygame.Rect(feet[0] - 16, feet[1] - 6, 32, 10))

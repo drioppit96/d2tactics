@@ -1431,6 +1431,22 @@ class Game:
         pygame.quit()
 
 
+def log_error(text):
+    """Everything that goes wrong ends up in errors.log next to the game (send it to me)."""
+    try:
+        with open(os.path.join(HERE, "errors.log"), "a") as f:
+            f.write("---- %s\n%s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), text.rstrip()))
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
-    Game().run()
+    try:
+        Game().run()
+    except Exception:
+        import traceback
+        log_error(traceback.format_exc())
+        traceback.print_exc()
+        print("\nThe error was also written to errors.log in the game folder.")
+        sys.exit(1)
     sys.exit(0)
