@@ -37,6 +37,24 @@ automap cells (AutoMap.txt + MaxiMap.dc6), Act 2.
   argument); only the buttons use the units palette. Only EXIT shows until a hero is picked.
 - Saves now keep sockets, socketed items, runewords, identified, tome charges.
 
+## Day 4: readability, AP rework, big monsters
+
+- DS1 main index is 6 bits (0-63): cottages use main 45 - the old `main >= 30` skip hid every
+  house floor and wall (black holes, invisible blocking). Only `border.tg1` editor presets (main 48)
+  have no tiles, and they are never placed.
+- Monster sprites: MonStats2 BaseW is the weapon class of the COFs (goatman 2hs, corruptrogue 1hs,
+  sk_archer / cr_archer bow - the bow is a layer of the bow COFs). Death COFs are hth, which is
+  why only corpses showed.
+- MonStats2 SizeX 3 -> `unit.radius = 1` (3x3 cells). World.occupied/unit_at cover the footprint,
+  World.udist = body distance, World.path_near / attack_path handle big movers and targets,
+  actworld.settle_big_monsters moves them where they fit. No knockback for big ones.
+- AP: items.speed_tier(Weapons.txt speed) -> 1..5 AP; IAS shifts speed by ias/2. Skill AP from
+  mana (skills.ap_cost). Max AP: units.AP_LEVELS, dex/40 above start, FRW/20.
+- Aggro: SIGHT 16, ALERT_RADIUS 12, allies look 24 cells for foes.
+- Followers: ally moves outside combat don't block the event queue (that made walking stutter
+  and could freeze input); teleporting followers emit ("place", unit, cell).
+- Esc menu render/gamemenu.py (font42 + pentspin.dc6), options.ini; loot window d2hud._draw_loot.
+
 ## Act 1 world (game/act1.py)
 
 - Outdoors: slots of 8x8 blocks of 8x8 tiles (64x64 tiles = 320x320 cells per area). Snake

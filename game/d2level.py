@@ -103,7 +103,7 @@ def stamp(tm, room, tiles, ox, oy, rng):
             pos = (ox + x, oy + y)
             for layer in room.floors:
                 c = layer[y * room.width + x]
-                if c.empty or c.main >= 30:
+                if c.empty:
                     continue
                 t = tiles.pick(0, c.main, c.sub, rng.randrange(1 << 16))
                 if t:
@@ -111,7 +111,7 @@ def stamp(tm, room, tiles, ox, oy, rng):
             walls = []
             for layer in room.walls:
                 c = layer[y * room.width + x]
-                if c.empty or c.orientation in SKIP_ORIENT or c.orientation == 0 or c.main >= 30:
+                if c.empty or c.orientation in SKIP_ORIENT or c.orientation == 0:
                     continue
                 orients = [c.orientation, 4] if c.orientation == 3 else [c.orientation]
                 for o in orients:

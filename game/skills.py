@@ -9,6 +9,7 @@ columns plus a small override list below.
 
 Without D2 data (placeholder art) only the built-in Barbarian tree is available.
 """
+import math
 from .d2calc import evaluate, linear, diminishing
 
 TURN_SECONDS = 2          # one combat round lasts about two seconds of D2 time
@@ -506,27 +507,23 @@ class SkillBook:
         return round(m, 1) if m != int(m) else int(m)
 
     def ap_cost(self, name, weapon_ap):
+        """AP for a skill, worked out from its mana cost (at your current skill level).
+
+        Spells and other non-weapon skills: 1.5 + sqrt(mana), rounded, 2..10 AP
+        (Fire Bolt 3, Frost Nova 5, Meteor 6, Frozen Orb 7, Revive 8).
+        Skills that swing or shoot your weapon: the weapon's attack AP + 0.6 * sqrt(mana)
+        (Bash +1, Leap Attack +2, Whirlwind +3). Auras cost 1 AP to switch on.
+        """
         s = self.tree[name]
         k = s.kind
-        if k in ("cry", "corpse", "curse", "buff", "summon", "raise", "golem", "revive", "wall", "turret"):
-            return 2
         if k == "aura":
             return 1
-        if name == "Taunt":
-            return 1
-        if name in ("Double Swing", "Frenzy") or k == "melee" and s.extra.get("hits"):
-            return weapon_ap + 1
-        if name == "Leap" or k == "teleport":
-            return 2
-        if name in ("Leap Attack", "Whirlwind") or k == "charge":
-            return weapon_ap + 2
-        if k == "missile" and s.weapon:
-            return weapon_ap + 1
-        if k in ("missile", "chain", "corpse_blast"):
-            return 3
-        if k in ("nova", "area", "line"):
-            return 4
-        return weapon_ap + 1
+        mana = max(0.0, float(self.mana_cost(name) or 0))
+        weapon_skill = k in ("attack", "melee", "charge") or (k == "missile" and s.weapon) or \
+            name in ("Double Swing", "Frenzy", "Leap Attack", "Whirlwind", "Double Throw")
+        if weapon_skill:
+            return int(weapon_ap + max(1, int(0.6 * math.sqrt(mana) + 0.5)))
+        return max(2, min(10, int(1.5 + math.sqrt(mana) + 0.5)))
 
     # ------------------------------------------------------------ text
     def describe(self, name):

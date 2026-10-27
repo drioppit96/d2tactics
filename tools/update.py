@@ -20,7 +20,7 @@ BRANCH = "main"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VERSION_FILE = os.path.join(ROOT, "version.txt")
 TOKEN_FILE = os.path.join(ROOT, "github_token.txt")
-KEEP = {"settings.ini", "github_token.txt", "version.txt"}           # never overwritten
+KEEP = {"settings.ini", "options.ini", "github_token.txt", "version.txt"}           # never overwritten
 SKIP_DIRS = ("d2samples", "d2samples2", "cache", ".git")
 
 

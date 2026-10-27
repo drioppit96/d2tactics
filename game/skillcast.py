@@ -351,8 +351,8 @@ class SkillCaster:
             ed = env.elem_damage()
             n = max(1, env.calc("calc1"))
             if ed:
-                foes = sorted([m for m in self.enemies() if m is not target and chebyshev(m.pos, target.pos) <= 4],
-                              key=lambda m: chebyshev(m.pos, target.pos))[:n]
+                foes = sorted([m for m in self.enemies() if m is not target and self.udist(m, target) <= 4],
+                              key=lambda m: self.udist(m, target))[:n]
                 for m in foes:
                     self.emit("projectile", p, target.pos, m.pos, "ltng")
                     self.elem_hit(m, ed[0], ed[1], ed[2], p, ed[3])
@@ -361,7 +361,7 @@ class SkillCaster:
         if x.get("splash"):
             ed = env.elem_damage()
             for m in self.enemies():
-                if m is not target and chebyshev(m.pos, target.pos) <= x["splash"] and ed:
+                if m is not target and self.udist(m, target) <= x["splash"] and ed:
                     self.elem_hit(m, ed[0], ed[1], ed[2], p, ed[3])
         if x.get("charges"):
             p.effects["charges"] = min(3, p.effects.get("charges", 0) + 1)
@@ -431,10 +431,10 @@ class SkillCaster:
         foes = []
         if n > 1:
             # spread: the n nearest enemies in front of you (towards the target cell)
-            cand = [m for m in self.enemies() if chebyshev(m.pos, p.pos) <= SPELL_RANGE
+            cand = [m for m in self.enemies() if self.udist(m, p) <= SPELL_RANGE
                     and self.grid.line_of_sight(p.pos, m.pos)]
             ref = cell
-            cand.sort(key=lambda m: (chebyshev(m.pos, ref), chebyshev(m.pos, p.pos)))
+            cand.sort(key=lambda m: (chebyshev(m.pos, ref), self.udist(m, p)))
             foes = cand[:n]
         wake = foes[:]
         self._spend(ap, mana, cell, "attack" if s.weapon else "cast")
@@ -479,7 +479,7 @@ class SkillCaster:
         r = s.extra.get("radius") or env.radius() or 4
         if s.key in ("Frost Nova", "Nova", "Poison Nova"):
             r = max(r, 5)
-        foes = [m for m in self.enemies() if chebyshev(m.pos, p.pos) <= r and self.grid.line_of_sight(p.pos, m.pos)]
+        foes = [m for m in self.enemies() if self.udist(m, p) <= r and self.grid.line_of_sight(p.pos, m.pos)]
         self._spend(ap, mana, None, "cast")
         self.emit("nova", p, p.pos, r, s.element or "phys", self.vis_missile(s, area=True))
         self._wake(foes)
@@ -570,7 +570,7 @@ class SkillCaster:
             done.add(id(cur))
             self._wake([cur])
             self.skill_damage(env, cur)
-            nxt = [m for m in self.enemies() if id(m) not in done and chebyshev(m.pos, cur.pos) <= 5]
+            nxt = [m for m in self.enemies() if id(m) not in done and self.udist(m, cur) <= 5]
             src = cur.pos
             cur = min(nxt, key=lambda m: chebyshev(m.pos, src)) if nxt else None
         return True
@@ -579,14 +579,14 @@ class SkillCaster:
         corpse = None
         for c in self.corpses:
             if not getattr(c, "exploded", False) and (cell is None or chebyshev(c.pos, cell) <= 1) \
-                    and chebyshev(c.pos, self.player.pos) <= SPELL_RANGE:
+                    and self.udist(c, self.player) <= SPELL_RANGE:
                 corpse = c
                 break
         if corpse is None:
             self.log("Target a corpse.", GREY)
             return False
         r = max(2, env.radius() or 3)
-        foes = [m for m in self.enemies() if chebyshev(m.pos, corpse.pos) <= r]
+        foes = [m for m in self.enemies() if self.udist(m, corpse) <= r]
         self._spend(ap, mana, corpse.pos, "cast")
         corpse.exploded = True
         corpse.searched = True
@@ -721,7 +721,7 @@ class SkillCaster:
             return
         env = self._skill_env(key)
         r = {"Thunder Storm": 6, "Armageddon": 4, "Hurricane": 3, "Blade Shield": 1, "Blaze": 1}.get(key, 3)
-        foes = [m for m in self.enemies() if m.aware and chebyshev(m.pos, p.pos) <= r]
+        foes = [m for m in self.enemies() if m.aware and self.udist(m, p) <= r]
         if not foes:
             return
         if key == "Thunder Storm":
@@ -747,7 +747,7 @@ class SkillCaster:
         elif name == "Meditation":
             p.mana = min(p.max_mana, p.mana + max(2, p.max_mana * (env.ln(1, 2) or 100) // 1000))
         elif name in ("Holy Fire", "Holy Freeze", "Holy Shock", "Sanctuary"):
-            foes = [m for m in self.enemies() if m.aware and chebyshev(m.pos, p.pos) <= r]
+            foes = [m for m in self.enemies() if m.aware and self.udist(m, p) <= r]
             if name == "Sanctuary":
                 foes = [m for m in foes if getattr(m, "undead", False)]
             if foes:
@@ -763,14 +763,14 @@ class SkillCaster:
                 if ours:
                     stats[ours] = stats.get(ours, 0) + v
             for m in self.enemies():
-                if chebyshev(m.pos, p.pos) <= r:
+                if self.udist(m, p) <= r:
                     m.curses = getattr(m, "curses", {})
                     m.curses["Conviction"] = {"turns": 2, "stats": stats, "flags": {"aura"}, "title": "Conviction"}
         elif name == "Cleansing":
             p.effects.pop("poison", None)
         elif name == "Redemption":
             for c in list(self.corpses):
-                if chebyshev(c.pos, p.pos) <= r and not getattr(c, "searched", False):
+                if self.udist(c, p) <= r and not getattr(c, "searched", False):
                     c.searched = True
                     self.corpses.remove(c)
                     gain = max(5, env.ln(1, 2) if env.par(1) else 25)
@@ -830,7 +830,7 @@ class SkillCaster:
         reach = 8 if not s.extra.get("teleport") else 10
         spots = [(target.x + dx, target.y + dy) for dx, dy in DIRS8]
         spots = [c for c in spots if self.grid.walkable(*c) and c not in self.occupied(p) and chebyshev(c, p.pos) <= reach]
-        if not spots and chebyshev(p.pos, target.pos) > 1:
+        if not spots and self.udist(p, target) > 1:
             self.log("Can't reach it.", GREY)
             return False
         if self.mode == "combat" and p.ap < ap:
@@ -839,7 +839,7 @@ class SkillCaster:
         if self.mode == "explore":
             target.aware = True
             self.check_awareness_force()
-        if chebyshev(p.pos, target.pos) > 1:
+        if self.udist(p, target) > 1:
             dest = min(spots, key=lambda c: chebyshev(c, p.pos))
             src = p.pos
             if not s.extra.get("teleport"):
@@ -897,6 +897,8 @@ class SkillCaster:
         if cell is None:
             return None
         m = Monster(t.get("id") or "ally", cell[0], cell[1], level=lvl, rng=self.rng, template=t)
+        if m.radius and not self.fits(cell, m.radius, occ):
+            m.radius = 0
         m.name = s.title if not template else m.name
         self._make_ally(m, turns)
         # D2 skill bonuses for minions: +damage%, +AR, +defense from the skill's aura stats
@@ -996,9 +998,9 @@ class SkillCaster:
                 continue
             if not allow_unique and c.unique:
                 continue
-            if chebyshev(c.pos, p.pos) > SPELL_RANGE or self.unit_at(c.pos) is not None:
+            if self.udist(c, p) > SPELL_RANGE or self.unit_at(c.pos) is not None:
                 continue
-            d = chebyshev(c.pos, cell) if cell else chebyshev(c.pos, p.pos)
+            d = chebyshev(c.pos, cell) if cell else self.udist(c, p)
             if cell and d > 1:
                 continue
             if best is None or d < best[0]:
@@ -1089,7 +1091,7 @@ class SkillCaster:
                 if foe is None:
                     break
                 if a.range > 1:
-                    d = chebyshev(a.pos, foe.pos)
+                    d = self.udist(a, foe)
                     if d <= a.range and self.grid.line_of_sight(a.pos, foe.pos):
                         if a.ap < a.attack_cost:
                             break
@@ -1103,7 +1105,7 @@ class SkillCaster:
                         else:
                             self._resolve_attack(a, foe, ranged_kind="arrow")
                         continue
-                if chebyshev(a.pos, foe.pos) == 1 and self._adjacent_reachable(a.pos, foe.pos):
+                if self.udist(a, foe) == 1 and self._adjacent_reachable(a.pos, foe.pos):
                     if a.ap < a.attack_cost:
                         break
                     a.ap -= a.attack_cost
@@ -1115,24 +1117,24 @@ class SkillCaster:
                     break
                 self._walk(a, path[: a.ap])
 
-    def _nearest_foe(self, a, rng=12):
+    def _nearest_foe(self, a, rng=24):
         best = None
         for m in self.enemies():
-            if not m.aware and self.mode == "combat" and chebyshev(m.pos, self.player.pos) > 8:
+            if not m.aware and self.mode == "combat" and self.udist(m, self.player) > 16:
                 continue
-            d = chebyshev(m.pos, a.pos)
+            d = self.udist(m, a)
             if d <= rng and (best is None or d < best[0]):
                 best = (d, m)
         return best[1] if best else None
 
     def _turret_shoot(self, a):
         env = getattr(a, "turret_env", None)
-        foes = [m for m in self.enemies() if chebyshev(m.pos, a.pos) <= a.range and self.grid.line_of_sight(a.pos, m.pos)]
+        foes = [m for m in self.enemies() if self.udist(m, a) <= a.range and self.grid.line_of_sight(a.pos, m.pos)]
         if not foes or env is None:
             return
         n = 2 if env.s.key == "Hydra" else 1
         for _ in range(n):
-            foe = min(foes, key=lambda m: chebyshev(m.pos, a.pos))
+            foe = min(foes, key=lambda m: self.udist(m, a))
             if not foe.alive:
                 foes = [m for m in foes if m.alive]
                 if not foes:
@@ -1157,22 +1159,31 @@ class SkillCaster:
     def allies_follow(self):
         """Out of combat your minions keep up with you."""
         p = self.player
+        occ = None
         for a in self.allies():
             if a.ai in ("turret", "wall"):
                 continue
-            d = chebyshev(a.pos, p.pos)
+            d = self.udist(a, p)
             if d <= 3:
                 continue
             if d > 25:
                 spots = [(p.x + dx, p.y + dy) for dx in (-2, -1, 1, 2) for dy in (-2, -1, 1, 2)]
-                occ = self.occupied()
+                if occ is None:
+                    occ = self.occupied()
                 spot = next((c for c in spots if self.grid.walkable(*c) and c not in occ), None)
                 if spot:
+                    occ.discard(a.pos)
+                    occ.add(spot)
                     a.x, a.y = spot
+                    self.emit("place", a, spot)     # appear next to you instead of sliding across the map
                 continue
-            path = self.grid.find_path(a.pos, p.pos, blocked=self.occupied(a), allow_goal_blocked=True)
+            if occ is None:
+                occ = self.occupied()
+            occ.discard(a.pos)
+            path = self.grid.find_path(a.pos, p.pos, blocked=occ, allow_goal_blocked=True, limit=2500)
             if path and len(path) > 2:
                 self._walk(a, path[: len(path) - 2])
+            occ.add(a.pos)
 
     # ------------------------------------------------------------ monster statuses
     def monster_status(self, m):
@@ -1198,7 +1209,7 @@ class SkillCaster:
             m.ap = max(1, m.ap - 2)
         if self._has_flag(m, "slow"):
             m.ap = max(1, m.ap // 2)
-        if self._has_flag(m, "blind") and chebyshev(m.pos, self.player.pos) > 2:
+        if self._has_flag(m, "blind") and self.udist(m, self.player) > 2:
             return False
         return True
 

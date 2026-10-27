@@ -8,7 +8,8 @@ import random
 from .items import Item, SLOTS
 
 
-MELEE_AP = 1          # AP per melee attack (settings.ini [game] melee_ap)
+ATTACK_AP_OFFSET = 0  # added to every attack's AP (settings.ini [game] attack_ap_offset)
+AP_LEVELS = (10, 20, 30, 45, 60, 80)   # +1 max AP at each of these character levels
 
 
 class Unit:
@@ -31,6 +32,7 @@ class Unit:
         self.color = (150, 150, 150)
         self.unique = False
         self.thorns = 0
+        self.radius = 0         # big monsters (D2 size 3) fill the 3x3 cells around them
 
     @property
     def pos(self):
@@ -259,10 +261,15 @@ class Player(Unit):
         self.elem = {k: v for k, v in self.elem.items() if v[1] > 0}
         wtypes = set(weapon.base.get("ancestors", ())) if weapon is not None and isinstance(getattr(weapon, "base", None), dict) else set()
         self.ranged = bool(wtypes & {"miss", "bow", "xbow", "jave", "thro", "taxe", "tkni"}) and not (wtypes & {"spea"} and "jave" not in wtypes)
-        # a melee swing costs MELEE_AP (settings.ini [game] melee_ap); shots one more; fast weapons /
-        # IAS never go below that, very slow two-handers cost one extra
-        slow = 1 if weapon is not None and (weapon.ap or 3) >= 5 and self.mod("ias") < 20 else 0
-        self.attack_cost = max(1, MELEE_AP + (1 if self.ranged else 0) + slow)
+        # attack AP = the weapon's D2 speed: very fast 1, fast 2, normal 3, slow 4, very slow 5.
+        # Increased attack speed shifts it like D2 (about 10 speed per 20% IAS); bare hands are normal
+        from .items import speed_tier
+        wsm = 0
+        if weapon is not None:
+            b = weapon.base if isinstance(getattr(weapon, "base", None), dict) else {}
+            wsm = b.get("speed", {1: -20, 2: -10, 3: 0, 4: 10, 5: 20}.get(weapon.ap or 3, 0))
+        self.attack_speed = wsm - self.mod("ias") // 2
+        self.attack_cost = max(1, speed_tier(self.attack_speed)[0] + ATTACK_AP_OFFSET)
         self.range = 10 if wtypes & {"miss", "bow", "xbow"} else (6 if self.ranged else 1)
         ar = self.dexterity * 5 - 35 + cs["thf"] + self.mod("ar") + (self.level - 1) * 5
         self.ar = int(ar * (100 + self.mod("ar_pct") + pb["ar_pct"]) / 100)
@@ -277,7 +284,10 @@ class Player(Unit):
             self.max_hp = int(self.max_hp * (100 + eff.get("bo_pct", 0)) / 100)
             self.max_mana = int(self.max_mana * (100 + eff.get("bo_pct", 0)) / 100)
         frw = self.mod("frw")
-        self.max_ap = 8 + self.mod("ap") + (1 if frw >= 20 else 0) + (1 if frw >= 40 else 0) + pb["ap"]
+        # more AP as you grow: character level, dexterity above your class's start, faster run/walk
+        dex_bonus = max(0, self.dexterity - d0) // 40
+        lvl_bonus = sum(1 for t in AP_LEVELS if self.level >= t)
+        self.max_ap = 8 + lvl_bonus + dex_bonus + self.mod("ap") + max(0, frw) // 20 + pb["ap"]
         self.thorns = self.mod("thorns")
         self.light = 9 + self.mod("light")
         self.regen = self.mod("regen")
@@ -363,6 +373,7 @@ class Monster(Unit):
             self.ar = t["ar"] + (level - 1) * 8
             self.defense = t["df"] + (level - 1) * 2
         self.max_ap = self.ap = t["ap"]
+        self.radius = 1 if t.get("size", 2) >= 3 else 0
         self.attack_cost = t["cost"]
         self.range = t["rng"]
         self.xp_value = t["xp"] if template else t["xp"] + (level - 1) * t["xp"] // 3

@@ -23,8 +23,8 @@ from .units import Player, Monster, CLASS_KIT
 from .skillcast import SkillCaster
 from .itemactions import ItemActions
 
-SIGHT = 8           # how far monsters notice you
-ALERT_RADIUS = 6    # pack mates that get woken up with them
+SIGHT = 16          # how far monsters notice you (doubled: fights start before they are in your face)
+ALERT_RADIUS = 12   # pack mates that get woken up with them
 POTION_AP = 2
 PICKUP_AP = 1
 BASH_MANA = 2
@@ -327,13 +327,93 @@ class World(SkillCaster, ItemActions):
         for m in self.monsters:
             if m.alive and m.pos == cell:
                 return m
+        for m in self.monsters:       # big monsters cover the cells around them too
+            r = getattr(m, "radius", 0)
+            if r and m.alive and abs(m.x - cell[0]) <= r and abs(m.y - cell[1]) <= r:
+                return m
         return None
 
     def occupied(self, exclude=None):
-        cells = {m.pos for m in self.monsters if m.alive and m is not exclude}
+        cells = set()
+        for m in self.monsters:
+            if m.alive and m is not exclude:
+                r = getattr(m, "radius", 0)
+                if r:
+                    cells.update((m.x + dx, m.y + dy) for dx in range(-r, r + 1) for dy in range(-r, r + 1))
+                else:
+                    cells.add(m.pos)
         if self.player.alive and self.player is not exclude:
             cells.add(self.player.pos)
         return cells
+
+    @staticmethod
+    def udist(a, b):
+        """Distance between two units' bodies (big monsters fill 3x3 cells): 1 = touching."""
+        return max(1 if a is not b else 0,
+                   chebyshev(a.pos, b.pos) - getattr(a, "radius", 0) - getattr(b, "radius", 0))
+
+    def attack_path(self, mover, target):
+        """Cells to walk so `mover` can hit `target` in melee (None if it can't get there)."""
+        if getattr(target, "radius", 0) or getattr(mover, "radius", 0):
+            return self.path_near(mover, target.pos, 1, getattr(target, "radius", 0))
+        path = self.grid.find_path(mover.pos, target.pos, blocked=self.occupied(mover), allow_goal_blocked=True)
+        if not path or len(path) < 2:
+            return None
+        return path[:-1]
+
+    def fits(self, cell, r, blocked):
+        """Can a unit of radius r stand on cell?"""
+        x, y = cell
+        g = self.grid
+        for dy in range(-r, r + 1):
+            for dx in range(-r, r + 1):
+                c = (x + dx, y + dy)
+                if not g.walkable(*c) or c in blocked:
+                    return False
+        return True
+
+    def path_near(self, mover, target, reach=1, target_r=0, blocked=None, limit=12000, max_len=None):
+        """A* path (start excluded) for `mover` to the nearest cell from which its body is within
+        `reach` of a body of radius target_r standing on `target`. [] = already there, None = no way."""
+        import heapq
+        r = getattr(mover, "radius", 0)
+        if blocked is None:
+            blocked = self.occupied(mover)
+        start = mover.pos
+        want = reach + r + target_r
+        if chebyshev(start, target) <= want:
+            return []
+        g = self.grid
+        heap = [(chebyshev(start, target), 0, start)]
+        came = {start: None}
+        cost = {start: 0}
+        n = 0
+        while heap:
+            _, gc, cur = heapq.heappop(heap)
+            n += 1
+            if n > limit:
+                return None
+            if cur != start and chebyshev(cur, target) <= want:
+                path = []
+                while cur != start:
+                    path.append(cur)
+                    cur = came[cur]
+                path.reverse()
+                return path
+            if gc > cost.get(cur, 1 << 30) or (max_len is not None and gc >= max_len):
+                continue
+            for nb in g.neighbors(*cur):
+                if r:
+                    if not self.fits(nb, r, blocked):
+                        continue
+                elif nb in blocked:
+                    continue
+                ng = gc + 1
+                if ng < cost.get(nb, 1 << 30):
+                    cost[nb] = ng
+                    came[nb] = cur
+                    heapq.heappush(heap, (ng + max(0, chebyshev(nb, target) - want), ng, nb))
+        return None
 
     def living_monsters(self):
         return [m for m in self.monsters if m.alive and not m.ally]
@@ -351,12 +431,12 @@ class World(SkillCaster, ItemActions):
         for m in self.living_monsters():
             if m.aware or m.ai == "npc":
                 continue
-            if chebyshev(m.pos, p.pos) <= SIGHT and self.grid.line_of_sight(m.pos, p.pos):
+            if self.udist(m, p) <= SIGHT and self.grid.line_of_sight(m.pos, p.pos):
                 newly.append(m)
         for m in list(newly):
             m.aware = True
             for o in self.living_monsters():
-                if not o.aware and o.ai != "npc" and chebyshev(o.pos, m.pos) <= ALERT_RADIUS:
+                if not o.aware and o.ai != "npc" and self.udist(o, m) <= ALERT_RADIUS:
                     o.aware = True
                     newly.append(o)
         if newly and self.mode == "explore":
@@ -473,6 +553,37 @@ class World(SkillCaster, ItemActions):
             del self.ground[cell]
         return True
 
+    def pickup_item(self, cell, it):
+        """Loot window: take one item lying on the screen. Outside combat from anywhere you can see;
+        in combat it must be next to you (1 AP)."""
+        p = self.player
+        items = self.ground.get(cell)
+        if not items or it not in items:
+            return False
+        if self.mode == "combat":
+            if chebyshev(p.pos, cell) > 1:
+                self.log("Too far away - in combat you can only pick up items next to you.", GREY)
+                return False
+            if p.ap < PICKUP_AP:
+                self.log("Not enough AP to pick that up.", GREY)
+                return False
+        if it.kind == "gold":
+            p.gold += it.amount
+        elif it.kind == "potion" and len(p.belt) < 4:
+            p.belt.append(it)
+        elif not p.inv_add(it):
+            self.log("Your inventory is full.", GREY)
+            return False
+        if self.mode == "combat":
+            p.ap -= PICKUP_AP
+        items.remove(it)
+        if not items:
+            del self.ground[cell]
+        self.emit("pickup", cell, it)
+        self.log("Picked up %s." % ("%d gold" % it.amount if it.kind == "gold" else getattr(it, "shown_name", it.name)),
+                 it.color)
+        return True
+
     def attack_cost(self, skill):
         return self.player.attack_cost + (1 if skill == "bash" else 0)
 
@@ -483,12 +594,12 @@ class World(SkillCaster, ItemActions):
     def interact(self, npc):
         """Walk up to an NPC and talk (Akara heals, like in D2)."""
         p = self.player
-        if chebyshev(p.pos, npc.pos) > 1:
+        if self.udist(p, npc) > 1:
             path = self.grid.find_path(p.pos, npc.pos, blocked=self.occupied(p), allow_goal_blocked=True)
             if not path or len(path) < 2:
                 return False
             self.player_move_to(path[-2])
-            if chebyshev(p.pos, npc.pos) > 1 or self.pending_exit:
+            if self.udist(p, npc) > 1 or self.pending_exit:
                 return True
         p.face(*npc.pos)
         npc.face(*p.pos)
@@ -528,13 +639,12 @@ class World(SkillCaster, ItemActions):
             return False
         cost = ap_cost if ap_cost is not None else self.attack_cost(skill)
         shoot = skill == "attack" and getattr(p, "ranged", False)
-        if shoot and chebyshev(p.pos, target.pos) <= p.range and self.grid.line_of_sight(p.pos, target.pos):
+        if shoot and self.udist(p, target) <= p.range and self.grid.line_of_sight(p.pos, target.pos):
             pass
-        elif chebyshev(p.pos, target.pos) > 1 or not self._adjacent_reachable(p.pos, target.pos):
-            path = self.grid.find_path(p.pos, target.pos, blocked=self.occupied(p), allow_goal_blocked=True)
-            if not path or len(path) < 2:
+        elif self.udist(p, target) > 1 or not self._adjacent_reachable(p.pos, target.pos):
+            path = self.attack_path(p, target)
+            if not path:
                 return False
-            path = path[:-1]
             if shoot:
                 # walk only until the target is in range with a clear shot
                 for i, c in enumerate(path):
@@ -582,7 +692,7 @@ class World(SkillCaster, ItemActions):
             self._maybe_auto_end()
             return True
         if generic and sk.extra.get("sweep"):
-            targets = [m for m in self.living_monsters() if m.ai != "npc" and chebyshev(m.pos, p.pos) == 1]
+            targets = [m for m in self.living_monsters() if m.ai != "npc" and self.udist(m, p) == 1]
         else:
             targets = [target]
         for t in targets:
@@ -733,7 +843,7 @@ class World(SkillCaster, ItemActions):
         self.grid.update_visibility(p.pos, self.sight_radius())
         if target is None:
             for m in self.living_monsters():
-                if m.ai != "npc" and chebyshev(m.pos, p.pos) == 1:
+                if m.ai != "npc" and self.udist(m, p) == 1:
                     self._knockback(p, m, 2)
         else:
             self._resolve_attack(p, target, "Leap Attack")
@@ -784,7 +894,7 @@ class World(SkillCaster, ItemActions):
         L = lv - 1
         near = [m for m in self.living_monsters() if m.ai != "npc"]
         if name in ("Howl", "Battle Cry", "War Cry") and self.mode == "explore":
-            if any(chebyshev(m.pos, p.pos) <= 6 for m in near):
+            if any(self.udist(m, p) <= 6 for m in near):
                 self.check_awareness_force()
         self._pay(ap, mana)
         self.emit("attack", p, p.pos, "cast")
@@ -792,7 +902,7 @@ class World(SkillCaster, ItemActions):
             r, turns = 4 + L // 2, 2 + L // 4
             n = 0
             for m in near:
-                if chebyshev(m.pos, p.pos) <= r:
+                if self.udist(m, p) <= r:
                     m.effects["flee"] = turns
                     n += 1
             self.log("You howl! %d monsters flee." % n, YELLOW)
@@ -813,7 +923,7 @@ class World(SkillCaster, ItemActions):
         elif name == "Battle Cry":
             n = 0
             for m in near:
-                if chebyshev(m.pos, p.pos) <= 5:
+                if self.udist(m, p) <= 5:
                     m.effects.update(bc=True, bc_def=min(90, 50 + 2 * L), bc_dmg=min(75, 25 + L), bc_turns=5 + L)
                     m.aware = True
                     n += 1
@@ -821,7 +931,7 @@ class World(SkillCaster, ItemActions):
         elif name == "War Cry":
             lo, hi = 20 + 6 * L, 30 + 6 * L
             for m in list(near):
-                if chebyshev(m.pos, p.pos) <= 3 and m.alive:
+                if self.udist(m, p) <= 3 and m.alive:
                     m.aware = True
                     self._damage(m, self.rng.randint(lo, hi), p)
                     if m.alive:
@@ -835,7 +945,7 @@ class World(SkillCaster, ItemActions):
         L = lv - 1
         corpse = None
         for c in self.corpses:
-            if not getattr(c, "searched", False) and chebyshev(c.pos, p.pos) <= 2 and (cell is None or c.pos == cell):
+            if not getattr(c, "searched", False) and self.udist(c, p) <= 2 and (cell is None or c.pos == cell):
                 corpse = c
                 break
         if corpse is None:
@@ -905,6 +1015,8 @@ class World(SkillCaster, ItemActions):
 
     def _adjacent_reachable(self, a, b):
         dx, dy = b[0] - a[0], b[1] - a[1]
+        if max(abs(dx), abs(dy)) != 1:
+            return True     # touching a big monster's side
         if dx and dy:   # diagonal: can't attack through a wall corner
             return self.grid.walkable(a[0] + dx, a[1]) or self.grid.walkable(a[0], a[1] + dy)
         return True
@@ -912,7 +1024,7 @@ class World(SkillCaster, ItemActions):
     def check_awareness_force(self):
         if self.mode == "explore":
             for o in self.living_monsters():
-                if o.aware is False and o.ai != "npc" and chebyshev(o.pos, self.player.pos) <= ALERT_RADIUS:
+                if o.aware is False and o.ai != "npc" and self.udist(o, self.player) <= ALERT_RADIUS:
                     o.aware = True
             self.mode = "combat"
             self.round = 1
@@ -979,8 +1091,8 @@ class World(SkillCaster, ItemActions):
         # ... and ones that lost you give up the chase (so you can explore freely again)
         p = self.player
         for m in self.aware_monsters():
-            d = chebyshev(m.pos, p.pos)
-            if d > 18 or (d > SIGHT + 2 and not self.grid.line_of_sight(m.pos, p.pos)):
+            d = self.udist(m, p)
+            if d > SIGHT + 12 or (d > SIGHT + 2 and not self.grid.line_of_sight(m.pos, p.pos)):
                 m.aware = False
         if self.game_over:
             return
@@ -1295,6 +1407,8 @@ class World(SkillCaster, ItemActions):
         return True
 
     def _knockback(self, src_unit, target, cells=1):
+        if getattr(target, "radius", 0):
+            return          # too big to push around
         for _ in range(cells):
             dx = (target.x > src_unit.x) - (target.x < src_unit.x)
             dy = (target.y > src_unit.y) - (target.y < src_unit.y)
@@ -1370,7 +1484,7 @@ class World(SkillCaster, ItemActions):
         quests.on_monster_killed(self, unit)
         # D2 flavour: fallen scatter when a pack mate dies
         for m in self.living_monsters():
-            if m.ai == "fallen" and chebyshev(m.pos, unit.pos) <= 5 and self.rng.random() < 0.5:
+            if m.ai == "fallen" and self.udist(m, unit) <= 5 and self.rng.random() < 0.5:
                 m.panic = 1
         self.check_combat_end()
 
@@ -1428,22 +1542,22 @@ class World(SkillCaster, ItemActions):
         if self._has_flag(m, "confuse"):
             others = [o for o in self.living_monsters() if o is not m and o.ai != "npc"]
             if others:
-                return min(others, key=lambda o: chebyshev(o.pos, m.pos))
+                return min(others, key=lambda o: self.udist(o, m))
         for o in self.living_monsters():
-            if o is not m and self._has_flag(o, "attract") and chebyshev(o.pos, m.pos) <= 10:
+            if o is not m and self._has_flag(o, "attract") and self.udist(o, m) <= 10:
                 return o
-        best = (chebyshev(m.pos, p.pos) - (0.5 if True else 0), p) if p.alive else None
+        best = (self.udist(m, p) - (0.5 if True else 0), p) if p.alive else None
         for a in self.allies():
             if a.ai in ("turret", "wall") or getattr(a, "invulnerable", False):
                 continue
-            d = chebyshev(m.pos, a.pos) - (3 if getattr(a, "decoy", False) else 0)
+            d = self.udist(m, a) - (3 if getattr(a, "decoy", False) else 0)
             if best is None or d < best[0]:
                 best = (d, a)
         return best[1] if best else p
 
     def _melee_step(self, m):
         p = self._monster_target(m)
-        if chebyshev(m.pos, p.pos) == 1 and self._adjacent_reachable(m.pos, p.pos):
+        if self.udist(m, p) == 1 and self._adjacent_reachable(m.pos, p.pos):
             if m.ap >= m.attack_cost:
                 m.ap -= m.attack_cost
                 self._resolve_attack(m, p)
@@ -1458,7 +1572,7 @@ class World(SkillCaster, ItemActions):
 
     def _ranged_step(self, m):
         p = self._monster_target(m)
-        d = chebyshev(m.pos, p.pos)
+        d = self.udist(m, p)
         los = self.grid.line_of_sight(m.pos, p.pos)
         if d <= m.range and los and m.ap >= m.attack_cost:
             # quill rats back off first if they are in your face and can still shoot after
@@ -1471,7 +1585,8 @@ class World(SkillCaster, ItemActions):
         if d <= m.range and los:
             return False    # in position, out of AP
         # approach until in range with line of sight, keep AP for the shot
-        path = self.grid.find_path(m.pos, p.pos, blocked=self.occupied(m), allow_goal_blocked=True)
+        path = None if m.radius else \
+            self.grid.find_path(m.pos, p.pos, blocked=self.occupied(m), allow_goal_blocked=True)
         if not path:
             path = self._path_to_adjacent(m, p.pos)
             if not path:
@@ -1494,7 +1609,7 @@ class World(SkillCaster, ItemActions):
         if m.ap < m.max_ap or self.rng.random() > 0.6:
             return False
         for c in self.corpses:
-            if c.ai == "fallen" and chebyshev(c.pos, m.pos) <= 6 and self.unit_at(c.pos) is None \
+            if c.ai == "fallen" and self.udist(c, m) <= 6 and self.unit_at(c.pos) is None \
                     and self.grid.line_of_sight(m.pos, c.pos):
                 m.ap = 0
                 self.corpses.remove(c)
@@ -1511,6 +1626,10 @@ class World(SkillCaster, ItemActions):
 
     def _path_to_adjacent(self, m, target):
         blocked = self.occupied(m)
+        tu = self.unit_at(target)
+        tr = getattr(tu, "radius", 0) if tu is not None else 0
+        if getattr(m, "radius", 0) or tr:
+            return self.path_near(m, target, 1, tr, blocked=blocked, limit=6000) or None
         path = self.grid.find_path(m.pos, target, blocked=blocked, allow_goal_blocked=True)
         if path and len(path) >= 1:
             path = path[:-1]
@@ -1538,7 +1657,8 @@ class World(SkillCaster, ItemActions):
         cur = m.pos
         blocked = self.occupied(m)
         for _ in range(max_steps):
-            opts = [nb for nb in self.grid.neighbors(*cur) if nb not in blocked and nb not in steps]
+            opts = [nb for nb in self.grid.neighbors(*cur) if nb not in blocked and nb not in steps
+                    and (not m.radius or self.fits(nb, m.radius, blocked))]
             opts = [o for o in opts if chebyshev(o, p.pos) > chebyshev(cur, p.pos)]
             if not opts:
                 break

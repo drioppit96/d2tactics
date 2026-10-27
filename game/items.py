@@ -200,6 +200,10 @@ class Item:
                 out.append(("Two-Hand Damage: %d to %d" % (lo, hi), WHITE))
             else:
                 out.append(("One-Hand Damage: %d to %d" % (lo, hi), WHITE))
+            base = self.base if isinstance(getattr(self, "base", None), dict) else {}
+            if "speed" in base:
+                ap, label = speed_tier(base["speed"])
+                out.append(("%s Attack Speed (%d AP)" % (label, ap), WHITE))
         if self.defense:
             out.append(("Defense: %d" % self.defense, WHITE))
         if self.block:
@@ -249,6 +253,17 @@ class Item:
         for stat, val in self.mods.items():
             lines.append(STAT_LABELS.get(stat, stat + " {}").format(val))
         return lines
+
+
+SPEED_TIERS = ((-20, 1, "Very Fast"), (-10, 2, "Fast"), (5, 3, "Normal"), (15, 4, "Slow"), (999, 5, "Very Slow"))
+
+
+def speed_tier(wsm):
+    """Weapon speed modifier (Weapons.txt 'speed', lower = faster) -> (AP per attack, D2 speed name)."""
+    for limit, ap, label in SPEED_TIERS:
+        if wsm <= limit:
+            return ap, label
+    return 5, "Very Slow"
 
 
 def make_gold(level, rng=random):

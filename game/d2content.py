@@ -169,8 +169,9 @@ class D2Content:
             if not hi and r.get("minmisdam"):
                 lo, hi = _int(r.get("minmisdam")), _int(r.get("maxmisdam"))
             speed = _int(r.get("speed"))
-            ap = 3 + (1 if two else 0) + (1 if speed >= 10 else 0) - (1 if speed <= -10 else 0)
-            b.update(dmg=(max(1, lo), max(1, hi)), two_handed=two, ap=max(2, min(5, ap)),
+            from .items import speed_tier
+            ap = speed_tier(speed)[0]
+            b.update(dmg=(max(1, lo), max(1, hi)), two_handed=two, ap=ap, speed=speed,
                      wclass=(r.get("2handedwclass") if two and r.get("1or2handed") != "1" else r.get("wclass")) or "1hs",
                      gfx=(r.get("alternategfx") or r["code"]).upper(),
                      strbonus=_int(r.get("strbonus")), dexbonus=_int(r.get("dexbonus")),
@@ -466,7 +467,7 @@ class D2Content:
             "id": mid, "name": self._name(r), "token": r.get("code", "ZM").upper(), "level": lvl,
             "hp": hp, "dmg": dmg, "ar": max(5, base_th * pct("a1th") // 100),
             "df": max(0, base_ac * pct("ac") // 100), "xp": max(1, base_xp * pct("exp") // 100),
-            "ap": max(4, min(9, 3 + vel)), "cost": 3 if vel <= 2 else 2,
+            "ap": max(4, min(9, 3 + vel)), "cost": 4 if vel <= 2 else 3,
             "rng": 6 if ai in ("ranged", "shaman") else 1, "ai": ai,
             "missile": miss, "minion": r.get("minion1", "").lower(),
             "party": (_int(r.get("partymin")), _int(r.get("partymax"))),
@@ -475,6 +476,7 @@ class D2Content:
             "res": {"phys": pct("resdm"), "mag": pct("resma"), "fire": pct("resfi"), "ltng": pct("resli"),
                     "cold": pct("resco"), "pois": pct("respo")},
             "undead": r.get("lundead") == "1" or r.get("hundead") == "1", "demon": r.get("demon") == "1",
+            "size": self.monster_size(r),
         }
         if unique:
             t["hp"] = (t["hp"][0] * 4, t["hp"][1] * 4)
@@ -483,6 +485,21 @@ class D2Content:
             t["xp"] *= 5
             t["level"] += 3
         return t
+
+    def monster_size(self, r):
+        """MonStats2 SizeX (D2 subtiles = our cells): 3 for Gargantuan Beasts, nests, Andariel ..."""
+        if not hasattr(self, "_ms2size"):
+            self._ms2size = {}
+            try:
+                for row in read_table(self.src, "MonStats2"):
+                    try:
+                        self._ms2size[row.get("id", "").lower()] = int(row.get("sizex") or 2)
+                    except ValueError:
+                        pass
+            except Exception:
+                pass
+        key = (r.get("monstatsex") or r.get("id") or "").lower()
+        return self._ms2size.get(key, 2)
 
     def _name(self, r):
         # MonStats only holds a string key; turn "Zombie1"-style ids into readable names

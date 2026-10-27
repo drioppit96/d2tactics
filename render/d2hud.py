@@ -124,6 +124,8 @@ class D2Hud:
         self.show_char = False
         self.show_skills = False
         self.show_quests = False
+        self.show_loot = False
+        self.loot_list = None
         self.show_automap = False
         self.automap_mode = 0           # 0 off, 1 full, 2 mini
         self.show_minipanel = True
@@ -256,6 +258,8 @@ class D2Hud:
             self._draw_inventory(surf, world)
         elif self.show_skills:
             self._draw_skill_tree(surf, p)
+        if getattr(self, "loot_list", None) is not None:
+            self._draw_loot(surf, world)
         self._draw_control_panel(surf, world, scene)
         if self.skill_popup:
             self._draw_skill_popup(surf, p)
@@ -271,7 +275,14 @@ class D2Hud:
         tip = getattr(self, "world_tip", None)
         if not self.hover_lines and tip and getattr(world, "held", None) is None:
             texts, cols = tip
-            self.tooltip(surf, list(zip(texts, list(cols) + [WHITE] * len(texts))), self.mouse)
+            anchor = getattr(self, "world_tip_anchor", None)
+            if anchor is not None:
+                # monster info sits to the left of the monster, so it never covers it
+                a = pygame.Rect(int(anchor.x / self.s), int(anchor.y / self.s),
+                                int(anchor.w / self.s), int(anchor.h / self.s))
+                self.tooltip(surf, list(zip(texts, list(cols) + [WHITE] * len(texts))), self.mouse, left_of=a)
+            else:
+                self.tooltip(surf, list(zip(texts, list(cols) + [WHITE] * len(texts))), self.mouse)
         if self.hover_lines:
             self.tooltip(surf, self.hover_lines, self.mouse)
         held = getattr(world, "held", None)
@@ -294,7 +305,7 @@ class D2Hud:
             y += 15
 
     # ------------------------------------------------------------ tooltip
-    def tooltip(self, surf, lines, at):
+    def tooltip(self, surf, lines, at, left_of=None):
         """lines: [(text, colour)] - drawn like D2's item description box."""
         if lines and isinstance(lines, tuple) and len(lines) == 2 and isinstance(lines[0], list):
             texts, cols = lines
@@ -302,10 +313,17 @@ class D2Hud:
         lh = 15
         w = max((self.f16.width(t) for t, _ in lines), default=10) + 14
         h = len(lines) * lh + 8
-        x = min(max(4, at[0] - w / 2), self.lw - w - 4)
-        y = at[1] - h - 18
-        if y < 4:
-            y = at[1] + 24
+        if left_of is not None:
+            x = left_of.x - w - 12
+            if x < 4:
+                x = left_of.x + left_of.w + 12
+            x = min(max(4, x), self.lw - w - 4)
+            y = min(max(4, left_of.y + left_of.h / 2 - h / 2), 600 - 110 - h)
+        else:
+            x = min(max(4, at[0] - w / 2), self.lw - w - 4)
+            y = at[1] - h - 18
+            if y < 4:
+                y = at[1] + 24
         bg = pygame.Surface((int(w * self.s), int(h * self.s)), pygame.SRCALPHA)
         bg.fill((0, 0, 0, 205))
         surf.blit(bg, self.P(x, y))
@@ -919,6 +937,51 @@ class D2Hud:
         elif lv and s.kind != "passive":
             lines.append(("Right click: use as right skill", GREY))
         return lines
+
+    # ------------------------------------------------------------ loot window (V)
+    def _draw_loot(self, surf, world):
+        """Everything lying on the screen; click a line to pick it up."""
+        rows = self.loot_list[:20]
+        more = len(self.loot_list) - len(rows)
+        p = world.player
+        lh = 16
+        w = 270
+        x0 = 330 if (self.show_char or self.show_quests or self.store is not None) else 8
+        if x0 + w > self.lw - (320 if (self.show_inv or self.show_skills) else 0):
+            x0 = 8
+        y0 = 104
+        h = 34 + max(1, len(rows)) * lh + 22
+        bg = pygame.Surface((int(w * self.s), int(h * self.s)), pygame.SRCALPHA)
+        bg.fill((0, 0, 0, 215))
+        surf.blit(bg, self.P(x0, y0))
+        gold = (199, 179, 119)
+        pygame.draw.rect(surf, (110, 95, 60), pygame.Rect(self.P(x0, y0), (int(w * self.s), int(h * self.s))), 1)
+        self.region(x0, y0, w, h, "loot_panel")
+        self.text(surf, self.f16, "Items on screen", gold, x0, y0 + 6, "center", w)
+        self.text(surf, self.f16, "x", (200, 80, 60), x0 + w - 16, y0 + 5)
+        self.region(x0 + w - 20, y0 + 2, 18, 18, "loot_close")
+        mx, my = self.mouse
+        if not rows:
+            self.text(surf, self.f16, "Nothing here", (150, 150, 150), x0, y0 + 30, "center", w)
+        from game.grid import chebyshev
+        for i, (cell, it) in enumerate(rows):
+            y = y0 + 28 + i * lh
+            name = "%d Gold" % it.amount if it.kind == "gold" else getattr(it, "shown_name", it.name)
+            d = chebyshev(cell, p.pos)
+            r = pygame.Rect(int(x0 + 4), int(y), int(w - 8), lh)
+            if r.collidepoint((int(mx), int(my))):
+                hl = pygame.Surface((int((w - 8) * self.s), int(lh * self.s)), pygame.SRCALPHA)
+                hl.fill((90, 80, 50, 120))
+                surf.blit(hl, self.P(x0 + 4, y))
+                if it.kind != "gold" and hasattr(it, "describe_lines"):
+                    self.hover_lines = it.describe_lines(p)
+            self.text(surf, self.f16, name, it.color, x0 + 10, y + 1)
+            self.text(surf, self.f16, "%d" % d, (150, 150, 150), x0 + w - 40, y + 1, "right", 30)
+            self.region(x0 + 4, y, w - 8, lh, "loot_pick", (cell, it))
+        hint = "Click to pick up (V closes)" if world.mode != "combat" else "Combat: only next to you, 1 AP"
+        if more > 0:
+            hint = "... %d more further away" % more
+        self.text(surf, self.f16, hint, (150, 150, 150), x0, y0 + h - 18, "center", w)
 
     # ------------------------------------------------------------ automap
     def _draw_automap(self, surf, world):

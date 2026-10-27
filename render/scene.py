@@ -78,6 +78,9 @@ class Scene:
         self.speed = 1.0
         self.show_grid = False
         self.show_labels = False
+        self.selected = None      # monster under the mouse (highlighted)
+        self.opts = {}
+        self._sel_draw = None
         self.flags = set()       # game_over / victory
         self.clock = 0.0
         self.drop_time = {}
@@ -98,8 +101,13 @@ class Scene:
             self.world.events.clear()
 
     def idle(self):
-        return not self.queue and self.current is None and self.wait <= 0 and \
-            not self.projectiles and not any(v.busy() for v in self.views.values())
+        if self.queue or self.current is not None or self.wait > 0 or self.projectiles:
+            return False
+        explore = getattr(self.world, "mode", "") == "explore"
+        for v in self.views.values():
+            if v.busy() and not (explore and getattr(v.unit, "ally", False)):
+                return False
+        return True
 
     def _seen(self, unit, cells=()):
         g = self.world.grid
@@ -115,6 +123,13 @@ class Scene:
             self.log.append([ev[1], ev[2], 0.0])
             self.log = self.log[-60:]
             return 0
+        if kind == "place":
+            v = self.view(ev[1])
+            v.path = []
+            v.slide = None
+            v.rx, v.ry = float(ev[2][0]), float(ev[2][1])
+            v.mode = "NU"
+            return 0
         if kind == "move":
             unit, cells = ev[1], ev[2]
             v = self.view(unit)
@@ -124,14 +139,15 @@ class Scene:
                 v.rx, v.ry = cells[-1]
                 return 0
             explore = getattr(self.world, "mode", "") == "explore"
-            if unit.is_player and explore and v.path and v.mode == "WL":
+            free = explore and (unit.is_player or getattr(unit, "ally", False))
+            if free and v.path and v.mode == "WL":
                 v.path.extend(cells)          # keep walking smoothly, step after step
                 return 0
             v.path = list(cells)
             v.mode = "WL"
-            v.speed = (9.5 if explore else 7.0) if unit.is_player else 9.0
-            if unit.is_player and explore:
-                return 0                      # free walking doesn't hold up other events
+            v.speed = (9.5 if explore else 7.0) if unit.is_player else (11.0 if free else 9.0)
+            if free:
+                return 0                      # free walking (you and your followers) doesn't hold anything up
             return None   # wait until the walk finishes
         if kind == "attack":
             unit, target, skill = ev[1], ev[2], ev[3]
@@ -390,7 +406,7 @@ class Scene:
         """World pass. Drawn at 1:1 into an offscreen buffer that main.py scales to the window."""
         world, g, assets = self.world, self.world.grid, self.assets
         s = cam.scale
-        light = world.player.light
+        light = world.player.light * self.opts.get("light_radius", 100) / 100.0
         x0, y0, x1, y1 = cam.visible_cell_range(g)
         pv = self.view(world.player)
         psum = pv.rx + pv.ry
@@ -439,6 +455,11 @@ class Scene:
                 self._diamond(surf, cam, x, y, (80, 200, 90, 90) if ok else (210, 60, 50, 90))
         if hover_cell and g.in_bounds(*hover_cell) and g.explored[hover_cell[1]][hover_cell[0]]:
             self._diamond(surf, cam, *hover_cell, (255, 255, 255, 40), outline=True)
+        sel = self.selected if self.selected is not None and self.selected.alive else None
+        self._sel_draw = None
+        if sel is not None and self.opts.get("highlight_tile", True):
+            for c in self._footprint(sel):
+                self._diamond(surf, cam, c[0], c[1], (230, 50, 40, 70))
 
         for cell, items in world.ground.items():
             if use_tiles or g.explored[cell[1]][cell[0]]:
@@ -500,6 +521,8 @@ class Scene:
                         "flash": v.flash, "facing": v.facing}
                 feet = cam.cell_to_screen(v.rx, v.ry)
                 rect = assets.draw_unit(surf, u, pose, feet, s, max(0.35, b))
+                if u is sel and not v.dead:
+                    self._sel_draw = (u, dict(pose), feet)
                 if u.alive and not v.dead and hasattr(assets, "draw_overlay"):
                     for st in self._unit_states(u):
                         for ov in assets.state_overlays(st):
@@ -546,6 +569,37 @@ class Scene:
 
         if use_tiles:
             self._draw_darkness(surf, cam, light)
+        if sel is not None:
+            self._draw_selected(surf, cam, sel)
+
+    def _footprint(self, u):
+        r = getattr(u, "radius", 0)
+        return [(u.x + dx, u.y + dy) for dy in range(-r, r + 1) for dx in range(-r, r + 1)]
+
+    def _draw_selected(self, surf, cam, u):
+        """The monster under the mouse: drawn again above the darkness with a red rim, and its
+        tile(s) outlined - so it stays readable at the edge of your light."""
+        if self.opts.get("highlight_tile", True):
+            for c in self._footprint(u):
+                self._diamond(surf, cam, c[0], c[1], (255, 70, 50, 150), outline=True)
+        if not self.opts.get("highlight_monster", True) or self._sel_draw is None:
+            return
+        _, pose, feet = self._sel_draw
+        size = 360
+        tmp = pygame.Surface((size, size), pygame.SRCALPHA)
+        tmp.fill((0, 0, 0, 0))
+        fx, fy = size // 2, size - 60
+        try:
+            self.assets.draw_unit(tmp, u, pose, (fx, fy), cam.scale, 1.0)
+        except Exception:
+            return
+        sil = tmp.copy()
+        sil.fill((0, 0, 0, 255), special_flags=pygame.BLEND_RGBA_MULT)
+        sil.fill((255, 60, 40, 0), special_flags=pygame.BLEND_RGBA_ADD)
+        ox, oy = int(feet[0] - fx), int(feet[1] - fy)
+        for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            surf.blit(sil, (ox + dx, oy + dy))
+        surf.blit(tmp, (ox, oy))
 
     def _unit_states(self, u):
         """D2 states shown as overlays: your aura and buffs, curses on monsters."""
@@ -625,7 +679,8 @@ class Scene:
         tmp = pygame.Surface((w, h), pygame.SRCALPHA)
         pts = [(w / 2, 1), (w - 1, h / 2), (w / 2, h - 1), (1, h / 2)]
         if outline:
-            pygame.draw.lines(tmp, (255, 255, 255, 120), True, pts, 1)
+            col = rgba if len(rgba) > 3 and rgba[3] >= 100 else (255, 255, 255, 120)
+            pygame.draw.lines(tmp, col, True, pts, 1)
         else:
             pygame.draw.polygon(tmp, rgba, pts)
         surf.blit(tmp, (cx - w / 2, cy - h / 2))

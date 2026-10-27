@@ -21,7 +21,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 def load_settings():
     cfg = configparser.ConfigParser()
     cfg.read_dict({"display": {"width": "1280", "height": "720", "fullscreen": "no", "scale": "auto"},
-                   "diablo2": {"path": ""}, "game": {"difficulty": "normal", "min_hit_chance": "60", "melee_ap": "1"}})
+                   "diablo2": {"path": ""}, "game": {"difficulty": "normal", "min_hit_chance": "60", "attack_ap_offset": "0"}})
     cfg.read(os.path.join(HERE, "settings.ini"))
     return cfg
 
@@ -46,7 +46,7 @@ class Game:
             import game.world as _gw
             _gw.PLAYER_HIT_FLOOR = max(5, min(95, self.cfg.getint("game", "min_hit_chance"))) / 100.0
             import game.units as _gu
-            _gu.MELEE_AP = max(1, min(6, self.cfg.getint("game", "melee_ap")))
+            _gu.ATTACK_AP_OFFSET = max(-4, min(4, self.cfg.getint("game", "attack_ap_offset")))
         except Exception:
             pass
         pygame.init()
@@ -74,6 +74,9 @@ class Game:
         self._path_cache = {}
         self.creator = None
         self.state = "play"
+        from render.gamemenu import load_options
+        self.opts = load_options()
+        self.menu = None
         if getattr(self.assets, "act_kit", None) is not None:
             # D2 files: start at D2's character creation screen
             self.hud = self.make_hud()
@@ -259,9 +262,9 @@ class Game:
         spot = arrive or w.entries.get(src_level) or w.entries.get(target)
         if spot is None:
             spot = w._default_start()
-        followers = [a for a in old.allies() if a.ai not in ("turret", "wall")] if w is not old else []
+        followers = [a for a in old.allies() if a.ai not in ("turret", "wall")]
         for a in followers:
-            old.monsters.remove(a)
+            old.monsters.remove(a)          # (put back below - also when the level stays the same)
         for m in old.aware_monsters():
             m.aware = False
         old.mode = "explore"
@@ -269,14 +272,19 @@ class Game:
         w.relocate_player(spot)
         occ = w.occupied()
         for a in followers:
+            placed = False
             for r in range(1, 5):
                 cands = [(spot[0] + dx, spot[1] + dy) for dx in range(-r, r + 1) for dy in range(-r, r + 1)]
                 c = next((c for c in cands if w.grid.walkable(*c) and c not in occ), None)
                 if c:
                     a.x, a.y = c
                     occ.add(c)
-                    w.monsters.append(a)
+                    placed = True
                     break
+            if not placed:
+                a.x, a.y = w._free_cell_near(spot, 10)
+            a.aware = False
+            w.monsters.append(a)
         w.events = []
         w.update_area()
         from game.actworld import ensure_cain
@@ -395,7 +403,30 @@ class Game:
         self.walk_queue, self.walk_action, self.walk_goal = [], None, None
         self.scene = Scene(self.world, self.assets, self.fonts)
         self.scene.banner = [self.world.level_name, (199, 179, 119), 2.0]
+        self.scene.opts = self.opts
         self.cam.snap(*self.scene.player_world_pos())
+
+    def apply_options(self):
+        if getattr(self, "scene", None) is not None:
+            self.scene.opts = self.opts
+        self._path_cache = {}
+
+    def open_menu(self):
+        from render.gamemenu import GameMenu
+        self.menu = GameMenu(self)
+
+    def save_and_exit(self):
+        """D2: Save and Exit Game -> back to the hero select screen."""
+        self.save()
+        self.menu = None
+        from render.charcreate import CharCreate
+        try:
+            self.creator = CharCreate(self)
+            self.state = "create"
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            self.running = False
 
     def prebuild(self, target):
         """Generate a level in the background so entering it needs no loading screen."""
@@ -491,8 +522,12 @@ class Game:
         w = self.world
         p = w.player
         if adjacent:
-            path = w.grid.find_path(p.pos, goal, blocked=w.occupied(p), allow_goal_blocked=True)
-            path = path[:-1] if path else None
+            u = w.unit_at(goal)
+            if u is not None and getattr(u, "radius", 0) and hasattr(w, "attack_path"):
+                path = w.attack_path(p, u)
+            else:
+                path = w.grid.find_path(p.pos, goal, blocked=w.occupied(p), allow_goal_blocked=True)
+                path = path[:-1] if path else None
         else:
             path = w.path_for_player(goal)
         self.walk_goal, self.walk_action, self.walk_adjacent = goal, action, adjacent
@@ -556,6 +591,35 @@ class Game:
         for rect, u in reversed(getattr(self.scene, "unit_hits", [])):
             if u.alive and rect.collidepoint((int(wx), int(wy))):
                 return u
+        return None
+
+    def loot_on_screen(self):
+        """[(cell, item)] for every item lying on the visible part of the map, nearest first."""
+        w = self.world
+        g = w.grid
+        W, H = self.screen.get_size()
+        p = w.player
+        out = []
+        for cell, items in w.ground.items():
+            x, y = cell
+            if not g.in_bounds(x, y) or not g.explored[y][x]:
+                continue
+            sx, sy = self.cam.cell_to_screen(x, y)
+            if -20 <= sx <= W + 20 and -20 <= sy <= H + 20:
+                for it in items:
+                    out.append((cell, it))
+        out.sort(key=lambda ci: (chebyshev(ci[0], p.pos), ci[1].kind == "gold"))
+        return out
+
+    def unit_screen_rect(self, u):
+        """Where a unit's sprite is on the window (from the last drawn frame), or None."""
+        W, H = self.screen.get_size()
+        z = self.cam.scale
+        for rect, v in getattr(self.scene, "unit_hits", []):
+            if v is u:
+                x = (rect.x - self.cam.wx) * z + W / 2
+                y = (rect.y - self.cam.wy) * z + H / 2
+                return pygame.Rect(int(x), int(y), int(rect.w * z), int(rect.h * z))
         return None
 
     def monster_at(self, cell):
@@ -648,6 +712,15 @@ class Game:
                 h.show_inv = h.show_char = False
                 if hasattr(h, "show_skills"):
                     h.show_skills = False
+                self.open_menu()
+            elif action == "loot_pick":
+                cell, it = arg
+                if w.pickup_item(cell, it):
+                    self._path_cache = {}
+            elif action == "loot_close":
+                h.show_loot = False
+            elif action == "loot_panel":
+                pass
             elif action == "potion" and self.can_act():
                 w.use_potion(arg)
             elif action == "item":                      # simple HUD
@@ -794,6 +867,9 @@ class Game:
     def handle_key(self, key):
         w = self.world
         h = self.hud
+        if self.menu is not None:
+            self.menu.key(key)
+            return
         if key == pygame.K_ESCAPE:
             if getattr(h, "store", None) is not None or getattr(h, "npc_menu", None) is not None:
                 h.store = None
@@ -810,8 +886,10 @@ class Game:
                     h.show_skills = False
                 if hasattr(h, "show_quests"):
                     h.show_quests = False
+            elif getattr(h, "show_loot", False):
+                h.show_loot = False
             else:
-                self.running = False
+                self.open_menu()
         elif key in (pygame.K_SPACE, pygame.K_e) and self.can_act():
             w.end_player_turn()
         elif key in (pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4) and self.can_act():
@@ -828,6 +906,8 @@ class Game:
             self.scene.show_grid = not self.scene.show_grid
         elif key == pygame.K_TAB:
             self.cycle_automap()                                   # D2: Tab = automap
+        elif key == pygame.K_v:
+            h.show_loot = not getattr(h, "show_loot", False)        # loot window
         elif key == pygame.K_l:
             self.scene.show_labels = not self.scene.show_labels    # keep item names on
         elif key == pygame.K_f:
@@ -878,6 +958,9 @@ class Game:
     # ------------------------------------------------------------ hover info
     def hover_info(self, mouse):
         """Returns (hover_cell, move_range, path_preview, tooltip)."""
+        self._tip_unit = None
+        if getattr(self, "scene", None) is not None:
+            self.scene.selected = None
         if self.hud.over_ui(mouse):
             return None, None, None, None
         w = self.world
@@ -892,6 +975,8 @@ class Game:
                 self._trim_cache()
                 self._path_cache[hk] = w.reachable_cells()
             highlight = self._path_cache[hk]
+            if not self.opts.get("show_move_range", True):
+                highlight = None
         m = self.monster_under_mouse(mouse) or self.monster_at(cell)
         tip = None
         preview = None
@@ -900,7 +985,7 @@ class Game:
             return cell, highlight, None, ([m.name, "Click to talk"], [(90, 200, 255), TEXT])
         if m:
             hc, cost = w.preview_attack(m, "attack")
-            dist = chebyshev(p.pos, m.pos)
+            dist = w.udist(p, m) if hasattr(w, "udist") else chebyshev(p.pos, m.pos)
             name_col = GOLD if m.unique else TEXT
             lines = [m.name, f"Level {m.level}   Life {self.scene.view(m).shown_hp}/{m.max_hp}",
                      f"Attack: {int(hc * 100)}% to hit, {cost} AP"]
@@ -926,13 +1011,16 @@ class Game:
                 key = ("m", m.pos) + key_base
                 if key not in self._path_cache:
                     self._trim_cache()
-                    self._path_cache[key] = w.grid.find_path(p.pos, m.pos, blocked=w.occupied(p), allow_goal_blocked=True)
+                    self._path_cache[key] = w.attack_path(p, m) if hasattr(w, "attack_path") else \
+                        (w.grid.find_path(p.pos, m.pos, blocked=w.occupied(p), allow_goal_blocked=True) or [None])[:-1]
                 path = self._path_cache[key]
                 if path:
-                    steps = len(path) - 1
+                    steps = len(path)
                     lines.append(f"Walk {steps} + attack = {steps + cost} AP" if w.mode == "combat" else f"Walk {steps}")
-                    preview = [(c, w.mode == "explore" or i < p.ap) for i, c in enumerate(path[:-1])]
+                    preview = [(c, w.mode == "explore" or i < p.ap) for i, c in enumerate(path)]
             tip = (lines, [name_col] + [TEXT] * (len(lines) - 1))
+            self._tip_unit = m
+            self.scene.selected = m
         else:
             g = w.grid
             if g.in_bounds(*cell) and g.walkable(*cell) and cell != p.pos:
@@ -989,10 +1077,26 @@ class Game:
                 self.cam.resize(ev.w, ev.h)
             elif ev.type == pygame.KEYDOWN:
                 self.handle_key(ev.key)
+            elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button in (1, 3) and self.menu is not None:
+                self.menu.click(ev.pos, ev.button)
             elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button in (1, 3):
                 self.handle_click(ev.pos, ev.button)
-            elif ev.type == pygame.MOUSEWHEEL:
+            elif ev.type == pygame.MOUSEWHEEL and self.menu is None:
                 self.cam.scale = max(1.0, min(3.5, self.cam.scale + ev.y * 0.25))
+        if self.state == "create":
+            return
+        if self.menu is not None:
+            # single player: the game waits while the menu is open (like D2)
+            self.menu.update(dt)
+            self.screen.fill((0, 0, 0))
+            self.draw_world(None, None, None)
+            self.scene.draw_overlay(self.screen, self.cam)
+            self.hud.world_tip = None
+            self.hud.draw(self.screen, self.world, self.scene, (-100, -100))
+            if self.menu is not None:
+                self.menu.draw(self.screen, mouse)
+            pygame.display.flip()
+            return
 
         try:
             self.scene.alt_held = bool(pygame.key.get_mods() & pygame.KMOD_ALT)
@@ -1028,6 +1132,8 @@ class Game:
         self.draw_world(cell, highlight, preview)
         self.scene.draw_overlay(self.screen, self.cam)
         self.hud.world_tip = tip
+        self.hud.loot_list = self.loot_on_screen() if getattr(self.hud, "show_loot", False) else None
+        self.hud.world_tip_anchor = self.unit_screen_rect(self._tip_unit) if getattr(self, "_tip_unit", None) else None
         self.hud.draw(self.screen, self.world, self.scene, mouse)
         if tip and not self.hud.hover_lines and not hasattr(self.hud, "automap_mode"):
             from render.hud import tooltip

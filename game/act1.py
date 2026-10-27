@@ -185,7 +185,7 @@ def stamp(b, ds, tiles, ox, oy, rng, owner, skip_npc_objects=False):
             pos = (ox + x, oy + y)
             for li, layer in enumerate(ds.floors):
                 c = layer[y * w + x]
-                if c.empty or c.main >= 30:
+                if c.empty:
                     continue
                 t = tiles.pick(0, c.main, c.sub, rng.randrange(1 << 16))
                 if t:
@@ -201,7 +201,7 @@ def stamp(b, ds, tiles, ox, oy, rng, owner, skip_npc_objects=False):
                 if c.orientation in (10, 11) and c.main < 8:
                     b.warps.append((pos, c.main, owner))
                     continue
-                if c.orientation in SKIP_ORIENT or c.orientation == 0 or c.main >= 30:
+                if c.orientation in SKIP_ORIENT or c.orientation == 0:
                     continue
                 orients = [c.orientation, 4] if c.orientation == 3 else [c.orientation]
                 for o in orients:

@@ -52,21 +52,32 @@ Fallout). Each turn you get **Action Points** (the stamina bar shows them).
 | Action | Cost |
 |---|---|
 | Move one cell | 1 AP |
-| Attack (left click a monster) | 1 AP (bows / crossbows +1, very slow weapons +1; `melee_ap` in settings.ini) |
+| Attack (left click a monster) | the weapon's D2 speed: Very Fast 1, Fast 2, Normal 3, Slow 4, Very Slow 5 AP (IAS makes it faster) |
 | Right click | your selected right skill (choose it on the right skill button, or F1-F8) |
 | Drink potion (keys 1-4) | 2 AP |
 | Pick up item | 1 AP (free outside combat) |
 
 **Skills:** one skill point per level, D2's full tree of your class (T). Right click a learned skill in
-the tree (or use the right skill button / F1-F8) to put it on the right mouse button. Bolts cost 3 AP,
-novas and area spells 4, curses / buffs / summons / warcries 2, skill attacks your attack + 1,
-switching auras 1 AP. Choosing an aura turns it on.
+the tree (or use the right skill button / F1-F8) to put it on the right mouse button. Skill AP comes
+from the skill's mana cost: spells 1.5 + square root of the mana (Fire Bolt 3, Frost Nova 5,
+Meteor 6, Frozen Orb 7), weapon skills your attack AP + 0.6 x square root of the mana (Bash +1,
+Whirlwind +3); switching auras 1 AP. Your maximum AP grows: 8, +1 at levels 10/20/30/45/60/80,
++1 per 40 Dexterity above your class's start, +1 per 20% Faster Run/Walk. Choosing an aura turns it on.
 
 **Dying:** you wake up in the Rogue Encampment and lose half your gold (press R).
 
-**Keys:** Space = end turn - I = inventory - C = character - T = skill tree - Q = quest log - Tab = automap
+**Monsters:** the one under the mouse is outlined in red with its tile(s) marked, and its info box
+sits to its left. Big monsters (Gargantuan Beasts, crow nests, Andariel ...) fill 3x3 cells.
+
+**Esc menu:** Options (light radius, monster / tile highlight, move range), Save and Exit Game
+(back to the hero screen), Return to Game. Options are kept in options.ini.
+
+**Loot window (V):** every item lying on the screen; click one to pick it up (in combat only
+items next to you, 1 AP).
+
+**Keys:** Space = end turn - V = loot window - I = inventory - C = character - T = skill tree - Q = quest log - Tab = automap
 (full / corner / off) - Alt (hold) or L = item names - F = fast animations - F1-F8 = right skill -
-mouse wheel = zoom - Esc = close panels / quit
+mouse wheel = zoom - Esc = close panels / game menu
 
 **Walking:** outside combat, click (or hold the left button) to walk; a new click changes direction at once.
 

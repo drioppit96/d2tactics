@@ -340,7 +340,10 @@ class D2Assets(AssetProvider):
                 if unit.unique and len(opts) > 1:
                     opts = opts[1:] + opts[:1]    # a different look for the boss
                 arms[comp] = opts
-            self.sprites[key] = UnitSprites(self, "monsters", unit.token, arms, "HTH")
+            # MonStats2 BaseW: Moon Clan use 2hs, Dark Hunters 1hs, archers bow (their bow is a layer
+            # of the bow COFs) - with HTH they only had death animations
+            wc = (ms2.get("basew") or "hth").replace('"', "").strip().upper() or "HTH"
+            self.sprites[key] = UnitSprites(self, "monsters", unit.token, arms, wc)
         return self.sprites[key]
 
     # ---------------------------------------------------------------- items

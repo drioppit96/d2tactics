@@ -334,7 +334,35 @@ def make_world(kit, info, content, level_key, seed=None, player=None, char_class
         b, grid, rng = build_level(kit, level_key, seed)
     w = World(built=(b, grid, rng), content=content, level_key=level_key, info=info, player=player,
               char_class=char_class, char_name=char_name)
+    settle_big_monsters(w)
     return w
+
+
+def settle_big_monsters(w):
+    """Big monsters need their 3x3 cells free: move them to the nearest spot where they fit."""
+    for m in w.monsters:
+        if not m.alive or not getattr(m, "radius", 0):
+            continue
+        blocked = w.occupied(m)
+        if w.fits(m.pos, m.radius, blocked):
+            continue
+        best = None
+        for r in range(1, 8):
+            for dy in range(-r, r + 1):
+                for dx in range(-r, r + 1):
+                    c = (m.x + dx, m.y + dy)
+                    if max(abs(dx), abs(dy)) == r and w.fits(c, m.radius, blocked):
+                        best = c
+                        break
+                if best:
+                    break
+            if best:
+                break
+        if best:
+            m.x, m.y = best
+            m.home = best
+        else:
+            m.radius = 0        # no room anywhere near: behaves like a normal-sized monster
 
 
 def ensure_cain(world):
