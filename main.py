@@ -132,8 +132,8 @@ class Game:
             self.world.log(self.asset_warning, (230, 160, 90))
 
     # ------------------------------------------------------------ Act 1 (D2 files)
-    def start_act(self, cls, name):
-        """New character: build the whole outdoor act and start in the Rogue Encampment."""
+    def start_act(self, cls, name, saved=None):
+        """New (or loaded) character: build the whole outdoor act and start in the Rogue Encampment."""
         from game.actworld import make_world
         a = self.assets
         self.state = "play"
@@ -143,8 +143,18 @@ class Game:
         if hasattr(self.hud, "use_class"):
             self.hud.use_class(cls)
         self.loading("Building Act 1 - the Rogue Encampment and the wilderness...")
-        self.world = make_world(a.act_kit, a.act_info, a.content, "wild", char_class=cls, char_name=name)
+        player = None
+        if saved is not None:
+            from game.save import build_player
+            player = build_player(saved, a.content)
+        self.world = make_world(a.act_kit, a.act_info, a.content, "wild", char_class=cls, char_name=name, player=player)
         self.levels["wild"] = self.world
+        if player is not None:
+            from game.actworld import ensure_cain
+            ensure_cain(self.world)
+            if getattr(player, "has_hireling", False):
+                from game.quests import hire_rogue
+                hire_rogue(self.world)
         self.loading("Preparing your hero...")
         if hasattr(a, "warm"):
             a.warm(self.world.player, self.loading)
@@ -153,13 +163,29 @@ class Game:
                     a._sprites_for(npc).frames("NU", npc.facing)
                 except Exception:
                     pass
-        self.world.log("Welcome to the Rogue Encampment, %s. Talk to Akara and Kashya." % name, (199, 179, 119))
+        if saved is None:
+            self.world.log("Welcome to the Rogue Encampment, %s. Talk to Akara and Kashya." % name, (199, 179, 119))
+        else:
+            self.world.log("Welcome back, %s (level %d %s)." % (name, self.world.player.level,
+                                                              self.world.player.class_name), (199, 179, 119))
+        self.save()
         self.world.log("Left click: move / talk / attack. Right click: your skill. Space: end turn. Tab: map.",
                        (170, 170, 170))
         self._start_scene()
         self.prebuild_from(self.world)
         if self.asset_warning:
             self.world.log(self.asset_warning, (230, 160, 90))
+
+    def save(self):
+        """Save the hero (on every level change, waypoint, respawn and when quitting)."""
+        if getattr(self.world, "level_key", None) is None:
+            return
+        try:
+            from game.save import save_character
+            save_character(self.world.player, self.cfg.get("game", "difficulty"))
+        except Exception:
+            import traceback
+            traceback.print_exc()
 
     def prebuild_from(self, w):
         """Build the dungeons behind this level's entrances in the background (no loading screens)."""
@@ -254,6 +280,7 @@ class Game:
         self.world = w
         self._start_scene()
         self.prebuild_from(w)
+        self.save()
 
     def travel_waypoint(self, lid):
         """Waypoint travel to any activated waypoint of the act."""
@@ -296,6 +323,7 @@ class Game:
         wild.update_area()
         wild.log("You wake up in the Rogue Encampment. You lost %d gold." % lost, (230, 160, 90))
         self._start_scene()
+        self.save()
 
     def _start_scene(self):
         self._path_cache = {}
@@ -931,6 +959,8 @@ class Game:
         while self.running:
             dt = self.clock.tick(60) / 1000.0
             self.frame(min(dt, 0.05))
+        if self.state == "play":
+            self.save()
         pygame.quit()
 
 

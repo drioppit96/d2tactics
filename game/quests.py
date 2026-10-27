@@ -119,6 +119,15 @@ def talk(world, npc):
             hire_rogue(world)
             lines = ["Kashya: Blood Raven is gone. You have earned my respect - and a Rogue to watch your back."]
             world.log("Quest completed: Sisters' Burial Grounds. A Rogue scout joins you.", DONE_COLOR)
+        elif q["blood_raven"] == "done" and getattr(p, "has_hireling", False) and \
+                not any(getattr(a, "hireling", False) for a in world.allies()):
+            cost = 50 * p.level
+            if p.gold >= cost:
+                p.gold -= cost
+                hire_rogue(world)
+                lines = ["Kashya: Your scout fell? Take another one - %d gold for her gear." % cost]
+            else:
+                lines = ["Kashya: I can send another scout with you for %d gold." % cost]
         elif q["den"] == "done":
             lines = ["Kashya: So you cleared the Den. Maybe you're worth something after all."]
     elif who == "charsi":
@@ -175,6 +184,7 @@ def hire_rogue(world):
     m.name = "Rogue Scout"
     m.summon_skill = "hireling"
     m.hireling = True
+    p.has_hireling = True
     world.monsters.append(m)
     world.emit("resurrect", m)
 

@@ -84,6 +84,11 @@ class CharCreate:
             a["back_fx"] = self._anim(base + "bws.dc6", pal=self.unit_palette)
             self.anims[code] = a
         self.state = {c: ("idle", 0.0) for c, _, _, _ in HEROES}
+        try:
+            from game.save import list_saves
+            self.saves = list_saves()[:8]
+        except Exception:
+            self.saves = []
         self.selected = None
         self.hover = None
         self.name = ""
@@ -160,6 +165,9 @@ class CharCreate:
             return pygame.Rect(pos[0] + xo, pos[1] + yo - img.get_height(), img.get_width(), img.get_height())
         return pygame.Rect(pos[0] - 30, pos[1] - 110, 60, 110)
 
+    def save_rect(self, i):
+        return pygame.Rect(14, 120 + i * 30, 250, 26)
+
     def ok_rect(self):
         return pygame.Rect(627, 552, 128, 35)
 
@@ -176,6 +184,10 @@ class CharCreate:
             if self.exit_rect().collidepoint((lx, ly)):
                 self.game.running = False
                 return
+            for i, d in enumerate(self.saves):
+                if self.save_rect(i).collidepoint((lx, ly)):
+                    self.game.start_act(d.get("cls", "bar"), d.get("name", "Hero"), saved=d)
+                    return
             for code, _, _, pos in sorted(HEROES, key=lambda h: -h[3][1]):
                 if self._hero_rect(code, pos).collidepoint((lx, ly)):
                     self.select(code)
@@ -272,6 +284,18 @@ class CharCreate:
             self._text(canvas, self.f16, BLURB[show], GOLD, 400, 64, center=True)
         else:
             self._text(canvas, self.f30, "Select Hero Class", WHITE, 400, 24, center=True)
+        # saved heroes (click to continue)
+        if self.saves:
+            self._text(canvas, self.f16, "Continue:", GOLD, 18, 96)
+            lx, ly = self._to_logical(pygame.mouse.get_pos())
+            for i, d in enumerate(self.saves):
+                r = self.save_rect(i)
+                bg = pygame.Surface(r.size, pygame.SRCALPHA)
+                bg.fill((70, 56, 30, 210) if r.collidepoint((lx, ly)) else (0, 0, 0, 170))
+                canvas.blit(bg, r.topleft)
+                pygame.draw.rect(canvas, (120, 110, 80), r, 1)
+                label = "%s - level %d %s" % (d.get("name", "?"), d.get("level", 1), NAMES.get(d.get("cls"), "?"))
+                self._text(canvas, self.f16, label, WHITE, r.x + 6, r.y + 5)
         # name box, OK / EXIT
         if self.selected:
             self._text(canvas, self.f16, "Character Name", GOLD, 400, 488, center=True)
