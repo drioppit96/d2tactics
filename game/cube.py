@@ -118,7 +118,10 @@ def item_matches(it, spec):
         if it.kind not in ("equip",):
             return False
     elif code not in _anc(it):
-        return False
+        # a named unique / set item ("The Stone of Jordan")
+        names = {str(getattr(it, "unique_name", "") or "").lower(), str(getattr(it, "set_item", "") or "").lower()}
+        if not (code in names or (it.rarity in ("unique", "set") and it.name.lower() == code)):
+            return False
     q = spec.quals
     rarity = it.rarity if it.kind == "equip" else "normal"
     if getattr(it, "runeword", None):
@@ -189,8 +192,7 @@ def _item_level(recipe, player, first):
 
 
 def _apply_mods(content, it, recipe, rng):
-    from .d2items import apply_props, UNSUPPORTED, _unsupported_text
-    from .d2content import PROP_MAP
+    from . import props
     for code, chance, param, lo, hi in recipe.mods:
         if chance and rng.randrange(100) >= chance:
             continue
@@ -200,11 +202,8 @@ def _apply_mods(content, it, recipe, rng):
             it.sockets = max(getattr(it, "sockets", 0), min(n, cap or n))
         elif code == "levelreq":
             it.levelreq += hi
-        elif code in UNSUPPORTED or code not in PROP_MAP:
-            it.extra_lines.append(_unsupported_text(code, param, lo, hi) if code in UNSUPPORTED else
-                                  "%s %s" % (code, hi))
         else:
-            apply_props(it, [(code, lo, hi)], rng)
+            props.apply(it, [(code, param, lo, hi)], rng)
 
 
 def _new_item(content, base, ilvl, quality, spec, rng):

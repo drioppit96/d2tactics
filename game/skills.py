@@ -468,9 +468,19 @@ class SkillBook:
         s = self.tree.get(name)
         return s if s is not None else self._by_title.get(str(name).lower())
 
+    item_bonus = 0
+    tab_bonus = {}
+    single_bonus = {}
+
+    def item_levels(self, name):
+        """+skill levels from items (they only raise skills you have learned, like class +skills)."""
+        s = self.tree.get(name)
+        page = getattr(s, "page", 0) if s is not None else 0
+        return self.item_bonus + self.tab_bonus.get(page, 0) + self.single_bonus.get(name, 0)
+
     def level(self, name):
         base = self.levels.get(name, 0)
-        return base + self.bonus if base else 0
+        return base + self.bonus + self.item_levels(name) if base else 0
 
     def can_learn(self, name, clvl):
         s = self.tree.get(name)

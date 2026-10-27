@@ -163,8 +163,43 @@ class Player(Unit):
     def mod(self, stat):
         v0 = getattr(self, "_skill_stats", {}).get(stat, 0)
         v0 = 0 if isinstance(v0, tuple) else v0
-        return v0 + sum(v for it in getattr(self, "_active", []) if getattr(it, "identified", True)
-                        for k, v in it.mods.items() if k == stat and not isinstance(v, tuple))
+        active = [it for it in getattr(self, "_active", []) if getattr(it, "identified", True)]
+        v = v0 + sum(it.mods.get(stat, 0) for it in active if not isinstance(it.mods.get(stat, 0), tuple))
+        # D2's "per character level" properties: value / 8 per level
+        per = sum(it.mods.get(stat + "@lvl", 0) for it in active)
+        if per:
+            v += per * self.level // 8
+        return v
+
+    def set_bonuses(self):
+        """Bonuses of the set items you wear (more pieces, more bonuses; all of them: the full set)."""
+        from .items import Item
+        from . import props
+        worn = {}
+        for it in self._active:
+            if getattr(it, "set_name", None) and getattr(it, "identified", True):
+                worn.setdefault(it.set_name, []).append(it)
+        self.sets_worn = {k: sorted({getattr(i, "set_item", "") for i in v}) for k, v in worn.items()}
+        holder = Item("Set bonuses", "", None, kind="equip")
+        holder.mod_list = []
+        any_bonus = False
+        for name, items in worn.items():
+            n = len(self.sets_worn[name])
+            for it in items:
+                for k, plist in getattr(it, "set_bonus", []) or []:
+                    if n >= k + 1:
+                        props.apply(holder, plist, roll=False)
+                        any_bonus = True
+            sd = getattr(items[0], "set_def", None) or {}
+            for k, plist in sd.get("partial", {}).items():
+                if n >= k:
+                    props.apply(holder, plist, roll=False)
+                    any_bonus = True
+            if sd.get("members") and n >= len(sd["members"]):
+                props.apply(holder, sd.get("full", []), roll=False)
+                any_bonus = True
+        holder.defense = 0
+        return holder if any_bonus else None
 
     def mod_range(self, stat):
         lo = hi = 0
@@ -179,6 +214,38 @@ class Player(Unit):
                 lo += v[0]
                 hi += v[1]
         return lo, hi
+
+    def _skill_items(self):
+        """+skills from items: all skills, +class skills, +skill tab, +single skill."""
+        sk = getattr(self, "skills", None)
+        if sk is None:
+            return
+        from .props import CLASS_CODES
+        ci = CLASS_CODES.index(self.cls) if self.cls in CLASS_CODES else -1
+        tot = {}
+        for it in self._active:
+            if not getattr(it, "identified", True):
+                continue
+            for k, v in it.mods.items():
+                if isinstance(v, tuple):
+                    continue
+                if k in ("all_skills", "cls_" + self.cls) or k.startswith(("tab_", "sk_")):
+                    tot[k] = tot.get(k, 0) + v
+        sk.item_bonus = tot.get("all_skills", 0) + tot.get("cls_" + self.cls, 0)
+        sk.tab_bonus = {}
+        sk.single_bonus = {}
+        for k, v in tot.items():
+            if k.startswith("tab_"):
+                try:
+                    t = int(k[4:])
+                except ValueError:
+                    continue
+                if t // 3 == ci:
+                    sk.tab_bonus[t % 3 + 1] = sk.tab_bonus.get(t % 3 + 1, 0) + v
+            elif k.startswith("sk_"):
+                s = sk.find(k[3:])
+                if s is not None:
+                    sk.single_bonus[s.name] = sk.single_bonus.get(s.name, 0) + v
 
     def _gather_skill_stats(self):
         """Buffs, the active aura and passives, as item-style stats."""
@@ -236,6 +303,10 @@ class Player(Unit):
         self.bonus = dict(pb)
         self.bonus.update({k: v for k, v in extra.items() if not isinstance(v, tuple)})
         self._active = self.active_items()
+        sb = self.set_bonuses()
+        if sb is not None:
+            self._active.append(sb)
+        self._skill_items()
         old_max = getattr(self, "max_hp", None)
         s0, d0, e0, v0 = self.start_stats
         life = v0 + cs["hpadd"] + (self.vitality - v0) * cs["lpv"] / 4.0 + (self.level - 1) * cs["lpl"] / 4.0 + self.mod("life")
@@ -299,7 +370,13 @@ class Player(Unit):
         self.gf = self.mod("gf")
         self.crit = pb.get("crit", 0)
         allres = self.mod("res_all")
-        self.res = {k: min(75, allres + pb["res"] + self.mod("res_" + k)) for k in ("fire", "cold", "ltng", "pois")}
+        cap = {k: min(95, 75 + self.mod("maxres_" + k) + self.mod("maxres_all")) for k in ("fire", "cold", "ltng", "pois")}
+        self.res = {k: min(cap[k], allres + pb["res"] + self.mod("res_" + k)) for k in ("fire", "cold", "ltng", "pois")}
+        self.res_cap = cap
+        self.dr_pct = min(50, self.mod("dr_pct"))
+        self.life_kill = self.mod("life_kill")
+        self.mana_kill = self.mod("mana_kill")
+        self.xp_pct = self.mod("xp_pct")
         shield = self.equipment.get("shield")
         if shield and shield in self._active and shield.slot == "shield":
             # D2: (class block factor + shield block) * (dex - 15) / (clvl * 2), max 75%

@@ -1002,7 +1002,8 @@ class D2Hud:
                 dim.fill((0, 0, 0, 140))
                 surf.blit(dim, self.P(x, y))
             if lv:
-                t(surf, self.f16, str(book.level(name)), WHITE, x + 49, y + 35, "center", 16)
+                t(surf, self.f16, str(book.level(name)), BLUE if book.level(name) > lv else WHITE, x + 49, y + 35,
+                  "center", 16)
             self.region(x, y, 48, 48, "learn", name)
             if pygame.Rect(int(x), int(y), 48, 48).collidepoint((int(mx), int(my))):
                 self.hover_lines = self.skill_tooltip(p, name, can)

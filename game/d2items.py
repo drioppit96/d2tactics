@@ -141,7 +141,10 @@ class SocketRules:
             self.runewords = []
 
     def mods_for(self, filler, host):
-        """Property codes a gem / rune gives inside the host item."""
+        """Property codes a gem / rune / jewel gives inside the host item."""
+        g = getattr(filler, "gem", None)
+        if g and g[0] == "jewel":
+            return list(getattr(filler, "jewel_props", []) or [])
         part = self._part(host)
         if filler.code in self.gems_txt:
             return list(self.gems_txt[filler.code][0][part])
@@ -175,6 +178,8 @@ class SocketRules:
         dummy_w = type("H", (), {"slot": "weapon", "base": {}})()
         dummy_a = type("H", (), {"slot": "helm", "base": {}})()
         dummy_s = type("H", (), {"slot": "shield", "base": {}})()
+        if getattr(filler, "gem", (None,))[0] == "jewel":
+            return []
         for label, host in (("Weapons", dummy_w), ("Armor", dummy_a), ("Shields", dummy_s)):
             parts = []
             for code, lo, hi in self.mods_for(filler, host):
@@ -214,28 +219,9 @@ def _int(v, d=0):
 
 
 def apply_props(item, props, rng):
-    """Add D2 properties [(code, min, max)] to an item (stats + description lines)."""
-    from .d2content import PROP_MAP
-    if item.mod_list is None:
-        item.mod_list = []
-    for code, lo, hi in props:
-        info = PROP_MAP.get(code)
-        if info and info[1] == "minmax":
-            v = (min(lo, hi), max(lo, hi))
-            key = info[0]
-            old = item.mods.get(key, (0, 0))
-            old = old if isinstance(old, tuple) else (0, 0)
-            item.mods[key] = (old[0] + v[0], old[1] + v[1])
-            item.mod_list.append((code, v))
-            continue
-        v = rng.randint(min(lo, hi), max(lo, hi)) if lo != hi else hi
-        key = info[0] if info else code
-        if isinstance(item.mods.get(key), tuple):
-            continue
-        item.mods[key] = item.mods.get(key, 0) + v
-        item.mod_list.append((code, v))
-    if getattr(item, "base_defense", None) is not None:
-        item.defense = item.base_defense * (100 + item.mods.get("edef", 0)) // 100 + item.mods.get("def", 0)
+    """Add D2 properties [(code, min, max)] or [(code, param, min, max)] to an item."""
+    from . import props as P
+    P.apply(item, [p if len(p) == 4 else (p[0], "", p[1], p[2]) for p in props], rng)
 
 
 def insert(content, host, filler, rng):
@@ -253,11 +239,7 @@ def insert(content, host, filler, rng):
     if rw is not None:
         host.runeword = rw["name"]
         host.rarity = "unique"
-        props = [(c, lo, hi) for c, param, lo, hi in rw["props"] if c not in UNSUPPORTED]
-        apply_props(host, props, rng)
-        for c, param, lo, hi in rw["props"]:
-            if c in UNSUPPORTED:
-                host.extra_lines.append(_unsupported_text(c, param, lo, hi))
+        apply_props(host, rw["props"], rng)
         return "The runes glow - %s!" % rw["name"]
     return "Inserted %s." % filler.name
 
@@ -295,6 +277,8 @@ def price(item):
         mult = max(mult, 2048)
     elif item.rarity in ("rare", "crafted"):
         mult = max(mult, 3072)
+    elif item.rarity in ("unique", "set") and not getattr(item, "runeword", None):
+        mult = max(mult, 4096)
     if item.kind == "quest":
         return 1
     v = cost * mult // 1024 + extra

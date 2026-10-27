@@ -43,12 +43,15 @@ ELEM_PARTS = {"fire-min": ("fire", 0), "fire-max": ("fire", 1), "cold-min": ("co
               "mag-min": ("mag", 0), "mag-max": ("mag", 1)}
 IGNORED = {"fire-len", "cold-len", "pois-len"}
 # not supported yet (skills, charges, sockets): affixes with these don't spawn
-SKIP_CODES = {"charged", "skilltab", "gethit-skill", "hit-skill", "att-skill", "sock", "stack", "",
-              "ama", "pal", "nec", "sor", "bar", "dru", "ass", "kill-skill", "death-skill", "levelup-skill"}
+SKIP_CODES = {"charged", "gethit-skill", "hit-skill", "att-skill", "stack", "", "kill-skill", "death-skill",
+              "levelup-skill"}
+# affix properties handled by game/props.py once the item exists (sockets, +skills ...)
+LATE_CODES = {"sock", "skilltab", "ama", "pal", "nec", "sor", "bar", "dru", "ass", "allskills", "skill", "oskill"}
 PROP_MAP.update({"res-pois-len": ("pois_len", "val"), "red-dmg": ("dr", "val"), "stam": ("stamina", "val"), "regen-stam": ("stamina_regen", "val"),
                  "att-demon": ("ar_demon", "val"), "att-undead": ("ar_undead", "val"), "mana-kill": ("mana_kill", "val"),
                  "ignore-ac": ("ignore_ac", "val"), "dmg-ac": ("dmg_ac", "val"), "ac/lvl": ("def_lvl", "val"),
-                 "dmg/lvl": ("maxdmg_lvl", "val"), "mana/lvl": ("mana_lvl", "val")})
+                 "dmg/lvl": ("maxdmg_lvl", "val"), "mana/lvl": ("mana_lvl", "val"),
+                 "dmg-mag": ("mag_dmg", "minmax")})
 
 POTIONS = {"yps": ("antidote", 50), "wms": ("thawing", 50), "vps": ("stamina", 2), "hp1": ("heal", 30), "hp2": ("heal", 60), "hp3": ("heal", 100), "hp4": ("heal", 180),
            "hp5": ("heal", 320), "mp1": ("mana", 20), "mp2": ("mana", 40), "mp3": ("mana", 80),
@@ -70,6 +73,8 @@ QUEST_USE = {"box": "cube", "ass": "book_skill", "tr1": "horadric_scroll", "xyz"
 class D2Content:
     def __init__(self, src, difficulty="normal"):
         self.src = src
+        from . import props
+        props.SRC = src
         sfx = {"normal": "", "nightmare": "(n)", "hell": "(h)"}.get(difficulty, "")
         self.sfx = sfx
         self.strings = Strings(src)
@@ -213,6 +218,8 @@ class D2Content:
                 b["gem"] = gem_kind(b)
             elif slot in ("ring", "amulet"):
                 pass              # rings and amulets are equipment
+            elif code == "jew":
+                b["jewel"] = True  # magic / rare, goes into sockets
             elif code != "gld":
                 return None       # quest items, keys, charms: not used
         return b
@@ -262,6 +269,7 @@ class D2Content:
     # ------------------------------------------------------------ item generation
     player_cls = "bar"
     _force = {}
+    _late = []
 
     def pick_base(self, ilvl, rng, kinds=("weapon", "armor", "misc")):
         cands = [b for b in self.bases if b["kind"] in kinds and b["slot"] and b["qlvl"] <= ilvl
@@ -281,7 +289,7 @@ class D2Content:
                  if a["level"] <= ilvl and (not a["maxlevel"] or ilvl <= a["maxlevel"])
                  and a["itypes"] & base["ancestors"] and not (a["etypes"] & base["ancestors"])
                  and a["group"] not in used_groups and a["freq"] > 0
-                 and (not a["classspecific"] or a["classspecific"] == self.player_cls)]
+                 and (not a["classspecific"] or not base.get("class") or a["classspecific"] == base["class"])]
         if not cands:
             return None
         total = sum(a["freq"] for a in cands)
@@ -293,16 +301,31 @@ class D2Content:
         return cands[-1]
 
     def make_item(self, base, ilvl, rng, quality="normal", sockets=None, identified=None, force=None):
+        if quality in ("unique", "set"):
+            it = (self.make_unique if quality == "unique" else self.make_set_item)(base, ilvl, rng, identified)
+            if it is not None:
+                return it
+            quality = "rare"
         self._force = force or {}
+        self._late = []
         try:
             it = self._make_item(base, ilvl, rng, quality, sockets, identified)
+            if it is not None and self._late and it.mod_list is not None:
+                from . import props
+                late, self._late = self._late, []
+                props.apply(it, late, rng)
+                if it.sockets and isinstance(it.base, dict):
+                    it.sockets = min(it.sockets, max(1, self.max_sockets(it.base, ilvl)))
         finally:
             self._force = {}
+            self._late = []
         if it is not None:
             it.ilvl = max(1, int(ilvl))
+            if base.get("jewel"):
+                self._finish_jewel(it, rng)
         return it
 
-    def _make_item(self, base, ilvl, rng, quality="normal", sockets=None, identified=None):
+    def _make_item(self, base, ilvl, rng, quality="normal", sockets=None, identified=None, plain=False):
         if base.get("quest"):
             it = Item(base["name"], base["code"], None, kind="quest")
             it.base = base
@@ -320,6 +343,8 @@ class D2Content:
             it.base = base
             it.invfile, it.flippy = base["invfile"], base["flippyfile"]
             return it
+        if base.get("jewel") and quality == "normal":
+            quality = "magic"
         if "use" in base or "gem" in base:
             it = Item(base["name"], base["code"], None, kind="misc")
             it.base = base
@@ -338,7 +363,7 @@ class D2Content:
             return it
         mods_raw = []       # (code, value or (min,max))
         affixes = []
-        if base["magic_only"] and quality == "normal":
+        if base["magic_only"] and quality == "normal" and not plain:
             quality = "magic"
         if base["normal_only"]:
             quality = "normal"
@@ -426,11 +451,206 @@ class D2Content:
             it.sockets = min(sockets, self.max_sockets(base, ilvl)) or sockets
         return it
 
+    def _finish_jewel(self, it, rng):
+        """A jewel: its properties go into the item it is socketed in."""
+        it.kind = "misc"
+        it.slot = None
+        it.gem = ("jewel",)
+        props = []
+        for e in it.mod_list or []:
+            code, v = e[0], e[1]
+            par = e[2] if len(e) > 2 else ""
+            lo, hi = v if isinstance(v, tuple) else (v, v)
+            props.append((code, par, lo, hi))
+        it.jewel_props = props
+        it.invfile = "invjw%d" % rng.randint(1, 6)
+        it.filler_lines = []
+        it.rune_letter = ""
+
+    # ------------------------------------------------------------ unique and set items
+    _uniques = None
+
+    def _props_of(self, r, n, fmt=("prop%d", "par%d", "min%d", "max%d")):
+        out = []
+        for i in range(1, n + 1):
+            code = (r.get(fmt[0] % i) or "").strip()
+            if code:
+                out.append((code, r.get(fmt[1] % i, ""), _int(r.get(fmt[2] % i)), _int(r.get(fmt[3] % i))))
+        return out
+
+    def _load_uniques(self):
+        if self._uniques is not None:
+            return
+        self._uniques, self._setitems, self.sets = {}, {}, {}
+        self.set_item_by_index = {}
+        self.unique_by_index = {}
+        try:
+            for r in read_table(self.src, "UniqueItems"):
+                if (r.get("enabled") or "") != "1" or (r.get("ladder") or "") == "1" or not r.get("code"):
+                    continue
+                u = dict(index=r.get("index", ""), name=self.strings.get(r.get("index", ""), r.get("index", "")),
+                         code=r["code"], lvl=_int(r.get("lvl")), lvlreq=_int(r.get("lvl req")),
+                         rarity=max(1, _int(r.get("rarity"), 1)), invfile=r.get("invfile", ""),
+                         props=self._props_of(r, 12))
+                self._uniques.setdefault(u["code"], []).append(u)
+                self.unique_by_index[u["index"]] = u
+        except Exception:
+            pass
+        try:
+            for r in read_table(self.src, "SetItems"):
+                code = r.get("item", "")
+                if not code or not r.get("set"):
+                    continue
+                aprops = []
+                for n in range(1, 6):
+                    lst = []
+                    for x in "ab":
+                        c = (r.get("aprop%d%s" % (n, x)) or "").strip()
+                        if c:
+                            lst.append((c, r.get("apar%d%s" % (n, x), ""), _int(r.get("amin%d%s" % (n, x))),
+                                        _int(r.get("amax%d%s" % (n, x)))))
+                    if lst:
+                        aprops.append((n, lst))
+                si = dict(index=r.get("index", ""), name=self.strings.get(r.get("index", ""), r.get("index", "")),
+                          set=r["set"], code=code, lvl=_int(r.get("lvl")), lvlreq=_int(r.get("lvl req")),
+                          rarity=max(1, _int(r.get("rarity"), 1)), invfile=r.get("invfile", ""),
+                          props=self._props_of(r, 9), aprops=aprops)
+                self._setitems.setdefault(code, []).append(si)
+                self.set_item_by_index[si["index"]] = si
+            for r in read_table(self.src, "Sets"):
+                idx = r.get("index", "")
+                if not idx:
+                    continue
+                partial = {}
+                for n in range(2, 6):
+                    lst = []
+                    for x in "ab":
+                        c = (r.get("PCode%d%s" % (n, x)) or r.get("pcode%d%s" % (n, x)) or "").strip()
+                        if c:
+                            g = lambda k: r.get(k % (n, x)) or r.get((k % (n, x)).lower())
+                            lst.append((c, g("PParam%d%s") or "", _int(g("PMin%d%s")), _int(g("PMax%d%s"))))
+                    if lst:
+                        partial[n] = lst
+                full = []
+                for i in range(1, 9):
+                    c = (r.get("FCode%d" % i) or r.get("fcode%d" % i) or "").strip()
+                    if c:
+                        g = lambda k: r.get(k % i) or r.get((k % i).lower())
+                        full.append((c, g("FParam%d") or "", _int(g("FMin%d")), _int(g("FMax%d"))))
+                members = [si["index"] for si in self.set_item_by_index.values() if si["set"] == idx]
+                self.sets[idx] = dict(index=idx, name=self.strings.get(r.get("name", idx), idx), partial=partial,
+                                      full=full, members=members)
+        except Exception:
+            pass
+
+    def uniques_for(self, base, ilvl=None):
+        self._load_uniques()
+        lst = self._uniques.get(base["code"], [])
+        return [u for u in lst if ilvl is None or u["lvl"] <= ilvl]
+
+    def set_items_for(self, base, ilvl=None):
+        self._load_uniques()
+        lst = self._setitems.get(base["code"], [])
+        return [u for u in lst if ilvl is None or u["lvl"] <= ilvl]
+
+    def _pick(self, lst, rng):
+        total = sum(u["rarity"] for u in lst)
+        r = rng.uniform(0, total)
+        for u in lst:
+            r -= u["rarity"]
+            if r <= 0:
+                return u
+        return lst[-1]
+
+    def make_unique(self, base, ilvl, rng, identified=None, which=None):
+        """A unique item (UniqueItems.txt) of this base, or None if none can exist at this item level."""
+        u = which or (lambda c: self._pick(c, rng) if c else None)(self.uniques_for(base, ilvl))
+        if u is None:
+            return None
+        it = self._make_item(base, max(ilvl, u["lvl"]), rng, "normal", sockets=0, identified=True, plain=True)
+        if it is None or it.mod_list is None:
+            return None
+        it.rarity = "unique"
+        it.name = u["name"]
+        it.unique_name = u["index"]
+        it.levelreq = max(it.levelreq, u["lvlreq"])
+        if u["invfile"]:
+            it.invfile = u["invfile"]
+        from . import props
+        props.apply(it, u["props"], rng)
+        it.ilvl = max(1, int(ilvl))
+        it.identified = bool(identified) if identified is not None else False
+        return it
+
+    def make_set_item(self, base, ilvl, rng, identified=None, which=None):
+        """A set item (SetItems.txt) of this base, or None."""
+        si = which or (lambda c: self._pick(c, rng) if c else None)(self.set_items_for(base, ilvl))
+        if si is None:
+            return None
+        it = self._make_item(base, max(ilvl, si["lvl"]), rng, "normal", sockets=0, identified=True, plain=True)
+        if it is None or it.mod_list is None:
+            return None
+        it.rarity = "set"
+        it.name = si["name"]
+        self.attach_set(it, si)
+        it.levelreq = max(it.levelreq, si["lvlreq"])
+        if si["invfile"]:
+            it.invfile = si["invfile"]
+        from . import props
+        props.apply(it, si["props"], rng)
+        it.ilvl = max(1, int(ilvl))
+        it.identified = bool(identified) if identified is not None else False
+        return it
+
+    def attach_set(self, it, si):
+        """Set data the hero's stats need (bonuses per number of pieces worn)."""
+        self._load_uniques()
+        it.set_item = si["index"]
+        it.set_name = si["set"]
+        it.set_bonus = list(si["aprops"])
+        it.set_def = self.sets.get(si["set"])
+
+    def roll_quality(self, base, ilvl, rng, mf=0, boss=False):
+        """normal / magic / rare / set / unique, roughly D2's odds (better with magic find)."""
+        if base.get("normal_only"):
+            return "normal"
+        # D2's magic find has diminishing returns for uniques and sets
+        mf_u = mf * 250.0 / (mf + 250) if mf > 0 else mf
+        mf_s = mf * 500.0 / (mf + 500) if mf > 0 else mf
+        boost = 3.0 if boss else 1.0
+        r = rng.random()
+        unique = 0.006 * boost * (1 + mf_u / 100.0)
+        setp = 0.010 * boost * (1 + mf_s / 100.0)
+        rare = (0.025 + (0.15 if boss else 0)) * (1 + mf / 150.0)
+        magic = 0.18 * (1 + mf / 100.0) + (0.6 if boss else 0)
+        if r < unique and self.uniques_for(base, ilvl):
+            return "unique"
+        r -= unique
+        if r < setp and self.set_items_for(base, ilvl):
+            return "set"
+        r -= setp
+        if r < rare:
+            return "rare"
+        r -= rare
+        if r < magic:
+            return "magic"
+        return "normal"
+
+    def make_jewel(self, mlvl, rng):
+        b = self.base_by_code.get("jew")
+        if b is None:
+            return None
+        return self.make_item(b, mlvl, rng, "rare" if rng.random() < 0.25 else "magic")
+
     def _affix_mods(self, a, rng, mods_raw):
         elem = {}
         length = 0
         for code, param, lo, hi in a["mods"]:
             info = PROP_MAP.get(code)
+            if code in LATE_CODES or (info is None and code not in ELEM_PARTS and code not in IGNORED
+                                      and code not in ("pois-len", "cold-len", "fire-len")):
+                self._late.append((code, param, lo, hi))
+                continue
             if code in ELEM_PARTS:
                 e, i = ELEM_PARTS[code]
                 elem.setdefault(e, [0, 0])[i] = rng.randint(min(lo, hi), max(lo, hi))
@@ -486,7 +706,11 @@ class D2Content:
         return max(0, min(base.get("maxsock", 0), cap or base.get("maxsock", 0)))
 
     def make_gem_or_rune(self, mlvl, rng):
-        """Gems (chipped/flawed early) or low runes, like Act 1 drops."""
+        """Gems (chipped/flawed early), low runes, now and then a jewel."""
+        if rng.random() < 0.12:
+            j = self.make_jewel(mlvl, rng)
+            if j is not None:
+                return j
         if rng.random() < 0.35:
             n = 1 + min(32, int(rng.expovariate(1.0 / (1.5 + mlvl / 6.0))))
             b = self.base_by_code.get("r%02d" % n)
@@ -532,10 +756,7 @@ class D2Content:
                 b = self.pick_base(max(1, ilvl), rng)
                 if not b:
                     continue
-                magic = 0.18 * (1 + mf / 100.0) + (0.6 if is_boss else 0)
-                rare = 0.025 * (1 + mf / 150.0) + (0.15 if is_boss else 0)
-                roll = rng.random()
-                q = "rare" if roll < rare else ("magic" if roll < rare + magic else "normal")
+                q = self.roll_quality(b, ilvl, rng, mf, is_boss)
                 out.append(self.make_item(b, ilvl, rng, q))
         if is_boss:
             out.append(self.make_gold(mlvl * 2, rng, gf))

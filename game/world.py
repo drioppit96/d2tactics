@@ -1409,6 +1409,8 @@ class World(SkillCaster, ItemActions):
                 dmg += max(0, extra * (100 - res) // 100)
         if target.is_player and getattr(target, "dr", 0) and not mods["magic"]:
             dmg = max(1, dmg - target.dr)
+        if target.is_player and getattr(target, "dr_pct", 0) and not mods["magic"] and dmg > 1:
+            dmg = max(1, dmg * (100 - target.dr_pct) // 100)
         dealt = dmg
         if dmg > 0:
             self._damage(target, dmg, attacker)
@@ -1503,7 +1505,11 @@ class World(SkillCaster, ItemActions):
             return
         self.corpses.append(unit)
         p = self.player
-        gained = p.gain_xp(unit.xp_value)
+        gained = p.gain_xp(unit.xp_value * (100 + max(0, getattr(p, "xp_pct", 0))) // 100)
+        if getattr(p, "life_kill", 0) and p.alive:
+            p.hp = min(p.max_hp, p.hp + p.life_kill)
+        if getattr(p, "mana_kill", 0):
+            p.mana = min(p.max_mana, p.mana + p.mana_kill)
         if gained:
             self.emit("levelup", p.level)
             self.log(f"Level up! You are now level {p.level}. Press C to spend stat points.", YELLOW)

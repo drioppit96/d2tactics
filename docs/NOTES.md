@@ -206,3 +206,18 @@ and waypoint graphics.
 A PIL-backed pygame stand-in was used for headless screenshots (not part of the repo):
 it supports Surface/Rect/draw/font/blend modes used by the game. Logic tests run bots
 through whole caves (`World` + simple attack/move loop) to check balance.
+
+## Item properties, uniques, sets, jewels (game/props.py)
+
+- props.apply(item, [(code, param, min, max)]) is the one way properties go onto items
+  (uniques, sets, set bonuses, runewords, gems, jewels, cube mods, affix +skills/sockets).
+  Stat keys: PROP_MAP + props.EXTRA_MAP; "x/lvl" -> "<stat>@lvl" (value/8 per clvl, Player.mod);
+  class skills -> cls_<cls>, skilltab N -> tab_N (tab = class index*3 + page-1), skill -> sk_<name>.
+- mod_list entries are (code, value) or (code, value, param); tooltips via props.text().
+- Uniques: UniqueItems enabled=1, ladder rows skipped. Sets: SetItems aprop{n}a/b active with n+1
+  pieces worn; Sets.txt PCode{n} with n pieces, FCode with all. Player.set_bonuses() adds a
+  pseudo item to _active. Saved: unique_name / set_item (set data re-attached from the tables).
+- Jewels: Misc "jew", magic or rare with jewl affixes; item.gem = ("jewel",), jewel_props go
+  into the host. Picture invjw1-6 (random).
+- roll_quality: unique 0.6%, set 1%, rare 2.5%, magic 18% of item drops (MF with D2's diminishing
+  returns for uniques/sets, x3 for bosses).

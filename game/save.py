@@ -20,7 +20,8 @@ def _item_dict(it):
     mods = {k: (list(v) if isinstance(v, tuple) else v) for k, v in (it.mods or {}).items()}
     ml = None
     if it.mod_list is not None:
-        ml = [[c, list(v) if isinstance(v, tuple) else v] for c, v in it.mod_list]
+        ml = [[e[0], list(e[1]) if isinstance(e[1], tuple) else e[1]] + ([e[2]] if len(e) > 2 and e[2] else [])
+              for e in it.mod_list]
     return dict(name=it.name, code=it.code, slot=it.slot, rarity=it.rarity, kind=it.kind, mods=mods, mod_list=ml,
                 defense=it.defense, dmg=list(it.dmg) if it.dmg else None, ap=it.ap, amount=it.amount,
                 potion=getattr(it, "potion", "heal"), inv_pos=list(it.inv_pos) if getattr(it, "inv_pos", None) else None,
@@ -33,7 +34,10 @@ def _item_dict(it):
                          for a in getattr(it, "affixes", []) or []], extra_lines=list(getattr(it, "extra_lines", []) or []),
                 base_defense=getattr(it, "base_defense", None), ilvl=getattr(it, "ilvl", None),
                 contents=[_item_dict(x) for x in it.contents] if getattr(it, "contents", None) is not None else None,
-                cube_pos=list(it.cube_pos) if getattr(it, "cube_pos", None) else None)
+                cube_pos=list(it.cube_pos) if getattr(it, "cube_pos", None) else None,
+                unique_name=getattr(it, "unique_name", None), set_item=getattr(it, "set_item", None),
+                jewel_props=[list(p) for p in getattr(it, "jewel_props", []) or []] or None,
+                invfile=getattr(it, "invfile", "") or "")
 
 
 def _item_from(d, content):
@@ -46,7 +50,8 @@ def _item_from(d, content):
               amount=d.get("amount", 0), kind=d.get("kind", "equip"))
     it.potion = d.get("potion", "heal")
     if d.get("mod_list") is not None:
-        it.mod_list = [(c, tuple(v) if isinstance(v, list) else v) for c, v in d["mod_list"]]
+        it.mod_list = [tuple([e[0], tuple(e[1]) if isinstance(e[1], list) else e[1]] + list(e[2:]))
+                       for e in d["mod_list"]]
     base = getattr(content, "base_by_code", {}).get(d["code"]) if content is not None else None
     if base is not None:
         it.base = base
@@ -89,6 +94,18 @@ def _item_from(d, content):
         it.cube_pos = tuple(d["cube_pos"])
     if d.get("ilvl"):
         it.ilvl = d["ilvl"]
+    if d.get("invfile"):
+        it.invfile = d["invfile"]          # uniques, sets and jewels have their own pictures
+    if d.get("unique_name"):
+        it.unique_name = d["unique_name"]
+    if d.get("set_item") and content is not None and hasattr(content, "attach_set"):
+        content._load_uniques()
+        si = content.set_item_by_index.get(d["set_item"])
+        if si is not None:
+            content.attach_set(it, si)
+    if d.get("jewel_props"):
+        it.jewel_props = [tuple(p) for p in d["jewel_props"]]
+        it.slot = None
     if d.get("contents") is not None or it.code == "box":
         it.contents = [x for x in (_item_from(c, content) for c in d.get("contents") or []) if x is not None]
     return it

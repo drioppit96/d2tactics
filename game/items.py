@@ -153,7 +153,7 @@ class Item:
             return WHITE
         if self.kind == "quest":
             return D2_COLORS["unique"]
-        if self.gem is not None:
+        if self.gem is not None and self.gem[0] != "jewel":
             return ORANGE if self.gem[0] == "rune" else WHITE
         if self.sockets and self.rarity == "normal":
             return (150, 150, 150)       # D2: socketed white items are grey
@@ -200,7 +200,7 @@ class Item:
             out.append(("Right click to read" + (" (opens a portal to town)" if self.use == "tp" else
                                                   " (then click an item)"), (170, 170, 170)))
             return out
-        if self.gem is not None:
+        if self.gem is not None and self.gem[0] != "jewel":
             out = [(self.name, self.color), ("Can be Inserted into Socketed Items", WHITE)]
             out += [(l, WHITE) for l in getattr(self, "filler_lines", [])]
             if self.levelreq > 1:
@@ -214,8 +214,10 @@ class Item:
                    ("'%s'" % "".join(getattr(f, "rune_letter", "") for f in self.socketed), D2_COLORS["unique"])]
         else:
             out = [(self.shown_name, self.color)]
-            if self.rarity in ("rare", "crafted") and self.identified and isinstance(self.base, dict):
+            if self.rarity in ("rare", "crafted", "unique", "set") and self.identified and isinstance(self.base, dict):
                 out.append((self.base.get("name", ""), self.color))
+            if self.gem is not None:
+                out.append(("Can be Inserted into Socketed Items", WHITE))
         if self.dmg:
             lo, hi = self.dmg
             if self.two_handed:
@@ -242,20 +244,64 @@ class Item:
         if not self.identified:
             out.append(("Unidentified", RED_TEXT))
             return out
-        from .d2items import EXTRA_TEXT
-        for code, v in self.mod_list:
-            fmt = MOD_TEXT.get(code) or EXTRA_TEXT.get(code) or (code + " {0}")
-            try:
-                text = fmt.format(*v) if isinstance(v, tuple) else fmt.format(v)
-            except Exception:
-                text = code
-            out.append((text, D2_COLORS["magic"]))
+        from . import props
+        props.LEVEL = getattr(player, "level", 1) or 1
+        merged, order = {}, []
+        for e in self.mod_list:
+            code, v, par = e[0], e[1], (e[2] if len(e) > 2 else "")
+            k = (code, par)
+            if k in merged and not isinstance(v, tuple) and not isinstance(merged[k], tuple):
+                merged[k] += v              # D2 shows one line per property
+            elif k in merged and isinstance(v, tuple) and isinstance(merged[k], tuple):
+                merged[k] = (merged[k][0] + v[0], merged[k][1] + v[1])
+            else:
+                merged[k] = v
+                order.append(k)
+        for code, par in order:
+            v = merged[(code, par)]
+            t = props.text(code, v, par)
+            if t:
+                out.append((t, D2_COLORS["magic"]))
         for t in self.extra_lines:
             out.append((t, D2_COLORS["magic"]))
         if self.sockets:
             out.append(("Socketed (%d)" % self.sockets, D2_COLORS["magic"]))
             for f in self.socketed:
                 out.append(("  " + f.name, (170, 170, 170)))
+        if getattr(self, "set_name", None):
+            out += self._set_lines(player)
+        return out
+
+    def _set_lines(self, player):
+        from . import props
+        props.LEVEL = getattr(player, "level", 1) or 1
+        grey, gold, green = (130, 130, 130), D2_COLORS["unique"], D2_COLORS["set"]
+        worn = (getattr(player, "sets_worn", {}) or {}).get(self.set_name, []) if player is not None else []
+        n = len(worn)
+        on_hero = player is not None and self in [x for x in player.equipment.values() if x]
+
+        def lines(plist, active, label=""):
+            out = []
+            for code, par, lo, hi in plist:
+                t = props.text(code, (lo, hi) if code.startswith("dmg-") and lo != hi else hi, par)
+                if t:
+                    out.append((t + ("" if active else label), green if active else grey))
+            return out
+        out = []
+        for k, plist in getattr(self, "set_bonus", []) or []:
+            out += lines(plist, on_hero and n >= k + 1, " (%d Items)" % (k + 1))
+        sd = getattr(self, "set_def", None) or {}
+        out.append(("", WHITE))
+        out.append((sd.get("name", self.set_name), gold))
+        for m in sd.get("members", []):
+            out.append((m, green if m in worn else grey))
+        for k, plist in sorted(sd.get("partial", {}).items()):
+            act = on_hero and n >= k
+            out += [(t + ("" if act else " (%d Items)" % k), gold if act else grey) for t, _ in lines(plist, True)]
+        full = lines(sd.get("full", []), True)
+        if full:
+            done = on_hero and sd.get("members") and n >= len(sd["members"])
+            out += [(t + ("" if done else " (Full Set)"), gold if done else grey) for t, _ in full]
         return out
 
     def describe(self):

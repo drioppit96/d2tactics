@@ -130,7 +130,14 @@ class ItemActions:
             self.log("You don't have enough gold (%d needed)." % cost, RED)
             return False
         if getattr(it, "gamble", False):
-            new = self.content.make_item(it.gamble_base, min(p.level + 5, 40), self.rng, "magic", identified=True)
+            # D2's gambling odds: mostly magic, 10% rare, now and then a set or unique item
+            ilvl = min(p.level + 5, 40)
+            r = self.rng.random()
+            c = self.content
+            q = "unique" if r < 0.005 and c.uniques_for(it.gamble_base, ilvl) else \
+                "set" if r < 0.015 and c.set_items_for(it.gamble_base, ilvl) else \
+                "rare" if r < 0.115 else "magic"
+            new = c.make_item(it.gamble_base, ilvl, self.rng, q, identified=True)
             if not p.inv_add(new):
                 self.log("Your inventory is full.", GREY)
                 return False

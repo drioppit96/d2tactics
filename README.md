@@ -45,8 +45,19 @@ also "Go East (test)" without killing Andariel).
 **Horadric Cube:** right click it in the backpack (or drop items on it). Every D2 recipe from
 CubeMain.txt: gem and rune upgrades, potions, 3 rings -> amulet, rerolls, socketing, prismatic
 and garnet rings ..., the Horadric Staff, and Wirt's Leg + a Tome of Town Portal in the Rogue
-Encampment opens the Secret Cow Level (Wirt's body lies in Tristram). Rare items now exist
-(drops and cube); recipes that need uniques, set items or jewels wait until those exist.
+Encampment opens the Secret Cow Level (Wirt's body lies in Tristram), crafted items (jewel +
+rune + perfect gem + a magic item), Stone of Jordan recipes.
+
+**Item qualities:** normal, magic, rare, set and unique, all from D2's tables: every unique
+of UniqueItems.txt and every set of SetItems.txt / Sets.txt with their real properties. Set
+items give their extra bonuses as you wear more pieces of the set, and the full-set bonus when
+you wear them all (the tooltip lights them up, like D2). Sockets: normal items, magic items
+with socket affixes (Jeweler's ...), uniques and sets with sockets, the cube's socket recipes.
+Gems, runes (runewords) and jewels (magic and rare, D2's jewel affixes) go into them. Item
++skills (+All Skills, +class skills, +skill tab, +single skill) raise your skills (shown blue in
+the skill tree); "per character level" properties grow with you; +maximum resistance, damage
+reduced by %, life/mana after each kill and extra experience work. Uniques and sets drop
+rarely (better with magic find, more from bosses) and can be gambled.
 
 Without a D2 path the game falls back to placeholder art (a Barbarian in a generated cave).
 
