@@ -55,6 +55,22 @@ automap cells (AutoMap.txt + MaxiMap.dc6), Act 2.
   and could freeze input); teleporting followers emit ("place", unit, cell).
 - Esc menu render/gamemenu.py (font42 + pentspin.dc6), options.ini; loot window d2hud._draw_loot.
 
+## Day 5: sprite cache
+
+- d2/spritecache.py: decoded DCC directions in cache/sprites/<key[:2]>/<key>_<dir>.bin, key = crc32 +
+  length of the DCC file (so other installs / mods never get stale art), zlib level 1, written
+  atomically. DCC.direction() loads from it before decoding. ~1.3x the DCC size on disk; loading
+  is ~50x faster than decoding.
+- Background: main.start_sprite_prebuild spawns spritecache.worker_main (multiprocessing "spawn",
+  daemon, below-normal priority) with a cheap plan (player look, monster ids near-first + act
+  rosters, missile names); the worker turns it into DCC paths (d2/unitfiles.py, COF-driven) and
+  writes progress to cache/sprites/progress.txt. Whole act 1 here: 1030 files / 8508 directions /
+  53 MB in ~50 s. Test harnesses must stub start_sprite_prebuild (spawn re-imports __main__).
+- d2/dcc.py: numpy path (_decode_fast) = same pixels as the Python path (checked file by file),
+  ~1.8x faster. The format is a chain of small variable-length codes, so stage 1 stays Python.
+- MPQ read cache tmp files carry the pid (two processes read the MPQs now).
+- F11 readout: main._perf_mark / draw_perf; dcc.STATS counts decode time.
+
 ## Act 1 world (game/act1.py)
 
 - Outdoors: slots of 8x8 blocks of 8x8 tiles (64x64 tiles = 320x320 cells per area). Snake

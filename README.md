@@ -92,9 +92,16 @@ level with all its stat and skill points (will be removed later).
 **Loot window (V):** every item lying on the screen; click one to pick it up (in combat only
 items next to you, 1 AP).
 
+**Loading:** decoded sprites are kept in the `cache` folder (a few hundred MB at most; delete it any
+time). While you play, a low-priority background process prepares everything the act needs - your
+hero, every Act 1 monster, all missiles - so new things appear without a stutter. numpy (installed
+automatically by Play D2 Tactics.bat) makes decoding about twice as fast; without it the game still
+runs. F11 shows a performance readout (frame time split into logic / world / interface, sprite
+decoding, background preparation progress).
+
 **Keys:** Space = end turn - V = loot window - I = inventory - C = character - T = skill tree - Q = quest log - Tab = automap
 (full / corner / off) - Alt (hold) or L = item names - F = fast animations - F1-F8 = right skill -
-mouse wheel = zoom - Esc = close panels / game menu
+mouse wheel = zoom - F11 = performance readout - Esc = close panels / game menu
 
 **Walking:** outside combat, click (or hold the left button) to walk; a new click changes direction at once.
 

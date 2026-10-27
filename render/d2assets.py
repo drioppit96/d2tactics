@@ -193,6 +193,10 @@ class D2Assets(AssetProvider):
         import os
         cache = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cache", "mpq")
         self.src = open_source(d2_path, say, cache)
+        from d2 import spritecache
+        spritecache.configure(os.path.join(os.path.dirname(cache), "sprites"))
+        self.cache_root = os.path.dirname(cache)
+        self.d2_path = d2_path
         self.palette = load_palette(self.src.read("data\\global\\palette\\act1\\pal.dat"))
         say("Reading cave tiles")
         self.kit = CaveKit(self.src)

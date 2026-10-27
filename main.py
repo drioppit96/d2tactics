@@ -5,6 +5,7 @@ Run:  python main.py
 import configparser
 import os
 import sys
+import time
 
 import pygame
 
@@ -171,6 +172,7 @@ class Game:
                        (170, 170, 170))
         self._start_scene()
         self.prebuild_from(self.world)
+        self.start_sprite_prebuild()
         if self.asset_warning:
             self.world.log(self.asset_warning, (230, 160, 90))
 
@@ -412,6 +414,91 @@ class Game:
         self.scene.banner = [self.world.level_name, (199, 179, 119), 2.0]
         self.scene.opts = self.opts
         self.cam.snap(*self.scene.player_world_pos())
+
+    # ------------------------------------------------------------ sprite cache prebuild
+    def sprite_plan(self):
+        """What the act needs, most urgent first (cheap: the background process works out the
+        files itself): your look, the monsters near you, the rest of the act's monsters, then the
+        missiles of your skills and of the monsters."""
+        a = self.assets
+        w = self.world
+        p = w.player
+        plan = {"player": None, "monsters": [], "missiles": []}
+        try:
+            arms, hide, wclass = a.player_look(p)
+            plan["player"] = (getattr(p, "token", "BA") or "BA", [wclass, "HTH"] if wclass != "HTH" else ["HTH"],
+                              {k: list(v) for k, v in arms.items()})
+        except Exception:
+            pass
+        ids = []
+        for m in sorted([m for m in w.monsters if getattr(m, "d2id", None)], key=lambda m: abs(m.x - p.x) + abs(m.y - p.y)):
+            if m.d2id not in ids:
+                ids.append(m.d2id)
+        info = getattr(a, "act_info", None)
+        if info is not None:
+            for lid in range(1, 40):
+                for mid in info.roster(lid):
+                    if mid not in ids:
+                        ids.append(mid)
+        for mid in ("andariel", "bloodraven", "corpsefire", "smith", "griswold", "countess"):
+            if mid not in ids:
+                ids.append(mid)
+        plan["monsters"] = ids
+        names = []
+        tree = getattr(getattr(p, "skills", None), "tree", {})
+        for sk in tree.values():
+            d = sk.data or {}
+            for col in ("cltmissile", "srvmissile", "cltmissilea", "srvmissilea", "cltmissileb"):
+                if d.get(col):
+                    names.append(d[col])
+            if hasattr(w, "ground_missile"):
+                names.append(w.ground_missile(sk))
+        names += ["arrow", "bolt", "javelin", "frozenorbbolt"]
+        plan["missiles"] = [n for n in names if n]
+        return plan
+
+    def start_sprite_prebuild(self):
+        """Fill the sprite cache in a separate low-priority process while you play."""
+        a = self.assets
+        old = getattr(self, "_prebuild_proc", None)
+        if not hasattr(a, "cache_root") or (old is not None and old.is_alive()):
+            return
+        try:
+            plan = self.sprite_plan()
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            return
+        import multiprocessing
+        from d2 import spritecache
+        prog = os.path.join(a.cache_root, "sprites", "progress.txt")
+        try:
+            os.remove(prog)
+        except OSError:
+            pass
+        try:
+            ctx = multiprocessing.get_context("spawn")
+            proc = ctx.Process(target=spritecache.worker_main,
+                               args=(a.d2_path, os.path.join(a.cache_root, "sprites"), os.path.join(a.cache_root, "mpq"),
+                                     plan, prog),
+                               daemon=True)
+            proc.start()
+            self._prebuild_proc = proc
+        except Exception:
+            import traceback
+            traceback.print_exc()
+
+    def prebuild_progress(self):
+        """(done, total) of the background sprite preparation, or None when it isn't running."""
+        proc = getattr(self, "_prebuild_proc", None)
+        if proc is None:
+            return None
+        try:
+            with open(os.path.join(self.assets.cache_root, "sprites", "progress.txt")) as f:
+                n, total = [int(v) for v in f.read().split()[:2]]
+        except Exception:
+            n, total = 0, 0
+        return n, total
 
     def _warm_skill_art(self):
         """Decode the selected skill's missiles / overlays in spare frame time, before you cast."""
@@ -992,6 +1079,8 @@ class Game:
             self.scene.show_grid = not self.scene.show_grid
         elif key == pygame.K_TAB:
             self.cycle_automap()                                   # D2: Tab = automap
+        elif key == pygame.K_F11:
+            self.show_perf = not getattr(self, "show_perf", False)   # performance readout
         elif key == pygame.K_v:
             h.show_loot = not getattr(h, "show_loot", False)        # loot window
         elif key == pygame.K_l:
@@ -1157,6 +1246,7 @@ class Game:
                 self.creator.draw(self.screen)
                 pygame.display.flip()
             return
+        t_frame = time.perf_counter()
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT:
                 self.running = False
@@ -1191,7 +1281,9 @@ class Game:
             self.scene.alt_held = False
         self._hold_walk(mouse, dt)
         self.advance_walk()
+        tp = time.perf_counter()
         self._warm_skill_art()
+        self._perf_mark("prep", tp)
         self.scene.update(dt)
         if self.world.pending_exit and self.scene.idle():
             w = self.world
@@ -1215,9 +1307,15 @@ class Game:
         self.cam.resize(*self.screen.get_size())
         self.cam.follow(*self.scene.player_world_pos(), dt)
 
+        self._perf_mark("logic", t_frame, minus=("prep",))
+        t1 = time.perf_counter()
         cell, highlight, preview, tip = self.hover_info(mouse)
+        self._perf_mark("hover", t1)
+        t1 = time.perf_counter()
         self.screen.fill((0, 0, 0))
         self.draw_world(cell, highlight, preview)
+        self._perf_mark("world", t1)
+        t1 = time.perf_counter()
         self.scene.draw_overlay(self.screen, self.cam)
         self.hud.world_tip = tip
         self.hud.loot_list = self.loot_on_screen() if getattr(self.hud, "show_loot", False) else None
@@ -1227,7 +1325,63 @@ class Game:
             from render.hud import tooltip
             tooltip(self.screen, self.fonts, tip[0], tip[1], mouse)
         self.draw_overlays()
+        self._perf_mark("hud", t1)
+        if getattr(self, "show_perf", False):
+            self.draw_perf()
+        t1 = time.perf_counter()
         pygame.display.flip()
+        self._perf_mark("flip", t1)
+        self._perf_frame(t_frame)
+
+    # ------------------------------------------------------------ performance readout (F11)
+    PERF_KEYS = ("logic", "prep", "hover", "world", "hud", "flip")
+
+    def _perf_mark(self, key, t_start, minus=()):
+        ms = (time.perf_counter() - t_start) * 1000.0
+        cur = self.__dict__.setdefault("_perf_cur", {})
+        for k in minus:
+            ms -= cur.get(k, 0.0)
+        cur[key] = cur.get(key, 0.0) + ms
+
+    def _perf_frame(self, t_frame):
+        from d2 import dcc
+        cur = self.__dict__.setdefault("_perf_cur", {})
+        cur["frame"] = (time.perf_counter() - t_frame) * 1000.0
+        dec = dcc.STATS["decode_ms"]
+        cur["decode"] = dec - getattr(self, "_perf_dec0", 0.0)
+        self._perf_dec0 = dec
+        avg = self.__dict__.setdefault("_perf_avg", {})
+        peak = self.__dict__.setdefault("_perf_peak", {})
+        for k, v in cur.items():
+            avg[k] = avg.get(k, v) * 0.9 + v * 0.1
+            peak[k] = max(v, peak.get(k, 0.0) * 0.995)    # slowly fading worst frame
+        self._perf_cur = {}
+
+    def draw_perf(self):
+        from d2 import dcc
+        avg = getattr(self, "_perf_avg", {})
+        peak = getattr(self, "_perf_peak", {})
+        fr = avg.get("frame", 16.7)
+        lines = ["FPS %.0f   frame %.1f ms (worst %.0f)" % (1000.0 / max(1.0, fr), fr, peak.get("frame", 0)),
+                 "  ".join("%s %.1f" % (k, avg.get(k, 0.0)) for k in self.PERF_KEYS),
+                 "sprite decoding %.1f ms/frame (worst %.0f), %d animations decoded"
+                 % (avg.get("decode", 0.0), peak.get("decode", 0.0), dcc.STATS["decoded"])]
+        pr = self.prebuild_progress()
+        if pr:
+            n, total = pr
+            lines.append("background preparation: %d / %d files%s" % (n, total, " - done" if n >= total else ""))
+        f = self.fonts["small"]
+        imgs = [f.render(t, True, (230, 230, 200)) for t in lines]
+        W = self.screen.get_size()[0]
+        w = max(i.get_width() for i in imgs) + 12
+        h = sum(i.get_height() for i in imgs) + 8
+        box = pygame.Surface((w, h), pygame.SRCALPHA)
+        box.fill((0, 0, 0, 190))
+        x, y = W - w - 8, 64
+        self.screen.blit(box, (x, y))
+        for img in imgs:
+            self.screen.blit(img, (x + 6, y + 4))
+            y += img.get_height()
 
     def draw_world(self, cell, highlight, preview):
         """Draw the world 1:1 into a smaller buffer, then scale it up to the window (zoom)."""

@@ -280,7 +280,7 @@ class MPQSet:
             pass
         data = a.read(name)
         try:
-            tmp = path + ".tmp"
+            tmp = path + ".%d.tmp" % os.getpid()      # the background prebuild reads too
             with open(tmp, "wb") as f:
                 f.write(zlib.compress(data, 1))
             os.replace(tmp, path)

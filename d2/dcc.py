@@ -6,6 +6,15 @@ describing which cells changed and how.
 """
 import struct
 
+from . import spritecache
+
+try:                      # numpy makes the per-pixel stage ~20x faster; pure Python still works
+    import numpy as _np
+except Exception:         # pragma: no cover - numpy missing or broken
+    _np = None
+
+STATS = {"decode_ms": 0.0, "decoded": 0}     # for the performance readout (F11)
+
 _CRAZY = [0, 1, 2, 4, 6, 8, 10, 12, 14, 16, 20, 24, 26, 28, 30, 32]
 
 
@@ -79,10 +88,25 @@ class DCC:
         self.frames_per_dir = struct.unpack_from("<I", data, 3)[0]
         self.dir_offsets = list(struct.unpack_from("<%dI" % ndirs, data, 15))
         self._dirs = {}
+        self._key = None
 
     def direction(self, d):
         if d not in self._dirs:
-            self._dirs[d] = self._decode_direction(d)
+            frames = None
+            if spritecache.enabled():
+                if self._key is None:
+                    self._key = spritecache.key_for(self.data)
+                frames = spritecache.load(self._key, d, Frame)
+            if frames is not None:
+                self._dirs[d] = Direction(frames)
+            else:
+                import time as _t
+                t0 = _t.perf_counter()
+                self._dirs[d] = self._decode_direction(d)
+                STATS["decode_ms"] += (_t.perf_counter() - t0) * 1000.0
+                STATS["decoded"] += 1
+                if spritecache.enabled():
+                    spritecache.save(self._key, d, self._dirs[d].frames)
         return self._dirs[d]
 
     def _decode_direction(self, d):
@@ -172,6 +196,10 @@ class DCC:
                 cy += h
             f.cells = cells
 
+        if _np is not None:
+            return Direction(_decode_fast(frames, data, pixel_values, eq_br.pos, eq_size, mask_br.pos,
+                                          enc_br.pos, enc_size, raw_br.pos, code_br.pos,
+                                          dxmin, dymin, dw, dh, ncw, nch))
         # stage 1: pixel buffer entries
         last = [None] * (ncw * nch)
         for f in frames:
@@ -254,3 +282,143 @@ class DCC:
             f.pixels = px
             f.cells = None
         return Direction(frames)
+
+
+def _decode_fast(frames, data, pixel_values, eq_p, eq_size, mask_p, enc_p, enc_size, raw_p, code_p,
+                 dxmin, dymin, dw, dh, ncw, nch):
+    """Both stages with numpy: the bit streams are unpacked once into one byte per bit (read by
+    plain indexing instead of a method call per value), cells are sorted into "clear / move / solid /
+    coded" while stage 1 runs, and each frame's solid and coded cells are painted with one array
+    operation. A frame's cells lie in different 4x4 grid squares, so painting them together is the
+    same as one by one. Gives exactly the same pixels as the pure Python path."""
+    np = _np
+    bits = np.unpackbits(np.frombuffer(data, dtype=np.uint8), bitorder="little").tobytes()
+    last = [None] * (ncw * nch)
+    seen = [None] * (ncw * nch)
+    plan = []            # per frame: (clears, moves, solid cells, coded cells)
+    cpos = code_p
+    coded_rel = 0        # stage 2 bits used so far (its stream starts where stage 1 ended)
+    for f in frames:
+        clears, moves = [], []
+        sx, sy, sw, sh, sv = [], [], [], [], []
+        cx_, cy_, cw_, ch_, cnb, cst, cvals = [], [], [], [], [], [], []
+        for cx, cy, w, h, ci, _ in f.cells:
+            old = last[ci]
+            vals = None
+            if old is not None:
+                if eq_size:
+                    e = bits[eq_p]
+                    eq_p += 1
+                else:
+                    e = 0
+                if e:
+                    mask = -1           # equal cell: reuse previous pixels
+                else:
+                    mask = bits[mask_p] | (bits[mask_p + 1] << 1) | (bits[mask_p + 2] << 2) | (bits[mask_p + 3] << 3)
+                    mask_p += 4
+            else:
+                mask = 0x0F
+            if mask >= 0:
+                read = []
+                if mask:
+                    nbits = (mask & 1) + ((mask >> 1) & 1) + ((mask >> 2) & 1) + ((mask >> 3) & 1)
+                    last_pix = 0
+                    if enc_size:
+                        enc = bits[enc_p]
+                        enc_p += 1
+                    else:
+                        enc = 0
+                    for _ in range(nbits):
+                        if enc:
+                            b = raw_p
+                            val = (bits[b] | (bits[b + 1] << 1) | (bits[b + 2] << 2) | (bits[b + 3] << 3) |
+                                   (bits[b + 4] << 4) | (bits[b + 5] << 5) | (bits[b + 6] << 6) | (bits[b + 7] << 7))
+                            raw_p += 8
+                        else:
+                            val = last_pix
+                            while True:
+                                b = cpos
+                                disp = bits[b] | (bits[b + 1] << 1) | (bits[b + 2] << 2) | (bits[b + 3] << 3)
+                                cpos += 4
+                                val += disp
+                                if disp != 15:
+                                    break
+                        if val == last_pix:
+                            break
+                        read.append(val)
+                        last_pix = val
+                vals = [0, 0, 0, 0]
+                idx = len(read) - 1
+                for i in range(4):
+                    if mask & (1 << i):
+                        vals[i] = pixel_values[read[idx] & 0xFF] if idx >= 0 else 0
+                        idx -= 1
+                    else:
+                        vals[i] = old[i] if old is not None else 0
+                last[ci] = vals
+            # stage 2 plan for this cell
+            prev = seen[ci]
+            if vals is None:
+                if prev is None or prev[2] != w or prev[3] != h:
+                    clears.append((cx, cy, w, h))
+                elif prev[0] != cx or prev[1] != cy:
+                    moves.append((prev[0], prev[1], cx, cy, w, h))
+            elif vals[0] == vals[1]:
+                sx.append(cx)
+                sy.append(cy)
+                sw.append(w)
+                sh.append(h)
+                sv.append(vals[0])
+            else:
+                nb = 1 if vals[1] == vals[2] else 2
+                cx_.append(cx)
+                cy_.append(cy)
+                cw_.append(w)
+                ch_.append(h)
+                cnb.append(nb)
+                cst.append(coded_rel)
+                cvals.append(vals)
+                coded_rel += w * h * nb
+            seen[ci] = (cx, cy, w, h)
+        plan.append((clears, moves, (sx, sy, sw, sh, sv), (cx_, cy_, cw_, ch_, cnb, cst, cvals)))
+    base = cpos                 # stage 2 pixel codes follow stage 1 in the code stream
+    nbits_arr = np.frombuffer(bits, dtype=np.uint8)
+    bitmap = np.zeros((dh, dw), dtype=np.uint8)
+    flat = bitmap.reshape(-1)
+    for f, (clears, moves, solid, coded) in zip(frames, plan):
+        for cx, cy, w, h in clears:
+            bitmap[cy:cy + h, cx:cx + w] = 0
+        for px0, py0, cx, cy, w, h in moves:
+            bitmap[cy:cy + h, cx:cx + w] = bitmap[py0:py0 + h, px0:px0 + w].copy()
+        sx, sy, sw, sh, sv = solid
+        if sx:
+            dest, cell = _cell_pixels(np, sx, sy, sw, sh, dw)
+            flat[dest] = np.asarray(sv, dtype=np.uint8)[cell]
+        cx_, cy_, cw_, ch_, cnb, cst, cvals = coded
+        if cx_:
+            dest, cell, k = _cell_pixels(np, cx_, cy_, cw_, ch_, dw, with_k=True)
+            nb = np.asarray(cnb, dtype=np.int64)[cell]
+            bp = base + np.asarray(cst, dtype=np.int64)[cell] + k * nb
+            idx = nbits_arr[bp].astype(np.int64)
+            two = nb == 2
+            idx[two] += 2 * nbits_arr[bp[two] + 1]
+            flat[dest] = np.asarray(cvals, dtype=np.uint8)[cell, idx]
+        fx, fy = f.xmin - dxmin, f.ymin - dymin
+        f.pixels = bytearray(bitmap[fy:fy + f.height, fx:fx + f.width].tobytes())
+        f.cells = None
+    return frames
+
+
+def _cell_pixels(np, xs, ys, ws, hs, dw, with_k=False):
+    """Every pixel of a list of cells -> (flat bitmap index, cell number[, pixel number in the cell])."""
+    w = np.asarray(ws, dtype=np.int64)
+    h = np.asarray(hs, dtype=np.int64)
+    n = w * h
+    cell = np.repeat(np.arange(len(ws)), n)
+    first = np.cumsum(n) - n
+    k = np.arange(int(n.sum()), dtype=np.int64) - first[cell]
+    wc = w[cell]
+    yy = k // wc
+    xx = k - yy * wc
+    dest = (np.asarray(ys, dtype=np.int64)[cell] + yy) * dw + np.asarray(xs, dtype=np.int64)[cell] + xx
+    return (dest, cell, k) if with_k else (dest, cell)

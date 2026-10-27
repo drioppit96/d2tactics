@@ -13,6 +13,18 @@ if errorlevel 1 (
     %PY% -m pip install -r requirements.txt
 )
 
+rem numpy makes sprite decoding faster (optional: the game also runs without it)
+rem (if it can't be installed, numpy_skip.txt stops it from trying again every start)
+if not exist numpy_skip.txt (
+    %PY% -c "import numpy" >nul 2>nul
+    if errorlevel 1 (
+        echo Installing numpy for faster loading, one moment...
+        %PY% -m pip install numpy
+        %PY% -c "import numpy" >nul 2>nul
+        if errorlevel 1 echo numpy could not be installed - the game runs without it> numpy_skip.txt
+    )
+)
+
 %PY% main.py
 if errorlevel 1 (
     echo.
