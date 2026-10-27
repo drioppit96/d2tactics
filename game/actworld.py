@@ -227,6 +227,8 @@ def _spawn_preset(world, name, cell, owner, taken, info):
     rng = world.rng
     if name in NPC_IDS or name in ("chicken", "cow", "camel"):
         return
+    if name == "The Cow King" and owner != 39:
+        return      # D2 only puts him on the Moo Moo Farm (some outdoor presets carry his marker)
     if name in ("place_fallen", "place_fallenshaman"):
         base = "fallenshaman" if name.endswith("shaman") else "fallen"
         mid = next((m for m in roster if m.startswith(base) and (base != "fallen" or not m.startswith("fallenshaman"))),

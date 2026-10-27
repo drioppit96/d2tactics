@@ -412,7 +412,7 @@ class D2Assets(AssetProvider):
         if img is None:
             return
         cx, cy = pos
-        if mode not in ("DD", "DT"):
+        if mode not in ("DD", "DT") and not pose.get("no_shadow"):
             sh = self.placeholder._shadow(1, 16 if unit.token != "SI" else 20)
             surf.blit(sh, (cx - sh.get_width() / 2, cy - sh.get_height() / 2))
         if unit.unique and mode not in ("DD", "DT"):
@@ -430,6 +430,30 @@ class D2Assets(AssetProvider):
                 f.fill((v, v, v, 0), special_flags=pygame.BLEND_RGBA_ADD)
                 self.flash_cache[k] = f
             img = self.flash_cache[k]
+        tint = pose.get("tint")
+        outline = pose.get("outline")
+        if tint or outline:
+            tc = self.__dict__.setdefault("_tint_cache", {})
+            if len(tc) > 400:
+                tc.clear()
+            if outline:
+                k = ("sil", id(img), outline)
+                sil = tc.get(k)
+                if sil is None:
+                    sil = img.copy()
+                    sil.fill((0, 0, 0, 255), special_flags=pygame.BLEND_RGBA_MULT)
+                    sil.fill(tuple(outline[:3]) + (0,), special_flags=pygame.BLEND_RGBA_ADD)
+                    tc[k] = sil
+                for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                    surf.blit(sil, (int(cx + x0 + dx), int(cy + y0 + dy)))
+            if tint:
+                k = ("tint", id(img), tint)
+                t_img = tc.get(k)
+                if t_img is None:
+                    t_img = img.copy()
+                    t_img.fill(tint, special_flags=pygame.BLEND_RGBA_MULT)
+                    tc[k] = t_img
+                img = t_img
         surf.blit(img, (int(cx + x0), int(cy + y0)))
         return pygame.Rect(int(cx + x0), int(cy + y0), img.get_width(), img.get_height())
 
@@ -517,6 +541,42 @@ class D2Assets(AssetProvider):
                             break
         self.item_cache[key] = anim
         return anim
+
+    # ---------------------------------------------------------------- warming up animations
+    def warm_missile(self, name, overlay=False):
+        """Queue a missile / overlay animation to be decoded a little at a time in spare frame time
+        (decoding a 32-direction missile in one go makes the game stutter on the first cast)."""
+        if not name:
+            return
+        q = self.__dict__.setdefault("_warm_q", [])
+        seen = self.__dict__.setdefault("_warm_seen", set())
+        key = (name.lower(), overlay)
+        if key in seen:
+            return
+        seen.add(key)
+        anim = self.overlay_anim(name) if overlay else self.missile_anim(name)
+        if anim is None:
+            return
+        # the most used directions first: the 8 main ones, then the rest
+        n = anim.n_dirs
+        order = sorted(range(n), key=lambda d: (d % max(1, n // 8) != 0, d))
+        q.extend((anim, d) for d in order)
+        if not overlay:
+            self.warm_missile(self.missile_explosion(name))
+
+    def pump(self, budget=0.006):
+        """Decode queued animation directions until `budget` seconds are used."""
+        q = self.__dict__.get("_warm_q")
+        if not q:
+            return
+        import time
+        t0 = time.time()
+        while q and time.time() - t0 < budget:
+            anim, d = q.pop(0)
+            try:
+                anim.frames(d)
+            except Exception:
+                pass
 
     def missile_explosion(self, name):
         r = self._missile_rows().get((name or "").lower())

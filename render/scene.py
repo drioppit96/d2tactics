@@ -326,6 +326,10 @@ class Scene:
                 break
             ev = self.queue.pop(0)
             w = self._start(ev)
+            if ev[0] == "projectile":
+                # a volley (Teeth, Charged Bolt, Multiple Shot, Twister ...) leaves all at once
+                while self.queue and self.queue[0][0] == "projectile" and self.queue[0][1] is ev[1]:
+                    self._start(self.queue.pop(0))
             if w is None:
                 self.current = ev
             else:
@@ -618,16 +622,11 @@ class Scene:
 
     def _draw_ghost(self, surf, cam, u, pose, feet):
         """A monster beyond your light radius, shown dimmed so you can see what is coming."""
-        size = 300
-        tmp = pygame.Surface((size, size), pygame.SRCALPHA)
-        tmp.fill((0, 0, 0, 0))
-        fx, fy = size // 2, size - 50
+        pose = dict(pose, tint=(150, 140, 135, 230), no_shadow=True)
         try:
-            self.assets.draw_unit(tmp, u, pose, (fx, fy), cam.scale, 1.0)
+            self.assets.draw_unit(surf, u, pose, feet, cam.scale, 1.0)
         except Exception:
-            return
-        tmp.fill((150, 140, 135, 230), special_flags=pygame.BLEND_RGBA_MULT)
-        surf.blit(tmp, (int(feet[0] - fx), int(feet[1] - fy)))
+            pass
 
     def _draw_selected(self, surf, cam, u):
         """The monster under the mouse: drawn again above the darkness with a red rim, and its
@@ -638,21 +637,10 @@ class Scene:
         if not self.opts.get("highlight_monster", True) or self._sel_draw is None:
             return
         _, pose, feet = self._sel_draw
-        size = 360
-        tmp = pygame.Surface((size, size), pygame.SRCALPHA)
-        tmp.fill((0, 0, 0, 0))
-        fx, fy = size // 2, size - 60
         try:
-            self.assets.draw_unit(tmp, u, pose, (fx, fy), cam.scale, 1.0)
+            self.assets.draw_unit(surf, u, dict(pose, outline=(255, 60, 40), no_shadow=True), feet, cam.scale, 1.0)
         except Exception:
-            return
-        sil = tmp.copy()
-        sil.fill((0, 0, 0, 255), special_flags=pygame.BLEND_RGBA_MULT)
-        sil.fill((255, 60, 40, 0), special_flags=pygame.BLEND_RGBA_ADD)
-        ox, oy = int(feet[0] - fx), int(feet[1] - fy)
-        for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-            surf.blit(sil, (ox + dx, oy + dy))
-        surf.blit(tmp, (ox, oy))
+            pass
 
     def _unit_states(self, u):
         """D2 states shown as overlays: your aura and buffs, curses on monsters."""
@@ -729,13 +717,21 @@ class Scene:
         cx, cy = cam.cell_to_screen(x, y)
         hw, hh = TILE_W * s / 2, TILE_H * s / 2
         w, h = int(hw * 2) + 2, int(hh * 2) + 2
-        tmp = pygame.Surface((w, h), pygame.SRCALPHA)
-        pts = [(w / 2, 1), (w - 1, h / 2), (w / 2, h - 1), (1, h / 2)]
-        if outline:
-            col = rgba if len(rgba) > 3 and rgba[3] >= 100 else (255, 255, 255, 120)
-            pygame.draw.lines(tmp, col, True, pts, 1)
-        else:
-            pygame.draw.polygon(tmp, rgba, pts)
+        cache = self.__dict__.setdefault("_diamonds", {})
+        key = (w, h, tuple(rgba), outline)
+        tmp = cache.get(key)
+        if tmp is None:
+            tmp = pygame.Surface((w, h), pygame.SRCALPHA)
+            tmp.fill((0, 0, 0, 0))
+            pts = [(w / 2, 1), (w - 1, h / 2), (w / 2, h - 1), (1, h / 2)]
+            if outline:
+                col = rgba if len(rgba) > 3 and rgba[3] >= 100 else (255, 255, 255, 120)
+                pygame.draw.lines(tmp, col, True, pts, 1)
+            else:
+                pygame.draw.polygon(tmp, rgba, pts)
+            if len(cache) > 64:
+                cache.clear()
+            cache[key] = tmp
         surf.blit(tmp, (cx - w / 2, cy - h / 2))
 
     def _draw_labels(self, surf, labels):

@@ -415,29 +415,46 @@ class SkillCaster:
     # ------------------------------------------------------------ projectiles
     def _first_hit_on_line(self, src, dst, pierce=False, max_len=SPELL_RANGE):
         cells = _extend(src, dst, max_len)
+        foes = self._foe_index(src, max_len)
         hit = []
         for c in cells:
             if not self.grid.in_bounds(*c) or not self.grid.walkable(*c):
                 break
-            u = self.unit_at(c)
-            if u is not None and u is not self.player and u.ai != "npc" and not getattr(u, "ally", False):
+            u = foes.get(c)
+            if u is not None and u not in hit:
                 hit.append(u)
                 if not pierce:
                     return hit, c
         return hit, (cells[-1] if cells else dst)
 
-    def _missile_path(self, src, dst, pierce=False, max_len=SPELL_RANGE):
+    def _foe_index(self, centre, r):
+        """{cell: monster} for every enemy body near `centre` (one pass instead of unit_at per cell)."""
+        idx = {}
+        for m in self.monsters:
+            if not m.alive or m.ai == "npc" or getattr(m, "ally", False):
+                continue
+            if abs(m.x - centre[0]) > r + 2 or abs(m.y - centre[1]) > r + 2:
+                continue
+            rr = getattr(m, "radius", 0)
+            for dy in range(-rr, rr + 1):
+                for dx in range(-rr, rr + 1):
+                    idx[(m.x + dx, m.y + dy)] = m
+        return idx
+
+    def _missile_path(self, src, dst, pierce=False, max_len=SPELL_RANGE, foes=None):
         """(cells the missile flies over, units it hits) - stops at walls and, unless it pierces,
         at the first enemy."""
         cells = _line(src, dst)[:max_len] if max(abs(dst[0] - src[0]), abs(dst[1] - src[1])) >= max_len \
             else _extend(src, dst, max_len)
+        if foes is None:
+            foes = self._foe_index(src, max_len)
         path, hit = [], []
         for c in cells:
             if not self.grid.in_bounds(*c) or not self.grid.walkable(*c):
                 break
             path.append(c)
-            u = self.unit_at(c)
-            if u is not None and u is not self.player and u.ai != "npc" and not getattr(u, "ally", False):
+            u = foes.get(c)
+            if u is not None:
                 if u not in hit:
                     hit.append(u)
                 if not pierce:
@@ -455,8 +472,9 @@ class SkillCaster:
         p = self.player
         n = self._spread_count(s, env)
         out = []
+        foes = self._foe_index(p.pos, SPELL_RANGE)
         for end in _fan_targets(p.pos, cell, n, SPELL_RANGE):
-            path, hit = self._missile_path(p.pos, end, max_len=SPELL_RANGE)
+            path, hit = self._missile_path(p.pos, end, max_len=SPELL_RANGE, foes=foes)
             out.append((path, hit[0] if hit else None))
         return out
 
@@ -572,9 +590,11 @@ class SkillCaster:
             shots = self._spread_shots(s, env, cell)
             hit_any = [m for _, m in shots if m is not None]
             self._wake(list({id(m): m for m in hit_any}.values()))
+            # the whole volley flies at once, then the hits land
             for path, m in shots:
                 end = m.pos if m is not None else (path[-1] if path else cell)
                 self.emit("projectile", p, p.pos, end, kind, vm)
+            for path, m in shots:
                 if m is not None and m.alive:
                     self._missile_hit(s, env, m)
             return True
@@ -588,6 +608,7 @@ class SkillCaster:
                 self._wake(foes)
                 for m in foes:
                     self.emit("projectile", p, p.pos, m.pos, kind, vm)
+                for m in foes:
                     self._missile_hit(s, env, m)
                 return True
         hit, end = self._first_hit_on_line(p.pos, cell, pierce=bool(x.get("pierce")))

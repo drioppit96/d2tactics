@@ -413,6 +413,37 @@ class Game:
         self.scene.opts = self.opts
         self.cam.snap(*self.scene.player_world_pos())
 
+    def _warm_skill_art(self):
+        """Decode the selected skill's missiles / overlays in spare frame time, before you cast."""
+        a = self.assets
+        if not hasattr(a, "pump"):
+            return
+        p = self.world.player
+        rs = getattr(p, "right_skill", None)
+        if rs != getattr(self, "_warmed_skill", 0):
+            self._warmed_skill = rs
+            sk = p.skills.tree.get(rs) if rs and getattr(p, "skills", None) else None
+            w = self.world
+            if sk is not None:
+                d = sk.data or {}
+                for col in ("cltmissile", "srvmissile", "cltmissilea", "srvmissilea", "cltmissileb", "cltmissilec"):
+                    a.warm_missile(d.get(col))
+                if hasattr(w, "ground_missile"):
+                    a.warm_missile(w.ground_missile(sk))
+                if sk.key == "Frozen Orb":
+                    a.warm_missile("frozenorbbolt")
+                if d.get("castoverlay"):
+                    a.warm_missile(d["castoverlay"], overlay=True)
+            if hasattr(w, "weapon_missile"):
+                a.warm_missile(w.weapon_missile(p))
+        self._warm_tick = getattr(self, "_warm_tick", 0) + 1
+        w = self.world
+        if self._warm_tick % 30 == 0 and w.mode == "combat" and hasattr(w, "weapon_missile"):
+            for m in w.aware_monsters():          # what the monsters will shoot at you
+                if m.range > 1:
+                    a.warm_missile(w.weapon_missile(m))
+        a.pump(0.006)
+
     def apply_options(self):
         if getattr(self, "scene", None) is not None:
             self.scene.opts = self.opts
@@ -1156,6 +1187,7 @@ class Game:
             self.scene.alt_held = False
         self._hold_walk(mouse, dt)
         self.advance_walk()
+        self._warm_skill_art()
         self.scene.update(dt)
         if self.world.pending_exit and self.scene.idle():
             w = self.world
