@@ -142,6 +142,8 @@ class Game:
         if hasattr(self.hud, "use_class"):
             self.hud.use_class(cls)
         self.loading("Building Act 1 - the Rogue Encampment and the wilderness...")
+        from game import act2 as _act2
+        _act2.CURRENT_REAL = _act2.real_tomb(name)          # which of the seven is Tal Rasha's
         player = None
         if saved is not None:
             from game.save import build_player
@@ -171,6 +173,8 @@ class Game:
         self.world.log("Left click: move / talk / attack. Right click: your skill. Space: end turn. Tab: map.",
                        (170, 170, 170))
         self._start_scene()
+        if saved is not None and int(saved.get("act", 1) or 1) == 2:
+            self.travel_act(2)                 # D2: you continue in the town of the act you were in
         self.prebuild_from(self.world)
         self.start_sprite_prebuild()
         if self.asset_warning:
@@ -182,6 +186,10 @@ class Game:
             return
         try:
             from game.save import save_character
+            try:
+                self.world.player.current_act = self.current_act()      # you continue in this act's town
+            except Exception:
+                pass
             save_character(self.world.player, self.cfg.get("game", "difficulty"))
         except Exception:
             import traceback
@@ -189,9 +197,9 @@ class Game:
 
     def prebuild_from(self, w):
         """Build the dungeons behind this level's entrances in the background (no loading screens)."""
-        from game.act1 import WORLD_OF
+        from game.acts import world_of
         for target in sorted(set(t for t in w.exits.values() if t), key=str):
-            key = WORLD_OF.get(target, target)
+            key = world_of(target)
             if key not in self.levels and key not in self._prebuilt and key not in self._build_queue:
                 self._build_queue.append(key)
         self._run_builder()
@@ -240,12 +248,12 @@ class Game:
         return make_world(a.act_kit, a.act_info, a.content, key, player=self.world.player)
 
     def change_level_act(self, target, arrive=None):
-        from game.act1 import WORLD_OF
+        from game.acts import world_of
         old = self.world
         old.pending_exit = None
         src_level = old.level_id
         player = old.player
-        key = WORLD_OF.get(target, target)
+        key = world_of(target)
         info = self.assets.act_info
         if key == getattr(old, "level_key", None):
             w = old
@@ -291,8 +299,8 @@ class Game:
 
     def travel_waypoint(self, lid):
         """Waypoint travel to any activated waypoint of the act."""
-        from game.act1 import WORLD_OF
-        key = WORLD_OF.get(lid, lid)
+        from game.acts import world_of
+        key = world_of(lid)
         info = self.assets.act_info
         w = self.levels.get(key) or self._get_world(key, info.name(lid))
         self.levels[key] = w
@@ -301,7 +309,8 @@ class Game:
         if cell is not None:
             from game.act1 import arrival_cell
             spot = arrival_cell(w.grid, [cell], set(), w.rng, dist=2)
-        if spot is None and lid == 1:
+        from game.acts import TOWN_IDS
+        if spot is None and lid in TOWN_IDS:
             spot = w._default_start()
         self.change_level_act(lid, arrive=spot)
 
@@ -351,22 +360,51 @@ class Game:
             q = w.player.quests
             if q.get("andariel") in ("cleared", "done"):
                 q["andariel"] = "done"
-                w.log("Warriv: To Lut Gholein! (Act 2 is coming in a later update.)", (220, 210, 170))
-                w.emit("victory")
+                w.log("Warriv: To Lut Gholein!", (220, 210, 170))
+                self.travel_act(2)
             else:
                 w.log("Warriv: The pass is blocked until Andariel falls.", (220, 210, 170))
+        elif opt == "Go East (test)":
+            # TESTING ONLY: travel to Act 2 without killing Andariel
+            w.log("Warriv: To Lut Gholein!", (220, 210, 170))
+            self.travel_act(2)
+        elif opt == "Go West":
+            w.log("Warriv: Back to the Rogue Encampment.", (220, 210, 170))
+            self.travel_act(1)
+
+    def current_act(self):
+        from game.acts import act_of
+        w = self.world
+        return act_of(w.level_id if getattr(w, "level_id", None) else getattr(w, "level_key", 1))
+
+    def town_world(self, act):
+        """The (built) world holding the town of an act."""
+        from game.acts import TOWNS, world_of
+        town = TOWNS.get(act, 1)
+        key = world_of(town)
+        w = self.levels.get(key)
+        if w is None:
+            w = self._get_world(key, self.assets.act_info.name(town))
+            self.levels[key] = w
+        return town, w
+
+    def travel_act(self, act):
+        """Warriv / Meshif: to the town of another act (you arrive next to the caravan / ship)."""
+        town, w = self.town_world(act)
+        self.change_level_act(town, arrive=w._default_start())
+        self._prebuild_proc = None if not getattr(self, "_prebuild_proc", None) or \
+            not self._prebuild_proc.is_alive() else self._prebuild_proc
+        self.start_sprite_prebuild()          # the new act's monsters and missiles
 
     def portal_to_town(self):
-        """Through your Town Portal: you arrive next to its twin in the camp."""
-        wild = self.levels.get("wild")
-        if wild is None:
-            return
+        """Through your Town Portal: you arrive next to its twin in the town of this act."""
+        town, wild = self.town_world(self.current_act())
         base = wild._default_start()
         cell = wild._free_cell_near((base[0] + 2, base[1] - 2), 4)
         wild.objects = [o for o in wild.objects if o["kind"] != "tp_back"]
-        wild.objects.append(dict(kind="tp_back", cell=cell, level=1, oid=0, used=False, target=None))
+        wild.objects.append(dict(kind="tp_back", cell=cell, level=town, oid=0, used=False, target=None))
         spot = wild._free_cell_near((cell[0] + 1, cell[1] + 2), 3)
-        self.change_level_act(1, arrive=spot)
+        self.change_level_act(town, arrive=spot)
 
     def portal_back(self):
         p = self.world.player
@@ -392,7 +430,7 @@ class Game:
         for m in self.world.aware_monsters():
             m.aware = False
         self.world.mode, self.world.turn = "explore", "player"
-        wild = self.levels.get("wild")
+        town, wild = self.town_world(self.current_act())
         if wild is None:
             return
         wild.game_over = False
@@ -403,11 +441,16 @@ class Game:
             old.player = p
         wild.relocate_player(wild._default_start())
         wild.update_area()
-        wild.log("You wake up in the Rogue Encampment. You lost %d gold." % lost, (230, 160, 90))
+        wild.log("You wake up in %s. You lost %d gold." % (self.assets.act_info.name(town), lost), (230, 160, 90))
         self._start_scene()
         self.save()
 
     def _start_scene(self):
+        if hasattr(self.assets, "set_act"):
+            try:
+                self.assets.set_act(self.current_act())
+            except Exception:
+                pass
         self._path_cache = {}
         self.walk_queue, self.walk_action, self.walk_goal = [], None, None
         self.scene = Scene(self.world, self.assets, self.fonts)
@@ -436,11 +479,13 @@ class Game:
                 ids.append(m.d2id)
         info = getattr(a, "act_info", None)
         if info is not None:
-            for lid in range(1, 40):
+            from game.acts import ACT_RANGES
+            for lid in ACT_RANGES.get(self.current_act(), range(1, 40)):
                 for mid in info.roster(lid):
                     if mid not in ids:
                         ids.append(mid)
-        for mid in ("andariel", "bloodraven", "corpsefire", "smith", "griswold", "countess"):
+        for mid in ("andariel", "bloodraven", "corpsefire", "smith", "griswold", "countess",
+                    "radament", "duriel", "summoner"):
             if mid not in ids:
                 ids.append(mid)
         plan["monsters"] = ids
@@ -556,6 +601,8 @@ class Game:
                 select = bool(list_saves())
             except Exception:
                 select = False
+        if hasattr(self.assets, "set_act"):
+            self.assets.set_act(1)
         try:
             if select:
                 from render.charselect import CharSelect
@@ -905,6 +952,8 @@ class Game:
                 w.unequip(arg)
             elif action == "stat":
                 w.add_stat(arg)
+            elif action == "wp_tab":
+                h.wp_act = arg
             elif action == "waypoint":
                 h.show_waypoints = False
                 self.travel_waypoint(arg)

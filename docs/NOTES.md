@@ -95,6 +95,23 @@ automap cells (AutoMap.txt + MaxiMap.dc6), Act 2.
 - Performance: Grid.update_visibility only clears what it lit last time (big maps!), find_path has
   a node limit, make_grid builds rows by slices; the outdoor act builds in about a second.
 
+## Act 2 world (game/act2.py, game/acts.py)
+
+- acts.py: level ranges per act, towns, waypoint lists, MonPreset rows per act (type-1 DS1
+  objects), act tables applied to every Built (b.act, b.monpreset, b.town_npcs, b.quest_objects).
+- Desert: same slot scheme as Act 1 (8x8 blocks of 8 tiles) but area valleys are 4x4 blocks
+  offset inside their slot. Town LutW (exit W) / LutN (exit N) + transw2/transn1 flush on the
+  slot edge. Borders edge1 S, edge2 W, edge3 N, edge4 E, corners edge9 SW, edge10 NW, edge11 NE,
+  edge12 SE. Snake 40-41-42-43-44, 45 next to 44.
+- Canyon (46): 7 tal pieces, warp main 1..7 -> tombs 66..72. Real tomb = 66 + hash(name) % 7
+  (act2.CURRENT_REAL; background builders must use it, not the dummy player).
+- Mazes sewer / tomb / lair / arcane added to act1.MAZES; MazeKit.role_room honours role_exits.
+- Portals: 54 (cellar 3) -> 74 (Arcane), Summoner room -> 46, Tal Rasha room -> 73 (Duriel).
+- DS1 cells with the hidden bit (0x80000000) are editor markers - never drawn (teal floors).
+- Per-act palette: assets.set_act(act) swaps the map palette; HUD/items always use Act 1's.
+- Type-2 DS1 object ids per act need obj.txt (Extract D2 tables.bat); until then waypoints
+  are injected by the builders.
+
 ## Skills (game/skills.py)
 
 - calc language: ln12 = par1 + (lvl-1)*par2, dm12 = diminishing, parN, lvl, blvl (hard points),

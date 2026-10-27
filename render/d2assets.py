@@ -198,6 +198,8 @@ class D2Assets(AssetProvider):
         self.cache_root = os.path.dirname(cache)
         self.d2_path = d2_path
         self.palette = load_palette(self.src.read("data\\global\\palette\\act1\\pal.dat"))
+        self.ui_palette = self.palette          # the interface and item pictures always use Act 1's
+        self.act = 1
         say("Reading cave tiles")
         self.kit = CaveKit(self.src)
         say("Reading the Rogue Encampment")
@@ -239,6 +241,34 @@ class D2Assets(AssetProvider):
         return build_town(self.town_kit, seed)
 
     # ---------------------------------------------------------------- helpers
+    def set_act(self, act):
+        """Each act's terrain, monsters and missiles are drawn with that act's palette (Lut Gholein's
+        sand isn't Act 1's grass colours). Switching drops the pictures made with the old one."""
+        if act == self.act:
+            return
+        path = "data\\global\\palette\\act%d\\pal.dat" % act
+        if not self.src.has(path):
+            return
+        self.act = act
+        self.palette = load_palette(self.src.read(path))
+        self.tile_cache.clear()
+        self.sprites.clear()
+        self.flash_cache.clear()
+        self.__dict__.pop("_tint_cache", None)
+        for k in [k for k in self.item_cache if isinstance(k, tuple) and k and k[0] in ("mis", "ovl")]:
+            del self.item_cache[k]
+        self.__dict__.pop("_warm_seen", None)
+        self.__dict__.pop("_warm_q", None)
+
+    def indexed_surface_ui(self, w, h, pixels):
+        s = pygame.image.frombuffer(bytes(pixels), (w, h), "P")
+        s.set_palette(self.ui_palette)
+        s.set_colorkey(0)
+        out = pygame.Surface((w, h), pygame.SRCALPHA)
+        out.fill((0, 0, 0, 0))
+        out.blit(s, (0, 0))
+        return out
+
     def indexed_surface(self, w, h, pixels):
         s = pygame.image.frombuffer(bytes(pixels), (w, h), "P")
         s.set_palette(self.palette)
@@ -360,7 +390,7 @@ class D2Assets(AssetProvider):
                 try:
                     from d2.dc6 import DC6
                     dc = DC6(self.src.read(path))
-                    frames = [(self.indexed_surface(f.width, f.height, f.pixels), f.xoff, f.yoff)
+                    frames = [(self.indexed_surface_ui(f.width, f.height, f.pixels), f.xoff, f.yoff)
                               for f in dc.frames if f.width and f.height]
                 except Exception:
                     frames = None
@@ -467,6 +497,10 @@ class D2Assets(AssetProvider):
     def draw_object(self, surf, kind, oid, pos, s, clock=0.0, used=False):
         """Quest objects and waypoints with D2's object graphics (placeholder marker if missing)."""
         toks = self.OBJECT_TOKENS.get(kind, [])
+        if kind == "waypoint":
+            from game.act2 import WAYPOINT_TOKEN
+            if oid in WAYPOINT_TOKEN:
+                toks = [WAYPOINT_TOKEN[oid]] + [t for t in toks if t != WAYPOINT_TOKEN[oid]]
         if kind == "cairn" and isinstance(oid, int) and 7 <= oid <= 11:
             toks = [toks[oid - 7]]
         mode = "ON" if used and kind in ("waypoint", "cage", "inifuss") else "NU"

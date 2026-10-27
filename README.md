@@ -31,6 +31,16 @@ sockets, and every non-ladder runeword of 1.14d (Runes.txt).
 **Graphics:** projectiles and spells use D2's own missile animations (Missiles.txt) with their
 explosions, cast overlays and aura / curse effects (Overlay.txt, States.txt).
 
+**Act 2 (in progress):** Lut Gholein (Atma, Drognan, Fara, Elzix, Lysander, Greiz, Cain,
+Meshif, Warriv), the Rocky Waste, Dry Hills, Far Oasis, Lost City and Valley of Snakes as one
+seamless desert, the Canyon of the Magi with the seven tombs (one is the real Tal Rasha's
+Tomb, picked per character), and every Act 2 dungeon: Sewers 1-3 (Radament), Harem and Palace
+Cellars, Arcane Sanctuary (the Summoner, portal to the Canyon), Halls of the Dead, Claw Viper
+Temple, Maggot Lair, Ancient Tunnels, Stony Tomb, Duriel's Lair and the rest. D2's Act 2
+waypoints (the waypoint panel has act tabs), D2's Act 2 palette. Travel: Warriv "Go East"
+(for now also "Go East (test)" without killing Andariel); in Lut Gholein Warriv takes you back
+west. Act 2 quests come next.
+
 Without a D2 path the game falls back to placeholder art (a Barbarian in a generated cave).
 
 ## Run it (Windows)

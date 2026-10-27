@@ -160,7 +160,7 @@ class FrontEnd:
             f = self.game.fonts["med"]
             img = f.render(text, True, color)
         else:
-            img = font.render(text, color, self.assets.indexed_surface)
+            img = font.render(text, color, getattr(self.assets, "indexed_surface_ui", self.assets.indexed_surface))
         if center:
             x -= img.get_width() / 2
         surf.blit(img, (int(x), int(y)))

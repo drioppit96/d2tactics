@@ -144,7 +144,8 @@ class D2Content:
         b["cost"] = _int(r.get("cost"))
         b["gamble"] = _int(r.get("gamble cost"))
         b["shop"] = {}
-        for npc in ("charsi", "gheed", "akara"):
+        for npc in ("charsi", "gheed", "akara", "fara", "lysander", "drognan", "elzix", "ormus", "alkor",
+                    "asheara", "hralti", "jamella", "halbu", "larzuk", "malah", "drehya"):
             vals = tuple(_int(r.get(npc + k)) for k in ("min", "max", "magicmin", "magicmax", "magiclvl"))
             if vals[1] or vals[3]:
                 b["shop"][npc] = vals

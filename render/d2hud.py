@@ -105,7 +105,7 @@ class D2Hud:
         self.assets = assets
         src = assets.src
         self.src = src
-        self.ind = assets.indexed_surface
+        self.ind = getattr(assets, "indexed_surface_ui", assets.indexed_surface)
         self.frames = {}
         for n in ("800ctrlpnl7", "hlthmana", "overlap", "invchar6", "minipanel", "minipanelbtn", "level",
                   "runbutton", "mediumbuttonblank", "blank", "buysellbtn", "skillpoints", "buysell", "buyselltabs",
@@ -685,16 +685,30 @@ class D2Hud:
 
     def _draw_waypoints(self, surf, world):
         """D2's waypoint list: every activated waypoint of the act; click one to travel."""
-        from game.act1 import WAYPOINT_LEVELS
+        from game.acts import WAYPOINTS, act_of
         p = world.player
         info = getattr(world, "info", None)
         self._panel_bg(surf, 0, self.frames.get("blank") or self.frames["invchar6"], 0)
         self.text(surf, self.f30, "Waypoints", GOLD, 0, 14, "center", 320)
-        self.text(surf, self.f10, "Act I", WHITE, 0, 46, "center", 320)
         here = world.level_id
         mx, my = self.mouse
         got = getattr(p, "waypoints", {1})
-        for i, lid in enumerate(WAYPOINT_LEVELS):
+        # D2's act tabs: every act you have a waypoint in
+        acts = [a for a in sorted(WAYPOINTS) if any(l in got for l in WAYPOINTS[a])] or [1]
+        if getattr(self, "wp_act", None) not in acts:
+            cur = act_of(here) if here else 1
+            self.wp_act = cur if cur in acts else acts[-1]
+        tw = 280 // max(1, len(acts))
+        for i, a in enumerate(acts):
+            x = 20 + i * tw
+            on = a == self.wp_act
+            box = pygame.Surface((int((tw - 4) * self.s), int(20 * self.s)), pygame.SRCALPHA)
+            box.fill((70, 58, 30, 220) if on else (0, 0, 0, 140))
+            surf.blit(box, self.P(x, 44))
+            self.text(surf, self.f10, "Act " + "I II III IV V".split()[a - 1], WHITE if on else (150, 140, 120),
+                      x, 48, "center", tw - 4)
+            self.region(x, 44, tw - 4, 20, "wp_tab", a)
+        for i, lid in enumerate(WAYPOINTS[self.wp_act]):
             y = 76 + i * 32
             name = info.name(lid) if info else str(lid)
             on = lid in got

@@ -115,7 +115,7 @@ def _canon(ex):
 
 def _path(name):
     name = name.replace("/", "\\").lower()
-    if name.startswith("act1\\"):
+    if name.startswith(("act1\\", "act2\\", "act3\\", "act4\\", "expansion\\")):
         return TILES + name
     return TILES + "act1\\" + name
 
@@ -185,8 +185,8 @@ def stamp(b, ds, tiles, ox, oy, rng, owner, skip_npc_objects=False):
             pos = (ox + x, oy + y)
             for li, layer in enumerate(ds.floors):
                 c = layer[y * w + x]
-                if c.empty:
-                    continue
+                if c.empty or c.hidden:
+                    continue            # hidden = editor markers D2 never draws
                 t = tiles.pick(0, c.main, c.sub, rng.randrange(1 << 16))
                 if t:
                     if li == 0:
@@ -201,6 +201,8 @@ def stamp(b, ds, tiles, ox, oy, rng, owner, skip_npc_objects=False):
                 if c.orientation in (10, 11) and c.main < 8:
                     b.warps.append((pos, c.main, owner))
                     continue
+                if c.hidden:
+                    continue
                 if c.orientation in SKIP_ORIENT or c.orientation == 0:
                     continue
                 orients = [c.orientation, 4] if c.orientation == 3 else [c.orientation]
@@ -212,16 +214,21 @@ def stamp(b, ds, tiles, ox, oy, rng, owner, skip_npc_objects=False):
                 tm.walls[pos] = walls
             elif pos in tm.walls:
                 del tm.walls[pos]
+    # what the DS1's object numbers mean depends on the act (Built carries the act's tables)
+    monpreset = getattr(b, "monpreset", MONPRESET_A1)
+    town_npcs = getattr(b, "town_npcs", TOWN_NPCS)
+    quest_objects = getattr(b, "quest_objects", QUEST_OBJECTS)
+    town_id = getattr(b, "town_id", 1)
     for typ, oid, x, y in ds.objects:
         cell = (ox * SUB + x, oy * SUB + y)
         if typ == 1:
-            name = MONPRESET_A1[oid] if oid < len(MONPRESET_A1) else ""
-            if oid in TOWN_NPCS and owner == 1:
-                b.npcs.append((TOWN_NPCS[oid], cell))
+            name = monpreset[oid] if oid < len(monpreset) else ""
+            if oid in town_npcs and owner == town_id:
+                b.npcs.append((town_npcs[oid], cell))
             elif name and not name.startswith("place_nothing"):
                 b.presets.append((name, cell, owner))
-        elif typ == 2 and oid in QUEST_OBJECTS:
-            b.objects.append((QUEST_OBJECTS[oid], cell, owner, oid))
+        elif typ == 2 and oid in quest_objects:
+            b.objects.append((quest_objects[oid], cell, owner, oid))
 
 
 # ---------------------------------------------------------------- fast walkability
@@ -624,7 +631,7 @@ class MazeKit:
         self.rooms = {}
         folder, prefix = spec["folder"], spec["prefix"]
         for combo in COMBOS:
-            for n in ("", "2", "3", "4"):
+            for n in ("", "1", "2", "3", "4"):
                 ds = kit.ds1(folder + "%s%s%s.ds1" % (prefix, combo, n))
                 if ds is not None:
                     self.rooms.setdefault(frozenset(combo), []).append(ds)
@@ -693,6 +700,7 @@ def build_maze(kit, level_id, spec, seed=None):
     cw = max(x for x, _ in layout) + 1
     ch = max(y for _, y in layout) + 1
     b = Built(cw * mk.rw + 1, ch * mk.rh + 1)
+    act_tables(b, spec.get("act", 1), kit)
     lt = mk.spec["lvltype"]
     for (rx, ry), ex in layout.items():
         role = assign.get((rx, ry))
@@ -700,6 +708,8 @@ def build_maze(kit, level_id, spec, seed=None):
         if ds is None:
             ds = rng.choice(mk.rooms[frozenset(ex)])
         stamp(b, ds, kit.tiles_for(ds, lt), rx * mk.rw, ry * mk.rh, rng, level_id)
+        if role:
+            b.__dict__.setdefault("role_rooms", {})[role] = (rx * mk.rw, ry * mk.rh, mk.rw, mk.rh)
         if role == "prev" and spec["kit"] == "barracks":
             # the court connection has no warp tile: its open side leads back to the cloister
             b.court_room = (rx * mk.rw, ry * mk.rh, mk.rw, mk.rh)
@@ -728,11 +738,13 @@ def build_preset(kit, level_id, spec, seed=None):
         b.areas[33] = (0, 0, W * SUB, oy * SUB)
         b.areas[32] = (0, oy * SUB, W * SUB, H * SUB)
     else:
-        name = rng.choice([f for f in spec["files"] if kit.ds1("act1\\" + f) is not None] or spec["files"])
-        ds = kit.ds1("act1\\" + name)
+        folder = spec.get("folder", "act1\\")
+        name = rng.choice([f for f in spec["files"] if kit.ds1(folder + f) is not None] or spec["files"])
+        ds = kit.ds1(folder + name)
         if ds is None:
             raise FileNotFoundError(name)
         b = Built(ds.width, ds.height)
+        act_tables(b, spec.get("act", 1), kit)
         stamp(b, ds, kit.tiles_for(ds, spec.get("lvltype")), 0, 0, rng, level_id)
         b.areas[level_id] = (0, 0, ds.width * SUB, ds.height * SUB)
     b.tm.drawn = set(b.tm.floor) | set(b.tm.walls)
@@ -740,7 +752,17 @@ def build_preset(kit, level_id, spec, seed=None):
     return b, grid, rng
 
 
+def act_tables(b, act, kit):
+    """Give a Built the object / monster number tables of its act (Act 1 is the default)."""
+    if act and act != 1:
+        from .acts import apply_act_tables
+        apply_act_tables(b, act, kit)
+
+
 def build_level(kit, level_id, seed=None):
+    if level_id not in DUNGEONS:
+        from . import act2
+        return act2.build_level(kit, level_id, seed)
     spec = DUNGEONS[level_id]
     if spec["kit"] in MAZES:
         return build_maze(kit, level_id, spec, seed)

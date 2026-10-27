@@ -11,10 +11,17 @@ YELLOW = (255, 230, 90)
 GREY = (170, 170, 170)
 RED = (255, 80, 80)
 
-VENDORS = {"akara": "akara", "charsi": "charsi", "gheed": "gheed"}
+VENDORS = {"akara": "akara", "charsi": "charsi", "gheed": "gheed",
+           "fara": "fara", "lysander": "lysander", "drognan": "drognan", "elzix": "elzix"}
 NPC_OPTIONS = {
-    "akara": ["Talk", "Trade", "Level 99 (test)"],   # TEST ONLY - remove the last entry later "charsi": ["Talk", "Trade"], "gheed": ["Talk", "Trade", "Gamble"],
-    "kashya": ["Talk", "Hire"], "cain1": ["Talk", "Identify Items"], "warriv1": ["Talk", "Go East"],
+    "akara": ["Talk", "Trade", "Level 99 (test)"],             # TEST ONLY: "Level 99 (test)", remove later
+    "charsi": ["Talk", "Trade"], "gheed": ["Talk", "Trade", "Gamble"],
+    "kashya": ["Talk", "Hire"], "cain1": ["Talk", "Identify Items"],
+    "warriv1": ["Talk", "Go East", "Go East (test)"],          # TEST ONLY: "Go East (test)", remove later
+    # Lut Gholein
+    "fara": ["Talk", "Trade"], "drognan": ["Talk", "Trade"], "lysander": ["Talk", "Trade"],
+    "elzix": ["Talk", "Trade", "Gamble"], "greiz": ["Talk"], "atma": ["Talk"], "jerhyn": ["Talk"],
+    "geglash": ["Talk"], "meshif1": ["Talk"], "warriv2": ["Talk", "Go West"], "cain2": ["Talk", "Identify Items"],
 }
 STORE_W, STORE_H = 10, 10
 TAB_NAMES = {"armo": "Armor", "weap": "Weapons", "misc": "Misc", "gamble": "Gamble"}

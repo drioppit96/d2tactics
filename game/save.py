@@ -96,7 +96,7 @@ def save_character(player, difficulty="normal"):
         skills=dict(p.skills.levels), skill_points=p.skills.points, right_skill=p.right_skill,
         quests=dict(getattr(p, "quests", {})), waypoints=sorted(getattr(p, "waypoints", {1})),
         visited=sorted(getattr(p, "visited", {1})), cain=bool(getattr(p, "cain_rescued", False)),
-        hireling=bool(getattr(p, "has_hireling", False)),
+        hireling=bool(getattr(p, "has_hireling", False)), act=int(getattr(p, "current_act", 1) or 1),
         equipment={k: _item_dict(v) for k, v in p.equipment.items()},
         inventory=[_item_dict(it) for it in p.inventory], belt=[_item_dict(it) for it in p.belt],
     )
@@ -163,6 +163,7 @@ def build_player(data, content):
     p.visited = set(data.get("visited", [1]))
     p.cain_rescued = data.get("cain", False)
     p.has_hireling = data.get("hireling", False)
+    p.current_act = data.get("act", 1)
     for k in p.equipment:
         p.equipment[k] = _item_from(data.get("equipment", {}).get(k), content)
     p.inventory = [it for it in (_item_from(d, content) for d in data.get("inventory", [])) if it is not None]

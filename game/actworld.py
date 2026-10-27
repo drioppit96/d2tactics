@@ -11,7 +11,16 @@ DUNGEON_AMBIENT = 205
 OUTDOOR_AMBIENT = 120
 TOWN_AMBIENT = 70
 
-NPC_IDS = {"gheed", "cain1", "akara", "rogue1", "kashya", "warriv1", "charsi", "navi"}
+NPC_IDS = {"gheed", "cain1", "akara", "rogue1", "kashya", "warriv1", "charsi", "navi",
+           "warriv2", "atma", "drognan", "fara", "greiz", "elzix", "lysander", "meshif1", "geglash", "jerhyn",
+           "cain2", "act2male", "act2female", "act2guard1", "act2guard4", "act2guard5", "act2vendor1",
+           "act2vendor2", "fish", "tyrael1", "place_talkingguard", "place_dumbguard"}
+# map markers that aren't fighters in this game (traps and towers come later)
+NOT_SPAWNED = ("trap-", "firetower", "lightningspire", "gargoyletrap", "sarcophagus", "place_npc_pack",
+               "place_maggot", "place_tightspotboss")
+# boss presets named by their MonStats id
+BOSS_IDS = {"radament": ("Radament", "radament"), "duriel": ("Duriel", "duriel"),
+            "summoner": ("The Summoner", "summoner")}
 
 
 def _int(v, d=0):
@@ -114,6 +123,11 @@ def setup(world, built, grid, rng, info, level_key):
             continue
         if kind == "waypoint":
             world.waypoints[c] = owner
+        elif kind == "portal":
+            # a fixed portal (Arcane Sanctuary, Canyon, Duriel's Lair): oid = where it leads;
+            # coming back through it you arrive next to it
+            world.objects.append(dict(kind=kind, cell=c, level=owner, oid=0, used=False, target=oid))
+            world.entries.setdefault(oid, arrival_cell(grid, [c], set(world.exits), rng, dist=2))
         else:
             world.objects.append(dict(kind=kind, cell=c, level=owner, oid=oid, used=False))
     # ---- NPCs
@@ -143,8 +157,9 @@ def setup(world, built, grid, rng, info, level_key):
     safe = list(world.entries.values()) + list(world.waypoints)
     for name, cell, owner in b.presets:
         _spawn_preset(world, name, cell, owner, taken, info)
+    from .acts import TOWN_IDS
     for lid, rect in world.areas.items():
-        if lid in (1, 20):
+        if lid in TOWN_IDS or lid == 20:
             continue
         _populate(world, lid, rect, taken, safe, info)
 
@@ -226,6 +241,14 @@ def _spawn_preset(world, name, cell, owner, taken, info):
     roster = info.roster(owner)
     rng = world.rng
     if name in NPC_IDS or name in ("chicken", "cow", "camel"):
+        return
+    if name.lower().startswith(NOT_SPAWNED):
+        return
+    if name.lower() in BOSS_IDS:
+        title, boss = BOSS_IDS[name.lower()]
+        m = _spawn(world, name.lower(), _free_near(world.grid, cell), lvl + 2, taken, unique=True, name=title)
+        if m is not None:
+            m.boss = boss
         return
     if name == "The Cow King" and owner != 39:
         return      # D2 only puts him on the Moo Moo Farm (some outdoor presets carry his marker)
@@ -320,7 +343,8 @@ def _populate(world, lid, rect, taken, safe, info):
     samples = 300
     hits = sum(1 for _ in range(samples) if g.walkable(rng.randrange(x0, x1), rng.randrange(y0, y1)))
     walk = area * hits / float(samples)
-    outdoor = lid in OUTDOOR_IDS
+    from .acts import OUTDOOR_IDS as ALL_OUTDOOR
+    outdoor = lid in ALL_OUTDOOR
     per_pack = 1500 if outdoor else 330
     n_packs = min(int(walk / per_pack), 42 if outdoor else 40)
     lvl = info.monster_level(lid)
@@ -352,8 +376,16 @@ def _populate(world, lid, rect, taken, safe, info):
 def make_world(kit, info, content, level_key, seed=None, player=None, char_class="bar", char_name=None):
     """level_key: "wild" (the whole outdoor act) or a dungeon level id."""
     from .world import World
+    from . import act2
     if level_key == "wild":
         b, grid, rng = build_outdoors(kit, seed, content)
+    elif level_key == "desert":
+        b, grid, rng = act2.build_desert(kit, seed, content)
+    elif level_key == 46:
+        b, grid, rng = act2.build_canyon(kit, seed, content)
+    elif level_key in act2.DUNGEONS:
+        real = act2.CURRENT_REAL or act2.real_tomb(getattr(player, "name", None) or char_name)
+        b, grid, rng = act2.build_level(kit, level_key, seed, real=real)
     else:
         b, grid, rng = build_level(kit, level_key, seed)
     w = World(built=(b, grid, rng), content=content, level_key=level_key, info=info, player=player,

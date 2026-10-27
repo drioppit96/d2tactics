@@ -34,7 +34,10 @@ RED = (255, 80, 80)
 GENERIC_EXCLUDED = {"Bash", "Double Swing", "Stun", "Leap Attack", "Concentrate", "Frenzy", "Berserk", "Whirlwind",
                     "Taunt", "bash", "attack"}
 NPC_NAMES = {"akara": "Akara", "charsi": "Charsi", "gheed": "Gheed", "kashya": "Kashya", "warriv1": "Warriv",
-             "cain1": "Deckard Cain", "rogue1": "Rogue Scout", "navi": "Flavie", "chicken": "Chicken"}
+             "cain1": "Deckard Cain", "rogue1": "Rogue Scout", "navi": "Flavie", "chicken": "Chicken",
+             "warriv2": "Warriv", "atma": "Atma", "drognan": "Drognan", "fara": "Fara", "greiz": "Greiz",
+             "elzix": "Elzix", "lysander": "Lysander", "meshif1": "Meshif", "geglash": "Geglash", "jerhyn": "Jerhyn",
+             "cain2": "Deckard Cain"}
 NPC_LINES = {
     "akara": "Akara: Rest a moment, I will mend your wounds.",
     "charsi": "Charsi: My forge isn't ready for trading yet - check back soon!",
@@ -44,6 +47,17 @@ NPC_LINES = {
     "rogue1": "Rogue Scout: Stay sharp out there.",
     "navi": "Flavie: The wilderness beyond is crawling with the Fallen.",
     "chicken": "Cluck.",
+    "warriv2": "Warriv: Lut Gholein - the jewel of the desert. I can take you back west whenever you like.",
+    "atma": "Atma: Radament... that monster killed my husband and son. He lurks in the sewers below.",
+    "drognan": "Drognan: The Horadrim hid Tal Rasha's tomb well. I study the old texts for a way in.",
+    "fara": "Fara: Your arms are battered, friend. Let me see to them.",
+    "greiz": "Greiz: My men are the best swords in the desert - for a price.",
+    "elzix": "Elzix: Looking for a bargain? Or feeling lucky?",
+    "lysander": "Lysander: Potions, elixirs... careful, some of them bite back!",
+    "meshif1": "Meshif: My ship sails east once the way is clear.",
+    "geglash": "Geglash: Want to know a secret? Me neither.",
+    "jerhyn": "Jerhyn: An evil has taken the palace. My men keep it sealed - for now.",
+    "cain2": "Deckard Cain: Stay awhile and listen... and bring me what you cannot read.",
 }
 GREEN = (100, 220, 100)
 YELLOW = (255, 230, 90)
@@ -188,7 +202,7 @@ class World(SkillCaster, ItemActions):
 
     def _default_start(self):
         """Where a new game starts: next to Warriv in the camp; in dungeons at the way in."""
-        warriv = [n.pos for n in self.npcs if getattr(n, "npc", "") == "warriv1"]
+        warriv = [n.pos for n in self.npcs if getattr(n, "npc", "") in ("warriv1", "warriv2")]
         if warriv:
             wx, wy = warriv[0]
             taken = {n.pos for n in self.monsters}
@@ -223,19 +237,15 @@ class World(SkillCaster, ItemActions):
         """Track which D2 area you are in (seamless outdoors): name, light, town safety."""
         if not self.areas:
             return
+        from .acts import TOWN_IDS, OUTDOOR_IDS
         lid = self.area_at(self.player.pos)
-        if self.town_rect is not None and lid == 1:
-            x0, y0, x1, y1 = self.town_rect
-            px, py = self.player.pos
-            if not (x0 <= px < x1 and y0 <= py < y1):
-                lid = 1
         if lid is None or lid == self.level_id:
             return
         self.level_id = lid
         info = getattr(self, "info", None)
         self.level_name = info.name(lid) if info else str(lid)
-        self.town = lid == 1
-        self.ambient = 70 if lid == 1 else (120 if lid in (2, 3, 4, 5, 6, 7, 17, 26, 27, 38) else 205)
+        self.town = lid in TOWN_IDS
+        self.ambient = 70 if self.town else (120 if lid in OUTDOOR_IDS or lid == 38 else 205)
         if announce:
             self.emit("area", self.level_name)
             self.log("Entering %s." % self.level_name, (199, 179, 119))
