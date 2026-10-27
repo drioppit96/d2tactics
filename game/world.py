@@ -403,8 +403,11 @@ class World(SkillCaster):
                 self._regen_steps += 1
                 if self._regen_steps % 2 == 0 and p.hp < p.max_hp:
                     p.hp += 1
+                if p.mana < p.max_mana:
+                    p.mana = min(p.max_mana, p.mana + self.mana_regen() / 2.0)
                 if self._regen_steps % 10 == 0:
                     self._tick_buffs()           # buffs also run out while exploring
+                    self.tick_player_buffs()
             self.grid.update_visibility(p.pos, self.sight_radius())
             if self.areas:
                 self.update_area()
@@ -610,6 +613,15 @@ class World(SkillCaster):
             hp_frac = p.hp / float(max(1, p.max_hp))
             p.recalc()
             p.hp = min(p.max_hp, max(1, int(round(p.max_hp * hp_frac))))
+
+    def mana_regen(self):
+        """Mana back per round: 4% of max mana (D2 refills mana in about two minutes; a round is a
+        couple of seconds, but every cast here is a whole action), more with Warmth / items."""
+        p = self.player
+        pct = p.mod("mana_regen_pct")
+        if getattr(p, "active_aura", None) == "Meditation":
+            pct += 100
+        return max(1.0, p.max_mana * 0.04 * (100 + pct) / 100.0)
 
     def select_right_skill(self, name):
         """The right mouse button skill; choosing an aura turns it on (D2), anything else turns it off."""
@@ -967,7 +979,7 @@ class World(SkillCaster):
         self.tick_player_buffs()
         p.ap = p.max_ap + min(3, p.frenzy)
         p.frenzy = 0
-        p.mana = min(p.max_mana, p.mana + 1)
+        p.mana = min(p.max_mana, p.mana + self.mana_regen())
         if getattr(p, "regen", 0):
             p.hp = min(p.max_hp, p.hp + p.regen)
         self.turn = "player"
