@@ -132,4 +132,5 @@ game/itemactions.py vendors, gambling, scrolls / tomes, town portal, identify
 render/charcreate.py  D2's character creation screen
 tools/extract_samples.py  pulls a small sample set out of your MPQs (for development)
 tools/extract_monsters.py every monster's animations + a report and picture sheets (for checking)
+tools/extract_act.py      one act's layouts (DS1), tile libraries (DT1), palette, objects (for building an act)
 ```
