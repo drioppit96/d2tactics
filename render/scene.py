@@ -489,7 +489,7 @@ class Scene:
                 drawables.append((c[0] + c[1] - 0.5, 0.2, "object", ("waypoint", lid, c, False)))
         for v in self.views.values():
             cx, cy = int(round(v.rx)), int(round(v.ry))
-            if not v.unit.is_player and (not g.in_bounds(cx, cy) or not g.visible[cy][cx]):
+            if not v.unit.is_player and not self.unit_seen(v.unit, cam, v):
                 continue
             layer = 0.5 if v.dead else 2
             drawables.append((v.rx + v.ry + (0 if not v.dead else -0.4), layer, "unit", v))
@@ -592,6 +592,37 @@ class Scene:
         if sel is not None:
             self._draw_selected(surf, cam, sel)
 
+    SEEN_MARGIN = 160      # px (1:1 world scale) beyond the screen edge: about 2 D2 tiles
+
+    def unit_seen(self, u, cam, v=None):
+        """Monsters show up as soon as they are within ~2 tiles of the screen (whatever your zoom),
+        if you have a line of sight to them - not only inside your light radius."""
+        g = self.world.grid
+        v = v or self.view(u)
+        cx, cy = int(round(v.rx)), int(round(v.ry))
+        if not g.in_bounds(cx, cy):
+            return False
+        if g.visible[cy][cx]:
+            return True
+        if getattr(u, "ally", False):
+            return True
+        if not u.alive or v.dead:
+            return g.explored[cy][cx]
+        sx, sy = cam.cell_to_screen(v.rx, v.ry)
+        m = self.SEEN_MARGIN * cam.scale
+        if not (-m <= sx <= cam.sw + m and -m <= sy <= cam.sh + m + 60 * cam.scale):
+            return False
+        p = self.world.player
+        cache = self.__dict__.setdefault("_los", {})
+        key = id(u)
+        hit = cache.get(key)
+        if hit is None or hit[0] != (cx, cy) or hit[1] != p.pos:
+            if len(cache) > 3000:
+                cache.clear()
+            hit = ((cx, cy), p.pos, g.line_of_sight(p.pos, (cx, cy)))
+            cache[key] = hit
+        return hit[2]
+
     def _footprint(self, u):
         r = getattr(u, "radius", 0)
         return [(u.x + dx, u.y + dy) for dy in range(-r, r + 1) for dx in range(-r, r + 1)]
@@ -622,7 +653,7 @@ class Scene:
 
     def _draw_ghost(self, surf, cam, u, pose, feet):
         """A monster beyond your light radius, shown dimmed so you can see what is coming."""
-        pose = dict(pose, tint=(150, 140, 135, 230), no_shadow=True)
+        pose = dict(pose, tint=(205, 195, 190, 255), no_shadow=True)
         try:
             self.assets.draw_unit(surf, u, pose, feet, cam.scale, 1.0)
         except Exception:

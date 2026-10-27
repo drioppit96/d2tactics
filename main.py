@@ -706,10 +706,14 @@ class Game:
 
     def monster_at(self, cell):
         g = self.world.grid
-        if not g.in_bounds(*cell) or not g.visible[cell[1]][cell[0]]:
+        if not g.in_bounds(*cell):
             return None
         u = self.world.unit_at(cell)
-        return u if u is not None and not u.is_player else None
+        if u is None or u.is_player:
+            return None
+        if not g.visible[cell[1]][cell[0]] and not any(v is u for _, v in getattr(self.scene, "unit_hits", [])):
+            return None         # only what is drawn on screen can be picked
+        return u
 
     def make_hud(self):
         """D2's own interface when the UI files are available, otherwise the simple one."""

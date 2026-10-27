@@ -264,8 +264,30 @@ def _spawn_preset(world, name, cell, owner, taken, info):
         m.boss = {"Corpsefire": "corpsefire", "The Countess": "countess", "The Smith": "smith",
                   "Griswold": "griswold"}.get(name, "superunique")
         lo, hi = _int(su.get("mingrp")), _int(su.get("maxgrp"))
-        for c in _spots(world, cell2, rng.randint(lo, max(lo, hi)) if hi else 0, taken):
+        for c in _scatter(world, cell2, rng.randint(lo, max(lo, hi)) if hi else 0, taken):
             _spawn(world, mid, c, lvl + 1, taken, champion=False)
+
+
+def _scatter(world, centre, n, taken, radius=6, gap=2):
+    """Spots for a pack spread over a few tiles (at least `gap` cells apart, in sight of the centre)
+    instead of a tight clump; falls back to the nearest free cells."""
+    g = world.grid
+    rng = world.rng
+    out = []
+    for _ in range(n * 25):
+        if len(out) >= n:
+            break
+        c = (centre[0] + rng.randint(-radius, radius), centre[1] + rng.randint(-radius, radius))
+        if not g.walkable(*c) or c in taken or c in out:
+            continue
+        if any(max(abs(c[0] - o[0]), abs(c[1] - o[1])) < gap for o in out):
+            continue
+        if not g.line_of_sight(centre, c):
+            continue
+        out.append(c)
+    if len(out) < n:
+        out += [c for c in _spots(world, centre, n * 2, taken | set(out)) if c not in out][:n - len(out)]
+    return out
 
 
 def _pack(world, centre, mid, lvl, taken, champion=False):
@@ -281,7 +303,7 @@ def _pack(world, centre, mid, lvl, taken, champion=False):
         plo, phi = t["party"] if t["party"][1] else (2, 4)
         members += [t["minion"]] * rng.randint(max(1, plo), max(1, phi))
     members = members[:7]
-    spots = _spots(world, centre, len(members), taken)
+    spots = _scatter(world, centre, len(members), taken, radius=5 + len(members) // 3)
     for i, (m, cell) in enumerate(zip(members, spots)):
         _spawn(world, m, cell, lvl, taken, champion=champion and i == 0)
 
