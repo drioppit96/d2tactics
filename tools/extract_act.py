@@ -2,7 +2,10 @@
 every room / area layout (DS1) the act's levels use, every tile library (DT1) they need, the
 act's palette, its objects (doors, chests, waypoints, quest objects) and the tables.
 
-    py tools\\extract_act.py --act 2 ["C:\\GOG Games\\Diablo II"]
+    py tools\\extract_act.py --act 2 ["C:\\GOG Games\\Diablo II"] [--no-objects]
+
+(The object animations of all acts come with every pack unless --no-objects is given; the
+Act 3-5 batch files leave them out because the Act 2 pack already has them.)
 
 Writes d2act<N>_part1.zip, part2 ... (about 40 MB each) next to the game. The game itself always
 reads straight from your MPQs; this is only so the levels can be built and tested.
@@ -152,6 +155,8 @@ def main():
     except Exception:
         pass
     n_obj = 0
+    if "--no-objects" in sys.argv:
+        tokens = set()          # every act's objects already came with the Act 2 pack
     for tok in sorted(tokens):
         for mode in ("NU", "OP", "ON", "S1", "S2", "S3", "S4", "S5"):
             cof = "data\\global\\objects\\%s\\COF\\%s%sHTH.cof" % (tok, tok, mode)
