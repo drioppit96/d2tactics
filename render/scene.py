@@ -46,11 +46,12 @@ class FloatText:
 
 
 class Projectile:
-    def __init__(self, kind, src, dst):
+    def __init__(self, kind, src, dst, missile=None):
         self.kind = kind
+        self.missile = missile
         self.src, self.dst = src, dst
         d = math.hypot(dst[0] - src[0], dst[1] - src[1])
-        self.dur = 0.08 + d * 0.045
+        self.dur = 0.06 + d / 650.0      # world pixels -> ~0.2 s over 5 tiles
         self.t = 0.0
 
     def pos(self):
@@ -70,6 +71,7 @@ class Scene:
         self.floats = []
         self.projectiles = []
         self.novas = []          # [world pos, radius in cells, colour, time] spell rings
+        self.effects = []        # [kind, name, unit or world pos, time, duration]: explosions, cast overlays
         self.items_shown = set()
         self.log = []
         self.banner = None       # (text, color, time left)
@@ -141,19 +143,44 @@ class Scene:
             v.t, v.dur = 0.0, 0.38 if skill in ("bash", "cast") else 0.3
             return None
         if kind == "projectile":
-            unit, src, dst, pk = ev[1:]
+            unit, src, dst, pk = ev[1:5]
+            missile = ev[5] if len(ev) > 5 else None
             v = self.view(unit)
             v.facing = (max(-1, min(1, dst[0] - src[0])), max(-1, min(1, dst[1] - src[1])))
             v.mode = "A1" if pk in ("arrow", "spike") else "SC"
             v.t, v.dur = 0.0, 0.2
-            self.projectiles.append(Projectile(pk, cell_to_world(*src), cell_to_world(*dst)))
+            self.projectiles.append(Projectile(pk, cell_to_world(*src), cell_to_world(*dst), missile))
             return None
+        if kind == "overlay":
+            unit, name = ev[1], ev[2]
+            self.effects.append(["overlay", name, unit, 0.0, None])
+            return 0
         if kind == "area":
             self.banner = [ev[1], (199, 179, 119), 2.0]
             return 0
         if kind == "nova":
-            unit, centre, radius, elem = ev[1:]
-            self.novas.append([cell_to_world(*centre), radius, NOVA_COLORS.get(elem, (230, 220, 200)), 0.0])
+            unit, centre, radius, elem = ev[1:5]
+            missile = ev[5] if len(ev) > 5 else None
+            wc = cell_to_world(*centre)
+            assets = self.assets
+            anim = assets.missile_anim(missile) if missile and hasattr(assets, "missile_anim") else None
+            if anim is not None and centre == unit.pos and anim.n_dirs > 1:
+                # D2 novas are rings of missiles flying outwards
+                for i in range(16):
+                    a = i * math.pi / 8
+                    dst = (wc[0] + math.cos(a) * radius * 32, wc[1] + math.sin(a) * radius * 16)
+                    pr = Projectile("nova", wc, dst, missile)
+                    pr.dur = 0.35
+                    self.projectiles.append(pr)
+            elif anim is not None:
+                # areas: the spell's graphic at the target and around it
+                import random as _r
+                spots = [wc] + [(wc[0] + _r.uniform(-1, 1) * radius * 28, wc[1] + _r.uniform(-1, 1) * radius * 14)
+                                for _ in range(min(8, 2 + radius * 2))]
+                for k, sp in enumerate(spots):
+                    self.effects.append(["missile", missile, sp, -0.06 * k, anim.duration() or 0.5])
+            else:
+                self.novas.append([wc, radius, NOVA_COLORS.get(elem, (230, 220, 200)), 0.0])
             return 0.22
         if kind == "teleport":
             v = self.view(ev[1])
@@ -243,6 +270,17 @@ class Scene:
             p.t += dt
             if p.t >= p.dur:
                 self.projectiles.remove(p)
+                expl = self.assets.missile_explosion(p.missile) if p.missile and hasattr(self.assets, "missile_explosion") else None
+                if expl and p.kind != "nova":
+                    anim = self.assets.missile_anim(expl)
+                    if anim is not None:
+                        self.effects.append(["missile", expl, p.dst, 0.0, anim.duration() or 0.4])
+        for e in list(self.effects):
+            e[3] += dt
+            if e[4] is not None and e[3] > e[4]:
+                self.effects.remove(e)
+            elif e[4] is None and e[3] > 3.0:
+                self.effects.remove(e)
         for n in list(self.novas):
             n[3] += dt
             if n[3] > 0.45:
@@ -462,6 +500,10 @@ class Scene:
                         "flash": v.flash, "facing": v.facing}
                 feet = cam.cell_to_screen(v.rx, v.ry)
                 rect = assets.draw_unit(surf, u, pose, feet, s, max(0.35, b))
+                if u.alive and not v.dead and hasattr(assets, "draw_overlay"):
+                    for st in self._unit_states(u):
+                        for ov in assets.state_overlays(st):
+                            assets.draw_overlay(surf, ov, feet, self.clock, loop=True)
                 if not u.is_player and u.alive and not v.dead:
                     if rect is None:
                         rect = pygame.Rect(0, 0, int(22 * s), int(38 * s))
@@ -474,7 +516,24 @@ class Scene:
 
         for p in self.projectiles:
             wx, wy = p.pos()
-            assets.draw_projectile(surf, p.kind, cam.to_screen(wx, wy), s, p.t)
+            sp = cam.to_screen(wx, wy)
+            vec = (p.dst[0] - p.src[0], p.dst[1] - p.src[1])
+            if not (p.missile and hasattr(assets, "draw_missile") and
+                    assets.draw_missile(surf, p.missile, (sp[0], sp[1] - 12), vec, p.t)):
+                assets.draw_projectile(surf, p.kind, sp, s, p.t)
+        for e in list(self.effects):
+            kind, name, where, t, dur = e
+            if t < 0:
+                continue
+            if kind == "missile":
+                sp = cam.to_screen(*where)
+                if hasattr(assets, "draw_missile"):
+                    assets.draw_missile(surf, name, sp, (0, 1), t, loop=False)
+            elif kind == "overlay" and hasattr(assets, "draw_overlay"):
+                v = self.view(where)
+                feet = cam.cell_to_screen(v.rx, v.ry)
+                if not assets.draw_overlay(surf, name, feet, t):
+                    self.effects.remove(e)
         for (wx, wy), r, col, t in self.novas:
             k = min(1.0, t / 0.3)
             rw, rh = max(2, int(r * 32 * k * s)), max(1, int(r * 16 * k * s))
@@ -487,6 +546,26 @@ class Scene:
 
         if use_tiles:
             self._draw_darkness(surf, cam, light)
+
+    def _unit_states(self, u):
+        """D2 states shown as overlays: your aura and buffs, curses on monsters."""
+        p = self.world.player
+        tree = getattr(getattr(p, "skills", None), "tree", {})
+        out = []
+        if u.is_player:
+            names = list(getattr(u, "buffs", {}).keys())
+            if getattr(u, "active_aura", None):
+                names.append(u.active_aura)
+            for n in names:
+                sk = tree.get(n)
+                if sk is not None and sk.data and sk.data.get("aurastate"):
+                    out.append(sk.data["aurastate"])
+        else:
+            for n in getattr(u, "curses", {}) or {}:
+                sk = tree.get(n)
+                if sk is not None and sk.data and sk.data.get("auratargetstate"):
+                    out.append(sk.data["auratargetstate"])
+        return out
 
     def _tile_explored(self, tx, ty):
         g = self.world.grid
@@ -556,7 +635,7 @@ class Scene:
         font = self.fonts["small"]
         placed = []
         for it, (x, y) in sorted(labels, key=lambda l: -l[1][1]):
-            text = "%d Gold" % it.amount if it.kind == "gold" else it.name
+            text = "%d Gold" % it.amount if it.kind == "gold" else getattr(it, "shown_name", it.name)
             img = font.render(text, True, it.color)
             r = pygame.Rect(0, 0, img.get_width() + 8, img.get_height() + 2)
             r.center = (int(x), int(y - 26))

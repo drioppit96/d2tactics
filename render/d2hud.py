@@ -108,7 +108,8 @@ class D2Hud:
         self.ind = assets.indexed_surface
         self.frames = {}
         for n in ("800ctrlpnl7", "hlthmana", "overlap", "invchar6", "minipanel", "minipanelbtn", "level",
-                  "runbutton", "mediumbuttonblank", "blank", "buysellbtn", "skillpoints"):
+                  "runbutton", "mediumbuttonblank", "blank", "buysellbtn", "skillpoints", "buysell", "buyselltabs",
+                  "gemsocket"):
             self.frames[n] = self._load(PANEL + n + ".dc6", required=n in ("800ctrlpnl7", "hlthmana", "invchar6"))
         self.cursor = self._load("data\\global\\ui\\CURSOR\\ohand.dc6")
         self._class_art = {}
@@ -127,6 +128,8 @@ class D2Hud:
         self.automap_mode = 0           # 0 off, 1 full, 2 mini
         self.show_minipanel = True
         self.skill_popup = False
+        self.store = None            # an open vendor (game.itemactions.Store)
+        self.npc_menu = None         # NPC whose talk / trade menu is open
         self.minimaps = {}
         self.regions = []
         self.hover_lines = None
@@ -241,7 +244,9 @@ class D2Hud:
         p = world.player
         self._draw_log(surf, scene)
         self._draw_automap(surf, world)
-        if getattr(self, "show_waypoints", False):
+        if self.store is not None:
+            self._draw_store(surf, world)
+        elif getattr(self, "show_waypoints", False):
             self._draw_waypoints(surf, world)
         elif self.show_quests:
             self._draw_quests(surf, p)
@@ -254,6 +259,8 @@ class D2Hud:
         self._draw_control_panel(surf, world, scene)
         if self.skill_popup:
             self._draw_skill_popup(surf, p)
+        if self.npc_menu is not None and self.store is None:
+            self._draw_npc_menu(surf, world)
         if scene.banner:
             text, col, t = scene.banner
             img = self.f30.render(text, col if col != (220, 60, 50) else (255, 60, 60), self.ind)
@@ -578,6 +585,86 @@ class D2Hud:
             y += 12
         self._close_button(surf, CHAR_CLOSE, 0, "quests")
 
+    # ------------------------------------------------------------ vendors
+    STORE_GRID = (15, 62)
+
+    def _draw_npc_menu(self, surf, world):
+        """D2's NPC menu: Talk / Trade / Gamble / ... / Cancel."""
+        from game.itemactions import NPC_OPTIONS
+        npc = self.npc_menu
+        opts = NPC_OPTIONS.get(getattr(npc, "npc", ""), ["Talk"]) + ["Cancel"]
+        w, h = 200, 34 + 24 * len(opts)
+        x0, y0 = self.lw / 2.0 - w / 2.0, 120
+        bg = pygame.Surface((int(w * self.s), int(h * self.s)), pygame.SRCALPHA)
+        bg.fill((0, 0, 0, 215))
+        surf.blit(bg, self.P(x0, y0))
+        pygame.draw.rect(surf, (110, 100, 70), self.R(x0, y0, w, h), 1)
+        self.text(surf, self.f16, npc.name, GOLD, x0, y0 + 8, "center", w)
+        mx, my = self.mouse
+        for i, o in enumerate(opts):
+            y = y0 + 32 + i * 24
+            hot = pygame.Rect(int(x0), int(y - 2), w, 22).collidepoint((int(mx), int(my)))
+            self.text(surf, self.f16, o, WHITE if hot else (200, 190, 160), x0, y, "center", w)
+            self.region(x0, y - 2, w, 22, "npc_opt", o)
+
+    def _draw_store(self, surf, world):
+        from game.itemactions import TAB_NAMES
+        st = self.store
+        p = world.player
+        fr = self.frames.get("buysell") or self.frames.get("blank") or self.frames["invchar6"]
+        self._panel_bg(surf, 0, fr, 0)
+        tabs = self.frames.get("buyselltabs") or []
+        mx, my = self.mouse
+        for i, (page, _) in enumerate(st.tabs):
+            x = 1 + i * 79
+            active = i == st.tab
+            f = tabs[(i * 2 + (0 if active else 1)) % len(tabs)] if tabs else None
+            if f is not None:
+                self.put(surf, f, x, 0)
+            self.text(surf, self.f10, TAB_NAMES.get(page, page), WHITE if active else GREY, x, 9, "center", 79)
+            self.region(x, 0, 79, 31, "store_tab", i)
+        gx, gy = self.STORE_GRID
+        held = getattr(world, "held", None)
+        self.region(gx, gy, 10 * CELL, 10 * CELL, "store_grid")
+        for it in st.items():
+            sx, sy = it.store_pos
+            w, h = max(1, it.invw), max(1, it.invh)
+            x, y = gx + sx * CELL, gy + sy * CELL
+            tint = pygame.Surface((int((w * CELL - 1) * self.s), int((h * CELL - 1) * self.s)), pygame.SRCALPHA)
+            ok = it.mod_list is None or not hasattr(it, "requirements_ok") or it.requirements_ok(p)
+            tint.fill((10, 10, 40, 120) if ok else (150, 0, 0, 70))
+            surf.blit(tint, self.P(x, y))
+            self._icon(surf, it, x, y, w * CELL - 1, h * CELL - 1)
+            self.region(x, y, w * CELL, h * CELL, "store_item", it)
+            if held is None and pygame.Rect(int(x), int(y), w * CELL, h * CELL).collidepoint((int(mx), int(my))):
+                lines = list(it.describe_lines(p)) if not getattr(it, "gamble", False) else \
+                    [(it.base.get("name", it.name), WHITE), ("Gamble: a random magic item of this kind", GREY)]
+                cost = world.price_of(it)
+                lines.append(("Cost: %d" % cost, WHITE if p.gold >= cost else RED))
+                lines.append(("Left click to buy", GREY))
+                self.hover_lines = lines
+        self.text(surf, self.f16, "Gold: %d" % p.gold, GOLD, 20, 359)
+        self.text(surf, self.f10, "Right click your items to sell", GREY, 20, 392)
+        self._close_button(surf, (271, 383, 32, 32), 0, "store_close")
+
+    def _draw_sockets(self, surf, it, x, y, w, h):
+        """Socket holes (and what's in them) over a hovered item, like D2."""
+        n = getattr(it, "sockets", 0)
+        if not n:
+            return
+        gs = (self.frames.get("gemsocket") or [None])[0]
+        cols = 1 if w < 50 else 2
+        rows = (n + cols - 1) // cols
+        for i in range(n):
+            cx = x + (w / cols) * (i % cols) + (w / cols - 28) / 2.0
+            cy = y + (h / rows) * (i // cols) + (h / rows - 28) / 2.0
+            if gs is not None:
+                self.put(surf, gs, cx, cy)
+            else:
+                pygame.draw.circle(surf, (60, 60, 60), self.P(cx + 14, cy + 14), int(12 * self.s), 1)
+            if i < len(it.socketed):
+                self._icon(surf, it.socketed[i], cx + 2, cy + 2, 24, 24)
+
     def _draw_waypoints(self, surf, world):
         """D2's waypoint list: every activated waypoint of the act; click one to travel."""
         from game.act1 import WAYPOINT_LEVELS
@@ -650,6 +737,9 @@ class D2Hud:
                 self._icon(surf, it, ox + x, y, w, h)
                 if hot and held is None:
                     self.hover_lines = it.describe_lines(p)
+                    self._draw_sockets(surf, it, ox + x, y, w, h)
+                elif hot and held is not None and getattr(held, "gem", None) and getattr(it, "sockets", 0):
+                    self._draw_sockets(surf, it, ox + x, y, w, h)
             self.region(ox + x, y, w, h, "slot", slot)
         # backpack grid
         for it in p.inventory:
@@ -667,11 +757,17 @@ class D2Hud:
                 tint.fill((10, 10, 40, 120))      # D2 shades the cells an item covers
                 surf.blit(tint, self.P(x, y))
             self._icon(surf, it, x, y, w * CELL - 1, h * CELL - 1)
-            if held is None and pygame.Rect(int(x), int(y), w * CELL, h * CELL).collidepoint((int(mx), int(my))):
-                lines = it.describe_lines(p)
+            hot = pygame.Rect(int(x), int(y), w * CELL, h * CELL).collidepoint((int(mx), int(my)))
+            if hot and (held is None or (getattr(held, "gem", None) and getattr(it, "sockets", 0))):
+                self._draw_sockets(surf, it, x, y, w * CELL - 1, h * CELL - 1)
+            if held is None and hot:
+                lines = list(it.describe_lines(p))
                 cur = p.equipment.get("ring1" if it.slot == "ring" else it.slot) if it.slot else None
                 if cur:
-                    lines = lines + [("", WHITE), ("Equipped: " + cur.name, cur.color)]
+                    lines = lines + [("", WHITE), ("Equipped: " + cur.shown_name, cur.color)]
+                if self.store is not None:
+                    from game.d2items import sell_price
+                    lines.append(("Sell value: %d (right click)" % sell_price(it), GOLD))
                 self.hover_lines = lines
         if held is not None:
             cell = self.grid_cell_at((mx * self.s, my * self.s))

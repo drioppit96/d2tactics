@@ -21,6 +21,7 @@ from .items import roll_drop, SLOTS
 from .mapgen import generate_cave, populate
 from .units import Player, Monster, CLASS_KIT
 from .skillcast import SkillCaster
+from .itemactions import ItemActions
 
 SIGHT = 8           # how far monsters notice you
 ALERT_RADIUS = 6    # pack mates that get woken up with them
@@ -70,7 +71,7 @@ def hit_chance(attacker, defender, ar_bonus_pct=0):
     return chance
 
 
-class World(SkillCaster):
+class World(SkillCaster, ItemActions):
     def __init__(self, seed=None, depth_level=1, level_builder=None, content=None,
                  level_id="den", level_name="Den of Evil", town=False, player=None, exit_to=None,
                  char_class="bar", char_name=None, built=None, level_key=None, info=None):
@@ -82,6 +83,9 @@ class World(SkillCaster):
         self.objects = []
         self.level_key = level_key
         self.town_rect = None
+        self.cursor_mode = None      # ("identify", scroll) while choosing an item
+        self.open_npc = None
+        self.pending_arrive = None
         if built is not None:
             self._init_act(built, content, level_key, info, player, char_class, char_name)
             return
@@ -240,6 +244,7 @@ class World(SkillCaster):
                 p.visited = set()
             p.visited.add(lid)
         if self.town:
+            self.player._town_visit = getattr(self.player, "_town_visit", 0) + 1   # vendors restock
             # monsters don't follow you into the camp
             for m in self.aware_monsters():
                 m.aware = False
@@ -293,12 +298,15 @@ class World(SkillCaster):
         c, p = self.content, self.player
         right, left = CLASS_KIT.get(p.cls, ("hax", "buc"))
         for slot, code in (("weapon", right), ("shield", left), ("armor", None)):
-            p.equipment[slot] = c.make_item(c.base_by_code[code], 1, self.rng) if code in c.base_by_code else None
+            p.equipment[slot] = c.make_item(c.base_by_code[code], 1, self.rng, sockets=0) if code in c.base_by_code else None
         w = p.equipment.get("weapon")
         if w is not None and right == "jav":
             w.amount = getattr(w, "amount", 0) or 20
         if "hp1" in c.base_by_code:
             p.belt = [c.make_item(c.base_by_code["hp1"], 1, self.rng) for _ in range(4)]
+        for code in ("tsc", "isc"):           # D2: a Scroll of Town Portal and one of Identify
+            if code in c.base_by_code:
+                p.inv_add(c.make_item(c.base_by_code[code], 1, self.rng))
         p.recalc()
         p.hp, p.mana = p.max_hp, p.max_mana
 
@@ -460,7 +468,7 @@ class World(SkillCaster):
                 continue
             items.remove(it)
             self.emit("pickup", cell, it)
-            self.log(f"Picked up {it.name}.", it.color)
+            self.log(f"Picked up {getattr(it, 'shown_name', it.name)}.", it.color)
         if not items:
             del self.ground[cell]
         return True
@@ -494,6 +502,9 @@ class World(SkillCaster):
         if npc.npc == "akara":
             p.hp, p.mana = p.max_hp, p.max_mana
             self.emit("heal", p, 0)
+        from .itemactions import NPC_OPTIONS
+        if npc.npc in NPC_OPTIONS:
+            self.open_npc = npc
         return True
 
     def player_attack(self, target, skill="attack", ap_cost=None, mana_cost=0):
@@ -1024,7 +1035,7 @@ class World(SkillCaster):
                 self.ground.setdefault(p.pos, []).append(o)
                 self.emit("drop", p.pos, o)
         p.recalc()
-        self.log(f"Equipped {it.name}.", it.color)
+        self.log(f"Equipped {getattr(it, 'shown_name', it.name)}.", it.color)
         return True
 
     def _put_on(self, it, slot=None):
@@ -1134,7 +1145,7 @@ class World(SkillCaster):
                     self.ground.setdefault(p.pos, []).append(extra)
                     self.emit("drop", p.pos, extra)
         p.recalc()
-        self.log(f"Equipped {it.name}.", it.color)
+        self.log(f"Equipped {getattr(it, 'shown_name', it.name)}.", it.color)
         return True
 
     def drop_held(self):
@@ -1195,7 +1206,7 @@ class World(SkillCaster):
         mods = self._skill_mods(attacker, skill)
         anim = "bash" if mods["knock"] else ("resurrect" if skill == "resurrect" else "attack")
         if ranged_kind:
-            self.emit("projectile", attacker, attacker.pos, target.pos, ranged_kind)
+            self.emit("projectile", attacker, attacker.pos, target.pos, ranged_kind, self.weapon_missile(attacker))
             if attacker.is_player:
                 self.emit("attack", attacker, target.pos, "attack")
         elif not quiet_anim:

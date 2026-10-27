@@ -24,7 +24,14 @@ def _item_dict(it):
     return dict(name=it.name, code=it.code, slot=it.slot, rarity=it.rarity, kind=it.kind, mods=mods, mod_list=ml,
                 defense=it.defense, dmg=list(it.dmg) if it.dmg else None, ap=it.ap, amount=it.amount,
                 potion=getattr(it, "potion", "heal"), inv_pos=list(it.inv_pos) if getattr(it, "inv_pos", None) else None,
-                levelreq=it.levelreq)
+                levelreq=it.levelreq, sockets=getattr(it, "sockets", 0),
+                socketed=[_item_dict(x) for x in getattr(it, "socketed", []) or []],
+                runeword=getattr(it, "runeword", None), identified=getattr(it, "identified", True),
+                use=getattr(it, "use", None), quantity=getattr(it, "quantity", 0),
+                gem=list(it.gem) if isinstance(getattr(it, "gem", None), (list, tuple)) else getattr(it, "gem", None),
+                affixes=[dict(name=a.get("name", ""), multiply=a.get("multiply", 0), add=a.get("add", 0))
+                         for a in getattr(it, "affixes", []) or []], extra_lines=list(getattr(it, "extra_lines", []) or []),
+                base_defense=getattr(it, "base_defense", None))
 
 
 def _item_from(d, content):
@@ -55,6 +62,25 @@ def _item_from(d, content):
     if d.get("kind") == "gold":
         it.invfile, it.flippy = "invgld1", "flpgld"
     it.levelreq = d.get("levelreq", 0)
+    it.sockets = d.get("sockets", 0) or 0
+    it.socketed = [x for x in (_item_from(sd, content) for sd in d.get("socketed", []) or []) if x is not None]
+    it.runeword = d.get("runeword")
+    it.identified = d.get("identified", True)
+    it.use = d.get("use")
+    it.quantity = d.get("quantity", 0) or 0
+    g = d.get("gem")
+    it.gem = tuple(g) if isinstance(g, list) else g
+    it.affixes = list(d.get("affixes", []) or [])
+    it.extra_lines = list(d.get("extra_lines", []) or [])
+    rules = getattr(content, "sockets", None) if content is not None else None
+    if it.gem is not None and rules is not None:
+        try:
+            it.filler_lines = rules.describe_filler(it)
+            it.rune_letter = rules.letter(it)
+        except Exception:
+            pass
+    if d.get("base_defense") is not None:
+        it.base_defense = d["base_defense"]
     if d.get("inv_pos"):
         it.inv_pos = tuple(d["inv_pos"])
     return it

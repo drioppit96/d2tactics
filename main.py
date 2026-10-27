@@ -21,7 +21,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 def load_settings():
     cfg = configparser.ConfigParser()
     cfg.read_dict({"display": {"width": "1280", "height": "720", "fullscreen": "no", "scale": "auto"},
-                   "diablo2": {"path": ""}, "game": {"difficulty": "normal", "min_hit_chance": "60"}})
+                   "diablo2": {"path": ""}, "game": {"difficulty": "normal", "min_hit_chance": "60", "melee_ap": "1"}})
     cfg.read(os.path.join(HERE, "settings.ini"))
     return cfg
 
@@ -45,6 +45,8 @@ class Game:
         try:
             import game.world as _gw
             _gw.PLAYER_HIT_FLOOR = max(5, min(95, self.cfg.getint("game", "min_hit_chance"))) / 100.0
+            import game.units as _gu
+            _gu.MELEE_AP = max(1, min(6, self.cfg.getint("game", "melee_ap")))
         except Exception:
             pass
         pygame.init()
@@ -252,6 +254,8 @@ class Game:
         else:
             w = self._get_world(key, info.name(target))
         self.levels[key] = w
+        if arrive is not None and (not w.grid.walkable(*arrive) or arrive in w.occupied()):
+            arrive = w._free_cell_near(arrive, 5)
         spot = arrive or w.entries.get(src_level) or w.entries.get(target)
         if spot is None:
             spot = w._default_start()
@@ -297,6 +301,67 @@ class Game:
         if spot is None and lid == 1:
             spot = w._default_start()
         self.change_level_act(lid, arrive=spot)
+
+    def npc_option(self, npc, opt):
+        w, h = self.world, self.hud
+        h.npc_menu = None
+        if npc is None:
+            return
+        if opt == "Talk":
+            from game import quests
+            lines = quests.talk(w, npc)
+            from game.world import NPC_LINES
+            for line in lines or [NPC_LINES.get(npc.npc, npc.name + ": Hello.")]:
+                w.log(line, (220, 210, 170))
+        elif opt in ("Trade", "Gamble"):
+            h.store = w.open_store(npc.npc, gamble=opt == "Gamble")
+            h.show_inv = True
+            h.show_char = h.show_quests = False
+            h.show_skills = False
+        elif opt == "Identify Items":
+            w.identify_all()
+        elif opt == "Hire":
+            from game import quests
+            q = w.player.quests
+            if q.get("blood_raven") != "done":
+                w.log("Kashya: Prove yourself first - kill Blood Raven.", (220, 210, 170))
+            elif any(getattr(a, "hireling", False) for a in w.allies()):
+                w.log("Kashya: You already have one of my scouts.", (220, 210, 170))
+            else:
+                for line in quests.talk(w, npc):
+                    w.log(line, (220, 210, 170))
+        elif opt == "Go East":
+            q = w.player.quests
+            if q.get("andariel") in ("cleared", "done"):
+                q["andariel"] = "done"
+                w.log("Warriv: To Lut Gholein! (Act 2 is coming in a later update.)", (220, 210, 170))
+                w.emit("victory")
+            else:
+                w.log("Warriv: The pass is blocked until Andariel falls.", (220, 210, 170))
+
+    def portal_to_town(self):
+        """Through your Town Portal: you arrive next to its twin in the camp."""
+        wild = self.levels.get("wild")
+        if wild is None:
+            return
+        base = wild._default_start()
+        cell = wild._free_cell_near((base[0] + 2, base[1] - 2), 4)
+        wild.objects = [o for o in wild.objects if o["kind"] != "tp_back"]
+        wild.objects.append(dict(kind="tp_back", cell=cell, level=1, oid=0, used=False, target=None))
+        spot = wild._free_cell_near((cell[0] + 1, cell[1] + 2), 3)
+        self.change_level_act(1, arrive=spot)
+
+    def portal_back(self):
+        p = self.world.player
+        info = getattr(p, "portal", None)
+        if not info:
+            return
+        key, cell, lid = info
+        self.change_level_act(lid, arrive=(cell[0] + 1, cell[1] + 1))
+        # the portal closes once you have used it to go back
+        for w in list(self.levels.values()):
+            w.objects = [o for o in w.objects if o["kind"] not in ("tp", "tp_back")]
+        p.portal = None
 
     def respawn(self):
         """D2: you wake up in the camp (and leave some gold behind)."""
@@ -544,10 +609,31 @@ class Game:
         w = self.world
         h = self.hud
         ui = h.hit(pos)
+        if getattr(h, "npc_menu", None) is not None and not (ui and ui[0] == "npc_opt"):
+            h.npc_menu = None
         if ui:
             action, arg = ui
             if action != "pick_skill" and not str(action).startswith("skill_"):
                 h.skill_popup = False if hasattr(h, "skill_popup") else None
+            if action == "npc_opt":
+                self.npc_option(h.npc_menu, arg)
+                return
+            if action == "store_tab":
+                h.store.tab = arg
+                return
+            if action == "store_close":
+                h.store = None
+                return
+            if action == "store_item":
+                if w.held is not None:
+                    return
+                if button == 1:
+                    w.buy(h.store, arg)
+                return
+            if action == "store_grid":
+                if w.held is not None and w.held in ():
+                    pass
+                return
             if action == "end_turn" and self.can_act():
                 w.end_player_turn()
             elif action in ("inv", "char", "skills", "quests"):
@@ -596,7 +682,12 @@ class Game:
                         w.select_right_skill(arg)
                     w.log("Learned %s (level %d)." % (p.skills.tree[arg].title, p.skills.levels[arg]), (0, 220, 0))
             elif action == "slot":
-                if w.held is not None:
+                eq = w.player.equipment.get(arg)
+                if getattr(w, "cursor_mode", None) and w.cursor_mode[0] == "identify":
+                    w.identify_with(w.cursor_mode[1], eq)
+                elif w.held is not None and getattr(w.held, "gem", None) is not None and eq is not None:
+                    w.insert_into(eq, w.held)
+                elif w.held is not None:
                     w.equip_held(arg)
                 elif button == 1:
                     w.pick_from_slot(arg)
@@ -607,16 +698,24 @@ class Game:
                 if cell is None:
                     return
                 p = w.player
-                if w.held is not None:
+                target = p.inv_at(*cell)
+                if getattr(w, "cursor_mode", None) and w.cursor_mode[0] == "identify":
+                    w.identify_with(w.cursor_mode[1], target)
+                elif w.held is not None and getattr(w.held, "gem", None) is not None and target is not None \
+                        and getattr(target, "sockets", 0) and target is not w.held:
+                    w.insert_into(target, w.held)
+                elif w.held is not None:
                     gx, gy = h._held_anchor(cell, w.held)
                     w.place_held(gx, gy)
                 else:
-                    it = p.inv_at(*cell)
+                    it = target
                     if it is not None:
                         if button == 3:
-                            if it.kind == "potion":
-                                w.use_inventory_potion(it) if hasattr(w, "use_inventory_potion") else w.equip(it)
-                            else:
+                            if getattr(h, "store", None) is not None:
+                                w.sell(it)
+                            elif it.kind == "potion" or getattr(it, "use", None):
+                                w.use_item(it) if hasattr(w, "use_item") else w.use_inventory_potion(it)
+                            elif getattr(it, "gem", None) is None:
                                 w.equip(it)
                         else:
                             w.pick_from_inventory(it)
@@ -696,7 +795,12 @@ class Game:
         w = self.world
         h = self.hud
         if key == pygame.K_ESCAPE:
-            if w.held is not None:
+            if getattr(h, "store", None) is not None or getattr(h, "npc_menu", None) is not None:
+                h.store = None
+                h.npc_menu = None
+            elif getattr(w, "cursor_mode", None):
+                w.cursor_mode = None
+            elif w.held is not None:
                 w.drop_held()
             elif h.show_inv or h.show_char or getattr(h, "show_skills", False) or getattr(h, "show_quests", False) \
                     or getattr(h, "show_waypoints", False):
@@ -851,7 +955,8 @@ class Game:
             obj = w.object_at(cell) if hasattr(w, "object_at") else None
             if obj is not None:
                 label = {"cairn": "Cairn Stone", "inifuss": "Tree of Inifuss", "tome": "Moldy Tome",
-                         "malus": "Horadric Malus", "cage": "Cain's Cage", "portal": "Portal to Tristram"}
+                         "malus": "Horadric Malus", "cage": "Cain's Cage", "portal": "Portal to Tristram",
+                         "tp": "Town Portal (to the Rogue Encampment)", "tp_back": "Town Portal (back)"}
                 tip = ([label.get(obj["kind"], obj["kind"]), "Click to use"], [(90, 200, 255), TEXT])
             if hasattr(w, "waypoint_at") and w.waypoint_at(cell) is not None:
                 tip = (["Waypoint", "Click to travel"], [(90, 200, 255), TEXT])
@@ -897,7 +1002,21 @@ class Game:
         self.advance_walk()
         self.scene.update(dt)
         if self.world.pending_exit and self.scene.idle():
-            self.change_level(self.world.pending_exit)
+            w = self.world
+            kind = getattr(w, "pending_portal", None)
+            arrive = getattr(w, "pending_arrive", None)
+            w.pending_portal = w.pending_arrive = None
+            if kind == "tp":
+                self.portal_to_town()
+            elif kind == "tp_back":
+                self.portal_back()
+            elif arrive is not None:
+                self.change_level_act(w.pending_exit, arrive=arrive)
+            else:
+                self.change_level(w.pending_exit)
+        if getattr(self.world, "open_npc", None) is not None:
+            self.hud.npc_menu = self.world.open_npc
+            self.world.open_npc = None
         if getattr(self.world, "open_waypoint", None) is not None:
             self.world.open_waypoint = None
             self.hud.show_waypoints = True

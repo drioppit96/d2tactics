@@ -22,6 +22,15 @@ damage per level (D2's level brackets), synergies, mana, durations, radii - and 
 trees, icons and tooltips. Auras, curses, summons, golems, traps, shape shifting and the
 Assassin's charge-ups all have turn-based rules.
 
+**Towns and items:** Akara, Charsi and Gheed trade (their stock is D2's own vendor tables and
+is rolled again each time you return to camp), Gheed gambles, Cain identifies for free, Kashya
+hires a Rogue. Scrolls and tomes of Town Portal and Identify, every potion (healing, mana,
+rejuvenation, antidote, thawing, stamina), magic items drop unidentified, gems and runes drop,
+sockets, and every non-ladder runeword of 1.14d (Runes.txt).
+
+**Graphics:** projectiles and spells use D2's own missile animations (Missiles.txt) with their
+explosions, cast overlays and aura / curse effects (Overlay.txt, States.txt).
+
 Without a D2 path the game falls back to placeholder art (a Barbarian in a generated cave).
 
 ## Run it (Windows)
@@ -43,14 +52,15 @@ Fallout). Each turn you get **Action Points** (the stamina bar shows them).
 | Action | Cost |
 |---|---|
 | Move one cell | 1 AP |
-| Attack (left click a monster) | weapon speed, e.g. Hand Axe 3 AP, Scimitar 2 AP |
+| Attack (left click a monster) | 1 AP (bows / crossbows +1, very slow weapons +1; `melee_ap` in settings.ini) |
 | Right click | your selected right skill (choose it on the right skill button, or F1-F8) |
 | Drink potion (keys 1-4) | 2 AP |
 | Pick up item | 1 AP (free outside combat) |
 
 **Skills:** one skill point per level, D2's full tree of your class (T). Right click a learned skill in
-the tree (or use the right skill button / F1-F8) to put it on the right mouse button. Spells cost
-about 4-5 AP, curses / buffs / summons 3 AP, switching auras 1 AP. Choosing an aura turns it on.
+the tree (or use the right skill button / F1-F8) to put it on the right mouse button. Bolts cost 3 AP,
+novas and area spells 4, curses / buffs / summons / warcries 2, skill attacks your attack + 1,
+switching auras 1 AP. Choosing an aura turns it on.
 
 **Dying:** you wake up in the Rogue Encampment and lose half your gold (press R).
 
@@ -59,6 +69,12 @@ about 4-5 AP, curses / buffs / summons 3 AP, switching auras 1 AP. Choosing an a
 mouse wheel = zoom - Esc = close panels / quit
 
 **Walking:** outside combat, click (or hold the left button) to walk; a new click changes direction at once.
+
+**Town:** click an NPC to Talk / Trade / Gamble / Identify / Hire. In a store, left click buys,
+right click one of your items sells it. Right click a scroll or tome: Town Portal opens a blue
+portal (take it back from the camp), Identify turns the cursor into a scroll - click the item.
+Drag a gem or rune onto an item with sockets to insert it; the right runes in the right order
+make a runeword.
 
 **Inventory:** D2's 10x4 grid. Click an item to pick it up, click again to place it (or onto an
 equipment slot). Right click equips / drinks. Clicking the world while holding an item drops it.
@@ -76,6 +92,8 @@ game/act1.py        Act 1: the seamless outdoors and every dungeon, from D2 pres
 game/actworld.py    entrances, monsters, super uniques, waypoints, quest objects
 game/skills.py      every class skill from D2's tables; game/d2calc.py evaluates D2's formulas
 game/skillcast.py   how each kind of skill plays on the grid
+game/d2items.py     gems, runes, sockets, runewords, prices
+game/itemactions.py vendors, gambling, scrolls / tomes, town portal, identify
 render/charcreate.py  D2's character creation screen
 tools/extract_samples.py  pulls a small sample set out of your MPQs (for development)
 ```

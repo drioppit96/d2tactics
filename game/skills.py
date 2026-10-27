@@ -508,26 +508,24 @@ class SkillBook:
     def ap_cost(self, name, weapon_ap):
         s = self.tree[name]
         k = s.kind
-        if k in ("cry", "corpse", "curse", "buff", "summon", "raise", "golem", "revive", "wall"):
-            return 3
+        if k in ("cry", "corpse", "curse", "buff", "summon", "raise", "golem", "revive", "wall", "turret"):
+            return 2
         if k == "aura":
             return 1
-        if k == "turret":
-            return 3
-        if name in ("Double Swing", "Frenzy") or k == "melee" and s.extra.get("hits"):
-            return weapon_ap + 2
-        if name == "Leap" or k == "teleport":
-            return 3
-        if name in ("Leap Attack", "Whirlwind") or k == "charge":
-            return weapon_ap + 3
         if name == "Taunt":
+            return 1
+        if name in ("Double Swing", "Frenzy") or k == "melee" and s.extra.get("hits"):
+            return weapon_ap + 1
+        if name == "Leap" or k == "teleport":
             return 2
+        if name in ("Leap Attack", "Whirlwind") or k == "charge":
+            return weapon_ap + 2
         if k == "missile" and s.weapon:
             return weapon_ap + 1
         if k in ("missile", "chain", "corpse_blast"):
-            return 4
+            return 3
         if k in ("nova", "area", "line"):
-            return 5
+            return 4
         return weapon_ap + 1
 
     # ------------------------------------------------------------ text

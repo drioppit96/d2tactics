@@ -50,7 +50,7 @@ PROP_MAP.update({"res-pois-len": ("pois_len", "val"), "red-dmg": ("dr", "val"), 
                  "ignore-ac": ("ignore_ac", "val"), "dmg-ac": ("dmg_ac", "val"), "ac/lvl": ("def_lvl", "val"),
                  "dmg/lvl": ("maxdmg_lvl", "val"), "mana/lvl": ("mana_lvl", "val")})
 
-POTIONS = {"hp1": ("heal", 30), "hp2": ("heal", 60), "hp3": ("heal", 100), "hp4": ("heal", 180),
+POTIONS = {"yps": ("antidote", 50), "wms": ("thawing", 50), "vps": ("stamina", 2), "hp1": ("heal", 30), "hp2": ("heal", 60), "hp3": ("heal", 100), "hp4": ("heal", 180),
            "hp5": ("heal", 320), "mp1": ("mana", 20), "mp2": ("mana", 40), "mp3": ("mana", 80),
            "mp4": ("mana", 150), "mp5": ("mana", 250), "rvs": ("rejuv", 35), "rvl": ("rejuv", 100)}
 
@@ -90,6 +90,8 @@ class D2Content:
             self.superuniques = {r.get("superunique", "").lower(): r for r in read_table(src, "SuperUniques")}
         except Exception:
             self.superuniques = {}
+        from .d2items import SocketRules
+        self.sockets = SocketRules(self, read_table)
 
     # ------------------------------------------------------------ item types
     def ancestors(self, code):
@@ -139,6 +141,22 @@ class D2Content:
             "magic_only": bool(self.types.get(tcode, {}).get("magic") == "1"),
             "normal_only": bool(self.types.get(tcode, {}).get("normal") == "1"),
         }
+        b["cost"] = _int(r.get("cost"))
+        b["gamble"] = _int(r.get("gamble cost"))
+        b["shop"] = {}
+        for npc in ("charsi", "gheed", "akara"):
+            vals = tuple(_int(r.get(npc + k)) for k in ("min", "max", "magicmin", "magicmax", "magiclvl"))
+            if vals[1] or vals[3]:
+                b["shop"][npc] = vals
+        b["maxsock"] = _int(r.get("gemsockets"))
+        t = self.types.get(tcode, {})
+        b["sockcaps"] = (_int(t.get("maxsock1")), _int(t.get("maxsock25")), _int(t.get("maxsock40")))
+        page = ""
+        for c in [tcode] + sorted(anc):
+            if self.types.get(c, {}).get("storepage"):
+                page = self.types[c]["storepage"]
+                break
+        b["page"] = page or {"weapon": "weap", "armor": "armo"}.get(kind, "misc")
         loc = self._bodyloc(tcode)
         slot = BODYLOC_SLOT.get(loc, "")
         if "shld" in anc or "shie" in anc:
@@ -162,10 +180,19 @@ class D2Content:
                      gfx=(r.get("alternategfx") or r["code"]).upper(),
                      look={k: _int(r.get(k)) for k in ("torso", "legs", "rarm", "larm", "rspad", "lspad")})
         else:
-            if r["code"] in POTIONS:
-                b["potion"] = POTIONS[r["code"]]
-            elif r["code"] != "gld":
-                return None    # quest items, keys, scrolls, gems: later
+            code = r["code"]
+            from .d2items import gem_kind
+            if code in POTIONS:
+                b["potion"] = POTIONS[code]
+            elif code in ("tsc", "isc", "tbk", "ibk"):
+                b["use"] = "tp" if code in ("tsc", "tbk") else "id"
+                b["tome"] = code in ("tbk", "ibk")
+            elif gem_kind(b):
+                b["gem"] = gem_kind(b)
+            elif slot in ("ring", "amulet"):
+                pass              # rings and amulets are equipment
+            elif code != "gld":
+                return None       # quest items, keys, charms: not used
         return b
 
     def _affixes(self, table):
@@ -187,13 +214,16 @@ class D2Content:
                 "itypes": {r.get("itype%d" % i) for i in range(1, 8) if r.get("itype%d" % i)},
                 "etypes": {r.get("etype%d" % i) for i in range(1, 6) if r.get("etype%d" % i)},
                 "classspecific": r.get("classspecific", ""),
+                "multiply": _int(r.get("multiply")), "add": _int(r.get("add")),
             })
         return out
 
     # ------------------------------------------------------------ item generation
-    def pick_base(self, ilvl, rng, kinds=("weapon", "armor")):
+    player_cls = "bar"
+
+    def pick_base(self, ilvl, rng, kinds=("weapon", "armor", "misc")):
         cands = [b for b in self.bases if b["kind"] in kinds and b["slot"] and b["qlvl"] <= ilvl
-                 and (not b["class"] or b["class"] == "bar")]
+                 and "gem" not in b and "use" not in b and "potion" not in b]
         if not cands:
             return None
         total = sum(b["rarity"] for b in cands)
@@ -209,7 +239,7 @@ class D2Content:
                  if a["level"] <= ilvl and (not a["maxlevel"] or ilvl <= a["maxlevel"])
                  and a["itypes"] & base["ancestors"] and not (a["etypes"] & base["ancestors"])
                  and a["group"] not in used_groups and a["freq"] > 0
-                 and (not a["classspecific"] or a["classspecific"] == "bar")]
+                 and (not a["classspecific"] or a["classspecific"] == self.player_cls)]
         if not cands:
             return None
         total = sum(a["freq"] for a in cands)
@@ -220,12 +250,29 @@ class D2Content:
                 return a
         return cands[-1]
 
-    def make_item(self, base, ilvl, rng, quality="normal"):
+    def make_item(self, base, ilvl, rng, quality="normal", sockets=None, identified=None):
         if "potion" in base:
             kind, amount = base["potion"]
             it = Item(base["name"], base["code"], None, amount=amount, kind="potion")
             it.potion = kind
+            it.base = base
             it.invfile, it.flippy = base["invfile"], base["flippyfile"]
+            return it
+        if "use" in base or "gem" in base:
+            it = Item(base["name"], base["code"], None, kind="misc")
+            it.base = base
+            it.invfile, it.flippy = base["invfile"], base["flippyfile"]
+            it.invw, it.invh = base["invw"], base["invh"]
+            it.levelreq = base["levelreq"]
+            it.mod_list = []
+            if "use" in base:
+                it.use = base["use"]
+                it.quantity = 20 if base.get("tome") else 0
+            else:
+                it.gem = base["gem"]
+                rules = self.sockets
+                it.filler_lines = rules.describe_filler(it)
+                it.rune_letter = rules.letter(it)
             return it
         mods_raw = []       # (code, value or (min,max))
         affixes = []
@@ -286,9 +333,10 @@ class D2Content:
             else:
                 stats[key] = stats.get(key, 0) + v
         defense = 0
+        raw_def = None
         if base["kind"] == "armor":
             lo, hi = base["defense"]
-            defense = rng.randint(min(lo, hi), max(lo, hi))
+            defense = raw_def = rng.randint(min(lo, hi), max(lo, hi))
             if "edef" in stats:
                 defense = defense * (100 + stats["edef"]) // 100
             defense += stats.get("def", 0)
@@ -306,7 +354,33 @@ class D2Content:
         it.wclass = base.get("wclass", "")
         it.look = base.get("look")
         it.strbonus, it.dexbonus = base.get("strbonus", 0), base.get("dexbonus", 0)
+        it.affixes = affixes
+        it.base_defense = raw_def
+        if quality == "magic" and identified is not True:
+            it.identified = bool(identified)
+        # D2: a normal item can come with sockets (up to what the base and item level allow)
+        if sockets is None and quality == "normal" and base.get("maxsock") and rng.random() < 0.15:
+            sockets = rng.randint(1, self.max_sockets(base, ilvl))
+        if sockets:
+            it.sockets = min(sockets, self.max_sockets(base, ilvl)) or sockets
         return it
+
+    def max_sockets(self, base, ilvl):
+        caps = base.get("sockcaps", (0, 0, 0))
+        cap = caps[2] if ilvl >= 40 else caps[1] if ilvl >= 25 else caps[0]
+        return max(0, min(base.get("maxsock", 0), cap or base.get("maxsock", 0)))
+
+    def make_gem_or_rune(self, mlvl, rng):
+        """Gems (chipped/flawed early) or low runes, like Act 1 drops."""
+        if rng.random() < 0.35:
+            n = 1 + min(32, int(rng.expovariate(1.0 / (1.5 + mlvl / 6.0))))
+            b = self.base_by_code.get("r%02d" % n)
+        else:
+            gems = [b for b in self.bases if b.get("gem") and b["gem"][0] == "gem"]
+            grade = 0 if rng.random() < 0.7 else (1 if rng.random() < 0.8 or mlvl < 10 else 2)
+            gems = [b for b in gems if b["gem"][2] == grade] or gems
+            b = rng.choice(gems) if gems else None
+        return self.make_item(b, mlvl, rng) if b else None
 
     def make_gold(self, mlvl, rng, gf=0):
         amt = int(rng.randint(mlvl * 2 + 1, mlvl * 9 + 10) * (100 + gf) / 100)
@@ -334,6 +408,10 @@ class D2Content:
                 p = self.make_potion(mlvl, rng)
                 if p:
                     out.append(p)
+            elif r < 0.935 and not is_boss:
+                g = self.make_gem_or_rune(mlvl, rng)
+                if g:
+                    out.append(g)
             else:
                 ilvl = mlvl + (2 if is_boss else 0)
                 b = self.pick_base(max(1, ilvl), rng)
@@ -374,7 +452,7 @@ class D2Content:
         hp = (max(1, base_hp * pct("minhp") // 100), max(1, base_hp * pct("maxhp") // 100))
         dmg = (max(1, base_dm * pct("a1mind") // 100), max(1, base_dm * pct("a1maxd") // 100))
         ai_name = r.get("ai", "")
-        miss = r.get("missa1", "")
+        miss = r.get("missa1", "") or r.get("missa2", "")
         if ai_name in ("FallenShaman",):
             ai = "shaman"
         elif ai_name == "Fallen":
@@ -388,7 +466,7 @@ class D2Content:
             "id": mid, "name": self._name(r), "token": r.get("code", "ZM").upper(), "level": lvl,
             "hp": hp, "dmg": dmg, "ar": max(5, base_th * pct("a1th") // 100),
             "df": max(0, base_ac * pct("ac") // 100), "xp": max(1, base_xp * pct("exp") // 100),
-            "ap": max(4, min(9, 3 + vel)), "cost": 4 if vel <= 2 else 3,
+            "ap": max(4, min(9, 3 + vel)), "cost": 3 if vel <= 2 else 2,
             "rng": 6 if ai in ("ranged", "shaman") else 1, "ai": ai,
             "missile": miss, "minion": r.get("minion1", "").lower(),
             "party": (_int(r.get("partymin")), _int(r.get("partymax"))),

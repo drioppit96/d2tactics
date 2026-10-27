@@ -9,9 +9,33 @@ sprites), every class skill from the tables (game/skills.py + game/d2calc.py, tu
 rules in game/skillcast.py), allies (summons, golems, traps, the Rogue hireling), the whole
 of Act 1 (game/act1.py builders, game/actworld.py population), waypoints and all six quests.
 
-Next ideas: save games, D2 sounds (Huffman/ADPCM WAV decompression), missile graphics
-(Missiles.txt celfile), shops/gambling, real unique/champion packs with D2 names, D2's
+Next ideas: save games, D2 sounds (Huffman/ADPCM WAV decompression), real unique/champion packs with D2 names, D2's
 automap cells (AutoMap.txt + MaxiMap.dc6), Act 2.
+
+## Day 3: towns, items, missiles
+
+- Vendors: Weapons/Armor/Misc.txt columns `<Npc>Min/Max` (normal) and `<Npc>MagicMin/MagicMax/
+  MagicLvl`; ItemTypes.txt StorePage picks the tab (armo/weap/misc). Stock ilvl = clvl+5 (max 30),
+  cached per town visit (`player._town_visit`). Potions and scrolls never run out. Sell = price/5.
+  Gamble: magic only for now (no rare/unique rolls), price 150 + 60*clvl + 2*cost, bases qlvl <= clvl+2.
+- Store art: buysell.dc6 (4 frames, 320x432, 10x10 grid at 15,62 with 29 px cells),
+  buyselltabs.dc6 (8 frames 79x31), buysellbtn frame 10 = close, gemsocket.dc6 28x28.
+- Sockets: ItemTypes MaxSock1/25/40 by ilvl, capped by the base's gemsockets. Normal items get
+  sockets 15% of the time. Gems.txt is not in the samples, so d2items.py has the 1.14d gem / rune
+  table built in (used when Gems.txt can't be read). Runes.txt: complete=1 and server=0 only
+  (server=1 = ladder). Unsupported props are listed as extra lines on the item (UNSUPPORTED).
+- Town portal = world objects "tp" (in the field) and "tp_back" (in camp); `player.portal =
+  (level_key, cell, level_id)`. main.portal_to_town / portal_back handle the jump.
+- Melee costs `MELEE_AP` (units.py, settings.ini melee_ap = 1); +1 for ranged, +1 for very slow
+  weapons (ap >= 5) under 20% IAS. Skill AP costs: skills.ap_cost.
+- Missiles: Skills.txt cltmissile / srvmissile -> Missiles.txt CelFile (follow SubMissile /
+  CltSubMissile if empty), `data\global\missiles\<cel>.dcc`, Trans = additive blend,
+  ExplosionMissile on impact. 32-direction order `_DIR32` in d2assets.py. Novas: 16 missiles
+  outward. Overlays: Overlay.txt Filename -> data\global\overlays\<f>.dcc; Skills.txt
+  castoverlay on cast, States.txt overlay1-4 for aurastate / auratargetstate.
+- Hero select screen: background, heroes and fire use the front-end palette (no palette
+  argument); only the buttons use the units palette. Only EXIT shows until a hero is picked.
+- Saves now keep sockets, socketed items, runewords, identified, tome charges.
 
 ## Act 1 world (game/act1.py)
 

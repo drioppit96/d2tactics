@@ -72,16 +72,18 @@ class CharCreate:
                 self.unit_palette = load_palette(self.src.read(p))
                 break
         self.bg = self._background()
-        self.fire = self._anim(FE + "fire.dc6", pal=self.unit_palette)
+        # D2's hero select is drawn entirely in the front-end palette (heroes and fire too);
+        # only the buttons use the units palette
+        self.fire = self._anim(FE + "fire.dc6")
         self.anims = {}
         for code, folder, pre, pos in HEROES:
             base = FE + folder + "\\" + pre
-            a = {k: self._anim(base + suffix + ".dc6", pal=self.unit_palette)
+            a = {k: self._anim(base + suffix + ".dc6")
                  for k, suffix in (("idle", "nu1"), ("hover", "nu2"), ("forward", "fw"), ("selected", "nu3"),
                                    ("back", "bw"))}
-            a["forward_fx"] = self._anim(base + "fws.dc6", pal=self.unit_palette)
-            a["selected_fx"] = self._anim(base + "nu3s.dc6", pal=self.unit_palette)
-            a["back_fx"] = self._anim(base + "bws.dc6", pal=self.unit_palette)
+            a["forward_fx"] = self._anim(base + "fws.dc6")
+            a["selected_fx"] = self._anim(base + "nu3s.dc6")
+            a["back_fx"] = self._anim(base + "bws.dc6")
             self.anims[code] = a
         self.state = {c: ("idle", 0.0) for c, _, _, _ in HEROES}
         try:
@@ -93,7 +95,8 @@ class CharCreate:
         self.hover = None
         self.name = ""
         self.t = 0.0
-        self.buttons = self._frames(FE + "mediumbuttonblank.dc6") or self._frames("data\\global\\ui\\PANEL\\mediumbuttonblank.dc6")
+        self.buttons = self._frames(FE + "mediumbuttonblank.dc6", pal=self.unit_palette) or \
+            self._frames("data\\global\\ui\\PANEL\\mediumbuttonblank.dc6", pal=self.unit_palette)
         hud = getattr(game, "hud", None)
         self.f30 = getattr(hud, "f30", None)
         self.f16 = getattr(hud, "f16", None)
@@ -304,7 +307,8 @@ class CharCreate:
             pygame.draw.rect(canvas, (120, 110, 80), box, 1)
             cursor = "_" if int(self.t * 2) % 2 == 0 else ""
             self._text(canvas, self.f16, self.name + cursor, WHITE, box.x + 6, box.y + 5)
-        for rect, label in ((self.exit_rect(), "EXIT"), (self.ok_rect(), "OK")):
+        for rect, label in ((self.exit_rect(), "EXIT"), (self.ok_rect(), "OK")) if self.selected else \
+                ((self.exit_rect(), "EXIT"),):
             if self.buttons and self.buttons[0][0] is not None:
                 canvas.blit(self.buttons[0][0], rect.topleft)
             else:

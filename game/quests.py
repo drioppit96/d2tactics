@@ -201,7 +201,7 @@ def _reward_item(world, kind, who):
     if not bases:
         return
     base = rng.choice(bases)
-    it = c.make_item(base, p.level + 3, rng, quality="magic")
+    it = c.make_item(base, p.level + 3, rng, quality="magic", identified=True)
     if it is None:
         return
     if not p.inv_add(it):
@@ -283,6 +283,13 @@ def on_object(world, obj):
             return True
     elif k == "portal":
         world.pending_exit = obj.get("target")
+        return True
+    elif k in ("tp", "tp_back"):
+        target, cell = world.portal_target(obj)
+        if target:
+            world.pending_exit = target
+            world.pending_arrive = cell
+            world.pending_portal = obj["kind"]
         return True
     return False
 

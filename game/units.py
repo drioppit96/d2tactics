@@ -8,6 +8,9 @@ import random
 from .items import Item, SLOTS
 
 
+MELEE_AP = 1          # AP per melee attack (settings.ini [game] melee_ap)
+
+
 class Unit:
     is_player = False
 
@@ -158,8 +161,8 @@ class Player(Unit):
     def mod(self, stat):
         v0 = getattr(self, "_skill_stats", {}).get(stat, 0)
         v0 = 0 if isinstance(v0, tuple) else v0
-        return v0 + sum(v for it in getattr(self, "_active", []) for k, v in it.mods.items()
-                        if k == stat and not isinstance(v, tuple))
+        return v0 + sum(v for it in getattr(self, "_active", []) if getattr(it, "identified", True)
+                        for k, v in it.mods.items() if k == stat and not isinstance(v, tuple))
 
     def mod_range(self, stat):
         lo = hi = 0
@@ -167,6 +170,8 @@ class Player(Unit):
         if isinstance(sv, tuple):
             lo, hi = sv
         for it in getattr(self, "_active", []):
+            if not getattr(it, "identified", True):
+                continue
             v = it.mods.get(stat)
             if isinstance(v, tuple):
                 lo += v[0]
@@ -252,11 +257,12 @@ class Player(Unit):
         self.dmg = (max(1, int(lo * mult)), max(1, int(hi * mult)))
         self.elem = {k: self.mod_range(k + "_dmg") for k in ("fire", "cold", "ltng", "pois", "mag")}
         self.elem = {k: v for k, v in self.elem.items() if v[1] > 0}
-        cost = weapon.ap if weapon and weapon.ap else 3
-        cost -= self.mod("ias") // 25          # every 25% IAS makes a swing 1 AP cheaper
-        self.attack_cost = max(2, cost)
         wtypes = set(weapon.base.get("ancestors", ())) if weapon is not None and isinstance(getattr(weapon, "base", None), dict) else set()
         self.ranged = bool(wtypes & {"miss", "bow", "xbow", "jave", "thro", "taxe", "tkni"}) and not (wtypes & {"spea"} and "jave" not in wtypes)
+        # a melee swing costs MELEE_AP (settings.ini [game] melee_ap); shots one more; fast weapons /
+        # IAS never go below that, very slow two-handers cost one extra
+        slow = 1 if weapon is not None and (weapon.ap or 3) >= 5 and self.mod("ias") < 20 else 0
+        self.attack_cost = max(1, MELEE_AP + (1 if self.ranged else 0) + slow)
         self.range = 10 if wtypes & {"miss", "bow", "xbow"} else (6 if self.ranged else 1)
         ar = self.dexterity * 5 - 35 + cs["thf"] + self.mod("ar") + (self.level - 1) * 5
         self.ar = int(ar * (100 + self.mod("ar_pct") + pb["ar_pct"]) / 100)

@@ -217,7 +217,9 @@ class SkillCaster:
             if near and self.mode == "explore":
                 near[0].aware = True
                 self.check_awareness_force()
+        self._casting = s
         ok = handler(s, env, target, cell, ap, mana)
+        self._casting = None
         if ok:
             self._maybe_auto_end()
         return ok
@@ -240,6 +242,35 @@ class SkillCaster:
         if anim_cell is not None:
             p.face(*anim_cell)
         self.emit("attack", p, anim_cell or p.pos, anim)
+        s = getattr(self, "_casting", None)
+        if s is not None and s.data and s.data.get("castoverlay"):
+            self.emit("overlay", p, s.data["castoverlay"])
+
+    @staticmethod
+    def vis_missile(s, area=False):
+        """The Missiles.txt entry D2 draws for a skill (client missile first)."""
+        d = s.data or {}
+        if area:
+            return d.get("cltmissilea") or d.get("srvmissilea") or d.get("cltmissile") or d.get("srvmissile") or None
+        return d.get("cltmissile") or d.get("srvmissile") or d.get("cltmissilea") or d.get("srvmissilea") or None
+
+    def weapon_missile(self, unit):
+        if not unit.is_player:
+            m = getattr(unit, "missile", "") or ""
+            if m:
+                return m
+            return {"shaman": "shafire1"}.get(getattr(unit, "ai", ""), "arrow")
+        w = unit.equipment.get("weapon")
+        anc = set(w.base.get("ancestors", ())) if w is not None and isinstance(getattr(w, "base", None), dict) else set()
+        if "xbow" in anc:
+            return "bolt"
+        if "jave" in anc:
+            return "javelin"
+        if anc & {"taxe"}:
+            return "throwaxe"
+        if anc & {"tkni"}:
+            return "throwknife"
+        return "arrow"
 
     def _in_range(self, cell, rng=SPELL_RANGE, los=True):
         p = self.player
@@ -408,16 +439,17 @@ class SkillCaster:
         wake = foes[:]
         self._spend(ap, mana, cell, "attack" if s.weapon else "cast")
         kind = {"fire": "fireball", "cold": "cold", "ltng": "ltng", "pois": "spike", "mag": "bone"}.get(s.element, "arrow" if s.weapon else "spike")
+        vm = self.vis_missile(s) or (self.weapon_missile(p) if s.weapon else None)
         if n > 1 and foes:
             hits = 0
             for i, m in enumerate(foes):
-                self.emit("projectile", p, p.pos, m.pos, kind)
+                self.emit("projectile", p, p.pos, m.pos, kind, vm)
                 if self._missile_hit(s, env, m):
                     hits += 1
             self._wake(wake)
             return True
         hit, end = self._first_hit_on_line(p.pos, cell, pierce=bool(x.get("pierce")))
-        self.emit("projectile", p, p.pos, hit[-1].pos if hit else end, kind)
+        self.emit("projectile", p, p.pos, hit[-1].pos if hit else end, kind, vm)
         if hit:
             self._wake(hit)
         for m in hit:
@@ -449,7 +481,7 @@ class SkillCaster:
             r = max(r, 5)
         foes = [m for m in self.enemies() if chebyshev(m.pos, p.pos) <= r and self.grid.line_of_sight(p.pos, m.pos)]
         self._spend(ap, mana, None, "cast")
-        self.emit("nova", p, p.pos, r, s.element or "phys")
+        self.emit("nova", p, p.pos, r, s.element or "phys", self.vis_missile(s, area=True))
         self._wake(foes)
         for m in foes:
             self.skill_damage(env, m)
@@ -463,7 +495,7 @@ class SkillCaster:
         r = s.extra.get("radius") or env.radius() or 2
         foes = [m for m in self.enemies() if chebyshev(m.pos, cell) <= r]
         self._spend(ap, mana, cell, "cast")
-        self.emit("nova", self.player, cell, r, s.element or "phys")
+        self.emit("nova", self.player, cell, r, s.element or "phys", self.vis_missile(s, area=True))
         self._wake(foes)
         for m in foes:
             self.skill_damage(env, m)
@@ -491,7 +523,8 @@ class SkillCaster:
         foes = [m for m in self.enemies() if m.pos in cells]
         self._spend(ap, mana, cell, "cast")
         if cells:
-            self.emit("projectile", p, p.pos, cells[-1], {"fire": "fireball", "cold": "cold"}.get(s.element, "spike"))
+            self.emit("projectile", p, p.pos, cells[-1], {"fire": "fireball", "cold": "cold"}.get(s.element, "spike"),
+                      self.vis_missile(s, area=True))
         self._wake(foes)
         for m in foes:
             self.skill_damage(env, m)
@@ -533,7 +566,7 @@ class SkillCaster:
         for _ in range(jumps + 1):
             if cur is None:
                 break
-            self.emit("projectile", p, src, cur.pos, "ltng")
+            self.emit("projectile", p, src, cur.pos, "ltng", self.vis_missile(s))
             done.add(id(cur))
             self._wake([cur])
             self.skill_damage(env, cur)

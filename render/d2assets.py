@@ -16,6 +16,52 @@ from .assets import AssetProvider, PlaceholderAssets
 
 # D2 sprite direction index for each screen direction, clockwise from south (every 22.5 deg)
 _DIR16 = [4, 8, 0, 9, 5, 10, 1, 11, 6, 12, 2, 13, 7, 14, 3, 15]
+# D2's 32-direction order (every second entry is the 16-direction order)
+_DIR32 = [4, 16, 8, 17, 0, 18, 9, 19, 5, 20, 10, 21, 1, 22, 11, 23, 6, 24, 12, 25, 2, 26, 13, 27, 7, 28, 14, 29,
+          3, 30, 15, 31]
+
+
+def screen_direction(dx, dy, n_dirs):
+    """Sprite direction for a screen-space vector (dx right, dy down)."""
+    if n_dirs <= 1:
+        return 0
+    ang = math.degrees(math.atan2(dy, dx))              # 90 = straight down (south)
+    if n_dirs >= 32:
+        return _DIR32[int(round((ang - 90) / 11.25)) % 32] % n_dirs
+    pos = int(round((ang - 90) / 22.5)) % 16
+    if n_dirs == 16:
+        return _DIR16[pos]
+    if n_dirs == 8:
+        return _DIR16[(pos // 2) * 2] % 8
+    if n_dirs == 4:
+        return [0, 1, 2, 3][((pos + 2) // 4) % 4]
+    return 0
+
+
+class DccAnim:
+    """A one-layer DCC (missile / overlay): frames decoded per direction on first use."""
+
+    def __init__(self, assets, dcc, trans=False, fps=25.0):
+        self.a, self.dcc, self.trans, self.fps = assets, dcc, trans, fps
+        self.cache = {}
+        self.n_dirs = dcc.n_dirs
+        self.length = dcc.frames_per_dir
+
+    def frames(self, d):
+        d = max(0, min(self.n_dirs - 1, d))
+        if d not in self.cache:
+            out = []
+            for fr in self.dcc.direction(d).frames:
+                if not fr.width or not fr.height:
+                    out.append((None, 0, 0))
+                    continue
+                img = self.a.indexed_surface(fr.width, fr.height, fr.pixels)
+                out.append((img, fr.xmin, fr.ymin))
+            self.cache[d] = out
+        return self.cache[d]
+
+    def duration(self):
+        return self.length / self.fps
 
 # our animation names -> D2 mode codes to try, in order
 MODE_MAP = {
@@ -385,7 +431,7 @@ class D2Assets(AssetProvider):
         return pygame.Rect(int(cx + x0), int(cy + y0), img.get_width(), img.get_height())
 
     OBJECT_TOKENS = {"cairn": ["S1", "S2", "S3", "S4", "S5"], "inifuss": ["IT"], "tome": ["TT"], "malus": ["HM"],
-                     "cage": ["GI"], "waypoint": ["WN", "WP", "W7"], "portal": ["PP", "TP"]}
+                     "cage": ["GI"], "waypoint": ["WN", "WP", "W7"], "portal": ["PP", "TP"], "tp": ["TP"], "tp_back": ["TP"]}
 
     def draw_object(self, surf, kind, oid, pos, s, clock=0.0, used=False):
         """Quest objects and waypoints with D2's object graphics (placeholder marker if missing)."""
@@ -412,15 +458,142 @@ class D2Assets(AssetProvider):
                     surf.blit(img, (int(pos[0] + x0), int(pos[1] + y0)))
                     return
         # placeholder: a glowing marker
-        col = {"waypoint": (90, 140, 255), "portal": (255, 60, 40), "cairn": (200, 200, 220)}.get(kind, (230, 200, 90))
+        col = {"waypoint": (90, 140, 255), "portal": (255, 60, 40), "cairn": (200, 200, 220), "tp": (80, 120, 255),
+               "tp_back": (80, 120, 255)}.get(kind, (230, 200, 90))
         pulse = 0.6 + 0.4 * abs(((clock * 1.5) % 2) - 1)
         w, h = int(30 * s), int(15 * s)
         g = pygame.Surface((w, h), pygame.SRCALPHA)
         pygame.draw.ellipse(g, col + (int(120 * pulse),), g.get_rect())
         pygame.draw.ellipse(g, col + (220,), g.get_rect(), 2)
         surf.blit(g, (int(pos[0] - w / 2), int(pos[1] - h / 2)))
+        if kind in ("tp", "tp_back", "portal"):
+            pw, ph = int(26 * s), int(54 * s)
+            gate = pygame.Surface((pw, ph), pygame.SRCALPHA)
+            pygame.draw.ellipse(gate, col + (int(110 * pulse),), gate.get_rect())
+            pygame.draw.ellipse(gate, (230, 240, 255, 200), gate.get_rect(), 2)
+            surf.blit(gate, (int(pos[0] - pw / 2), int(pos[1] - ph + 4)), special_flags=pygame.BLEND_RGBA_ADD)
         if kind in ("cairn", "tome", "inifuss", "cage", "malus"):
             pygame.draw.rect(surf, col, (int(pos[0] - 4 * s), int(pos[1] - 26 * s), int(8 * s), int(24 * s)))
+
+    # ---------------------------------------------------------------- missiles and overlays
+    def _missile_rows(self):
+        if not hasattr(self, "_mrows"):
+            try:
+                self._mrows = {r.get("missile", "").lower(): r for r in read_table(self.src, "Missiles")}
+            except Exception:
+                self._mrows = {}
+        return self._mrows
+
+    def missile_anim(self, name, depth=0):
+        """The graphic of a Missiles.txt entry (follows sub-missiles when it has none itself)."""
+        if not name:
+            return None
+        key = ("mis", name.lower())
+        if key in self.item_cache:
+            return self.item_cache[key]
+        anim = None
+        r = self._missile_rows().get(name.lower())
+        if r is not None:
+            cel = r.get("celfile", "")
+            if cel and cel.lower() != "null":
+                for ext in (".dcc", ".DCC"):
+                    path = "data\\global\\missiles\\%s%s" % (cel, ext)
+                    if self.src.has(path):
+                        try:
+                            speed = int(r.get("animspeed") or 16)
+                        except ValueError:
+                            speed = 16
+                        anim = DccAnim(self, DCC(self.src.read(path)), trans=r.get("trans") not in ("", "0"),
+                                       fps=max(8.0, 25.0 * speed / 16.0))
+                        break
+            if anim is None and depth < 3:
+                for col in ("cltsubmissile1", "submissile1", "clthitsubmissile1", "hitsubmissile1"):
+                    if r.get(col):
+                        anim = self.missile_anim(r[col], depth + 1)
+                        if anim:
+                            break
+        self.item_cache[key] = anim
+        return anim
+
+    def missile_explosion(self, name):
+        r = self._missile_rows().get((name or "").lower())
+        return (r or {}).get("explosionmissile", "") or None
+
+    def draw_missile(self, surf, name, pos, vec, t, loop=True):
+        anim = self.missile_anim(name)
+        if anim is None:
+            return False
+        d = screen_direction(vec[0], vec[1], anim.n_dirs)
+        frames = anim.frames(d)
+        if not frames:
+            return False
+        i = int(t * anim.fps)
+        i = i % len(frames) if loop else min(len(frames) - 1, i)
+        img, x0, y0 = frames[i]
+        if img is not None:
+            surf.blit(img, (int(pos[0] + x0), int(pos[1] + y0)),
+                      special_flags=pygame.BLEND_RGB_ADD if anim.trans else 0)
+        return True
+
+    def _overlay_rows(self):
+        if not hasattr(self, "_orows"):
+            try:
+                self._orows = {r.get("overlay", "").lower(): r for r in read_table(self.src, "Overlay")}
+                self._srows = {r.get("state", "").lower(): r for r in read_table(self.src, "States")}
+            except Exception:
+                self._orows, self._srows = {}, {}
+        return self._orows
+
+    def overlay_anim(self, name):
+        if not name:
+            return None
+        key = ("ovl", name.lower())
+        if key in self.item_cache:
+            return self.item_cache[key]
+        anim = None
+        r = self._overlay_rows().get(name.lower())
+        if r is not None and r.get("filename", "null").lower() != "null":
+            for path in ("data\\global\\overlays\\%s.dcc" % r["filename"],
+                         "data\\global\\overlays\\Expansion\\%s.dcc" % r["filename"]):
+                if self.src.has(path):
+                    try:
+                        rate = int(r.get("animrate") or 1024)
+                    except ValueError:
+                        rate = 1024
+                    anim = DccAnim(self, DCC(self.src.read(path)), trans=r.get("trans") not in ("", "0"),
+                                   fps=max(8.0, 25.0 * rate / 1024.0))
+                    try:
+                        anim.yoff = -int(r.get("yoffset") or 0)
+                        anim.xoff = int(r.get("xoffset") or 0)
+                    except ValueError:
+                        anim.xoff = anim.yoff = 0
+                    break
+        self.item_cache[key] = anim
+        return anim
+
+    def state_overlays(self, state):
+        self._overlay_rows()
+        r = getattr(self, "_srows", {}).get((state or "").lower())
+        if not r:
+            return []
+        return [r[k] for k in ("overlay1", "overlay2", "overlay3", "overlay4") if r.get(k)]
+
+    def draw_overlay(self, surf, name, pos, t, loop=False):
+        """-> False once a one-shot overlay has finished (or there is no graphic)."""
+        anim = self.overlay_anim(name)
+        if anim is None:
+            return False
+        frames = anim.frames(0)
+        if not frames:
+            return False
+        i = int(t * anim.fps)
+        if not loop and i >= len(frames):
+            return False
+        img, x0, y0 = frames[i % len(frames)]
+        if img is not None:
+            surf.blit(img, (int(pos[0] + x0 + getattr(anim, "xoff", 0)), int(pos[1] + y0 + getattr(anim, "yoff", 0))),
+                      special_flags=pygame.BLEND_RGB_ADD if anim.trans else 0)
+        return True
 
     def draw_floor(self, *a, **k):
         return self.placeholder.draw_floor(*a, **k)

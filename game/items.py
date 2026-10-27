@@ -127,12 +127,33 @@ class Item:
         self.look = None
         self.strbonus = self.dexbonus = 0
         self.potion = "heal"
+        # sockets, runewords, identification, scrolls/tomes, gems/runes
+        self.sockets = 0
+        self.socketed = []
+        self.runeword = None
+        self.identified = True
+        self.use = None          # "tp" / "id" for scrolls and tomes
+        self.quantity = 0        # tome charges
+        self.gem = None          # ("gem", name, grade) / ("rune", n)
+        self.affixes = []
+        self.extra_lines = []
+        self.base_defense = None
 
     @property
     def color(self):
         if self.kind in ("gold", "potion"):
             return WHITE
+        if self.gem is not None:
+            return ORANGE if self.gem[0] == "rune" else WHITE
+        if self.sockets and self.rarity == "normal":
+            return (150, 150, 150)       # D2: socketed white items are grey
         return D2_COLORS.get(self.rarity, WHITE)
+
+    @property
+    def shown_name(self):
+        if not self.identified and isinstance(self.base, dict):
+            return self.base.get("name", self.name)
+        return self.runeword or self.name
 
     def requirements_ok(self, player):
         return (player.level >= self.levelreq and player.strength >= self.reqstr
@@ -146,19 +167,39 @@ class Item:
         if self.kind == "gold":
             return [("%d Gold" % self.amount, WHITE)]
         if self.kind == "potion":
-            what = {"heal": "Heals %d life", "mana": "Restores %d mana", "rejuv": "Restores %d%% life and mana"}
+            what = {"heal": "Heals %d life", "mana": "Restores %d mana", "rejuv": "Restores %d%% life and mana",
+                    "antidote": "Cures poison, +%d%% poison resistance for a while",
+                    "thawing": "Thaws you, +%d%% cold resistance for a while",
+                    "stamina": "+%d AP next turn"}
             return [(self.name, WHITE), (what.get(self.potion, "%d") % self.amount, WHITE),
-                    ("2 AP to drink (keys 1-4)", (170, 170, 170))]
+                    ("2 AP to drink (keys 1-4 in the belt, right click in the backpack)", (170, 170, 170))]
+        if self.use:
+            out = [(self.name, WHITE)]
+            if self.quantity:
+                out.append(("Quantity: %d" % self.quantity, WHITE))
+            out.append(("Right click to read" + (" (opens a portal to town)" if self.use == "tp" else
+                                                  " (then click an item)"), (170, 170, 170)))
+            return out
+        if self.gem is not None:
+            out = [(self.name, self.color), ("Can be Inserted into Socketed Items", WHITE)]
+            out += [(l, WHITE) for l in getattr(self, "filler_lines", [])]
+            if self.levelreq > 1:
+                ok = player is None or player.level >= self.levelreq
+                out.append(("Required Level: %d" % self.levelreq, WHITE if ok else RED_TEXT))
+            return out
         if self.mod_list is None:
             return [(l, self.color if i == 0 else WHITE) for i, l in enumerate(self.describe())]
-        out = [(self.name, self.color)]
+        if self.runeword:
+            out = [(self.runeword, D2_COLORS["unique"]), (self.name, (150, 150, 150)),
+                   ("'%s'" % "".join(getattr(f, "rune_letter", "") for f in self.socketed), D2_COLORS["unique"])]
+        else:
+            out = [(self.shown_name, self.color)]
         if self.dmg:
             lo, hi = self.dmg
             if self.two_handed:
                 out.append(("Two-Hand Damage: %d to %d" % (lo, hi), WHITE))
             else:
                 out.append(("One-Hand Damage: %d to %d" % (lo, hi), WHITE))
-            out.append(("Attack cost: %d AP" % self.ap, (170, 170, 170)))
         if self.defense:
             out.append(("Defense: %d" % self.defense, WHITE))
         if self.block:
@@ -172,10 +213,23 @@ class Item:
             req("Required Strength: %d" % self.reqstr, player is None or player.strength >= self.reqstr)
         if self.levelreq > 1:
             req("Required Level: %d" % self.levelreq, player is None or player.level >= self.levelreq)
+        if not self.identified:
+            out.append(("Unidentified", RED_TEXT))
+            return out
+        from .d2items import EXTRA_TEXT
         for code, v in self.mod_list:
-            fmt = MOD_TEXT.get(code, code + " {0}")
-            text = fmt.format(*v) if isinstance(v, tuple) else fmt.format(v)
+            fmt = MOD_TEXT.get(code) or EXTRA_TEXT.get(code) or (code + " {0}")
+            try:
+                text = fmt.format(*v) if isinstance(v, tuple) else fmt.format(v)
+            except Exception:
+                text = code
             out.append((text, D2_COLORS["magic"]))
+        for t in self.extra_lines:
+            out.append((t, D2_COLORS["magic"]))
+        if self.sockets:
+            out.append(("Socketed (%d)" % self.sockets, D2_COLORS["magic"]))
+            for f in self.socketed:
+                out.append(("  " + f.name, (170, 170, 170)))
         return out
 
     def describe(self):
