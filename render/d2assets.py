@@ -169,6 +169,16 @@ class D2Assets(AssetProvider):
         from game.d2content import D2Content
         say("Reading items and monsters")
         self.content = D2Content(self.src, difficulty)
+        say("Reading the Act 1 layouts")
+        self.act_kit = self.act_info = None
+        try:
+            from game.act1 import OutdoorKit
+            from game.actworld import ActInfo
+            self.act_kit = OutdoorKit(self.src, read_table(self.src, "Levels"), read_table(self.src, "LvlTypes"))
+            self.act_info = ActInfo(self.act_kit, self.content)
+        except Exception:
+            import traceback
+            traceback.print_exc()
 
     # ---------------------------------------------------------------- level
     def level_builder(self, seed):
@@ -267,9 +277,9 @@ class D2Assets(AssetProvider):
     def _sprites_for(self, unit):
         if unit.is_player:
             arms, hide, wclass = self.player_look(unit)
-            key = ("player", wclass, hide, tuple(sorted((k, tuple(v)) for k, v in arms.items())))
+            key = ("player", getattr(unit, "token", "BA"), wclass, hide, tuple(sorted((k, tuple(v)) for k, v in arms.items())))
             if key not in self.sprites:
-                self.sprites[key] = UnitSprites(self, "chars", "BA", arms, wclass, hide=hide)
+                self.sprites[key] = UnitSprites(self, "chars", getattr(unit, "token", "BA") or "BA", arms, wclass, hide=hide)
             return self.sprites[key]
         key = (unit.token, unit.unique, getattr(unit, "d2id", None))
         if key not in self.sprites:
@@ -373,6 +383,44 @@ class D2Assets(AssetProvider):
             img = self.flash_cache[k]
         surf.blit(img, (int(cx + x0), int(cy + y0)))
         return pygame.Rect(int(cx + x0), int(cy + y0), img.get_width(), img.get_height())
+
+    OBJECT_TOKENS = {"cairn": ["S1", "S2", "S3", "S4", "S5"], "inifuss": ["IT"], "tome": ["TT"], "malus": ["HM"],
+                     "cage": ["GI"], "waypoint": ["WN", "WP", "W7"], "portal": ["PP", "TP"]}
+
+    def draw_object(self, surf, kind, oid, pos, s, clock=0.0, used=False):
+        """Quest objects and waypoints with D2's object graphics (placeholder marker if missing)."""
+        toks = self.OBJECT_TOKENS.get(kind, [])
+        if kind == "cairn" and isinstance(oid, int) and 7 <= oid <= 11:
+            toks = [toks[oid - 7]]
+        mode = "ON" if used and kind in ("waypoint", "cage", "inifuss") else "NU"
+        for tok in toks:
+            key = ("obj", tok)
+            sp = self.sprites.get(key)
+            if sp is None:
+                sp = self.sprites[key] = UnitSprites(self, "objects", tok, {}, "HTH")
+            frames = None
+            for m in ((mode, "NU") if mode != "NU" else ("NU",)):
+                try:
+                    frames = sp.frames(m, (0, 1))
+                except Exception:
+                    frames = None
+                if frames:
+                    break
+            if frames:
+                img, x0, y0 = frames[int(clock * 12) % len(frames)]
+                if img is not None:
+                    surf.blit(img, (int(pos[0] + x0), int(pos[1] + y0)))
+                    return
+        # placeholder: a glowing marker
+        col = {"waypoint": (90, 140, 255), "portal": (255, 60, 40), "cairn": (200, 200, 220)}.get(kind, (230, 200, 90))
+        pulse = 0.6 + 0.4 * abs(((clock * 1.5) % 2) - 1)
+        w, h = int(30 * s), int(15 * s)
+        g = pygame.Surface((w, h), pygame.SRCALPHA)
+        pygame.draw.ellipse(g, col + (int(120 * pulse),), g.get_rect())
+        pygame.draw.ellipse(g, col + (220,), g.get_rect(), 2)
+        surf.blit(g, (int(pos[0] - w / 2), int(pos[1] - h / 2)))
+        if kind in ("cairn", "tome", "inifuss", "cage", "malus"):
+            pygame.draw.rect(surf, col, (int(pos[0] - 4 * s), int(pos[1] - 26 * s), int(8 * s), int(24 * s)))
 
     def draw_floor(self, *a, **k):
         return self.placeholder.draw_floor(*a, **k)

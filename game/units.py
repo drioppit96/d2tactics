@@ -39,15 +39,35 @@ class Unit:
             self.facing = ((dx > 0) - (dx < 0), (dy > 0) - (dy < 0))
 
 
+# D2 CharStats.txt: str dex int vit, hpadd, to-hit factor, life/mana per level and per point (x4), block factor
+CLASS_STATS = {
+    "ama": dict(name="Amazon", token="AM", stats=(20, 25, 15, 20), hpadd=30, thf=5, lpl=8, mpl=6, lpv=12, mpm=6, block=25),
+    "sor": dict(name="Sorceress", token="SO", stats=(10, 25, 35, 10), hpadd=30, thf=-15, lpl=4, mpl=8, lpv=8, mpm=8, block=20),
+    "nec": dict(name="Necromancer", token="NE", stats=(15, 25, 25, 15), hpadd=30, thf=-10, lpl=6, mpl=8, lpv=8, mpm=8, block=20),
+    "pal": dict(name="Paladin", token="PA", stats=(25, 20, 15, 25), hpadd=30, thf=20, lpl=8, mpl=6, lpv=12, mpm=6, block=30),
+    "bar": dict(name="Barbarian", token="BA", stats=(30, 20, 10, 25), hpadd=30, thf=20, lpl=8, mpl=4, lpv=16, mpm=4, block=25),
+    "dru": dict(name="Druid", token="DZ", stats=(15, 20, 20, 25), hpadd=30, thf=5, lpl=6, mpl=8, lpv=8, mpm=8, block=20),
+    "ass": dict(name="Assassin", token="AI", stats=(20, 20, 25, 20), hpadd=30, thf=15, lpl=8, mpl=6, lpv=12, mpm=7, block=25),
+}
+# starting gear (CharStats item1..: right hand, left hand) - codes of Weapons/Armor.txt
+CLASS_KIT = {"ama": ("jav", "buc"), "sor": ("sst", None), "nec": ("wnd", None), "pal": ("ssd", "buc"),
+             "bar": ("hax", "buc"), "dru": ("clb", "buc"), "ass": ("ktr", "buc")}
+# the skill every class starts with points in? (D2 gives none; this game gives one free point)
+
+
 class Player(Unit):
     is_player = True
 
-    def __init__(self, x, y):
-        super().__init__("Barbarian", x, y)
-        self.token = "BA"
+    def __init__(self, x, y, cls="bar", name=None, tree=None):
+        cs = CLASS_STATS.get(cls, CLASS_STATS["bar"])
+        super().__init__(name or cs["name"], x, y)
+        self.cls = cls
+        self.class_name = cs["name"]
+        self.cs = cs
+        self.token = cs["token"]
         self.color = (200, 160, 90)
-        # D2 Barbarian starting stats
-        self.base_str, self.base_dex, self.base_vit, self.base_eng = 30, 20, 25, 10
+        self.base_str, self.base_dex, self.base_eng, self.base_vit = cs["stats"]
+        self.start_stats = (self.base_str, self.base_dex, self.base_eng, self.base_vit)
         self.stat_points = 0
         self.xp = 0
         self.gold = 0
@@ -56,12 +76,20 @@ class Player(Unit):
         self.inventory = []
         self.belt = []          # potions, max 4
         from .skills import SkillBook, load_tree
-        self.skills = SkillBook(load_tree())
+        self.skills = SkillBook(tree if tree is not None else load_tree(), cls)
         self.right_skill = None     # skill used with the right mouse button
-        self.effects = {}           # buffs: name -> turns left
+        self.active_aura = None     # Paladin aura (the right skill when it is an aura)
+        self.effects = {}           # Barbarian warcry buffs: name -> turns left
+        self.buffs = {}             # other classes' buffs: skill -> {"turns", "stats", ...}
+        self.shape = None           # Druid: wolf / bear
         self.frenzy = 0             # Frenzy charges -> bonus AP next turn
-        self.equipment["weapon"] = Item("Hand Axe", "hax", "weapon", dmg=(3, 6), ap=3)
-        self.equipment["armor"] = Item("Quilted Armor", "qui", "armor", defense=9)
+        self.bonus = {}
+        self.aura_source = None     # callable -> aura stats (set by the World)
+        if cls == "bar" and tree is None:
+            self.equipment["weapon"] = Item("Hand Axe", "hax", "weapon", dmg=(3, 6), ap=3)
+            self.equipment["armor"] = Item("Quilted Armor", "qui", "armor", defense=9)
+        else:
+            self.equipment["weapon"] = Item("Club", "clb", "weapon", dmg=(1, 6), ap=3)
         self.recalc()
         self.hp = self.max_hp
         self.mana = self.max_mana
@@ -128,17 +156,44 @@ class Player(Unit):
                    if it and not isinstance(it.mods.get(stat, 0), tuple))
 
     def mod(self, stat):
-        return sum(v for it in getattr(self, "_active", []) for k, v in it.mods.items()
-                   if k == stat and not isinstance(v, tuple))
+        v0 = getattr(self, "_skill_stats", {}).get(stat, 0)
+        v0 = 0 if isinstance(v0, tuple) else v0
+        return v0 + sum(v for it in getattr(self, "_active", []) for k, v in it.mods.items()
+                        if k == stat and not isinstance(v, tuple))
 
     def mod_range(self, stat):
         lo = hi = 0
+        sv = getattr(self, "_skill_stats", {}).get(stat)
+        if isinstance(sv, tuple):
+            lo, hi = sv
         for it in getattr(self, "_active", []):
             v = it.mods.get(stat)
             if isinstance(v, tuple):
                 lo += v[0]
                 hi += v[1]
         return lo, hi
+
+    def _gather_skill_stats(self):
+        """Buffs, the active aura and passives, as item-style stats."""
+        out = {}
+
+        def add(k, v):
+            if isinstance(v, tuple):
+                a = out.get(k, (0, 0))
+                a = a if isinstance(a, tuple) else (0, 0)
+                out[k] = (a[0] + v[0], a[1] + v[1])
+            else:
+                out[k] = out.get(k, 0) + v
+        for b in getattr(self, "buffs", {}).values():
+            for k, v in b.get("stats", {}).items():
+                add(k, v)
+        if self.aura_source is not None:
+            try:
+                for k, v in self.aura_source().items():
+                    add(k, v)
+            except Exception:
+                pass
+        return out
 
     @property
     def strength(self):
@@ -157,15 +212,33 @@ class Player(Unit):
         return self.base_eng + self.mod("eng")
 
     def recalc(self):
-        """Derived stats with D2's Barbarian formulas."""
+        """Derived stats with D2's formulas for the character's class (CharStats.txt)."""
+        cs = self.cs
+        self._skill_stats = {}
+        from .skills import passive_bonuses
+        pb = passive_bonuses(self.skills, self) if hasattr(self, "skills") else {"ed": 0, "ar_pct": 0, "def_pct": 0, "ap": 0, "res": 0}
+        extra = self._gather_skill_stats()
+        for k, v in pb.items():
+            if k in ("ed", "ar_pct", "def_pct", "ap", "res"):
+                continue
+            if isinstance(v, tuple):
+                extra[k] = v
+            else:
+                extra[k] = extra.get(k, 0) + v
+        self._skill_stats = extra
+        self.bonus = dict(pb)
+        self.bonus.update({k: v for k, v in extra.items() if not isinstance(v, tuple)})
         self._active = self.active_items()
         old_max = getattr(self, "max_hp", None)
-        life = 55 + (self.vitality - 25) * 4 + (self.level - 1) * 2 + self.mod("life")
+        s0, d0, e0, v0 = self.start_stats
+        life = v0 + cs["hpadd"] + (self.vitality - v0) * cs["lpv"] / 4.0 + (self.level - 1) * cs["lpl"] / 4.0 + self.mod("life")
         self.max_hp = int(life * (100 + self.mod("life_pct")) / 100)
-        mana = 10 + (self.energy - 10) + (self.level - 1) * 1 + self.mod("mana")
+        mana = e0 + (self.energy - e0) * cs["mpm"] / 4.0 + (self.level - 1) * cs["mpl"] / 4.0 + self.mod("mana")
         self.max_mana = int(mana * (100 + self.mod("mana_pct")) / 100)
         weapon = self.equipment["weapon"] if self.equipment["weapon"] in self._active else None
         lo, hi = weapon.dmg if weapon and weapon.dmg else (1, 2)
+        if getattr(self, "shape", None) and (weapon is None or not weapon.dmg):
+            lo, hi = 2, 5
         lo += self.mod("mindmg")
         hi += self.mod("maxdmg")
         flo, fhi = self.mod_range("flat_dmg")
@@ -175,25 +248,22 @@ class Player(Unit):
             bonus = (self.strength * weapon.strbonus + self.dexterity * weapon.dexbonus) / 10000.0
         else:
             bonus = self.strength / 100.0
-        mult = 1 + bonus + self.mod("ed") / 100.0
+        mult = 1 + bonus + (self.mod("ed") + pb["ed"]) / 100.0
         self.dmg = (max(1, int(lo * mult)), max(1, int(hi * mult)))
-        self.elem = {k: self.mod_range(k + "_dmg") for k in ("fire", "cold", "ltng", "pois")}
+        self.elem = {k: self.mod_range(k + "_dmg") for k in ("fire", "cold", "ltng", "pois", "mag")}
         self.elem = {k: v for k, v in self.elem.items() if v[1] > 0}
         cost = weapon.ap if weapon and weapon.ap else 3
         cost -= self.mod("ias") // 25          # every 25% IAS makes a swing 1 AP cheaper
         self.attack_cost = max(2, cost)
-        ar = (self.dexterity - 7) * 5 + 20 + self.mod("ar") + (self.level - 1) * 5
-        self.ar = int(ar * (100 + self.mod("ar_pct")) / 100)
-        from .skills import passive_bonuses
-        pb = passive_bonuses(self.skills, self) if hasattr(self, "skills") else {"ed": 0, "ar_pct": 0, "def_pct": 0, "ap": 0, "res": 0}
-        if pb["ed"]:
-            mult2 = 1 + bonus + (self.mod("ed") + pb["ed"]) / 100.0
-            self.dmg = (max(1, int(lo * mult2)), max(1, int(hi * mult2)))
-        self.ar = int(self.ar * (100 + pb["ar_pct"]) / 100)
+        wtypes = set(weapon.base.get("ancestors", ())) if weapon is not None and isinstance(getattr(weapon, "base", None), dict) else set()
+        self.ranged = bool(wtypes & {"miss", "bow", "xbow", "jave", "thro", "taxe", "tkni"}) and not (wtypes & {"spea"} and "jave" not in wtypes)
+        self.range = 10 if wtypes & {"miss", "bow", "xbow"} else (6 if self.ranged else 1)
+        ar = self.dexterity * 5 - 35 + cs["thf"] + self.mod("ar") + (self.level - 1) * 5
+        self.ar = int(ar * (100 + self.mod("ar_pct") + pb["ar_pct"]) / 100)
         eff = getattr(self, "effects", {})
-        def_pct = pb["def_pct"] + (eff.get("shout_pct", 0) if eff.get("shout") else 0) \
+        def_pct = pb["def_pct"] + self.mod("def_pct") + (eff.get("shout_pct", 0) if eff.get("shout") else 0) \
             + (eff.get("conc_pct", 0) if eff.get("concentrate") else 0)
-        self.defense = self.dexterity // 4 + sum(it.defense for it in self._active)
+        self.defense = self.dexterity // 4 + sum(it.defense for it in self._active) + self.mod("def")
         self.defense = int(self.defense * (100 + def_pct) / 100)
         if eff.get("berserk"):
             self.defense = 0
@@ -211,13 +281,16 @@ class Player(Unit):
         self.mdr = self.mod("mdr")
         self.mf = self.mod("mf")
         self.gf = self.mod("gf")
+        self.crit = pb.get("crit", 0)
         allres = self.mod("res_all")
         self.res = {k: min(75, allres + pb["res"] + self.mod("res_" + k)) for k in ("fire", "cold", "ltng", "pois")}
         shield = self.equipment.get("shield")
         if shield and shield in self._active and shield.slot == "shield":
             # D2: (class block factor + shield block) * (dex - 15) / (clvl * 2), max 75%
-            blk = (25 + shield.block + self.mod("block")) * max(0, self.dexterity - 15) / (self.level * 2.0)
+            blk = (cs["block"] + shield.block + self.mod("block")) * max(0, self.dexterity - 15) / (self.level * 2.0)
             self.block_chance = max(0, min(75, int(blk)))
+        elif self.mod("weapon_block") and wtypes & {"h2h", "h2h2"}:
+            self.block_chance = min(75, self.mod("weapon_block"))
         else:
             self.block_chance = 0
         if old_max is not None:
@@ -294,3 +367,9 @@ class Monster(Unit):
         self.panic = 0       # fallen run away for a turn when a pack mate dies
         self.effects = {}    # stun / flee / battle cry / taunt: turns left
         self.home = (x, y)
+        self.res = dict(t.get("res", {}))
+        self.undead = t.get("undead", False)
+        self.demon = t.get("demon", False)
+        self.curses = {}
+        self.ally = False
+        self.life_turns = None

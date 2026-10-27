@@ -1,13 +1,28 @@
 # D2 Tactics (prototype)
 
-Turn-based, action-point combat in Diablo 2's Act 1. You start in the Rogue Encampment
-(talk to Akara to heal) and leave the camp for the Den of Evil. The game reads the real
-tiles, room layouts and unit animations straight from your own Diablo II install
-(set the folder in `settings.ini`). No Blizzard files are included in this project.
+Turn-based, action-point combat in Diablo 2's Act 1. Create a hero (all seven classes, D2's
+own character creation screen), start in the Rogue Encampment and play through the whole act.
+The game reads the real tiles, room layouts, unit animations, skills and items straight from
+your own Diablo II install (set the folder in `settings.ini`). No Blizzard files are included.
 
-Each cave is generated like D2 does it: a random maze of D2's own cave room presets,
-with walkable areas taken from the tiles' collision flags. Without a D2 path the game
-falls back to placeholder art.
+**The world:** the outdoors are one seamless map - Rogue Encampment, Blood Moor, Cold Plains,
+Burial Grounds, Stony Field, Dark Wood, Black Marsh, Tamoe Highland, Monastery Gate and the
+Outer Cloister - built from D2's own outdoor presets (borders, fills, camps, cottages ...).
+Every dungeon is entered through its real entrance (Den of Evil, Cave, Underground Passage,
+Hole, Pit, Crypt, Mausoleum, Forgotten Tower + 5 cellars, Barracks, Jail 1-3, Inner Cloister,
+Cathedral, Catacombs 1-4, Tristram) and generated from D2's room presets; dungeons are built
+in the background, so going in or out is (almost) instant. Waypoints work like in D2.
+
+**Quests:** Den of Evil, Sisters' Burial Grounds (Blood Raven - Kashya gives you a Rogue),
+The Search for Cain (Tree of Inifuss, Cairn Stones, Tristram), The Forgotten Tower (Countess),
+Tools of the Trade (the Smith, Horadric Malus), Sisters to the Slaughter (Andariel).
+
+**Skills:** all 210 class skills from D2's Skills.txt / SkillDesc.txt with their real numbers -
+damage per level (D2's level brackets), synergies, mana, durations, radii - and D2's skill
+trees, icons and tooltips. Auras, curses, summons, golems, traps, shape shifting and the
+Assassin's charge-ups all have turn-based rules.
+
+Without a D2 path the game falls back to placeholder art (a Barbarian in a generated cave).
 
 ## Run it (Windows)
 
@@ -33,9 +48,11 @@ Fallout). Each turn you get **Action Points** (the stamina bar shows them).
 | Drink potion (keys 1-4) | 2 AP |
 | Pick up item | 1 AP (free outside combat) |
 
-**Skills:** one skill point per level, D2's full Barbarian tree (T). Combat skills (Bash, Stun,
-Double Swing, Frenzy, Leap Attack, Whirlwind, Berserk...), warcries (Howl, Shout, Battle
-Orders, Battle Cry, War Cry...) and passives (masteries, Iron Skin, Increased Speed...).
+**Skills:** one skill point per level, D2's full tree of your class (T). Right click a learned skill in
+the tree (or use the right skill button / F1-F8) to put it on the right mouse button. Spells cost
+about 4-5 AP, curses / buffs / summons 3 AP, switching auras 1 AP. Choosing an aura turns it on.
+
+**Dying:** you wake up in the Rogue Encampment and lose half your gold (press R).
 
 **Keys:** Space = end turn - I = inventory - C = character - T = skill tree - Q = quest log - Tab = automap
 (full / corner / off) - Alt (hold) or L = item names - F = fast animations - F1-F8 = right skill -
@@ -54,6 +71,11 @@ render/    pygame frontend (isometric renderer, animations, HUD)
 render/assets.py    placeholder art  - everything drawn goes through this
 render/d2assets.py  real D2 graphics (same interface)
 d2/        readers for D2 formats: MPQ, DT1 tiles, DS1 layouts, DCC/COF animations, palettes
-game/d2level.py     builds a cave from D2 room presets
+game/d2level.py     D2 cave rooms, tile maps
+game/act1.py        Act 1: the seamless outdoors and every dungeon, from D2 presets
+game/actworld.py    entrances, monsters, super uniques, waypoints, quest objects
+game/skills.py      every class skill from D2's tables; game/d2calc.py evaluates D2's formulas
+game/skillcast.py   how each kind of skill plays on the grid
+render/charcreate.py  D2's character creation screen
 tools/extract_samples.py  pulls a small sample set out of your MPQs (for development)
 ```

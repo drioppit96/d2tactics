@@ -18,7 +18,8 @@ def parse_tbl(data):
         kend = data.index(b"\0", koff)
         key = data[koff:kend].decode("latin-1")
         text = data[soff:soff + slen].split(b"\0")[0].decode("latin-1")
-        out[key] = text
+        if key not in out:          # duplicate keys: the game finds the first one when probing
+            out[key] = text
     return out
 
 

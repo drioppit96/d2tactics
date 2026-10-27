@@ -24,6 +24,8 @@ class Grid:
         self.explored = [[False] * width for _ in range(height)]
         self.visible = [[False] * width for _ in range(height)]
         self.new_explored = []       # cells revealed since the minimap last looked
+        self._lit = []               # cells marked visible last time (cleared cheaply)
+        self.explored_cells = []     # every explored cell, in order (the automap redraws from it)
 
     def in_bounds(self, x, y):
         return 0 <= x < self.w and 0 <= y < self.h
@@ -41,7 +43,7 @@ class Grid:
                 continue
             yield nx, ny
 
-    def find_path(self, start, goal, blocked=frozenset(), max_cost=None, allow_goal_blocked=False):
+    def find_path(self, start, goal, blocked=frozenset(), max_cost=None, allow_goal_blocked=False, limit=60000):
         """A* path from start to goal (exclusive of start). Returns list of cells or None.
 
         blocked: cells occupied by units. allow_goal_blocked lets you path *next to* a unit:
@@ -54,8 +56,12 @@ class Grid:
         open_heap = [(chebyshev(start, goal), 0, start)]
         came = {start: None}
         cost = {start: 0}
+        expanded = 0
         while open_heap:
             _, g, cur = heapq.heappop(open_heap)
+            expanded += 1
+            if expanded > limit:
+                return None          # big outdoor maps: give up instead of searching everything
             if cur == goal:
                 path = []
                 while cur != start:
@@ -118,9 +124,10 @@ class Grid:
         return True
 
     def update_visibility(self, origin, radius):
-        for row in self.visible:
-            for i in range(len(row)):
-                row[i] = False
+        vis = self.visible
+        for x, y in self._lit:
+            vis[y][x] = False
+        lit = self._lit = []
         ox, oy = origin
         for y in range(max(0, oy - radius), min(self.h, oy + radius + 1)):
             for x in range(max(0, ox - radius), min(self.w, ox + radius + 1)):
@@ -128,14 +135,18 @@ class Grid:
                     continue
                 if self.line_of_sight(origin, (x, y)):
                     self.visible[y][x] = True
+                    lit.append((x, y))
                     if not self.explored[y][x]:
                         self.explored[y][x] = True
                         self.new_explored.append((x, y))
+                        self.explored_cells.append((x, y))
                     # reveal the walls bordering visible floor too
                     for dx, dy in DIRS8:
                         nx, ny = x + dx, y + dy
                         if self.in_bounds(nx, ny) and self.cells[ny][nx] == WALL:
                             self.visible[ny][nx] = True
+                            lit.append((nx, ny))
                             if not self.explored[ny][nx]:
                                 self.explored[ny][nx] = True
                                 self.new_explored.append((nx, ny))
+                                self.explored_cells.append((nx, ny))

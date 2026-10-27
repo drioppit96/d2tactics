@@ -24,10 +24,11 @@ sys.path.insert(0, ROOT)
 
 from d2.mpq import MPQSet  # noqa: E402
 
-BATCH = 4 if "--batch4" in sys.argv else 3 if "--batch3" in sys.argv else 2 if "--batch2" in sys.argv else 1
-OUT = os.path.join(ROOT, {1: "d2samples", 2: "d2samples2", 3: "d2samples3", 4: "d2samples4"}[BATCH])
+BATCH = 5 if "--batch5" in sys.argv else 4 if "--batch4" in sys.argv else 3 if "--batch3" in sys.argv else \
+    2 if "--batch2" in sys.argv else 1
+OUT = os.path.join(ROOT, {1: "d2samples", 2: "d2samples2", 3: "d2samples3", 4: "d2samples4", 5: "d2samples5"}[BATCH])
 ZIP_PATH = OUT + ".zip"
-BUDGET = {1: 45, 2: 30, 3: 40, 4: 45}[BATCH] * 1024 * 1024        # stay well under upload limits
+BUDGET = {1: 45, 2: 30, 3: 40, 4: 45, 5: 45}[BATCH] * 1024 * 1024        # stay well under upload limits
 
 COMPONENTS = ["HD", "TR", "LG", "RA", "LA", "RH", "LH", "SH",
               "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8"]
@@ -465,6 +466,52 @@ class Extractor:
                     n += 1
             print("  %s %4d files" % (cls, n))
 
+    # ------------------------------------------------------------ batch 5: hero select art, palettes, objects
+    FE_CLASSES = [("amazon", "am"), ("assassin", "as"), ("necromancer", "ne"), ("barbarian", "ba"),
+                  ("paladin", "pa"), ("sorceress", "so"), ("druid", "dz")]
+
+    def step5_frontend(self):
+        print("Character creation: every hero, the campfire, the LoD background...")
+        n = 0
+        for f in ("charactercreationscreenEXP.dc6", "CharacterCreate.dc6", "fire.dc6", "TextBox2.dc6",
+                  "MediumButtonBlank.dc6", "charactercreationscreenEXP.DC6", "Fire.DC6"):
+            if self.grab("data\\global\\ui\\FrontEnd\\" + f) is not None:
+                n += 1
+        for folder, pre in self.FE_CLASSES:
+            for suffix in ("nu1", "nu2", "nu3", "fw", "bw", "fws", "bws", "nu3s", "nu1s", "nu2s"):
+                if self.grab("data\\global\\ui\\FrontEnd\\%s\\%s%s.dc6" % (folder, pre, suffix)) is not None:
+                    n += 1
+        print("  %d files" % n)
+
+    def step5_palettes(self):
+        print("All palettes...")
+        n = 0
+        for name in ("act1", "act2", "act3", "act4", "act5", "endgame", "endgame2", "fechar", "loading",
+                     "menu0", "menu1", "menu2", "menu3", "menu4", "sky", "static", "trademark", "units"):
+            for f in ("pal.dat", "Pal.PL2"):
+                if self.grab("data\\global\\palette\\%s\\%s" % (name, f)) is not None:
+                    n += 1
+        print("  %d files" % n)
+
+    def step5_objects(self):
+        print("Quest objects and waypoints (Cairn Stones, Inifuss tree, Malus, cage, portals)...")
+        n = 0
+        tokens = ("S1", "S2", "S3", "S4", "S5", "S6", "IT", "TT", "HM", "GI", "PP", "TP", "WP", "WN", "W7")
+        for tok in tokens:
+            prefix = "data\\global\\objects\\%s\\" % tok.lower()
+            for name in sorted(self.known):
+                if name.lower().startswith(prefix) and self.grab(name) is not None:
+                    n += 1
+            for mode in ("NU", "OP", "ON"):
+                cof = "data\\global\\objects\\%s\\COF\\%s%sHTH.cof" % (tok, tok, mode)
+                if self.grab(cof) is not None:
+                    n += 1
+                for comp in ("TR", "S1", "S2", "S3", "LG", "HD"):
+                    dcc = "data\\global\\objects\\%s\\%s\\%s%sLIT%sHTH.dcc" % (tok, comp, tok, comp, mode)
+                    if self.grab(dcc) is not None:
+                        n += 1
+        print("  %d files" % n)
+
     def finish(self):
         with open(os.path.join(OUT, "manifest.json"), "w") as f:
             json.dump({"files": self.manifest, "missing": self.tried_missing[:3000],
@@ -514,8 +561,10 @@ def main():
                  ex.step2_objects, ex.step2_monsters)
     elif BATCH == 3:
         steps = (ex.step2_listfiles, ex.step3_ui, ex.step3_act1_maps)
-    else:
+    elif BATCH == 4:
         steps = (ex.step2_listfiles, ex.step4_frontend, ex.step4_classes)
+    else:
+        steps = (ex.step2_listfiles, ex.step5_palettes, ex.step5_frontend, ex.step5_objects)
     for step in steps:
         try:
             step()

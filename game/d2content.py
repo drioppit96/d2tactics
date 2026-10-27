@@ -356,11 +356,16 @@ class D2Content:
         ids = [level_row.get("mon%d" % i, "").lower() for i in range(1, 11)]
         return [i for i in ids if i and i in self.monstats]
 
-    def monster_template(self, mid, unique=False):
-        """Everything needed to spawn a monster at its normal-difficulty level."""
+    def monstats_key(self, mid):
+        k = (mid or "").lower()
+        return k if k in self.monstats else None
+
+    def monster_template(self, mid, unique=False, level=None):
+        """Everything needed to spawn a monster at its normal-difficulty level (or `level`)."""
+        mid = mid.lower()
         r = self.monstats[mid]
         sfx = self.sfx
-        lvl = max(1, _int(r.get("level" + sfx) or r.get("level"), 1))
+        lvl = max(1, _int(r.get("level" + sfx) or r.get("level"), 1)) if level is None else max(1, level)
         ml = self.monlvl.get(lvl) or self.monlvl.get(1)
         base_hp, base_ac = _int(ml.get("hp" + sfx) or ml.get("hp")), _int(ml.get("ac" + sfx) or ml.get("ac"))
         base_th, base_dm = _int(ml.get("th" + sfx) or ml.get("th")), _int(ml.get("dm" + sfx) or ml.get("dm"))
@@ -389,6 +394,9 @@ class D2Content:
             "party": (_int(r.get("partymin")), _int(r.get("partymax"))),
             "group": (max(1, _int(r.get("mingrp"), 1)), max(1, _int(r.get("maxgrp"), 1))),
             "color": (150, 150, 150), "unique": unique, "rarity": max(1, _int(r.get("rarity"), 1)),
+            "res": {"phys": pct("resdm"), "mag": pct("resma"), "fire": pct("resfi"), "ltng": pct("resli"),
+                    "cold": pct("resco"), "pois": pct("respo")},
+            "undead": r.get("lundead") == "1" or r.get("hundead") == "1", "demon": r.get("demon") == "1",
         }
         if unique:
             t["hp"] = (t["hp"][0] * 4, t["hp"][1] * 4)

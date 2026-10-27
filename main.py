@@ -70,7 +70,21 @@ class Game:
         self.cam = Camera(w, h, zoom)
         self._offscreen = None
         self._path_cache = {}
-        self.new_world()
+        self.creator = None
+        self.state = "play"
+        if getattr(self.assets, "act_kit", None) is not None:
+            # D2 files: start at D2's character creation screen
+            self.hud = self.make_hud()
+            from render.charcreate import CharCreate
+            try:
+                self.creator = CharCreate(self)
+                self.state = "create"
+            except Exception:
+                import traceback
+                traceback.print_exc()
+                self.creator = None
+        if self.state != "create":
+            self.new_world()
         self.running = True
 
     def loading(self, message):
@@ -117,6 +131,172 @@ class Game:
         if self.asset_warning:
             self.world.log(self.asset_warning, (230, 160, 90))
 
+    # ------------------------------------------------------------ Act 1 (D2 files)
+    def start_act(self, cls, name):
+        """New character: build the whole outdoor act and start in the Rogue Encampment."""
+        from game.actworld import make_world
+        a = self.assets
+        self.state = "play"
+        self.levels = {}
+        self._prebuilt, self._builders, self._build_queue = {}, {}, []
+        self.hud.minimaps = {}
+        if hasattr(self.hud, "use_class"):
+            self.hud.use_class(cls)
+        self.loading("Building Act 1 - the Rogue Encampment and the wilderness...")
+        self.world = make_world(a.act_kit, a.act_info, a.content, "wild", char_class=cls, char_name=name)
+        self.levels["wild"] = self.world
+        self.loading("Preparing your hero...")
+        if hasattr(a, "warm"):
+            a.warm(self.world.player, self.loading)
+            for npc in self.world.npcs[:8]:
+                try:
+                    a._sprites_for(npc).frames("NU", npc.facing)
+                except Exception:
+                    pass
+        self.world.log("Welcome to the Rogue Encampment, %s. Talk to Akara and Kashya." % name, (199, 179, 119))
+        self.world.log("Left click: move / talk / attack. Right click: your skill. Space: end turn. Tab: map.",
+                       (170, 170, 170))
+        self._start_scene()
+        self.prebuild_from(self.world)
+        if self.asset_warning:
+            self.world.log(self.asset_warning, (230, 160, 90))
+
+    def prebuild_from(self, w):
+        """Build the dungeons behind this level's entrances in the background (no loading screens)."""
+        from game.act1 import WORLD_OF
+        for target in sorted(set(t for t in w.exits.values() if t), key=str):
+            key = WORLD_OF.get(target, target)
+            if key not in self.levels and key not in self._prebuilt and key not in self._build_queue:
+                self._build_queue.append(key)
+        self._run_builder()
+
+    def _run_builder(self):
+        import threading
+        if getattr(self, "_builder_thread", None) is not None and self._builder_thread.is_alive():
+            return
+        if not self._build_queue:
+            return
+        a = self.assets
+
+        def work():
+            from game.actworld import make_world
+            from game.units import Player
+            while self._build_queue:
+                key = self._build_queue.pop(0)
+                if key in self.levels or key in self._prebuilt:
+                    continue
+                try:
+                    w = make_world(a.act_kit, a.act_info, a.content, key, player=Player(0, 0))
+                    w.events = []
+                    self._prebuilt[key] = w
+                except Exception:
+                    import traceback
+                    traceback.print_exc()
+        self._builder_thread = threading.Thread(target=work, daemon=True)
+        self._builder_thread.start()
+
+    def _get_world(self, key, title):
+        from game.actworld import make_world
+        if key in self.levels:
+            return self.levels[key]
+        if key in self._prebuilt:
+            return self._prebuilt.pop(key)
+        t = getattr(self, "_builder_thread", None)
+        if t is not None and t.is_alive() and key in getattr(self, "_build_queue", []) + [None]:
+            pass
+        if t is not None and t.is_alive():
+            self.loading("Entering %s..." % title)
+            t.join(timeout=10)
+            if key in self._prebuilt:
+                return self._prebuilt.pop(key)
+        self.loading("Entering %s..." % title)
+        a = self.assets
+        return make_world(a.act_kit, a.act_info, a.content, key, player=self.world.player)
+
+    def change_level_act(self, target, arrive=None):
+        from game.act1 import WORLD_OF
+        old = self.world
+        old.pending_exit = None
+        src_level = old.level_id
+        player = old.player
+        key = WORLD_OF.get(target, target)
+        info = self.assets.act_info
+        if key == getattr(old, "level_key", None):
+            w = old
+        else:
+            w = self._get_world(key, info.name(target))
+        self.levels[key] = w
+        spot = arrive or w.entries.get(src_level) or w.entries.get(target)
+        if spot is None:
+            spot = w._default_start()
+        followers = [a for a in old.allies() if a.ai not in ("turret", "wall")] if w is not old else []
+        for a in followers:
+            old.monsters.remove(a)
+        for m in old.aware_monsters():
+            m.aware = False
+        old.mode = "explore"
+        w.player = player
+        w.relocate_player(spot)
+        occ = w.occupied()
+        for a in followers:
+            for r in range(1, 5):
+                cands = [(spot[0] + dx, spot[1] + dy) for dx in range(-r, r + 1) for dy in range(-r, r + 1)]
+                c = next((c for c in cands if w.grid.walkable(*c) and c not in occ), None)
+                if c:
+                    a.x, a.y = c
+                    occ.add(c)
+                    w.monsters.append(a)
+                    break
+        w.events = []
+        w.update_area()
+        from game.actworld import ensure_cain
+        ensure_cain(w)
+        self.world = w
+        self._start_scene()
+        self.prebuild_from(w)
+
+    def travel_waypoint(self, lid):
+        """Waypoint travel to any activated waypoint of the act."""
+        from game.act1 import WORLD_OF
+        key = WORLD_OF.get(lid, lid)
+        info = self.assets.act_info
+        w = self.levels.get(key) or self._get_world(key, info.name(lid))
+        self.levels[key] = w
+        cell = next((c for c, l in w.waypoints.items() if l == lid), None)
+        spot = None
+        if cell is not None:
+            from game.act1 import arrival_cell
+            spot = arrival_cell(w.grid, [cell], set(), w.rng, dist=2)
+        if spot is None and lid == 1:
+            spot = w._default_start()
+        self.change_level_act(lid, arrive=spot)
+
+    def respawn(self):
+        """D2: you wake up in the camp (and leave some gold behind)."""
+        p = self.world.player
+        lost = p.gold // 2
+        p.gold -= lost
+        p.alive = True
+        p.recalc()
+        p.hp, p.mana = p.max_hp, p.max_mana
+        self.world.game_over = False
+        for m in self.world.aware_monsters():
+            m.aware = False
+        self.world.mode, self.world.turn = "explore", "player"
+        wild = self.levels.get("wild")
+        if wild is None:
+            return
+        wild.game_over = False
+        if self.world is not wild:
+            old = self.world
+            self.world = wild
+            wild.player = p
+            old.player = p
+        wild.relocate_player(wild._default_start())
+        wild.update_area()
+        wild.log("You wake up in the Rogue Encampment. You lost %d gold." % lost, (230, 160, 90))
+        self._start_scene()
+
     def _start_scene(self):
         self._path_cache = {}
         self.walk_queue, self.walk_action, self.walk_goal = [], None, None
@@ -150,6 +330,8 @@ class Game:
 
     def change_level(self, target):
         """Walk through an exit: levels are kept, so killed monsters stay dead."""
+        if getattr(self.world, "level_key", None) is not None:
+            return self.change_level_act(target)
         old = self.world
         old.pending_exit = None
         old.last_pos = old.player.pos
@@ -242,6 +424,10 @@ class Game:
                 w.interact(target)
             elif kind == "pickup":
                 w.player_pickup(target)
+            elif kind == "object":
+                w.use_object(target)
+            elif kind == "waypoint":
+                w.use_waypoint(target)
 
     def advance_walk(self):
         w = self.world
@@ -359,22 +545,28 @@ class Game:
                 w.unequip(arg)
             elif action == "stat":
                 w.add_stat(arg)
+            elif action == "waypoint":
+                h.show_waypoints = False
+                self.travel_waypoint(arg)
+                return
+            elif action == "waypoints":
+                h.show_waypoints = False
             elif action == "skill_right":
                 h.skill_popup = not h.skill_popup
             elif action == "pick_skill":
-                w.player.right_skill = None if arg == "attack" else arg
+                w.select_right_skill(None if arg == "attack" else arg)
                 h.skill_popup = False
             elif action == "skill_page":
                 h.skill_page = arg
             elif action == "learn":
                 p = w.player
                 if button == 3 and p.skills.levels.get(arg) and p.skills.tree[arg].kind != "passive":
-                    p.right_skill = arg
+                    w.select_right_skill(arg)
                 elif p.skills.learn(arg, p.level):
                     p.recalc()
                     if p.right_skill is None and p.skills.tree[arg].kind != "passive":
-                        p.right_skill = arg
-                    w.log("Learned %s (level %d)." % (arg, p.skills.levels[arg]), (0, 220, 0))
+                        w.select_right_skill(arg)
+                    w.log("Learned %s (level %d)." % (p.skills.tree[arg].title, p.skills.levels[arg]), (0, 220, 0))
             elif action == "slot":
                 if w.held is not None:
                     w.equip_held(arg)
@@ -411,6 +603,8 @@ class Game:
             return
         cell = self.cam.screen_to_cell(*pos)
         m = self.monster_under_mouse(pos) or self.monster_at(cell)
+        if m is not None and getattr(m, "ally", False):
+            m = None                      # your own minions can't be attacked
         p = w.player
         if w.mode == "explore" and self.can_walk():
             # D2 style: every click is an order you can change at any time
@@ -420,12 +614,23 @@ class Game:
             if m is not None and button == 1:
                 self.walk_to(m.pos, ("attack", m), adjacent=True)
                 return
-            if m is not None and button == 3 and p.right_skill and p.skills.tree[p.right_skill].kind == "attack" \
+            if m is not None and button == 3 and p.right_skill and p.skills.tree[p.right_skill].kind in ("attack", "melee") \
                     and p.right_skill != "Leap Attack":
                 self.walk_to(m.pos, ("skill", m, p.right_skill), adjacent=True)
                 return
             if button == 1 and m is None:
                 g = w.grid
+                obj = w.object_at(cell) if hasattr(w, "object_at") else None
+                wp = w.waypoint_at(cell) if hasattr(w, "waypoint_at") else None
+                if obj is not None and cell not in w.ground:
+                    self.walk_to(obj["cell"], ("object", obj), adjacent=True)
+                    return
+                if wp is not None and cell not in w.ground:
+                    if chebyshev(p.pos, wp) <= 2:
+                        w.use_waypoint(wp)
+                    else:
+                        self.walk_to(wp, ("waypoint", wp), adjacent=True)
+                    return
                 if cell == p.pos and cell in w.ground:
                     w.player_pickup(cell)
                 elif cell in w.ground:
@@ -465,8 +670,10 @@ class Game:
         if key == pygame.K_ESCAPE:
             if w.held is not None:
                 w.drop_held()
-            elif h.show_inv or h.show_char or getattr(h, "show_skills", False) or getattr(h, "show_quests", False):
+            elif h.show_inv or h.show_char or getattr(h, "show_skills", False) or getattr(h, "show_quests", False) \
+                    or getattr(h, "show_waypoints", False):
                 h.show_inv = h.show_char = False
+                h.show_waypoints = False
                 if hasattr(h, "show_skills"):
                     h.show_skills = False
                 if hasattr(h, "show_quests"):
@@ -498,9 +705,11 @@ class Game:
             actives = p.skills.actives() if getattr(p, "skills", None) else []
             i = key - pygame.K_F1
             if i == 0:
-                p.right_skill = None
+                w.select_right_skill(None)
             elif i - 1 < len(actives):
-                p.right_skill = actives[i - 1]
+                w.select_right_skill(actives[i - 1])
+        elif key == pygame.K_r and "game_over" in self.scene.flags and getattr(self.world, "level_key", None) is not None:
+            self.respawn()
         elif key == pygame.K_r and ("game_over" in self.scene.flags or "victory" in self.scene.flags):
             self.new_world()
         elif key == pygame.K_n and "victory" in self.scene.flags:
@@ -559,12 +768,28 @@ class Game:
             return cell, highlight, None, ([m.name, "Click to talk"], [(90, 200, 255), TEXT])
         if m:
             hc, cost = w.preview_attack(m, "attack")
-            hb, bcost = w.preview_attack(m, "bash")
             dist = chebyshev(p.pos, m.pos)
             name_col = GOLD if m.unique else TEXT
             lines = [m.name, f"Level {m.level}   Life {self.scene.view(m).shown_hp}/{m.max_hp}",
-                     f"Attack: {int(hc * 100)}% to hit, {cost} AP",
-                     f"Bash: {int(hb * 100)}% to hit, {bcost} AP"]
+                     f"Attack: {int(hc * 100)}% to hit, {cost} AP"]
+            rs = getattr(p, "right_skill", None)
+            sk = p.skills.tree.get(rs) if rs and getattr(p, "skills", None) else None
+            if sk is not None:
+                ap, mana = w.skill_cost(rs)
+                if sk.kind in ("attack", "melee"):
+                    from game.world import hit_chance
+                    ar = w._skill_mods(p, rs).get("ar", 0)
+                    lines.append(f"{sk.title}: {int(hit_chance(p, m, ar) * 100)}% to hit, {ap} AP")
+                else:
+                    lines.append(f"{sk.title}: {ap} AP")
+            elif not hasattr(self.assets, "content"):
+                hb, bcost = w.preview_attack(m, "bash")
+                lines.append(f"Bash: {int(hb * 100)}% to hit, {bcost} AP")
+            res = getattr(m, "res", {})
+            imm = [n for k, n in (("fire", "Fire"), ("cold", "Cold"), ("ltng", "Lightning"), ("pois", "Poison"),
+                                  ("mag", "Magic"), ("phys", "Physical")) if res.get(k, 0) >= 100]
+            if imm:
+                lines.append("Immune to " + ", ".join(imm))
             if dist > 1:
                 key = ("m", m.pos) + key_base
                 if key not in self._path_cache:
@@ -575,7 +800,7 @@ class Game:
                     steps = len(path) - 1
                     lines.append(f"Walk {steps} + attack = {steps + cost} AP" if w.mode == "combat" else f"Walk {steps}")
                     preview = [(c, w.mode == "explore" or i < p.ap) for i, c in enumerate(path[:-1])]
-            tip = (lines, [name_col, TEXT, TEXT, TEXT, TEXT])
+            tip = (lines, [name_col] + [TEXT] * (len(lines) - 1))
         else:
             g = w.grid
             if g.in_bounds(*cell) and g.walkable(*cell) and cell != p.pos:
@@ -591,7 +816,17 @@ class Game:
                                [TEXT if len(path) <= p.ap else (230, 120, 90)])
             if cell in w.exits and w.exits[cell]:
                 names = {"den": "To the Den of Evil", "town": "To the Rogue Encampment"}
-                tip = ([names.get(w.exits[cell], "Exit")], [(240, 210, 90)])
+                info = getattr(self.assets, "act_info", None)
+                t = w.exits[cell]
+                label = ("To " + info.name(t)) if info and isinstance(t, int) else names.get(t, "Exit")
+                tip = ([label], [(240, 210, 90)])
+            obj = w.object_at(cell) if hasattr(w, "object_at") else None
+            if obj is not None:
+                label = {"cairn": "Cairn Stone", "inifuss": "Tree of Inifuss", "tome": "Moldy Tome",
+                         "malus": "Horadric Malus", "cage": "Cain's Cage", "portal": "Portal to Tristram"}
+                tip = ([label.get(obj["kind"], obj["kind"]), "Click to use"], [(90, 200, 255), TEXT])
+            if hasattr(w, "waypoint_at") and w.waypoint_at(cell) is not None:
+                tip = (["Waypoint", "Click to travel"], [(90, 200, 255), TEXT])
             items = w.ground.get(cell)
             if items and g.explored[cell[1]][cell[0]]:
                 lines = items[0].describe_lines(p)
@@ -601,6 +836,19 @@ class Game:
     # ------------------------------------------------------------ main loop
     def frame(self, dt):
         mouse = pygame.mouse.get_pos()
+        if self.state == "create":
+            for ev in pygame.event.get():
+                if ev.type == pygame.QUIT:
+                    self.running = False
+                elif ev.type == pygame.VIDEORESIZE:
+                    self.cam.resize(ev.w, ev.h)
+                else:
+                    self.creator.handle(ev)
+            if self.state == "create":
+                self.creator.update(dt)
+                self.creator.draw(self.screen)
+                pygame.display.flip()
+            return
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT:
                 self.running = False
@@ -622,6 +870,9 @@ class Game:
         self.scene.update(dt)
         if self.world.pending_exit and self.scene.idle():
             self.change_level(self.world.pending_exit)
+        if getattr(self.world, "open_waypoint", None) is not None:
+            self.world.open_waypoint = None
+            self.hud.show_waypoints = True
         self.cam.resize(*self.screen.get_size())
         self.cam.follow(*self.scene.player_world_pos(), dt)
 
@@ -661,13 +912,20 @@ class Game:
             shade = pygame.Surface((W, H), pygame.SRCALPHA)
             shade.fill((40, 0, 0, 150))
             self.screen.blit(shade, (0, 0))
-            for i, (text, font, col) in enumerate([("You have died", "big", (220, 50, 40)),
-                                                    ("Press R for a new cave, Esc to quit", "med", TEXT)]):
+            hint = "Press R to return to the Rogue Encampment" if getattr(self.world, "level_key", None) is not None \
+                else "Press R for a new cave, Esc to quit"
+            for i, (text, font, col) in enumerate([("You have died", "big", (220, 50, 40)), (hint, "med", TEXT)]):
                 img = self.fonts[font].render(text, True, col)
                 self.screen.blit(img, (W / 2 - img.get_width() / 2, H / 2 - 40 + i * 50))
         elif "victory" in self.scene.flags:
-            img = self.fonts["med"].render("Den of Evil cleared - press N for a new cave", True, GOLD)
-            self.screen.blit(img, (W / 2 - img.get_width() / 2, 84))
+            if getattr(self.world, "level_key", None) is not None:
+                q = getattr(self.world.player, "quests", {})
+                if q.get("andariel") in ("cleared", "done"):
+                    img = self.fonts["med"].render("Andariel is dead - Act 1 complete!", True, GOLD)
+                    self.screen.blit(img, (W / 2 - img.get_width() / 2, 84))
+            else:
+                img = self.fonts["med"].render("Den of Evil cleared - press N for a new cave", True, GOLD)
+                self.screen.blit(img, (W / 2 - img.get_width() / 2, 84))
 
     def run(self):
         while self.running:

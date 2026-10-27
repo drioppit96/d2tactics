@@ -10,6 +10,10 @@ from .iso import cell_to_world
 # NU neutral, WL walk, A1 attack, SC cast, GH get hit, DD death, DT dead
 
 
+NOVA_COLORS = {"fire": (255, 140, 40), "cold": (120, 180, 255), "ltng": (240, 240, 140), "pois": (110, 220, 80),
+               "mag": (230, 200, 255), "curse": (200, 40, 60), "phys": (220, 210, 190)}
+
+
 class UnitView:
     def __init__(self, unit):
         self.unit = unit
@@ -65,6 +69,7 @@ class Scene:
         self.wait = 0.0
         self.floats = []
         self.projectiles = []
+        self.novas = []          # [world pos, radius in cells, colour, time] spell rings
         self.items_shown = set()
         self.log = []
         self.banner = None       # (text, color, time left)
@@ -139,9 +144,24 @@ class Scene:
             unit, src, dst, pk = ev[1:]
             v = self.view(unit)
             v.facing = (max(-1, min(1, dst[0] - src[0])), max(-1, min(1, dst[1] - src[1])))
-            v.mode, v.t, v.dur = "SC" if pk == "fireball" else "A1", 0.0, 0.2
+            v.mode = "A1" if pk in ("arrow", "spike") else "SC"
+            v.t, v.dur = 0.0, 0.2
             self.projectiles.append(Projectile(pk, cell_to_world(*src), cell_to_world(*dst)))
             return None
+        if kind == "area":
+            self.banner = [ev[1], (199, 179, 119), 2.0]
+            return 0
+        if kind == "nova":
+            unit, centre, radius, elem = ev[1:]
+            self.novas.append([cell_to_world(*centre), radius, NOVA_COLORS.get(elem, (230, 220, 200)), 0.0])
+            return 0.22
+        if kind == "teleport":
+            v = self.view(ev[1])
+            v.path, v.slide = [], None
+            v.rx, v.ry = float(ev[3][0]), float(ev[3][1])
+            v.flash = 1.0
+            self.novas.append([cell_to_world(*ev[3]), 1, (140, 160, 255), 0.0])
+            return 0.15
         if kind == "damage":
             unit, amount, hp_after = ev[1:]
             v = self.view(unit)
@@ -223,6 +243,10 @@ class Scene:
             p.t += dt
             if p.t >= p.dur:
                 self.projectiles.remove(p)
+        for n in list(self.novas):
+            n[3] += dt
+            if n[3] > 0.45:
+                self.novas.remove(n)
         for f in list(self.floats):
             f.t += dt
             if f.t > 1.1:
@@ -337,6 +361,7 @@ class Scene:
         drawables = []
 
         if use_tiles:
+            f2 = getattr(tm, "floor2", None)
             tx0, ty0 = max(0, x0 // 5 - 1), max(0, y0 // 5 - 1)
             tx1, ty1 = min(tm.tw - 1, x1 // 5 + 1), min(tm.th - 1, y1 // 5 + 2)
             for ty in range(ty0, ty1 + 1):
@@ -346,6 +371,9 @@ class Scene:
                     ref = tm.floor.get((tx, ty))
                     if ref:
                         assets.draw_tile(surf, ref, tx, ty, cam)
+                    ref2 = f2.get((tx, ty)) if f2 else None
+                    if ref2:
+                        assets.draw_tile(surf, ref2, tx, ty, cam)
                     for wref in tm.walls.get((tx, ty), ()):
                         # props sort by the back of their tile, so units next to them stay visible
                         drawables.append((tx * 5 + ty * 5 + 1, 0, "tile", (wref, tx, ty)))
@@ -379,9 +407,16 @@ class Scene:
                 for it in items:
                     if id(it) in self.items_shown:
                         drawables.append((cell[0] + cell[1] - 0.01, 1, "item", (cell, it)))
+        for o in getattr(world, "objects", ()):
+            x, y = o["cell"]
+            if x0 - 4 <= x <= x1 + 4 and y0 - 4 <= y <= y1 + 4:
+                drawables.append((x + y, 1.5, "object", (o["kind"], o.get("oid", 0), o["cell"], o.get("used"))))
+        for c, lid in getattr(world, "waypoints", {}).items():
+            if x0 - 4 <= c[0] <= x1 + 4 and y0 - 4 <= c[1] <= y1 + 4:
+                drawables.append((c[0] + c[1] - 0.5, 0.2, "object", ("waypoint", lid, c, False)))
         for v in self.views.values():
             cx, cy = int(round(v.rx)), int(round(v.ry))
-            if not g.in_bounds(cx, cy) or not g.visible[cy][cx]:
+            if not v.unit.is_player and (not g.in_bounds(cx, cy) or not g.visible[cy][cx]):
                 continue
             layer = 0.5 if v.dead else 2
             drawables.append((v.rx + v.ry + (0 if not v.dead else -0.4), layer, "unit", v))
@@ -408,6 +443,10 @@ class Scene:
                 # walls standing between the camera and the player get cut down (like D2)
                 near = abs((x - y) - (pv.rx - pv.ry)) < 4.5 and 0 < (x + y) - psum < 6
                 assets.draw_wall(surf, obj, cam.cell_to_screen(x, y), s, b, cutaway=near)
+            elif kind == "object":
+                okind, oid, cell, used = obj
+                if hasattr(assets, "draw_object"):
+                    assets.draw_object(surf, okind, oid, cam.cell_to_screen(*cell), s, self.clock, used)
             elif kind == "item":
                 cell, it = obj
                 b = 1.0 if use_tiles else self.brightness(cell[0], cell[1], light)
@@ -436,6 +475,15 @@ class Scene:
         for p in self.projectiles:
             wx, wy = p.pos()
             assets.draw_projectile(surf, p.kind, cam.to_screen(wx, wy), s, p.t)
+        for (wx, wy), r, col, t in self.novas:
+            k = min(1.0, t / 0.3)
+            rw, rh = max(2, int(r * 32 * k * s)), max(1, int(r * 16 * k * s))
+            ring = pygame.Surface((rw * 2 + 4, rh * 2 + 4), pygame.SRCALPHA)
+            a = int(200 * (1 - t / 0.45))
+            pygame.draw.ellipse(ring, col + (max(0, a // 3),), ring.get_rect())
+            pygame.draw.ellipse(ring, col + (max(0, a),), ring.get_rect(), max(1, int(3 * s)))
+            sx, sy = cam.to_screen(wx, wy)
+            surf.blit(ring, (int(sx - rw - 2), int(sy - rh - 2)))
 
         if use_tiles:
             self._draw_darkness(surf, cam, light)
@@ -528,7 +576,7 @@ class Scene:
         g = self.world.grid
         for v in self.views.values():
             u = v.unit
-            if u.is_player or v.dead or getattr(u, "ai", "") == "npc":
+            if u.is_player or v.dead or getattr(u, "ai", "") in ("npc", "wall") or getattr(u, "invulnerable", False):
                 continue
             cx, cy = int(round(v.rx)), int(round(v.ry))
             if not g.visible[cy][cx]:
@@ -540,4 +588,4 @@ class Scene:
             top = sy - ((44 if u.unique else 36) + self.bar_lift) * cam.scale
             pygame.draw.rect(surf, (20, 0, 0), (sx - w / 2, top, w, 4))
             frac = max(0.0, v.shown_hp / u.max_hp)
-            pygame.draw.rect(surf, (200, 30, 30), (sx - w / 2, top, w * frac, 4))
+            pygame.draw.rect(surf, (40, 190, 60) if getattr(u, "ally", False) else (200, 30, 30), (sx - w / 2, top, w * frac, 4))

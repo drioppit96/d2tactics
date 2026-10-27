@@ -2,32 +2,53 @@
 
 Everything learned so far, so a new session can continue without re-discovering it.
 
-## Status (end of day 1)
+## Status (end of day 2)
 
-Working: MPQ reader (+ disk cache), DT1/DS1/DCC/DC6/COF/palette/font/string-table readers,
-Rogue Encampment (4 D2 layouts, NPCs at preset positions), Den of Evil (6-room maze of
-D2 cave presets, D2 roster and stats), turn-based combat with AP, D2 items/affixes,
-D2 interface (control panel, globes, belt, mini panel, char sheet, 10x4 inventory,
-skill tree fallback, quest log), Barbarian skills, Den of Evil quest, automap (own lines),
-background prebuild of the Den, step-by-step walking with hold-to-walk.
+Day 2 added: all seven classes (character creation screen, CharStats stats and kits, class
+sprites), every class skill from the tables (game/skills.py + game/d2calc.py, turn-based
+rules in game/skillcast.py), allies (summons, golems, traps, the Rogue hireling), the whole
+of Act 1 (game/act1.py builders, game/actworld.py population), waypoints and all six quests.
 
-## Next session - user's list
+Next ideas: save games, D2 sounds (Huffman/ADPCM WAV decompression), missile graphics
+(Missiles.txt celfile), shops/gambling, real unique/champion packs with D2 names, D2's
+automap cells (AutoMap.txt + MaxiMap.dc6), Act 2.
 
-1. **Character creation** with all 7 classes (Amazon, Sorceress, Necromancer, Paladin,
-   Barbarian, Druid, Assassin). Use D2's character-select art (`data\global\ui\FrontEnd\`,
-   per-class folders with NU1-3 / FW / BW animations). Needs batch 4 samples.
-2. **Every class's skill tree** with icons and **synergies** (Skills.txt `edmgsympercalc`,
-   `eLenSymPerCalc`, `aurastat...`; SkillDesc for pages/rows/cols/icons; icons in
-   `data\global\ui\SPELLS\<Xx>Skillicon.DC6`, trees `skltree_<x>_back.DC6`).
-   Generalise game/skills.py: data-driven tree for any class; behaviour per skill
-   "type" (melee attack, missile, nova, aura, summon, curse, warcry, passive...).
-3. **Act 1 complete**: Blood Moor, Cold Plains, Stony Field, Dark Wood, Black Marsh,
-   Tamoe Highland, Monastery Gate, Outer Cloister, Barracks, Jail 1-3, Inner Cloister,
-   Cathedral, Catacombs 1-4 + all caves/crypts/tower. Outdoors seamless (one continuous
-   world built from the wilderness DS1 presets); dungeons entered through their real
-   entrance tiles (Levels.txt Vis0-7 / Warp0-7, LvlWarp.txt). Quests: Den of Evil (done),
-   Blood Raven, Cain/Tristram (Cairn Stones), Forgotten Tower (Countess), Horadric Malus
-   (Charsi / Barracks), Andariel. Waypoints. Needs batch 3 samples (outdoor DS1s).
+## Act 1 world (game/act1.py)
+
+- Outdoors: slots of 8x8 blocks of 8x8 tiles (64x64 tiles = 320x320 cells per area). Snake
+  layout from the town's exit side (townN1/E1/S1/W1). Border ring of `Bord1-12` presets:
+  edges bord3 N, bord1 S, bord2 W, bord4 E (variants b/c), corners bord6 NW, bord7 NE,
+  bord8 SE, bord5 SW. Where two areas meet both sides get the `o` variant (opening) at the same
+  block index. Interior: entrances, waypoint, quest presets first, then fills (LvlPrest names).
+  If presets don't line up, `_connect` carves a grass trail (A* check per link).
+- Monastery Gate (facade1.ds1) must be north of Tamoe (its gate opens south); the Outer Cloister
+  (court*.ds1) sits right behind it. The Barracks door = the cloister's far edge (no warp tile).
+- Warp tiles: DS1 wall cells with orientation 10 or 11 and main index < 8; main index = Levels.txt
+  vis slot (vis0 previous, vis1 next, vis3-6 outdoor entrances, vis4 down). Orientation 8/9 are
+  door frames, not warps.
+- DS1 objects: type 1 = MonPreset.txt act 1 order (0 gheed, 1 cain1, 2 akara ... 12
+  place_bloodraven, 34 Bishibosh ... 46 Corpsefire; place_* = spawn points); type 2 =
+  objects: 52/53 waypoint, 7-11 cairn stones, 12 Inifuss tree, 25 moldy tome, 36 Malus, 26 cage.
+  Object graphics: Objects.txt token (S1-S5, IT, TT, HM, GI, wp/wn ...), data\global\objects\<tok>.
+- Dungeon mazes: room size from the presets (caves 24, crypt 8, barracks 10x14, jail/catacombs 12);
+  role rooms: cave{d}pre/next/down/spec/crow, crypt{d}warpprev/warpnext/bonebreak/consol,
+  jail{d}warpprev/warpnext/warpcath/way/pitspawn, bar{d}warp/forge + court{d}b, cat{x}up/{d}down/{d}way.
+- Monster level = Levels.txt MonLvl1Ex (normal). Rosters: mon1-10 (normal), nmon (NM/Hell).
+- Performance: Grid.update_visibility only clears what it lit last time (big maps!), find_path has
+  a node limit, make_grid builds rows by slices; the outdoor act builds in about a second.
+
+## Skills (game/skills.py)
+
+- calc language: ln12 = par1 + (lvl-1)*par2, dm12 = diminishing, parN, lvl, blvl (hard points),
+  skill('Name'.blvl/.lvl/.parN/.ln34), clc1-4, toht, edmn/edmx (shifted), edns/edxs (<< hitshift),
+  min/max, ?:. See game/d2calc.py.
+- Damage: value per level brackets (2-8, 9-16, 17-22, 23-28, 29+), shift = v * 2^hitshift / 256
+  (blank hitshift = 0). Poison total = shifted * ELen frames. Mana = (mana + lvlmana*(lvl-1)) *
+  2^manashift / 256, min minmana.
+- SkillDesc descline codes used: 2/4 "text +n tb", 3/5 "text n tb", 6, 7 "n text", 12/31 seconds,
+  19/37 yards (x 2/3), 36, 38/43/52 ranges, 51/66 "%d" text, 63 synergy lines (dsc3).
+- Durations: frames / 25 / 2 = turns (one round ~ 2 seconds).
+- String tables have duplicate keys (Skillname223 twice): the first one wins (parse_tbl).
 
 ## Skill data (all classes) - already in the batch 1 samples
 
@@ -84,9 +105,11 @@ Combat in this game: player hit chance is D2's formula mapped onto 60-95%
 
 ## Samples
 
-`tools/extract_samples.py --batch1..4` pulls small sets of files for development
+`tools/extract_samples.py --batch1..5` pulls small sets of files for development
 (never committed; .gitignore blocks D2 formats). Batch 3 = skill icons, skill trees,
 automap files, string tables, Act 1 layouts. Batch 4 = all classes + front-end screens.
+Batch 5 = every palette, all seven heroes of the character creation screen, quest object
+and waypoint graphics.
 
 ## Testing without a display
 

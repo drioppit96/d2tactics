@@ -19,7 +19,8 @@ import random
 from .grid import chebyshev, DIRS8
 from .items import roll_drop, SLOTS
 from .mapgen import generate_cave, populate
-from .units import Player, Monster
+from .units import Player, Monster, CLASS_KIT
+from .skillcast import SkillCaster
 
 SIGHT = 8           # how far monsters notice you
 ALERT_RADIUS = 6    # pack mates that get woken up with them
@@ -28,6 +29,9 @@ PICKUP_AP = 1
 BASH_MANA = 2
 
 RED = (255, 80, 80)
+# Barbarian skills with their own hand-made rules (everything else is read from the D2 tables)
+GENERIC_EXCLUDED = {"Bash", "Double Swing", "Stun", "Leap Attack", "Concentrate", "Frenzy", "Berserk", "Whirlwind",
+                    "Taunt", "bash", "attack"}
 NPC_NAMES = {"akara": "Akara", "charsi": "Charsi", "gheed": "Gheed", "kashya": "Kashya", "warriv1": "Warriv",
              "cain1": "Deckard Cain", "rogue1": "Rogue Scout", "navi": "Flavie", "chicken": "Chicken"}
 NPC_LINES = {
@@ -66,11 +70,21 @@ def hit_chance(attacker, defender, ar_bonus_pct=0):
     return chance
 
 
-class World:
+class World(SkillCaster):
     def __init__(self, seed=None, depth_level=1, level_builder=None, content=None,
-                 level_id="den", level_name="Den of Evil", town=False, player=None, exit_to=None):
+                 level_id="den", level_name="Den of Evil", town=False, player=None, exit_to=None,
+                 char_class="bar", char_name=None, built=None, level_key=None, info=None):
         self.seed = seed if seed is not None else random.randrange(1 << 30)
         self.tilemap = None
+        self.areas = {}
+        self.entries = {}
+        self.waypoints = {}
+        self.objects = []
+        self.level_key = level_key
+        self.town_rect = None
+        if built is not None:
+            self._init_act(built, content, level_key, info, player, char_class, char_name)
+            return
         self.level_id, self.level_name, self.town = level_id, level_name, town
         if level_builder is not None:
             self.grid, self.rng, self.tilemap = level_builder(self.seed)
@@ -96,16 +110,20 @@ class World:
                 if inside:
                     start = max(inside, key=lambda c: sum(1 for nb in self.grid.neighbors(*c)))
         self.entry = start
+        self.hazards = []
         if player is None:
-            self.player = Player(*start)
+            tree = None
             if content:
-                from .skills import SkillBook, load_tree
-                self.player.skills = SkillBook(load_tree(content.src))
+                from .skills import load_tree
+                tree = load_tree(content.src, char_class, getattr(content, "strings", None))
+            self.player = Player(*start, cls=char_class if content else "bar", name=char_name, tree=tree)
+            if content:
                 self._d2_starting_gear()
         else:
             self.player = player
             player.x, player.y = start
             player.alive = True
+        self.player.aura_source = self.aura_stats
         self.monsters = monsters
         self.corpses = []            # dead monsters, shamans can raise fallen
         self.ground = {}             # cell -> [items]
@@ -119,6 +137,115 @@ class World:
         self.ambient = 70 if town else 205     # how dark it is outside your light radius
         self.grid.update_visibility(self.player.pos, self.sight_radius())
         self.enter_message()
+
+    def _init_act(self, built, content, level_key, info, player, char_class, char_name):
+        """An Act 1 level made from D2 presets (see game/act1.py and game/actworld.py)."""
+        from .actworld import setup
+        self.content = content
+        self.level_id, self.level_name, self.town = None, "", False
+        self.pending_exit = None
+        self.hazards = []
+        self.corpses = []
+        self.ground = {}
+        self.events = []
+        setup(self, built[0], built[1], built[2], info, level_key)
+        start = self._default_start()
+        if level_key == 38:
+            # the red portal back to the Cairn Stones
+            self.objects.append(dict(kind="portal", cell=start, level=38, oid=0, used=False, target=4))
+            from .actworld import _free_near
+            g = self.grid
+            start = next((c for c in ((start[0] + 3, start[1] + 1), (start[0] + 1, start[1] + 3), (start[0] - 3, start[1]))
+                          if g.walkable(*c)), start)
+            self.entries[4] = start
+        if player is None:
+            from .skills import load_tree
+            tree = load_tree(content.src, char_class, getattr(content, "strings", None)) if content else None
+            self.player = Player(*start, cls=char_class if content else "bar", name=char_name, tree=tree)
+            if content:
+                self._d2_starting_gear()
+        else:
+            self.player = player
+            player.x, player.y = start
+            player.alive = True
+        self.player.aura_source = self.aura_stats
+        self.entry = start
+        self.mode = "explore"
+        self.turn = "player"
+        self.round = 0
+        self.game_over = False
+        self.boss_dead = False
+        self._regen_steps = 0
+        self.ambient = 205
+        self.update_area(announce=False)
+        self.grid.update_visibility(self.player.pos, self.sight_radius())
+        from . import quests
+        quests.init(self.player)
+
+    def _default_start(self):
+        """Where a new game starts: next to Warriv in the camp; in dungeons at the way in."""
+        warriv = [n.pos for n in self.npcs if getattr(n, "npc", "") == "warriv1"]
+        if warriv:
+            wx, wy = warriv[0]
+            taken = {n.pos for n in self.monsters}
+            for r in (3, 4, 5, 6):
+                for dy in range(-r, r + 1):
+                    for dx in range(-r, r + 1):
+                        c = (wx + dx, wy + dy)
+                        if self.grid.walkable(*c) and c not in taken and c not in self.exits:
+                            return c
+        if self.entries:
+            vals = [v for v in self.entries.values() if v]
+            if vals:
+                return vals[0]
+        if self.town_rect:
+            x0, y0, x1, y1 = self.town_rect
+            c = ((x0 + x1) // 2, (y0 + y1) // 2)
+        else:
+            c = (self.grid.w // 2, self.grid.h // 2)
+        from .actworld import _free_near
+        return _free_near(self.grid, c, 60) or c
+
+    def area_at(self, cell):
+        x, y = cell
+        best = None
+        for lid, (x0, y0, x1, y1) in self.areas.items():
+            if x0 <= x < x1 and y0 <= y < y1:
+                if best is None or lid in (26, 27):
+                    best = lid
+        return best
+
+    def update_area(self, announce=True):
+        """Track which D2 area you are in (seamless outdoors): name, light, town safety."""
+        if not self.areas:
+            return
+        lid = self.area_at(self.player.pos)
+        if self.town_rect is not None and lid == 1:
+            x0, y0, x1, y1 = self.town_rect
+            px, py = self.player.pos
+            if not (x0 <= px < x1 and y0 <= py < y1):
+                lid = 1
+        if lid is None or lid == self.level_id:
+            return
+        self.level_id = lid
+        info = getattr(self, "info", None)
+        self.level_name = info.name(lid) if info else str(lid)
+        self.town = lid == 1
+        self.ambient = 70 if lid == 1 else (120 if lid in (2, 3, 4, 5, 6, 7, 17, 26, 27, 38) else 205)
+        if announce:
+            self.emit("area", self.level_name)
+            self.log("Entering %s." % self.level_name, (199, 179, 119))
+            p = self.player
+            if not hasattr(p, "visited"):
+                p.visited = set()
+            p.visited.add(lid)
+        if self.town:
+            # monsters don't follow you into the camp
+            for m in self.aware_monsters():
+                m.aware = False
+            self.check_combat_end()
+        from . import quests
+        quests.on_enter(self, lid)
 
     def enter_message(self):
         from . import quests
@@ -152,15 +279,24 @@ class World:
         p = self.player
         p.x, p.y = cell
         p.alive = True
+        p.aura_source = self.aura_stats
         self.mode, self.turn = "explore", "player"
         self.pending_exit = None
+        for m in self.aware_monsters():
+            m.aware = False
         self.grid.update_visibility(p.pos, self.sight_radius())
+        if self.areas:
+            self.update_area()
 
     def _d2_starting_gear(self):
-        """D2's Barbarian starts with a Hand Axe, a Buckler and healing potions."""
+        """D2's starting kit for the class (CharStats.txt) and four healing potions."""
         c, p = self.content, self.player
-        for slot, code in (("weapon", "hax"), ("shield", "buc"), ("armor", None)):
+        right, left = CLASS_KIT.get(p.cls, ("hax", "buc"))
+        for slot, code in (("weapon", right), ("shield", left), ("armor", None)):
             p.equipment[slot] = c.make_item(c.base_by_code[code], 1, self.rng) if code in c.base_by_code else None
+        w = p.equipment.get("weapon")
+        if w is not None and right == "jav":
+            w.amount = getattr(w, "amount", 0) or 20
         if "hp1" in c.base_by_code:
             p.belt = [c.make_item(c.base_by_code["hp1"], 1, self.rng) for _ in range(4)]
         p.recalc()
@@ -192,10 +328,10 @@ class World:
         return cells
 
     def living_monsters(self):
-        return [m for m in self.monsters if m.alive]
+        return [m for m in self.monsters if m.alive and not m.ally]
 
     def aware_monsters(self):
-        return [m for m in self.monsters if m.alive and m.aware]
+        return [m for m in self.monsters if m.alive and m.aware and not m.ally]
 
     def player_can_act(self):
         return not self.game_over and self.turn == "player"
@@ -270,6 +406,8 @@ class World:
                 if self._regen_steps % 10 == 0:
                     self._tick_buffs()           # buffs also run out while exploring
             self.grid.update_visibility(p.pos, self.sight_radius())
+            if self.areas:
+                self.update_area()
             self._auto_pickup_gold(step)
             was_explore = self.mode == "explore"
             if self.check_awareness() and was_explore:
@@ -278,6 +416,8 @@ class World:
                 self.pending_exit = self.exits[step]
                 break
         self.emit("move", p, walked)
+        if self.mode == "explore" and walked:
+            self.allies_follow()
         if pickup and walked and walked[-1] == cell and cell in self.ground:
             self.player_pickup(cell)
         self._maybe_auto_end()
@@ -354,9 +494,12 @@ class World:
         return True
 
     def player_attack(self, target, skill="attack", ap_cost=None, mana_cost=0):
-        """Attack (or use a melee skill on) a monster, walking next to it first if AP allows."""
+        """Attack (or use a melee skill on) a monster, walking next to it first if AP allows.
+        With a bow / javelins the normal attack is a shot from where you stand."""
         if getattr(target, "ai", "") == "npc":
             return self.interact(target)
+        if getattr(target, "ally", False):
+            return False
         if not self.player_can_act() or not target.alive:
             return False
         p = self.player
@@ -370,11 +513,20 @@ class World:
             self.log("Not enough mana.", GREY)
             return False
         cost = ap_cost if ap_cost is not None else self.attack_cost(skill)
-        if chebyshev(p.pos, target.pos) > 1 or not self._adjacent_reachable(p.pos, target.pos):
+        shoot = skill == "attack" and getattr(p, "ranged", False)
+        if shoot and chebyshev(p.pos, target.pos) <= p.range and self.grid.line_of_sight(p.pos, target.pos):
+            pass
+        elif chebyshev(p.pos, target.pos) > 1 or not self._adjacent_reachable(p.pos, target.pos):
             path = self.grid.find_path(p.pos, target.pos, blocked=self.occupied(p), allow_goal_blocked=True)
             if not path or len(path) < 2:
                 return False
             path = path[:-1]
+            if shoot:
+                # walk only until the target is in range with a clear shot
+                for i, c in enumerate(path):
+                    if chebyshev(c, target.pos) <= p.range and self.grid.line_of_sight(c, target.pos):
+                        path = path[: i + 1]
+                        break
             if self.mode == "combat":
                 if len(path) + cost > p.ap:
                     # can't reach and swing this turn: get as close as AP allows
@@ -396,6 +548,10 @@ class World:
         p.ap -= cost
         p.mana -= mana_cost
         swings = 2 if skill in ("Double Swing", "Frenzy") else 1
+        sk = p.skills.tree.get(skill) if hasattr(p, "skills") else None
+        generic = sk is not None and sk.data is not None and skill not in GENERIC_EXCLUDED
+        if generic:
+            swings = self.melee_mods(p, skill)["hits"]
         if skill == "Concentrate":
             lv = p.skills.level(skill)
             p.effects["conc_pct"] = 100 + 10 * (lv - 1)
@@ -411,12 +567,20 @@ class World:
             self.log("%s is taunted!" % target.name, YELLOW)
             self._maybe_auto_end()
             return True
-        for _ in range(swings):
-            if not target.alive:
-                break
-            hit = self._resolve_attack(p, target, skill)
-            if hit and skill == "Frenzy":
-                p.frenzy += 1
+        if generic and sk.extra.get("sweep"):
+            targets = [m for m in self.living_monsters() if m.ai != "npc" and chebyshev(m.pos, p.pos) == 1]
+        else:
+            targets = [target]
+        for t in targets:
+            for _ in range(swings):
+                if not t.alive:
+                    break
+                hp0 = t.hp
+                hit = self._resolve_attack(p, t, skill, ranged_kind="arrow" if shoot else None)
+                if hit and skill == "Frenzy":
+                    p.frenzy += 1
+                if hit and generic:
+                    self.after_melee_hit(p, t, skill, max(0, hp0 - max(0, t.hp)))
         self._maybe_auto_end()
         return True
 
@@ -447,6 +611,18 @@ class World:
             p.recalc()
             p.hp = min(p.max_hp, max(1, int(round(p.max_hp * hp_frac))))
 
+    def select_right_skill(self, name):
+        """The right mouse button skill; choosing an aura turns it on (D2), anything else turns it off."""
+        p = self.player
+        p.right_skill = name
+        s = p.skills.tree.get(name) if name else None
+        aura = name if s is not None and s.kind == "aura" else None
+        if aura != getattr(p, "active_aura", None):
+            p.active_aura = aura
+            p.recalc()
+            if aura:
+                self.log("%s aura active." % s.title, YELLOW)
+
     def skill_cost(self, name):
         """(AP, mana) for using a learned skill right now."""
         p = self.player
@@ -468,6 +644,8 @@ class World:
             self.log("You haven't learned %s." % name, GREY)
             return False
         s = book.tree[name]
+        if s.kind not in ("attack", "move", "cry", "corpse"):
+            return self.cast_generic(name, target, cell)
         ap, mana = self.skill_cost(name)
         if s.kind == "attack":
             if target is None or getattr(target, "ai", "") == "npc":
@@ -667,6 +845,41 @@ class World:
         self._maybe_auto_end()
         return True
 
+    # ------------------------------------------------------------ objects and waypoints
+    def object_at(self, cell, radius=1):
+        for o in self.objects:
+            if chebyshev(o["cell"], cell) <= radius:
+                return o
+        return None
+
+    def waypoint_at(self, cell, radius=2):
+        for c in self.waypoints:
+            if chebyshev(c, cell) <= radius:
+                return c
+        return None
+
+    def use_object(self, obj):
+        p = self.player
+        if chebyshev(p.pos, obj["cell"]) > 2 or not self.player_can_act():
+            return False
+        p.face(*obj["cell"])
+        self.emit("attack", p, obj["cell"], "cast")
+        from . import quests
+        return quests.on_object(self, obj)
+
+    def use_waypoint(self, cell):
+        p = self.player
+        lid = self.waypoints.get(cell)
+        if lid is None or chebyshev(p.pos, cell) > 3:
+            return False
+        if not hasattr(p, "waypoints"):
+            p.waypoints = {1}
+        if lid not in p.waypoints:
+            p.waypoints.add(lid)
+            self.log("Waypoint activated: %s." % (self.info.name(lid) if getattr(self, "info", None) else lid), YELLOW)
+        self.open_waypoint = lid
+        return True
+
     def _adjacent_reachable(self, a, b):
         dx, dy = b[0] - a[0], b[1] - a[1]
         if dx and dy:   # diagonal: can't attack through a wall corner
@@ -730,6 +943,9 @@ class World:
             return
         self.turn = "monsters"
         self.emit("turn", "monsters")
+        self.aura_turn()
+        self.allies_turn()
+        self.tick_hazards()
         for m in list(self.aware_monsters()):
             if self.game_over:
                 break
@@ -748,6 +964,7 @@ class World:
         self.round += 1
         p = self.player
         self._tick_buffs()
+        self.tick_player_buffs()
         p.ap = p.max_ap + min(3, p.frenzy)
         p.frenzy = 0
         p.mana = min(p.max_mana, p.mana + 1)
@@ -932,11 +1149,14 @@ class World:
     # ------------------------------------------------------------ combat resolution
     def _skill_mods(self, attacker, skill):
         """Damage / attack rating bonuses and effects of a melee skill at its current level."""
-        m = {"dmg": 0, "ar": 0, "knock": False, "stun": 0, "magic": False}
+        m = {"dmg": 0, "ar": 0, "knock": False, "stun": 0, "magic": False, "elem": None, "always": False, "leech": 0}
         if not attacker.is_player or skill in ("attack", None):
             if skill == "bash":                       # monsters / placeholder Bash
                 m.update(dmg=50, ar=20, knock=True)
             return m
+        sk = attacker.skills.tree.get(skill)
+        if sk is not None and sk.data is not None and skill not in GENERIC_EXCLUDED:
+            return self.melee_mods(attacker, skill)
         lv = max(1, attacker.skills.level(skill))
         L = lv - 1
         if skill in ("Bash", "bash"):
@@ -957,43 +1177,93 @@ class World:
             m.update(dmg=-50 + 8 * L, ar=5 * L)
         return m
 
-    def _resolve_attack(self, attacker, target, skill="attack", ranged_kind=None):
+    def _resolve_attack(self, attacker, target, skill="attack", ranged_kind=None, quiet_anim=False):
         """One swing (or shot). Returns True on a hit."""
         attacker.face(*target.pos)
         mods = self._skill_mods(attacker, skill)
         anim = "bash" if mods["knock"] else ("resurrect" if skill == "resurrect" else "attack")
         if ranged_kind:
             self.emit("projectile", attacker, attacker.pos, target.pos, ranged_kind)
-        else:
+            if attacker.is_player:
+                self.emit("attack", attacker, target.pos, "attack")
+        elif not quiet_anim:
             self.emit("attack", attacker, target.pos, anim)
-        if self.rng.random() > hit_chance(attacker, target, mods["ar"]):
+        if getattr(target, "invulnerable", False):
+            return False
+        if not mods.get("always") and self.rng.random() > hit_chance(attacker, target, mods["ar"]):
             self.emit("miss", target)
             return False
+        if target.is_player:
+            b = getattr(target, "bonus", {}) or {}
+            dodge = b.get("avoid", 0) if ranged_kind else b.get("dodge", 0)
+            if dodge and self.rng.random() * 100 < min(75, dodge):
+                self.emit("miss", target)
+                self.log("Avoided!" if ranged_kind else "Dodged!", GREY)
+                return False
         if target.is_player and getattr(target, "block_chance", 0) and self.rng.random() * 100 < target.block_chance:
             self.emit("miss", target)
             self.log("Blocked!", GREY)
             return False
-        dmg = self.rng.randint(*attacker.dmg)
-        dmg = max(1, int(dmg * (100 + mods["dmg"]) / 100.0))
+        dmg = self.rng.randint(*attacker.dmg) if attacker.dmg[1] > 0 else 0
+        dmg = max(1, int(dmg * (100 + mods["dmg"]) / 100.0)) if attacker.dmg[1] > 0 else 0
         aeff = getattr(attacker, "effects", {})
         if aeff.get("bc"):
             dmg = max(1, dmg * (100 - aeff.get("bc_dmg", 25)) // 100)
         if aeff.get("taunt"):
             dmg = max(1, dmg * (100 - aeff.get("taunt", 5)) // 100)
+        if not attacker.is_player and getattr(attacker, "curses", None):
+            weak = self.mstat(attacker, "ed")
+            if weak:
+                dmg = max(1, dmg * (100 + weak) // 100)
         if attacker.is_player:
+            crit = getattr(attacker, "crit", 0)
+            if crit and self.rng.random() * 100 < min(75, crit):
+                dmg *= 2
+                self.log("Critical strike!", YELLOW)
+            if dmg and getattr(target, "curses", None):
+                amp = -self.mstat(target, "dr_pct")
+                if amp:
+                    dmg = max(1, dmg * (100 + amp) // 100)
+            if dmg and getattr(target, "res", {}).get("phys"):
+                dmg = max(1, dmg * (100 - min(100, target.res["phys"])) // 100)
             for kind, (lo, hi) in getattr(attacker, "elem", {}).items():
-                dmg += self.rng.randint(lo, max(lo, hi))
+                extra = self.rng.randint(lo, max(lo, hi))
+                res = self._resist(target, kind)
+                dmg += max(0, extra * (100 - res) // 100)
         if target.is_player and getattr(target, "dr", 0) and not mods["magic"]:
             dmg = max(1, dmg - target.dr)
-        self._damage(target, dmg, attacker)
+        dealt = dmg
+        if dmg > 0:
+            self._damage(target, dmg, attacker)
+        if mods.get("elem") and target.alive:
+            et, lo, hi, ln = mods["elem"]
+            dealt += self.elem_hit(target, et, lo, hi, attacker, ln, show=False)
         if attacker.is_player and target is not attacker:
-            if attacker.leech and attacker.hp < attacker.max_hp:
-                attacker.hp = min(attacker.max_hp, attacker.hp + max(1, dmg * attacker.leech // 100))
+            leech = attacker.leech + mods.get("leech", 0)
+            if leech and attacker.hp < attacker.max_hp:
+                attacker.hp = min(attacker.max_hp, attacker.hp + max(1, dealt * leech // 100))
             if attacker.mana_leech:
-                attacker.mana = min(attacker.max_mana, attacker.mana + max(1, dmg * attacker.mana_leech // 100))
-        # thorns
-        if target.is_player and target.alive and not ranged_kind and target.thorns and attacker.alive:
-            self._damage(attacker, target.thorns, target)
+                attacker.mana = min(attacker.max_mana, attacker.mana + max(1, dealt * attacker.mana_leech // 100))
+            if self._has_flag(target, "lifetap") and attacker.hp < attacker.max_hp:
+                attacker.hp = min(attacker.max_hp, attacker.hp + max(1, dealt // 2))
+        # thorns / Iron Maiden / Frozen and Shiver Armor
+        if target.is_player and target.alive and not ranged_kind and attacker.alive:
+            if target.thorns:
+                self._damage(attacker, target.thorns, target)
+            if self._has_flag(attacker, "maiden") and attacker.alive:
+                self._damage(attacker, max(1, dealt * 2), target)
+            ret = None
+            for bname, bf in getattr(target, "buffs", {}).items():
+                if bf.get("retaliate"):
+                    ret = bname
+            if ret and attacker.alive and ret in target.skills.tree:
+                env = self._skill_env(ret)
+                if ret == "Frozen Armor":
+                    attacker.effects["freeze"] = max(attacker.effects.get("freeze", 0), 1)
+                else:
+                    ed = env.elem_damage()
+                    if ed:
+                        self.elem_hit(attacker, "cold", ed[1], ed[2], target, ed[3], show=False)
         if mods["stun"] and target.alive and not target.is_player:
             target.effects["stun"] = max(target.effects.get("stun", 0), mods["stun"])
             self.log("%s is stunned!" % target.name, YELLOW)
@@ -1013,15 +1283,40 @@ class World:
             self.emit("knockback", target, src, dest)
 
     def _damage(self, unit, amount, source):
+        if getattr(unit, "invulnerable", False):
+            return
+        if unit.is_player and amount > 0:
+            amount = self._absorb(unit, amount)
+            if amount <= 0:
+                return
         unit.hp -= amount
         self.emit("damage", unit, amount, max(0, unit.hp))
         if unit.hp <= 0:
             self._kill(unit, source)
 
+    def _absorb(self, p, amount):
+        for name, b in list(getattr(p, "buffs", {}).items()):
+            if b.get("absorb"):
+                take = min(amount, b["absorb"])
+                b["absorb"] -= take
+                amount -= take
+                if b["absorb"] <= 0:
+                    p.buffs.pop(name)
+                    self.log("%s is gone." % b.get("title", name), GREY)
+            if amount > 0 and b.get("eshield"):
+                part = amount * min(95, b["eshield"]) // 100
+                part = min(part, int(p.mana))
+                p.mana -= part
+                amount -= part
+        return amount
+
     def _kill(self, unit, source):
         unit.alive = False
         unit.hp = 0
         self.emit("death", unit)
+        if getattr(unit, "ally", False):
+            self.log("%s dies." % unit.name, GREY)
+            return
         if unit.is_player:
             self.game_over = True
             self.log("You have died.", RED)
@@ -1043,10 +1338,13 @@ class World:
             self.emit("drop", cell, it)
         if unit.unique:
             self.boss_dead = True
-            self.log("Corpsefire is slain! The Den of Evil is cleansed.", (199, 179, 119))
-            self.emit("victory")
+            if not self.areas:
+                self.log("%s is slain!" % unit.name, (199, 179, 119))
+                self.emit("victory")
+            else:
+                self.log("%s is slain!" % unit.name, (199, 179, 119))
         from . import quests
-        quests.on_monster_killed(self)
+        quests.on_monster_killed(self, unit)
         # D2 flavour: fallen scatter when a pack mate dies
         for m in self.living_monsters():
             if m.ai == "fallen" and chebyshev(m.pos, unit.pos) <= 5 and self.rng.random() < 0.5:
@@ -1066,6 +1364,8 @@ class World:
         m.ap = m.max_ap
         p = self.player
         eff = m.effects
+        if not self.monster_status(m):
+            return
         for k in ("bc", "taunt"):
             if eff.get(k + "_turns"):
                 eff[k + "_turns"] -= 1
@@ -1099,8 +1399,27 @@ class World:
             if not acted:
                 break
 
-    def _melee_step(self, m):
+    def _monster_target(self, m):
+        """Who a monster goes for: you, your minions (whoever is closer) - or, when confused, anyone."""
         p = self.player
+        if self._has_flag(m, "confuse"):
+            others = [o for o in self.living_monsters() if o is not m and o.ai != "npc"]
+            if others:
+                return min(others, key=lambda o: chebyshev(o.pos, m.pos))
+        for o in self.living_monsters():
+            if o is not m and self._has_flag(o, "attract") and chebyshev(o.pos, m.pos) <= 10:
+                return o
+        best = (chebyshev(m.pos, p.pos) - (0.5 if True else 0), p) if p.alive else None
+        for a in self.allies():
+            if a.ai in ("turret", "wall") or getattr(a, "invulnerable", False):
+                continue
+            d = chebyshev(m.pos, a.pos) - (3 if getattr(a, "decoy", False) else 0)
+            if best is None or d < best[0]:
+                best = (d, a)
+        return best[1] if best else p
+
+    def _melee_step(self, m):
+        p = self._monster_target(m)
         if chebyshev(m.pos, p.pos) == 1 and self._adjacent_reachable(m.pos, p.pos):
             if m.ap >= m.attack_cost:
                 m.ap -= m.attack_cost
@@ -1115,7 +1434,7 @@ class World:
         return True
 
     def _ranged_step(self, m):
-        p = self.player
+        p = self._monster_target(m)
         d = chebyshev(m.pos, p.pos)
         los = self.grid.line_of_sight(m.pos, p.pos)
         if d <= m.range and los and m.ap >= m.attack_cost:

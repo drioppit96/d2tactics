@@ -34,6 +34,26 @@ CHAR_CLOSE = (128, 389, 32, 32)
 SKILL_TREE_X, SKILL_TREE_DX, SKILL_TREE_Y, SKILL_TREE_DY = 15, 69, 59, 63
 
 
+def _num(v):
+    if isinstance(v, float) and v != int(v):
+        return ("%.1f" % v).rstrip("0").rstrip(".")
+    return str(int(v))
+
+
+def _wrap(text, width):
+    out, line = [], ""
+    for wd in text.split():
+        trial = (line + " " + wd).strip()
+        if len(trial) > width and line:
+            out.append(line)
+            line = wd
+        else:
+            line = trial
+    if line:
+        out.append(line)
+    return out
+
+
 class D2Font:
     def __init__(self, src, name):
         self.t = FontTable(src.read(FONTS + name + ".tbl"), src.read(FONTS + name + ".dc6"))
@@ -91,9 +111,11 @@ class D2Hud:
                   "runbutton", "mediumbuttonblank", "blank", "buysellbtn", "skillpoints"):
             self.frames[n] = self._load(PANEL + n + ".dc6", required=n in ("800ctrlpnl7", "hlthmana", "invchar6"))
         self.cursor = self._load("data\\global\\ui\\CURSOR\\ohand.dc6")
-        self.skill_icons = self._load(SPELLS + "BaSkillicon.DC6")
+        self._class_art = {}
+        self.skill_icons = None
+        self.tree_back = None
         self.generic_icons = self._load(SPELLS + "Skillicon.DC6")
-        self.tree_back = self._load(SPELLS + "skltree_b_back.DC6")
+        self.use_class("bar")
         self.f16 = D2Font(src, "font16")
         self.f10 = D2Font(src, "fontformal10")
         self.f30 = D2Font(src, "font30")
@@ -112,6 +134,18 @@ class D2Hud:
         self.scaled = {}
         self.s = 1.0
         self.lw = 800
+
+    def use_class(self, cls):
+        """Skill icons and skill tree art of the character's class."""
+        if cls not in self._class_art:
+            from game.skills import CLASS_BY_CODE
+            info = CLASS_BY_CODE.get(cls, CLASS_BY_CODE["bar"])
+            prefix, letter = info[3], info[4]
+            icons = self._load(SPELLS + prefix.title() + "Skillicon.DC6") or self._load(SPELLS + prefix + "skillicon.dc6")
+            back = self._load(SPELLS + "skltree_%s_back.DC6" % letter)
+            self._class_art[cls] = (icons, back)
+        self.skill_icons, self.tree_back = self._class_art[cls]
+        self._art_class = cls
 
     # ------------------------------------------------------------ loading / scaling helpers
     def _load(self, path, required=False):
@@ -207,7 +241,9 @@ class D2Hud:
         p = world.player
         self._draw_log(surf, scene)
         self._draw_automap(surf, world)
-        if self.show_quests:
+        if getattr(self, "show_waypoints", False):
+            self._draw_waypoints(surf, world)
+        elif self.show_quests:
             self._draw_quests(surf, p)
         elif self.show_char:
             self._draw_char(surf, p)
@@ -399,6 +435,8 @@ class D2Hud:
 
     def _skill_icon(self, name):
         p = self.world.player
+        if getattr(self, "_art_class", None) != getattr(p, "cls", "bar"):
+            self.use_class(getattr(p, "cls", "bar"))
         if name is None or name == "attack":
             if self.generic_icons:
                 return self.generic_icons[0]
@@ -427,9 +465,11 @@ class D2Hud:
                     self.hover_lines = [("Right click: Attack", WHITE), ("Click here to choose a skill", GREY)]
                 else:
                     ap, mana = self.world.skill_cost(name)
-                    self.hover_lines = [(name, GREEN), ("Level %d" % p.skills.level(name), WHITE)] + \
+                    sk = p.skills.tree.get(name)
+                    title = sk.title if sk is not None else name
+                    self.hover_lines = [(title, GREEN), ("Level %d" % p.skills.level(name), WHITE)] + \
                         [(t, WHITE) for t in p.skills.describe(name)] + \
-                        [("%d AP, %d mana" % (ap, mana), GREY), ("Click to change skill", GREY)]
+                        [("%d AP, %s mana" % (ap, _num(mana)), GREY), ("Click to change skill", GREY)]
 
     def _draw_skill_popup(self, surf, p):
         """Choose the right-click skill: learned active skills in a row above the button."""
@@ -454,7 +494,8 @@ class D2Hud:
             self.region(x, y, 36, 36, "pick_skill", name)
             mx, my = self.mouse
             if pygame.Rect(int(x), int(y), 36, 36).collidepoint((int(mx), int(my))):
-                self.hover_lines = [("Attack" if name == "attack" else name, GREEN if name != "attack" else WHITE)]
+                sk = p.skills.tree.get(name)
+                self.hover_lines = [("Attack" if name == "attack" else (sk.title if sk else name), GREEN if name != "attack" else WHITE)]
 
     # ------------------------------------------------------------ panels
     def _panel_bg(self, surf, ox, frames, base=0):
@@ -466,8 +507,8 @@ class D2Hud:
     def _draw_char(self, surf, p):
         self._panel_bg(surf, 0, self.frames["invchar6"], 0)
         t, f10, f16 = self.text, self.f10, self.f16
-        t(surf, f16, "Barbarian", GOLD, 11, 12, "center", 171)
-        t(surf, f16, "Barbarian", GOLD, 193, 12, "center", 117)
+        t(surf, f16, p.name, GOLD, 11, 12, "center", 171)
+        t(surf, f16, getattr(p, "class_name", "Barbarian"), GOLD, 193, 12, "center", 117)
         t(surf, f10, "Level", GOLD, 10, 34, "center", 44)
         t(surf, f16, str(p.level), WHITE, 10, 50, "center", 44)
         t(surf, f10, "Experience", GOLD, 66, 34, "center", 116)
@@ -536,6 +577,31 @@ class D2Hud:
                 y += 14
             y += 12
         self._close_button(surf, CHAR_CLOSE, 0, "quests")
+
+    def _draw_waypoints(self, surf, world):
+        """D2's waypoint list: every activated waypoint of the act; click one to travel."""
+        from game.act1 import WAYPOINT_LEVELS
+        p = world.player
+        info = getattr(world, "info", None)
+        self._panel_bg(surf, 0, self.frames.get("blank") or self.frames["invchar6"], 0)
+        self.text(surf, self.f30, "Waypoints", GOLD, 0, 14, "center", 320)
+        self.text(surf, self.f10, "Act I", WHITE, 0, 46, "center", 320)
+        here = world.level_id
+        mx, my = self.mouse
+        got = getattr(p, "waypoints", {1})
+        for i, lid in enumerate(WAYPOINT_LEVELS):
+            y = 76 + i * 32
+            name = info.name(lid) if info else str(lid)
+            on = lid in got
+            hot = on and pygame.Rect(20, y - 4, 280, 28).collidepoint((int(mx), int(my)))
+            box = pygame.Surface((int(280 * self.s), int(26 * self.s)), pygame.SRCALPHA)
+            box.fill((60, 50, 30, 200) if hot else (0, 0, 0, 120))
+            surf.blit(box, self.P(20, y - 4))
+            col = (GOLD if lid == here else WHITE) if on else (90, 85, 75)
+            self.text(surf, self.f16, name, col, 30, y)
+            if on and lid != here:
+                self.region(20, y - 4, 280, 28, "waypoint", lid)
+        self._close_button(surf, CHAR_CLOSE, 0, "waypoints")
 
     def _close_button(self, surf, box, ox, action):
         b = self.frames.get("buysellbtn")
@@ -648,38 +714,58 @@ class D2Hud:
 
     # ------------------------------------------------------------ skill tree
     def _draw_skill_tree(self, surf, p):
+        """D2's skill tree: 320x432 panel on the right; tab column (frames 0-3) under the page
+        (frames 4k..4k+3, page 1 = bottom tab); 48x48 icons on a 69x68 grid from (15, 15)."""
         ox = self.lw - 320
         book = p.skills
-        if self.tree_back:
-            n = len(self.tree_back)
-            base = 4 * (self.skill_page - 1) if n >= 12 else 0
-            self._panel_bg(surf, ox, self.tree_back, base)
+        if getattr(self, "_art_class", None) != getattr(p, "cls", "bar"):
+            self.use_class(getattr(p, "cls", "bar"))
+        t = self.text
+        names = book.page_names()
+        tb = self.tree_back
+        real = bool(tb) and len(tb) >= 16
+        if real:
+            self._panel_bg(surf, ox, tb, 0)
+            self._panel_bg(surf, ox, tb, 4 * self.skill_page)
         else:
             self._panel_bg(surf, ox, self.frames.get("blank") or self.frames["invchar6"], 0)
-        t = self.text
-        t(surf, self.f16, "Skill Choices Remaining: %d" % book.points, GOLD if book.points else GREY, ox + 8, 14)
-        # page tabs on the right (D2: three tree tabs)
-        from game.skills import PAGE_NAMES
+        # skill points left (the little box at the top of the tab column)
+        t(surf, self.f16, str(book.points), WHITE if book.points else GREY, ox + 252, 62, "center", 50)
+        t(surf, self.f10, "Skill Choices", GOLD, ox + 236, 28, "center", 80)
+        t(surf, self.f10, "Remaining", GOLD, ox + 236, 42, "center", 80)
+        tab_y = {3: 110, 2: 218, 1: 325}
         for page in (1, 2, 3):
-            ty = 70 + (page - 1) * 110
+            ty = tab_y[page]
             active = page == self.skill_page
-            bg = pygame.Surface((int(70 * self.s), int(96 * self.s)), pygame.SRCALPHA)
-            bg.fill((40, 32, 20, 220) if active else (0, 0, 0, 150))
-            if not self.tree_back:
-                surf.blit(bg, self.P(ox + 244, ty))
-            for li, word in enumerate(PAGE_NAMES[page].split()):
-                t(surf, self.f10, word, GOLD if active else GREY, ox + 244, ty + 30 + li * 16, "center", 70)
-            self.region(ox + 244, ty, 70, 96, "skill_page", page)
+            words = names.get(page, "").split()
+            lines, line = [], ""
+            for wd in words:
+                trial = (line + " " + wd).strip()
+                if self.f10.width(trial) > 76 and line:
+                    lines.append(line)
+                    line = wd
+                else:
+                    line = trial
+            if line:
+                lines.append(line)
+            y0 = ty + 52 - 7 * len(lines)
+            for li, ln in enumerate(lines):
+                t(surf, self.f10, ln, WHITE if active else GREY, ox + 234, y0 + li * 14, "center", 82)
+            self.region(ox + 232, ty, 86, 104, "skill_page", page)
         mx, my = self.mouse
         clvl = p.level
         for name, s in book.tree.items():
             if s.page != self.skill_page:
                 continue
-            x = ox + SKILL_TREE_X + (s.col - 1) * SKILL_TREE_DX
-            y = SKILL_TREE_Y + (s.row - 1) * SKILL_TREE_DY
+            x = ox + 15 + (s.col - 1) * 69
+            y = 15 + (s.row - 1) * 68
             lv = book.levels.get(name, 0)
             can = book.can_learn(name, clvl)
-            icon = self.skill_icons[s.icon] if self.skill_icons and s.icon < len(self.skill_icons) else None
+            reachable = lv or (clvl >= s.reqlevel and all(book.levels.get(q, 0) for q in s.prereqs if q in book.tree))
+            icons = self.skill_icons
+            idx = s.icon if (lv or reachable) else s.icon + 1
+            icon = icons[idx] if icons and idx < len(icons) and icons[idx] is not None else \
+                (icons[s.icon] if icons and s.icon < len(icons) else None)
             if icon is not None:
                 surf.blit(self.S(icon, self.s * 48.0 / icon.get_width()), self.P(x, y))
             else:
@@ -687,34 +773,56 @@ class D2Hud:
                 box.fill((30, 26, 20, 240))
                 surf.blit(box, self.P(x, y))
                 pygame.draw.rect(surf, GOLD if lv else (90, 80, 60), self.R(x, y, 48, 48), 1)
-                words = name.split()
-                for li, word in enumerate(words[:3]):
+                for li, word in enumerate(s.title.split()[:3]):
                     t(surf, self.f10, word[:8], WHITE if lv else GREY, x, y + 4 + li * 13, "center", 48)
-            if not lv and not can:
+            if not lv and not reachable and (icons is None or s.icon + 1 >= len(icons)):
                 dim = pygame.Surface((int(48 * self.s), int(48 * self.s)), pygame.SRCALPHA)
                 dim.fill((0, 0, 0, 140))
                 surf.blit(dim, self.P(x, y))
             if lv:
-                t(surf, self.f16, str(lv), WHITE, x + 50, y + 34)
+                t(surf, self.f16, str(book.level(name)), WHITE, x + 49, y + 35, "center", 16)
             self.region(x, y, 48, 48, "learn", name)
             if pygame.Rect(int(x), int(y), 48, 48).collidepoint((int(mx), int(my))):
-                lines = [(name, GREEN)]
-                if lv:
-                    lines.append(("Current Skill Level: %d" % lv, WHITE))
-                lines += [(x_, WHITE) for x_ in book.describe(name) if x_]
-                if s.kind != "passive":
-                    ap, mana = (self.world.skill_cost(name) if lv else (0, s.mana))
-                    lines.append(("Mana Cost: %d" % mana, BLUE))
-                if not lv or can:
-                    lines.append(("Required Level: %d" % s.reqlevel, WHITE if clvl >= s.reqlevel else RED))
-                    for pre in s.prereqs:
-                        lines.append(("Requires " + pre, WHITE if book.levels.get(pre) else RED))
-                if can:
-                    lines.append(("Click to learn" if not lv else "Click to add a point", GOLD))
-                elif lv and s.kind != "passive":
-                    lines.append(("Right click: use as right skill", GREY))
-                self.hover_lines = lines
-        self._close_button(surf, (272, 390, 32, 32) if not self.tree_back else INV_CLOSE, ox, "skills")
+                self.hover_lines = self.skill_tooltip(p, name, can)
+        close = (12, 383, 32, 32) if self.skill_page == 2 else (168, 383, 32, 32)
+        self._close_button(surf, close if real else (272, 390, 32, 32), ox, "skills")
+
+    def skill_tooltip(self, p, name, can=False):
+        """D2-style skill tooltip: name, description, current and next level, synergies."""
+        book = p.skills
+        s = book.tree[name]
+        lv = book.levels.get(name, 0)
+        clvl = p.level
+        lines = [(s.title, GREEN)]
+        if s.long:
+            for chunk in _wrap(s.long[:1].upper() + s.long[1:], 46):
+                lines.append((chunk, WHITE))
+        if lv:
+            lines.append(("Current Skill Level: %d" % book.level(name), WHITE))
+            lines += [(x_, WHITE) for x_ in book.describe(name) if x_]
+            if lv < s.maxlvl:
+                lines.append(("Next Level", WHITE))
+                lines += [(x_, BLUE) for x_ in book.describe_next(name) if x_]
+        else:
+            lines.append(("First Level", WHITE))
+            lines += [(x_, WHITE) for x_ in book.describe_next(name) if x_]
+        syn = book.synergy_lines(name)
+        if syn:
+            lines.append(("", WHITE))
+            lines += [(x_, GREEN if i == 0 else WHITE) for i, x_ in enumerate(syn)]
+        if s.kind != "passive":
+            ap = book.ap_cost(name, p.attack_cost)
+            lines.append(("Costs %d AP" % ap, GOLD))
+        if not lv or can:
+            lines.append(("Required Level: %d" % s.reqlevel, WHITE if clvl >= s.reqlevel else RED))
+            for pre in s.prereqs:
+                q = book.tree.get(pre)
+                lines.append(("Requires " + (q.title if q else pre), WHITE if book.levels.get(pre) else RED))
+        if can:
+            lines.append(("Click to learn" if not lv else "Click to add a point", GOLD))
+        elif lv and s.kind != "passive":
+            lines.append(("Right click: use as right skill", GREY))
+        return lines
 
     # ------------------------------------------------------------ automap
     def _draw_automap(self, surf, world):

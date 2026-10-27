@@ -224,5 +224,11 @@ class PlaceholderAssets(AssetProvider):
         if kind == "fireball":
             pygame.draw.circle(surf, (255, 120, 30), (int(x), int(y)), int(4 * s))
             pygame.draw.circle(surf, (255, 230, 140), (int(x), int(y)), int(2 * s))
+        elif kind in ("cold", "ltng", "bone"):
+            outer = {"cold": (90, 150, 255), "ltng": (240, 240, 120), "bone": (230, 225, 210)}[kind]
+            pygame.draw.circle(surf, outer, (int(x), int(y)), int(3.5 * s))
+            pygame.draw.circle(surf, (255, 255, 255), (int(x), int(y)), max(1, int(1.5 * s)))
+        elif kind == "arrow":
+            pygame.draw.circle(surf, (200, 180, 140), (int(x), int(y)), max(1, int(1.5 * s)))
         else:
             pygame.draw.circle(surf, (230, 220, 190), (int(x), int(y)), max(1, int(1.5 * s)))
