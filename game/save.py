@@ -31,7 +31,9 @@ def _item_dict(it):
                 gem=list(it.gem) if isinstance(getattr(it, "gem", None), (list, tuple)) else getattr(it, "gem", None),
                 affixes=[dict(name=a.get("name", ""), multiply=a.get("multiply", 0), add=a.get("add", 0))
                          for a in getattr(it, "affixes", []) or []], extra_lines=list(getattr(it, "extra_lines", []) or []),
-                base_defense=getattr(it, "base_defense", None))
+                base_defense=getattr(it, "base_defense", None), ilvl=getattr(it, "ilvl", None),
+                contents=[_item_dict(x) for x in it.contents] if getattr(it, "contents", None) is not None else None,
+                cube_pos=list(it.cube_pos) if getattr(it, "cube_pos", None) else None)
 
 
 def _item_from(d, content):
@@ -83,6 +85,12 @@ def _item_from(d, content):
         it.base_defense = d["base_defense"]
     if d.get("inv_pos"):
         it.inv_pos = tuple(d["inv_pos"])
+    if d.get("cube_pos"):
+        it.cube_pos = tuple(d["cube_pos"])
+    if d.get("ilvl"):
+        it.ilvl = d["ilvl"]
+    if d.get("contents") is not None or it.code == "box":
+        it.contents = [x for x in (_item_from(c, content) for c in d.get("contents") or []) if x is not None]
     return it
 
 
@@ -96,7 +104,8 @@ def save_character(player, difficulty="normal"):
         skills=dict(p.skills.levels), skill_points=p.skills.points, right_skill=p.right_skill,
         quests=dict(getattr(p, "quests", {})), waypoints=sorted(getattr(p, "waypoints", {1})),
         visited=sorted(getattr(p, "visited", {1})), cain=bool(getattr(p, "cain_rescued", False)),
-        hireling=bool(getattr(p, "has_hireling", False)), act=int(getattr(p, "current_act", 1) or 1),
+        hireling=bool(getattr(p, "has_hireling", False)),
+        hireling_kind=getattr(p, "hireling_kind", ""), act=int(getattr(p, "current_act", 1) or 1),
         equipment={k: _item_dict(v) for k, v in p.equipment.items()},
         inventory=[_item_dict(it) for it in p.inventory], belt=[_item_dict(it) for it in p.belt],
     )
@@ -163,6 +172,7 @@ def build_player(data, content):
     p.visited = set(data.get("visited", [1]))
     p.cain_rescued = data.get("cain", False)
     p.has_hireling = data.get("hireling", False)
+    p.hireling_kind = data.get("hireling_kind", "")
     p.current_act = data.get("act", 1)
     for k in p.equipment:
         p.equipment[k] = _item_from(data.get("equipment", {}).get(k), content)

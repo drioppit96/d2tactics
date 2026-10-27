@@ -31,15 +31,22 @@ sockets, and every non-ladder runeword of 1.14d (Runes.txt).
 **Graphics:** projectiles and spells use D2's own missile animations (Missiles.txt) with their
 explosions, cast overlays and aura / curse effects (Overlay.txt, States.txt).
 
-**Act 2 (in progress):** Lut Gholein (Atma, Drognan, Fara, Elzix, Lysander, Greiz, Cain,
-Meshif, Warriv), the Rocky Waste, Dry Hills, Far Oasis, Lost City and Valley of Snakes as one
-seamless desert, the Canyon of the Magi with the seven tombs (one is the real Tal Rasha's
-Tomb, picked per character), and every Act 2 dungeon: Sewers 1-3 (Radament), Harem and Palace
-Cellars, Arcane Sanctuary (the Summoner, portal to the Canyon), Halls of the Dead, Claw Viper
-Temple, Maggot Lair, Ancient Tunnels, Stony Tomb, Duriel's Lair and the rest. D2's Act 2
-waypoints (the waypoint panel has act tabs), D2's Act 2 palette. Travel: Warriv "Go East"
-(for now also "Go East (test)" without killing Andariel); in Lut Gholein Warriv takes you back
-west. Act 2 quests come next.
+**Act 2:** Lut Gholein (Atma, Drognan, Fara, Elzix, Lysander, Greiz - hires desert guards -,
+Cain, Meshif, Jerhyn at the palace door, Warriv), the Rocky Waste, Dry Hills, Far Oasis, Lost
+City and Valley of Snakes as one seamless desert, the Canyon of the Magi with the seven tombs
+(one is the real Tal Rasha's Tomb, picked per character), and every Act 2 dungeon. Its six
+quests: Radament's Lair (Book of Skill), The Horadric Staff (Horadric Cube in the Halls of the
+Dead, Staff of Kings in the Maggot Lair, Amulet of the Viper in the Claw Viper Temple), Tainted
+Sun (the sky goes dark until you smash the altar), Arcane Sanctuary (Jerhyn opens the palace),
+The Summoner (Horazon's Journal opens the portal to the Canyon) and The Seven Tombs (the staff
+in the orifice opens Duriel's Lair; Tyrael, Jerhyn, Meshif). Travel: Warriv "Go East" (for now
+also "Go East (test)" without killing Andariel).
+
+**Horadric Cube:** right click it in the backpack (or drop items on it). Every D2 recipe from
+CubeMain.txt: gem and rune upgrades, potions, 3 rings -> amulet, rerolls, socketing, prismatic
+and garnet rings ..., the Horadric Staff, and Wirt's Leg + a Tome of Town Portal in the Rogue
+Encampment opens the Secret Cow Level (Wirt's body lies in Tristram). Rare items now exist
+(drops and cube); recipes that need uniques, set items or jewels wait until those exist.
 
 Without a D2 path the game falls back to placeholder art (a Barbarian in a generated cave).
 

@@ -83,7 +83,7 @@ DUNGEONS = {
     57: dict(kit="tomb", rooms=11, roles=["prev", "next", "way"], act=2),
     60: dict(kit="tomb", rooms=10, roles=["prev", "cube"], act=2),
     58: dict(kit="tomb", rooms=10, roles=["prev", "next"], act=2),
-    61: dict(kit="tomb", rooms=10, roles=["prev", "chest"], act=2),
+    61: dict(kit="tomb", rooms=10, roles=["prev", "serpent"], act=2),
     62: dict(kit="lair", rooms=10, roles=["prev", "next"], act=2),
     63: dict(kit="lair", rooms=10, roles=["prev", "next"], act=2),
     64: dict(kit="lair", rooms=10, roles=["prev", "queen"], act=2),
@@ -136,21 +136,42 @@ def build_level(kit, level_id, seed=None, real=None):
         b, grid, rng = act1.build_preset(kit, level_id, spec, seed)
     _ensure_waypoint(b, grid, level_id, spec)
     rooms = getattr(b, "role_rooms", {})
+    whole = (0, 0, b.tm.tw, b.tm.th)
 
-    def portal_in(rect, target):
+    def portal_in(rect, target, kind="portal"):
         x, y, w, h = rect
         c = _near_walkable(grid, ((x + w // 2) * SUB, (y + h // 2) * SUB), 50)
         if c is not None:
-            b.objects.append(("portal", c, level_id, target))
-    whole = (0, 0, b.tm.tw, b.tm.th)
+            b.objects.append((kind, c, level_id, target))
+    # the quest objects (D2's own when the room preset has them, else placed in their room)
+    for role, kind in QUEST_ROLES.get(level_id, []):
+        _ensure_object(b, grid, kind, rooms.get(role), level_id)
+    if "talrasha" in rooms:
+        _ensure_object(b, grid, "orifice", rooms["talrasha"], level_id)
     if level_id == 74:
-        portal_in(whole, 54)                                  # back to the Palace Cellar
-        portal_in(rooms.get("summoner", whole), 46)           # the Summoner's portal to the Canyon
-    elif "talrasha" in rooms:
-        portal_in(rooms["talrasha"], 73)                      # Tal Rasha's chamber -> Duriel
+        if not any(k == "arcane_portal" for k, _, _, _ in b.objects):
+            portal_in(whole, 54, "arcane_portal")             # back to the Palace Cellar
+        for i, (k, c, o, t) in enumerate(b.objects):
+            if k == "arcane_portal":
+                b.objects[i] = (k, c, o, 54)
+        _ensure_object(b, grid, "journal", rooms.get("summoner"), level_id)
     elif level_id == 73:
         portal_in(whole, real or 66)
     return b, grid, rng
+
+
+# role room -> quest object that belongs in it
+QUEST_ROLES = {49: [("rad", "scroll_chest")], 60: [("cube", "cube_chest")], 61: [("serpent", "viper_altar")],
+               64: [("queen", "staff_chest")]}
+
+
+def _ensure_object(b, grid, kind, rect, level_id):
+    if rect is None or any(k == kind for k, _, _, _ in b.objects):
+        return
+    x, y, w, h = rect
+    c = _near_walkable(grid, ((x + w // 2) * SUB, (y + h // 2) * SUB), 40)
+    if c is not None:
+        b.objects.append((kind, c, level_id, -1))
 
 
 def _ensure_waypoint(b, grid, level_id, spec):
@@ -207,11 +228,14 @@ def build_ring(kit, level_id, spec, seed=None):
     grid = make_grid(b.tm)
     if spec.get("waypoint"):
         _ensure_waypoint(b, grid, level_id, dict(spec, waypoint_centre=False))
-    if spec.get("arcane"):
+    if spec.get("arcane") and not any(k == "arcane_portal" for k, _, _, _ in b.objects):
         # the portal to the Arcane Sanctuary waits in the last cellar
         c = _near_walkable(grid, (rw * SUB, rh * SUB), 40)
         if c is not None:
-            b.objects.append(("portal", c, level_id, 74))
+            b.objects.append(("arcane_portal", c, level_id, 74))
+    for i, (k, c, o, t) in enumerate(b.objects):
+        if k == "arcane_portal":
+            b.objects[i] = (k, c, o, 74)
     return b, grid, rng
 
 

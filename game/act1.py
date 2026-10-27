@@ -87,6 +87,7 @@ DUNGEONS = {
 WORLD_OF = {i: "wild" for i in OUTDOOR_IDS}
 WORLD_OF.update({i: i for i in DUNGEONS})
 WORLD_OF[33] = 32
+WORLD_OF[39] = 39
 
 # maze kits: folder, file prefix, role file patterns (d = the one exit direction)
 MAZES = {
@@ -561,6 +562,83 @@ def build_outdoors(kit, seed=None, content=None):
     b.tm.drawn = set(b.tm.floor) | set(b.tm.walls)
     grid = make_grid(b.tm)
     _connect(b, grid, pos, links, kit, rng, openings)
+    return b, grid, rng
+
+
+def build_cow(kit, seed=None, content=None):
+    """The Moo Moo Farm (level 39): one Act 1 wilderness area of 80x80 tiles, D2's border ring
+    and wilderness fills, no exits (you leave through the red portal)."""
+    rng = random.Random(seed)
+    size = 10
+    b = Built(size * BLOCK + 1, size * BLOCK + 1)
+    b.areas[39] = (0, 0, size * BLOCK * SUB, size * BLOCK * SUB)
+    gds, gcodes = kit.grass()
+    gtiles = kit.tiles_for(gds, "Act 1 - Wilderness")
+
+    def grass_block(tx0, ty0):
+        for y in range(BLOCK):
+            for x in range(BLOCK):
+                main, sub = rng.choice(gcodes)
+                t = gtiles.pick(0, main, sub, rng.randrange(1 << 16))
+                if t:
+                    b.tm.floor[(tx0 + x, ty0 + y)] = t
+
+    def put(name, tx0, ty0):
+        ds = kit.ds1(name)
+        if ds is None:
+            return None
+        stamp(b, ds, kit.tiles_for(ds, "Act 1 - Wilderness"), tx0, ty0, rng, 39)
+        return ds
+    taken = set()
+    for bx in range(size):
+        for by in range(size):
+            en, es, ew, ee = by == 0, by == size - 1, bx == 0, bx == size - 1
+            if not (en or es or ew or ee):
+                continue
+            taken.add((bx, by))
+            vert = "n" if en else ("s" if es else None)
+            hor = "w" if ew else ("e" if ee else None)
+            if vert and hor:
+                put("Act1/Outdoors/%s.ds1" % OutdoorKit.CORNER[(vert, hor)], bx * BLOCK, by * BLOCK)
+                continue
+            side = vert or hor
+            v = rng.choice(["", "", "b", "c"])
+            if put("Act1/Outdoors/%s%s.ds1" % (OutdoorKit.EDGE[side], v), bx * BLOCK, by * BLOCK) is None:
+                put("Act1/Outdoors/%s.ds1" % OutdoorKit.EDGE[side], bx * BLOCK, by * BLOCK)
+    inner = [(bx, by) for bx in range(1, size - 1) for by in range(1, size - 1)]
+    rng.shuffle(inner)
+
+    def place(name, w=1, h=1):
+        for bx, by in inner:
+            cells = [(bx + i, by + j) for i in range(w) for j in range(h)]
+            if all(1 <= c[0] < size - 1 and 1 <= c[1] < size - 1 and c not in taken for c in cells):
+                if put(name, bx * BLOCK, by * BLOCK) is None:
+                    return False
+                taken.update(cells)
+                return True
+        return False
+    for _ in range(3):
+        place(rng.choice(OutdoorKit.FILLS["big"]), 2, 2)
+    fills = [f for f in OutdoorKit.FILLS["common"] if "FallCmp" not in f and "Camp" not in f]
+    for bx, by in list(inner):
+        if (bx, by) not in taken and rng.random() < 0.3:
+            place(rng.choice(fills))
+    for bx, by in inner:
+        if (bx, by) not in taken:
+            grass_block(bx * BLOCK, by * BLOCK)
+            taken.add((bx, by))
+    # D2's markers in the fills are the wilderness' own (fallen camps ...): the farm only has cows
+    b.presets = [p for p in b.presets if p[0] == "The Cow King"]
+    b.npcs = []
+    b.objects = []
+    b.tm.drawn = set(b.tm.floor) | set(b.tm.walls)
+    grid = make_grid(b.tm)
+    if not b.presets:
+        for _ in range(200):
+            c = (rng.randrange(3 * BLOCK, 7 * BLOCK) * SUB, rng.randrange(3 * BLOCK, 7 * BLOCK) * SUB)
+            if grid.walkable(*c):
+                b.presets.append(("The Cow King", c, 39))
+                break
     return b, grid, rng
 
 

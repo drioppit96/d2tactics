@@ -36,7 +36,7 @@ GENERIC_EXCLUDED = {"Bash", "Double Swing", "Stun", "Leap Attack", "Concentrate"
 NPC_NAMES = {"akara": "Akara", "charsi": "Charsi", "gheed": "Gheed", "kashya": "Kashya", "warriv1": "Warriv",
              "cain1": "Deckard Cain", "rogue1": "Rogue Scout", "navi": "Flavie", "chicken": "Chicken",
              "warriv2": "Warriv", "atma": "Atma", "drognan": "Drognan", "fara": "Fara", "greiz": "Greiz",
-             "elzix": "Elzix", "lysander": "Lysander", "meshif1": "Meshif", "geglash": "Geglash", "jerhyn": "Jerhyn",
+             "elzix": "Elzix", "lysander": "Lysander", "meshif1": "Meshif", "geglash": "Geglash", "jerhyn": "Jerhyn", "tyrael1": "Tyrael",
              "cain2": "Deckard Cain"}
 NPC_LINES = {
     "akara": "Akara: Rest a moment, I will mend your wounds.",
@@ -245,7 +245,7 @@ class World(SkillCaster, ItemActions):
         info = getattr(self, "info", None)
         self.level_name = info.name(lid) if info else str(lid)
         self.town = lid in TOWN_IDS
-        self.ambient = 70 if self.town else (120 if lid in OUTDOOR_IDS or lid == 38 else 205)
+        self.ambient = 70 if self.town else (120 if lid in OUTDOOR_IDS or lid in (38, 39) else 205)
         if announce:
             self.emit("area", self.level_name)
             self.log("Entering %s." % self.level_name, (199, 179, 119))
@@ -539,6 +539,13 @@ class World(SkillCaster, ItemActions):
             if self.check_awareness() and was_explore:
                 break   # spotted: stop walking, combat begins
             if self.mode == "explore" and step in self.exits and self.exits[step]:
+                from . import quests
+                msg = quests.blocked(self, self.exits[step])
+                if msg:
+                    if getattr(self, "_blocked_said", None) != self.exits[step]:
+                        self.log(msg, (220, 210, 170))
+                    self._blocked_said = self.exits[step]
+                    break
                 self.pending_exit = self.exits[step]
                 break
         self.emit("move", p, walked)

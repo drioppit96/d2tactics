@@ -293,6 +293,10 @@ def price(item):
         extra += a.get("add", 0)
     if item.rarity == "magic":
         mult = max(mult, 2048)
+    elif item.rarity in ("rare", "crafted"):
+        mult = max(mult, 3072)
+    if item.kind == "quest":
+        return 1
     v = cost * mult // 1024 + extra
     if getattr(item, "sockets", 0):
         v += 50 * item.sockets

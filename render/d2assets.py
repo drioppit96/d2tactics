@@ -492,7 +492,12 @@ class D2Assets(AssetProvider):
         return pygame.Rect(int(cx + x0), int(cy + y0), img.get_width(), img.get_height())
 
     OBJECT_TOKENS = {"cairn": ["S1", "S2", "S3", "S4", "S5"], "inifuss": ["IT"], "tome": ["TT"], "malus": ["HM"],
-                     "cage": ["GI"], "waypoint": ["WN", "WP", "W7"], "portal": ["PP", "TP"], "tp": ["TP"], "tp_back": ["TP"]}
+                     "cage": ["GI"], "waypoint": ["WN", "WP", "W7"], "portal": ["PP", "TP"], "tp": ["TP"], "tp_back": ["TP"],
+                     "arcane_portal": ["AY", "PP"], "duriel_portal": ["PP"], "orifice": ["HA"],
+                     "cube_chest": ["XK"], "staff_chest": ["XK"], "scroll_chest": ["XK"], "viper_altar": ["ZA"],
+                     "journal": ["TT"], "wirt": ["BP"]}
+    USED_ON = ("waypoint", "cage", "inifuss", "cube_chest", "staff_chest", "scroll_chest", "viper_altar",
+               "orifice", "journal")
 
     def draw_object(self, surf, kind, oid, pos, s, clock=0.0, used=False):
         """Quest objects and waypoints with D2's object graphics (placeholder marker if missing)."""
@@ -503,7 +508,7 @@ class D2Assets(AssetProvider):
                 toks = [WAYPOINT_TOKEN[oid]] + [t for t in toks if t != WAYPOINT_TOKEN[oid]]
         if kind == "cairn" and isinstance(oid, int) and 7 <= oid <= 11:
             toks = [toks[oid - 7]]
-        mode = "ON" if used and kind in ("waypoint", "cage", "inifuss") else "NU"
+        mode = "ON" if used and kind in self.USED_ON else "NU"
         for tok in toks:
             key = ("obj", tok)
             sp = self.sprites.get(key)

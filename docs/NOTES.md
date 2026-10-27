@@ -109,8 +109,23 @@ automap cells (AutoMap.txt + MaxiMap.dc6), Act 2.
 - Portals: 54 (cellar 3) -> 74 (Arcane), Summoner room -> 46, Tal Rasha room -> 73 (Duriel).
 - DS1 cells with the hidden bit (0x80000000) are editor markers - never drawn (teal floors).
 - Per-act palette: assets.set_act(act) swaps the map palette; HUD/items always use Act 1's.
-- Type-2 DS1 object ids per act need obj.txt (Extract D2 tables.bat); until then waypoints
-  are injected by the builders.
+- 1.14d ships no obj.txt. Act 2's DS1 object numbers were read off the room presets
+  (game/objtable.py): 10/115/88/134 waypoints, 89 arcane portal, 126 orifice, 109 cube chest,
+  121 Staff of Kings chest, 23 viper altar, 120 scroll chest, 14 Horazon's journal. Builders still
+  place any that a room lacks (_ensure_object / QUEST_ROLES).
+- Objects.txt tokens: XK quest chests, ZA tainted sun altar, HA orifice, AY arcane portal,
+  TT journal, BP Wirt's body, QM sewer waypoint, W7 cellar waypoint, WM act 2 waypoint.
+- Quests (game/quests2.py): portals made by quests are re-created by quests.restore(world)
+  when a world is rebuilt. Jerhyn has no preset (D2 places him by code): next to the palace warp.
+
+## Horadric Cube (game/cube.py)
+
+- CubeMain rows: enabled=1, ladder rows skipped. Inputs: code / type / any + nor mag rar uni set
+  crf nos sock bas exc eli qty=N. Item types also count "type2" (gems: gema + gem0 ...).
+- pre=N / suf=N = MagicPrefix / MagicSuffix data row N (0-based, the "Expansion" row counts).
+- Output level: lvl + plvl% clvl + ilvl% of input 1's ilvl (items store ilvl now).
+- Panel: supertransmogrifier.dc6, grid 3x4 at (117,138), cell 29; transmute button
+  miniconvert.dc6 at (145,259).
 
 ## Skills (game/skills.py)
 

@@ -153,9 +153,15 @@ class Game:
         if player is not None:
             from game.actworld import ensure_cain
             ensure_cain(self.world)
+            from game import quests
+            quests.restore(self.world)
             if getattr(player, "has_hireling", False):
-                from game.quests import hire_rogue
-                hire_rogue(self.world)
+                if getattr(player, "hireling_kind", "") == "act2hire":
+                    from game.quests2 import hire_guard
+                    hire_guard(self.world, free=True)
+                else:
+                    from game.quests import hire_rogue
+                    hire_rogue(self.world)
         self.loading("Preparing your hero...")
         if hasattr(a, "warm"):
             a.warm(self.world.player, self.loading)
@@ -292,6 +298,8 @@ class Game:
         w.update_area()
         from game.actworld import ensure_cain
         ensure_cain(w)
+        from game import quests
+        quests.restore(w)
         self.world = w
         self._start_scene()
         self.prebuild_from(w)
@@ -346,6 +354,15 @@ class Game:
                 w.log("Akara: Level %d -> 99. You have %d stat points and %d skill points to spend."
                       % (before, p.stat_points, p.skills.points), (199, 179, 119))
                 self.save()
+        elif opt == "Hire" and npc.npc == "greiz":
+            from game import quests2
+            quests2.hire_guard(w)
+        elif opt == "Sail East":
+            q = w.player.quests
+            if q.get("tombs") in ("cleared", "done"):
+                w.log("Meshif: Kurast will have to wait - Act 3 comes in the next update.", (220, 210, 170))
+            else:
+                w.log("Meshif: Not while Duriel's evil holds the seas. Talk to Jerhyn.", (220, 210, 170))
         elif opt == "Hire":
             from game import quests
             q = w.player.quests
@@ -865,20 +882,33 @@ class Game:
                 traceback.print_exc()
         return Hud(self.fonts, self.assets)
 
+    def open_cube(self, box):
+        h = self.hud
+        h.cube_item = box
+        h.show_cube = True
+        h.show_inv = True
+        h.show_char = h.show_quests = h.show_skills = False
+        h.show_waypoints = False
+        h.store = None
+
     def toggle_panel(self, name):
         h = self.hud
         if name == "inv":
             h.show_inv = not h.show_inv
             if h.show_inv:
                 h.show_skills = False
+            else:
+                h.show_cube = False
         elif name == "char":
             h.show_char = not h.show_char
+            h.show_cube = False
         elif name == "skills":
             h.show_skills = not getattr(h, "show_skills", False)
             if h.show_skills:
                 h.show_inv = False
         elif name == "quests" and hasattr(h, "show_quests"):
             h.show_quests = not h.show_quests
+            h.show_cube = False
             if h.show_quests:
                 h.show_char = False
 
@@ -922,6 +952,25 @@ class Game:
                 w.end_player_turn()
             elif action in ("inv", "char", "skills", "quests"):
                 self.toggle_panel(action)
+            elif action == "cube_close":
+                h.show_cube = False
+            elif action == "transmute":
+                if h.cube_item is not None and w.held is None:
+                    w.transmute(h.cube_item)
+            elif action == "cube_grid":
+                cell = h.cube_cell_at(pos)
+                box = h.cube_item
+                if cell is None or box is None:
+                    return
+                from game import cube as cb
+                if w.held is not None:
+                    ax, ay = h.cube_anchor(w.held)
+                    w.cube_place(box, ax, ay)
+                else:
+                    it = cb.at(box, *cell)
+                    if it is not None:
+                        w.cube_pick(box, it)
+                return
             elif action == "automap":
                 self.cycle_automap()
             elif action == "minipanel":
@@ -954,6 +1003,8 @@ class Game:
                 w.add_stat(arg)
             elif action == "wp_tab":
                 h.wp_act = arg
+            elif action == "q_tab":
+                h.q_act = arg
             elif action == "waypoint":
                 h.show_waypoints = False
                 self.travel_waypoint(arg)
@@ -999,6 +1050,9 @@ class Game:
                 elif w.held is not None and getattr(w.held, "gem", None) is not None and target is not None \
                         and getattr(target, "sockets", 0) and target is not w.held:
                     w.insert_into(target, w.held)
+                elif w.held is not None and target is not None and getattr(target, "code", "") == "box" \
+                        and target is not w.held:
+                    w.cube_insert(target)
                 elif w.held is not None:
                     gx, gy = h._held_anchor(cell, w.held)
                     w.place_held(gx, gy)
@@ -1008,11 +1062,15 @@ class Game:
                         if button == 3:
                             if getattr(h, "store", None) is not None:
                                 w.sell(it)
+                            elif getattr(it, "use", None) == "cube":
+                                self.open_cube(it)
                             elif it.kind == "potion" or getattr(it, "use", None):
                                 w.use_item(it) if hasattr(w, "use_item") else w.use_inventory_potion(it)
                             elif getattr(it, "gem", None) is None:
                                 w.equip(it)
                         else:
+                            if it is getattr(h, "cube_item", None):
+                                h.show_cube = False
                             w.pick_from_inventory(it)
             return
         if hasattr(h, "skill_popup"):
@@ -1101,8 +1159,9 @@ class Game:
             elif w.held is not None:
                 w.drop_held()
             elif h.show_inv or h.show_char or getattr(h, "show_skills", False) or getattr(h, "show_quests", False) \
-                    or getattr(h, "show_waypoints", False):
+                    or getattr(h, "show_waypoints", False) or getattr(h, "show_cube", False):
                 h.show_inv = h.show_char = False
+                h.show_cube = False
                 h.show_waypoints = False
                 if hasattr(h, "show_skills"):
                     h.show_skills = False
@@ -1466,7 +1525,10 @@ class Game:
         elif "victory" in self.scene.flags:
             if getattr(self.world, "level_key", None) is not None:
                 q = getattr(self.world.player, "quests", {})
-                if q.get("andariel") in ("cleared", "done"):
+                if self.current_act() == 2 and q.get("tombs") in ("cleared", "done"):
+                    img = self.fonts["med"].render("Duriel is dead - Act 2 complete!", True, GOLD)
+                    self.screen.blit(img, (W / 2 - img.get_width() / 2, 84))
+                elif q.get("andariel") in ("cleared", "done") and self.current_act() == 1:
                     img = self.fonts["med"].render("Andariel is dead - Act 1 complete!", True, GOLD)
                     self.screen.blit(img, (W / 2 - img.get_width() / 2, 84))
             else:

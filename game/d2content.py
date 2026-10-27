@@ -62,6 +62,11 @@ def _int(v, default=0):
         return default
 
 
+# quest items you use with a right click
+QUEST_NAMES = {"msf": "Staff of Kings", "vip": "Amulet of the Viper"}
+QUEST_USE = {"box": "cube", "ass": "book_skill", "tr1": "horadric_scroll", "xyz": "potion_of_life"}
+
+
 class D2Content:
     def __init__(self, src, difficulty="normal"):
         self.src = src
@@ -117,13 +122,27 @@ class D2Content:
                 return t["bodyloc1"]
         return ""
 
+    def _quest_base(self, r, kind):
+        """Quest items (Horadric Cube, Staff of Kings, Book of Skill ...): carried, never equipped."""
+        key = r.get("namestr") or r["code"]
+        display = self.strings.get(key, None) if key in self.strings.table else tidy_internal_name(r["name"])
+        tcode = r.get("type", "")
+        display = QUEST_NAMES.get(r["code"], display)
+        return {"name": display, "code": r["code"], "type": tcode, "kind": kind, "ancestors": self.ancestors(tcode),
+                "qlvl": _int(r.get("level")), "levelreq": _int(r.get("levelreq")), "reqstr": 0, "reqdex": 0,
+                "invfile": r.get("invfile", ""), "flippyfile": r.get("flippyfile", ""),
+                "invw": _int(r.get("invwidth"), 1), "invh": _int(r.get("invheight"), 1), "rarity": 1, "class": "",
+                "magic_only": False, "normal_only": True, "cost": 0, "gamble": 0, "shop": {}, "maxsock": 0,
+                "sockcaps": (0, 0, 0), "page": "misc", "slot": "", "quest": True,
+                "use": QUEST_USE.get(r["code"])}
+
     def _make_base(self, r, kind):
+        if r.get("quest", "") not in ("", "0"):
+            return self._quest_base(r, kind)
         if r.get("spawnable", "1") == "0" and kind != "misc":
             return None
-        if r.get("quest", "") not in ("", "0"):
-            return None
         tcode = r.get("type", "")
-        anc = self.ancestors(tcode)
+        anc = set(self.ancestors(tcode)) | (set(self.ancestors(r["type2"])) if r.get("type2") else set())
         cls = ""
         for c in anc:
             t = self.types.get(c)
@@ -142,6 +161,7 @@ class D2Content:
             "normal_only": bool(self.types.get(tcode, {}).get("normal") == "1"),
         }
         b["cost"] = _int(r.get("cost"))
+        b["tiers"] = (r.get("normcode", ""), r.get("ubercode", ""), r.get("ultracode", ""))
         b["gamble"] = _int(r.get("gamble cost"))
         b["shop"] = {}
         for npc in ("charsi", "gheed", "akara", "fara", "lysander", "drognan", "elzix", "ormus", "alkor",
@@ -197,31 +217,51 @@ class D2Content:
                 return None       # quest items, keys, charms: not used
         return b
 
+    def _affix_row(self, r):
+        mods = []
+        for i in (1, 2, 3):
+            code = r.get("mod%dcode" % i, "")
+            if code:
+                mods.append((code, r.get("mod%dparam" % i, ""), _int(r.get("mod%dmin" % i)), _int(r.get("mod%dmax" % i))))
+        return {
+            "name": self.strings.get(r["name"], r["name"]), "level": _int(r.get("level")), "maxlevel": _int(r.get("maxlevel")),
+            "levelreq": _int(r.get("levelreq")), "freq": max(0, _int(r.get("frequency"), 1)),
+            "group": r.get("group", ""), "mods": mods,
+            "itypes": {r.get("itype%d" % i) for i in range(1, 8) if r.get("itype%d" % i)},
+            "etypes": {r.get("etype%d" % i) for i in range(1, 6) if r.get("etype%d" % i)},
+            "classspecific": r.get("classspecific", ""),
+            "multiply": _int(r.get("multiply")), "add": _int(r.get("add")),
+        }
+
     def _affixes(self, table):
         out = []
         for r in read_table(self.src, table):
             if r.get("spawnable") != "1" or not r.get("name"):
                 continue
-            mods = []
-            for i in (1, 2, 3):
-                code = r.get("mod%dcode" % i, "")
-                if code:
-                    mods.append((code, r.get("mod%dparam" % i, ""), _int(r.get("mod%dmin" % i)), _int(r.get("mod%dmax" % i))))
-            if not mods or any(m[0] in SKIP_CODES for m in mods):
+            a = self._affix_row(r)
+            if not a["mods"] or any(m[0] in SKIP_CODES for m in a["mods"]):
                 continue
-            out.append({
-                "name": self.strings.get(r["name"], r["name"]), "level": _int(r.get("level")), "maxlevel": _int(r.get("maxlevel")),
-                "levelreq": _int(r.get("levelreq")), "freq": max(0, _int(r.get("frequency"), 1)),
-                "group": r.get("group", ""), "mods": mods,
-                "itypes": {r.get("itype%d" % i) for i in range(1, 8) if r.get("itype%d" % i)},
-                "etypes": {r.get("etype%d" % i) for i in range(1, 6) if r.get("etype%d" % i)},
-                "classspecific": r.get("classspecific", ""),
-                "multiply": _int(r.get("multiply")), "add": _int(r.get("add")),
-            })
+            out.append(a)
         return out
+
+    _affix_rows = None
+
+    def affix_by_row(self, table, idx):
+        """MagicPrefix / MagicSuffix row number idx (0 = first data row) - CubeMain's pre= / suf=."""
+        if self._affix_rows is None:
+            self._affix_rows = {}
+        if table not in self._affix_rows:
+            self._affix_rows[table] = read_table(self.src, table)
+        rows = self._affix_rows[table]
+        if not 0 <= idx < len(rows) or not rows[idx].get("name"):
+            return None
+        a = self._affix_row(rows[idx])
+        a["mods"] = [m for m in a["mods"] if m[0] not in SKIP_CODES]
+        return a
 
     # ------------------------------------------------------------ item generation
     player_cls = "bar"
+    _force = {}
 
     def pick_base(self, ilvl, rng, kinds=("weapon", "armor", "misc")):
         cands = [b for b in self.bases if b["kind"] in kinds and b["slot"] and b["qlvl"] <= ilvl
@@ -252,7 +292,27 @@ class D2Content:
                 return a
         return cands[-1]
 
-    def make_item(self, base, ilvl, rng, quality="normal", sockets=None, identified=None):
+    def make_item(self, base, ilvl, rng, quality="normal", sockets=None, identified=None, force=None):
+        self._force = force or {}
+        try:
+            it = self._make_item(base, ilvl, rng, quality, sockets, identified)
+        finally:
+            self._force = {}
+        if it is not None:
+            it.ilvl = max(1, int(ilvl))
+        return it
+
+    def _make_item(self, base, ilvl, rng, quality="normal", sockets=None, identified=None):
+        if base.get("quest"):
+            it = Item(base["name"], base["code"], None, kind="quest")
+            it.base = base
+            it.invfile, it.flippy = base["invfile"], base["flippyfile"]
+            it.invw, it.invh = base["invw"], base["invh"]
+            it.use = base.get("use")
+            it.mod_list = None
+            if base["code"] == "box":
+                it.contents = []
+            return it
         if "potion" in base:
             kind, amount = base["potion"]
             it = Item(base["name"], base["code"], None, amount=amount, kind="potion")
@@ -278,7 +338,7 @@ class D2Content:
             return it
         mods_raw = []       # (code, value or (min,max))
         affixes = []
-        if base["magic_only"]:
+        if base["magic_only"] and quality == "normal":
             quality = "magic"
         if base["normal_only"]:
             quality = "normal"
@@ -286,12 +346,13 @@ class D2Content:
         levelreq = base["levelreq"]
         if quality == "magic":
             used = set()
-            want_pre = rng.random() < 0.5
-            want_suf = rng.random() < 0.5 or not want_pre
-            pre = self._roll_affix(self.prefixes, base, ilvl, rng, used) if want_pre else None
+            fp, fs = self._force.get("pre"), self._force.get("suf")
+            want_pre = fp is not None or rng.random() < 0.5
+            want_suf = fs is not None or rng.random() < 0.5 or not want_pre
+            pre = fp or (self._roll_affix(self.prefixes, base, ilvl, rng, used) if want_pre else None)
             if pre:
                 used.add(pre["group"])
-            suf = self._roll_affix(self.suffixes, base, ilvl, rng, used) if want_suf else None
+            suf = fs or (self._roll_affix(self.suffixes, base, ilvl, rng, used) if want_suf else None)
             if not pre and not suf:
                 suf = self._roll_affix(self.suffixes, base, ilvl, rng, used) or \
                     self._roll_affix(self.prefixes, base, ilvl, rng, used)
@@ -299,32 +360,30 @@ class D2Content:
                 if a:
                     affixes.append(a)
                     levelreq = max(levelreq, a["levelreq"])
-                    elem = {}
-                    length = 0
-                    for code, param, lo, hi in a["mods"]:
-                        info = PROP_MAP.get(code)
-                        if code in ELEM_PARTS:
-                            e, i = ELEM_PARTS[code]
-                            elem.setdefault(e, [0, 0])[i] = rng.randint(min(lo, hi), max(lo, hi))
-                        elif code in ("pois-len", "cold-len", "fire-len"):
-                            length = max(lo, hi)
-                        elif code in IGNORED:
-                            continue
-                        elif info and info[1] == "minmax":
-                            mods_raw.append((code, (lo, hi)))
-                        else:
-                            mods_raw.append((code, rng.randint(min(lo, hi), max(lo, hi))))
-                    for e, (lo, hi) in elem.items():
-                        if e == "pois" and length:
-                            # D2 poison is per-frame damage over 'length' frames (256ths)
-                            lo, hi = max(1, lo * length // 256), max(1, hi * length // 256)
-                        mods_raw.append(("dmg-" + e if e != "mag" else "dmg-norm", (lo, max(lo, hi))))
+                    self._affix_mods(a, rng, mods_raw)
             if pre:
                 name = pre["name"] + " " + name
             if suf:
                 name = name + " " + suf["name"]
             if not affixes:
                 quality = "normal"
+        elif quality in ("rare", "crafted"):
+            used = set()
+            n = rng.randint(3, 6) if quality == "rare" else rng.randint(1, 4)
+            npre = rng.randint(max(0, n - 3), min(3, n))
+            for table, count in ((self.prefixes, npre), (self.suffixes, n - npre)):
+                for _ in range(count):
+                    a = self._roll_affix(table, base, ilvl, rng, used)
+                    if a is None:
+                        continue
+                    used.add(a["group"])
+                    affixes.append(a)
+                    levelreq = max(levelreq, a["levelreq"])
+                    self._affix_mods(a, rng, mods_raw)
+            if not affixes:
+                quality = "normal"
+            else:
+                name = self.rare_name(base, rng)
         stats = {}
         for code, v in mods_raw:
             info = PROP_MAP.get(code)
@@ -358,7 +417,7 @@ class D2Content:
         it.strbonus, it.dexbonus = base.get("strbonus", 0), base.get("dexbonus", 0)
         it.affixes = affixes
         it.base_defense = raw_def
-        if quality == "magic" and identified is not True:
+        if quality in ("magic", "rare", "crafted") and identified is not True:
             it.identified = bool(identified)
         # D2: a normal item can come with sockets (up to what the base and item level allow)
         if sockets is None and quality == "normal" and base.get("maxsock") and rng.random() < 0.15:
@@ -366,6 +425,60 @@ class D2Content:
         if sockets:
             it.sockets = min(sockets, self.max_sockets(base, ilvl)) or sockets
         return it
+
+    def _affix_mods(self, a, rng, mods_raw):
+        elem = {}
+        length = 0
+        for code, param, lo, hi in a["mods"]:
+            info = PROP_MAP.get(code)
+            if code in ELEM_PARTS:
+                e, i = ELEM_PARTS[code]
+                elem.setdefault(e, [0, 0])[i] = rng.randint(min(lo, hi), max(lo, hi))
+            elif code in ("pois-len", "cold-len", "fire-len"):
+                length = max(lo, hi)
+            elif code in IGNORED:
+                continue
+            elif info and info[1] == "minmax":
+                mods_raw.append((code, (lo, hi)))
+            else:
+                mods_raw.append((code, rng.randint(min(lo, hi), max(lo, hi))))
+        for e, (lo, hi) in elem.items():
+            if e == "pois" and length:
+                # D2 poison is per-frame damage over 'length' frames (256ths)
+                lo, hi = max(1, lo * length // 256), max(1, hi * length // 256)
+            mods_raw.append(("dmg-" + e if e != "mag" else "dmg-norm", (lo, max(lo, hi))))
+
+    _rare_names = None
+
+    def rare_name(self, base, rng):
+        """D2 rare names: a RarePrefix + a RareSuffix that fit the item type ("Grim Eye")."""
+        if self._rare_names is None:
+            def load(t):
+                out = []
+                try:
+                    for r in read_table(self.src, t):
+                        if not r.get("name"):
+                            continue
+                        it = {r.get("itype%d" % i) for i in range(1, 8) if r.get("itype%d" % i)}
+                        et = {r.get("etype%d" % i) for i in range(1, 5) if r.get("etype%d" % i)}
+                        out.append((self.strings.get(r["name"], r["name"]), it, et))
+                except Exception:
+                    pass
+                return out
+            self._rare_names = (load("RarePrefix"), load("RareSuffix"))
+        parts = []
+        for table, fallback in zip(self._rare_names, ("Grim", "Eye")):
+            ok = [n for n, it, et in table if (not it or it & base["ancestors"]) and not (et & base["ancestors"])]
+            n = rng.choice(ok) if ok else fallback
+            parts.append(n[:1].upper() + n[1:])
+        return " ".join(parts)
+
+    def base_of_type(self, tcode, ilvl, rng):
+        """A random base of an item type (e.g. 'amu', 'pole') that can exist at this item level."""
+        cands = [b for b in self.bases if tcode in b["ancestors"] and b["slot"] and not b.get("quest")
+                 and "gem" not in b and "use" not in b and "potion" not in b]
+        fit = [b for b in cands if b["qlvl"] <= ilvl] or sorted(cands, key=lambda b: b["qlvl"])[:1]
+        return rng.choice(fit) if fit else None
 
     def max_sockets(self, base, ilvl):
         caps = base.get("sockcaps", (0, 0, 0))
@@ -420,7 +533,10 @@ class D2Content:
                 if not b:
                     continue
                 magic = 0.18 * (1 + mf / 100.0) + (0.6 if is_boss else 0)
-                out.append(self.make_item(b, ilvl, rng, "magic" if rng.random() < magic else "normal"))
+                rare = 0.025 * (1 + mf / 150.0) + (0.15 if is_boss else 0)
+                roll = rng.random()
+                q = "rare" if roll < rare else ("magic" if roll < rare + magic else "normal")
+                out.append(self.make_item(b, ilvl, rng, q))
         if is_boss:
             out.append(self.make_gold(mlvl * 2, rng, gf))
         return out

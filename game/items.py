@@ -101,6 +101,14 @@ STAT_LABELS = {
 }
 
 
+QUEST_HINTS = {"cube": "Right click to open. Put items in and press Transmute",
+               "book_skill": "Right click to read (+1 skill point)",
+               "horadric_scroll": "Right click to read",
+               "msf": "Cube it with the Viper Amulet",
+               "vip": "Cube it with the Staff of Kings",
+               "hst": "Place it in the orifice in Tal Rasha's Tomb"}
+
+
 class Item:
     def __init__(self, name, code, slot, rarity="normal", mods=None, dmg=None, ap=None,
                  defense=0, amount=0, kind="equip"):
@@ -143,6 +151,8 @@ class Item:
     def color(self):
         if self.kind in ("gold", "potion"):
             return WHITE
+        if self.kind == "quest":
+            return D2_COLORS["unique"]
         if self.gem is not None:
             return ORANGE if self.gem[0] == "rune" else WHITE
         if self.sockets and self.rarity == "normal":
@@ -166,6 +176,16 @@ class Item:
         """[(text, colour)] in D2's tooltip order."""
         if self.kind == "gold":
             return [("%d Gold" % self.amount, WHITE)]
+        if self.kind == "quest":
+            out = [(self.name, self.color)]
+            hint = QUEST_HINTS.get(self.use or self.code)
+            if self.code == "box":
+                n = len(getattr(self, "contents", []) or [])
+                out.append(("Holds %d item%s" % (n, "" if n == 1 else "s"), WHITE))
+            if hint:
+                out.append((hint, (170, 170, 170)))
+            out.append(("Quest Item", (170, 170, 170)))
+            return out
         if self.kind == "potion":
             what = {"heal": "Heals %d life", "mana": "Restores %d mana", "rejuv": "Restores %d%% life and mana",
                     "antidote": "Cures poison, +%d%% poison resistance for a while",
@@ -194,6 +214,8 @@ class Item:
                    ("'%s'" % "".join(getattr(f, "rune_letter", "") for f in self.socketed), D2_COLORS["unique"])]
         else:
             out = [(self.shown_name, self.color)]
+            if self.rarity in ("rare", "crafted") and self.identified and isinstance(self.base, dict):
+                out.append((self.base.get("name", ""), self.color))
         if self.dmg:
             lo, hi = self.dmg
             if self.two_handed:

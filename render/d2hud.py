@@ -109,7 +109,7 @@ class D2Hud:
         self.frames = {}
         for n in ("800ctrlpnl7", "hlthmana", "overlap", "invchar6", "minipanel", "minipanelbtn", "level",
                   "runbutton", "mediumbuttonblank", "blank", "buysellbtn", "skillpoints", "buysell", "buyselltabs",
-                  "gemsocket"):
+                  "gemsocket", "supertransmogrifier", "miniconvert"):
             self.frames[n] = self._load(PANEL + n + ".dc6", required=n in ("800ctrlpnl7", "hlthmana", "invchar6"))
         self.cursor = self._load("data\\global\\ui\\CURSOR\\ohand.dc6")
         self._class_art = {}
@@ -131,6 +131,8 @@ class D2Hud:
         self.show_minipanel = True
         self.skill_popup = False
         self.store = None            # an open vendor (game.itemactions.Store)
+        self.show_cube = False
+        self.cube_item = None        # the Horadric Cube whose window is open
         self.npc_menu = None         # NPC whose talk / trade menu is open
         self.minimaps = {}
         self.regions = []
@@ -248,6 +250,8 @@ class D2Hud:
         self._draw_automap(surf, world)
         if self.store is not None:
             self._draw_store(surf, world)
+        elif getattr(self, "show_cube", False) and self.cube_item is not None:
+            self._draw_cube(surf, world)
         elif getattr(self, "show_waypoints", False):
             self._draw_waypoints(surf, world)
         elif self.show_quests:
@@ -294,7 +298,7 @@ class D2Hud:
     def _draw_log(self, surf, scene):
         lines = [l for l in scene.log if l[2] < 9][-6:]
         y = 6
-        x0 = 330 if (self.show_char or self.show_quests) else 8
+        x0 = 330 if (self.show_char or self.show_quests or getattr(self, "show_cube", False)) else 8
         for text, col, age in lines:
             img = self.f16.render(text, col, self.ind)
             sc = self.S(img)
@@ -579,28 +583,48 @@ class D2Hud:
 
     def _draw_quests(self, surf, p):
         from game.quests import journal
+        from game.acts import act_of
         self._panel_bg(surf, 0, self.frames.get("blank") or self.frames["invchar6"], 0)
         self.text(surf, self.f30, "Quests", GOLD, 0, 14, "center", 320)
-        self.text(surf, self.f10, "Act I", WHITE, 0, 46, "center", 320)
-        y = 72
-        for title, status, text in journal(p):
+        # D2's act tabs: every act you have reached
+        here = act_of(self.world.level_id) if getattr(self, "world", None) and self.world.level_id else 1
+        top = max([here, int(getattr(p, "current_act", 1) or 1)] + [act_of(l) for l in getattr(p, "visited", ()) if l])
+        acts = list(range(1, min(5, top) + 1))
+        if getattr(self, "q_act", None) not in acts:
+            self.q_act = here if here in acts else acts[-1]
+        tw = 280 // max(1, len(acts))
+        for i, a in enumerate(acts):
+            x = 20 + i * tw
+            on = a == self.q_act
+            box = pygame.Surface((int((tw - 4) * self.s), int(20 * self.s)), pygame.SRCALPHA)
+            box.fill((70, 58, 30, 220) if on else (0, 0, 0, 140))
+            surf.blit(box, self.P(x, 44))
+            self.text(surf, self.f10, "Act " + "I II III IV V".split()[a - 1], WHITE if on else (150, 140, 120),
+                      x, 48, "center", tw - 4)
+            self.region(x, 44, tw - 4, 20, "q_tab", a)
+        y = 74
+        for title, status, text in journal(p, self.q_act if self.q_act in (1, 2) else 0):
             col = {"done": GREY, "active": WHITE, "cleared": YELLOW}.get(status, (110, 105, 95))
             self.text(surf, self.f16, title, GOLD if status != "none" else (120, 110, 90), 20, y)
             y += 17
+            if status in ("done", "none"):
+                text = "Completed." if status == "done" else "Not started."
             # wrap the journal line into the panel width
             words, line = text.split(), ""
             for wd in words:
                 trial = (line + " " + wd).strip()
                 if self.f10.width(trial) > 280:
                     self.text(surf, self.f10, line, col, 26, y)
-                    y += 14
+                    y += 13
                     line = wd
                 else:
                     line = trial
             if line:
                 self.text(surf, self.f10, line, col, 26, y)
-                y += 14
-            y += 12
+                y += 13
+            y += 8
+        if self.q_act > 2:
+            self.text(surf, self.f10, "This act's quests come in a later update.", GREY, 20, y)
         self._close_button(surf, CHAR_CLOSE, 0, "quests")
 
     # ------------------------------------------------------------ vendors
@@ -721,6 +745,76 @@ class D2Hud:
             if on and lid != here:
                 self.region(20, y - 4, 280, 28, "waypoint", lid)
         self._close_button(surf, CHAR_CLOSE, 0, "waypoints")
+
+    # ------------------------------------------------------------ the Horadric Cube
+    CUBE_GRID = (117, 138)
+    CUBE_BUTTON = (145, 259, 32, 32)
+    CUBE_CLOSE = (275, 384, 32, 32)
+
+    def cube_cell_at(self, pos):
+        if not getattr(self, "show_cube", False):
+            return None
+        lx, ly = self.logical(pos)
+        gx, gy = self.CUBE_GRID
+        cx, cy = int((lx - gx) // CELL), int((ly - gy) // CELL)
+        from game.cube import W, H
+        if 0 <= cx < W and 0 <= cy < H:
+            return cx, cy
+        return None
+
+    def cube_anchor(self, item):
+        from game.cube import W, H
+        w, h = max(1, item.invw or 1), max(1, item.invh or 1)
+        mx, my = self.mouse
+        gx, gy = self.CUBE_GRID
+        fx = int(round((mx - gx) / CELL - w / 2.0))
+        fy = int(round((my - gy) / CELL - h / 2.0))
+        return max(0, min(W - w, fx)), max(0, min(H - h, fy))
+
+    def _draw_cube(self, surf, world):
+        from game import cube as cb
+        p = world.player
+        box = self.cube_item
+        fr = self.frames.get("supertransmogrifier") or self.frames.get("blank") or self.frames["invchar6"]
+        self._panel_bg(surf, 0, fr, 0)
+        self.text(surf, self.f16, "Horadric Cube", GOLD, 0, 104, "center", 320)
+        gx, gy = self.CUBE_GRID
+        mx, my = self.mouse
+        held = getattr(world, "held", None)
+        self.region(gx, gy, cb.W * CELL, cb.H * CELL, "cube_grid")
+        for it in getattr(box, "contents", []) or []:
+            if getattr(it, "cube_pos", None) is None:
+                continue
+            cx, cy = it.cube_pos
+            w, h = max(1, it.invw or 1), max(1, it.invh or 1)
+            x, y = gx + cx * CELL, gy + cy * CELL
+            tint = pygame.Surface((int((w * CELL - 1) * self.s), int((h * CELL - 1) * self.s)), pygame.SRCALPHA)
+            tint.fill((10, 10, 40, 120))
+            surf.blit(tint, self.P(x + 1, y + 1))
+            self._icon(surf, it, x + 1, y + 1, w * CELL - 1, h * CELL - 1)
+            if held is None and pygame.Rect(int(x), int(y), w * CELL, h * CELL).collidepoint((int(mx), int(my))):
+                self.hover_lines = list(it.describe_lines(p))
+        if held is not None and self.cube_cell_at((mx * self.s, my * self.s)) is not None:
+            ax, ay = self.cube_anchor(held)
+            ok, over = cb.fits(box, held, ax, ay)
+            good = ok and len(over) <= 1 and held.code != "box"
+            w, h = max(1, held.invw or 1), max(1, held.invh or 1)
+            tint = pygame.Surface((int(w * CELL * self.s), int(h * CELL * self.s)), pygame.SRCALPHA)
+            tint.fill((0, 120, 0, 70) if good else (140, 0, 0, 70))
+            surf.blit(tint, self.P(gx + ax * CELL, gy + ay * CELL))
+        bx, by, bw, bh = self.CUBE_BUTTON
+        btn = self.frames.get("miniconvert") or []
+        hot = pygame.Rect(bx, by, bw, bh).collidepoint((int(mx), int(my)))
+        down = hot and pygame.mouse.get_pressed()[0] if hasattr(pygame.mouse, "get_pressed") else False
+        f = btn[1 if down and len(btn) > 1 else 0] if btn else None
+        if f is not None:
+            self.put(surf, f, bx, by)
+        else:
+            pygame.draw.rect(surf, (150, 130, 80), self.R(bx, by, bw, bh), 1)
+        self.region(bx, by, bw, bh, "transmute")
+        if hot and held is None:
+            self.hover_lines = [("Transmute", WHITE)]
+        self._close_button(surf, self.CUBE_CLOSE, 0, "cube_close")
 
     def _close_button(self, surf, box, ox, action):
         b = self.frames.get("buysellbtn")

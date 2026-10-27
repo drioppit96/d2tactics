@@ -1,4 +1,4 @@
-"""Act 1 quests. State lives on the player so it follows you between areas.
+"""Act 1 quests (Act 2's are in quests2.py). State lives on the player so it follows you between areas.
 
 Story text is written for this project (it paraphrases what happens in D2, it doesn't
 copy the game's dialogue).
@@ -58,6 +58,8 @@ def init(player):
         player.quests = {q: "none" for q, _ in ACT1}
     for q, _ in ACT1:
         player.quests.setdefault(q, "none")
+    from . import quests2
+    quests2.init(player)
     if not hasattr(player, "waypoints"):
         player.waypoints = {1}
     if not hasattr(player, "visited"):
@@ -82,6 +84,9 @@ def talk(world, npc):
     q = p.quests
     lines = []
     who = npc.npc
+    from . import quests2
+    if who in quests2.NPC_ACT2:
+        return quests2.talk(world, npc)
     if who == "akara":
         if q["den"] == "none":
             _start(world, "den")
@@ -185,6 +190,7 @@ def hire_rogue(world):
     m.summon_skill = "hireling"
     m.hireling = True
     p.has_hireling = True
+    p.hireling_kind = "rogue"
     world.monsters.append(m)
     world.emit("resurrect", m)
 
@@ -224,6 +230,32 @@ def on_enter(world, lid):
         _start(world, "malus")
     if lid in (34, 35, 36, 37) and q["andariel"] == "none":
         _start(world, "andariel")
+    from . import quests2
+    quests2.on_enter(world, lid)
+
+
+def restore(world):
+    init(world.player)
+    from . import quests2
+    quests2.restore(world)
+
+
+def read_horadric_scroll(world, it):
+    init(world.player)
+    from . import quests2
+    quests2.read_horadric_scroll(world, it)
+
+
+def on_transmute(world, box):
+    init(world.player)
+    from . import quests2
+    quests2.on_transmute(world, box)
+
+
+def blocked(world, target):
+    init(world.player)
+    from . import quests2
+    return quests2.blocked(world, target)
 
 
 def on_object(world, obj):
@@ -232,6 +264,10 @@ def on_object(world, obj):
     init(p)
     q = p.quests
     k = obj["kind"]
+    from . import quests2
+    r = quests2.on_object(world, obj)
+    if r is not None:
+        return r
     if k == "inifuss":
         if q["cain"] in ("none", "active"):
             q["cain"] = "scroll"
@@ -269,6 +305,19 @@ def on_object(world, obj):
             p.cain_rescued = True
             world.log("You break the cage. Deckard Cain: 'Thank you! I will meet you at the Rogue camp.'", QUEST_COLOR)
             return True
+    elif k == "wirt":
+        if obj["used"]:
+            return False
+        obj["used"] = True
+        from . import quests2
+        quests2.give_item(world, "leg", near=obj["cell"])
+        if world.content is not None:
+            g = world.content.make_gold(20, world.rng)
+            cell = world._drop_cell(obj["cell"])
+            world.ground.setdefault(cell, []).append(g)
+            world.emit("drop", cell, g)
+        world.log("Poor Wirt. His wooden leg comes loose...", (170, 170, 170))
+        return True
     elif k == "tome":
         if q["tower"] == "none":
             _start(world, "tower")
@@ -281,7 +330,11 @@ def on_object(world, obj):
             obj["used"] = True
             world.log("You take the Horadric Malus. Return it to Charsi.", QUEST_COLOR)
             return True
-    elif k == "portal":
+    elif k in ("portal", "arcane_portal", "duriel_portal"):
+        msg = blocked(world, obj.get("target"))
+        if msg:
+            world.log(msg, (220, 210, 170))
+            return False
         world.pending_exit = obj.get("target")
         return True
     elif k in ("tp", "tp_back"):
@@ -300,6 +353,9 @@ def on_monster_killed(world, unit=None):
     init(p)
     q = p.quests
     boss = getattr(unit, "boss", None) if unit is not None else None
+    if unit is not None:
+        from . import quests2
+        quests2.on_killed(world, unit)
     if boss == "blood_raven" and q["blood_raven"] in ("none", "active"):
         q["blood_raven"] = "cleared"
         world.log("Blood Raven is slain! Return to Kashya.", QUEST_COLOR)
@@ -336,12 +392,14 @@ def _countess_gold(world, unit):
         world.emit("drop", cell, g)
 
 
-def journal(player):
+def journal(player, act=1):
     init(player)
     out = []
-    for qid, title in ACT1:
+    from . import quests2
+    table, texts = {1: (ACT1, JOURNAL), 2: (quests2.ACT2, quests2.JOURNAL)}.get(act, ([], {}))
+    for qid, title in table:
         st = player.quests.get(qid, "none")
-        text = JOURNAL.get(qid, {}).get(st, "")
+        text = texts.get(qid, {}).get(st, "")
         if st == "none":
             text = "Not started."
         out.append((title, "active" if st not in ("none", "done", "cleared") else st, text or ""))

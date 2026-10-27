@@ -20,8 +20,8 @@ NPC_OPTIONS = {
     "warriv1": ["Talk", "Go East", "Go East (test)"],          # TEST ONLY: "Go East (test)", remove later
     # Lut Gholein
     "fara": ["Talk", "Trade"], "drognan": ["Talk", "Trade"], "lysander": ["Talk", "Trade"],
-    "elzix": ["Talk", "Trade", "Gamble"], "greiz": ["Talk"], "atma": ["Talk"], "jerhyn": ["Talk"],
-    "geglash": ["Talk"], "meshif1": ["Talk"], "warriv2": ["Talk", "Go West"], "cain2": ["Talk", "Identify Items"],
+    "elzix": ["Talk", "Trade", "Gamble"], "greiz": ["Talk", "Hire"], "atma": ["Talk"], "jerhyn": ["Talk"],
+    "geglash": ["Talk"], "meshif1": ["Talk", "Sail East"], "tyrael1": ["Talk"], "warriv2": ["Talk", "Go West"], "cain2": ["Talk", "Identify Items"],
 }
 STORE_W, STORE_H = 10, 10
 TAB_NAMES = {"armo": "Armor", "weap": "Weapons", "misc": "Misc", "gamble": "Gamble"}
@@ -166,6 +166,9 @@ class ItemActions:
         p = self.player
         if it not in p.inventory:
             return False
+        if it.kind == "quest":
+            self.log("You can't sell quest items.", GREY)
+            return False
         value = d2items.sell_price(it)
         p.inventory.remove(it)
         it.inv_pos = None
@@ -196,6 +199,8 @@ class ItemActions:
             if self._consume(it):
                 return self.town_portal()
             return False
+        if it.kind == "quest":
+            return self.read_quest_item(it)
         if it.use == "id":
             if not any(not getattr(x, "identified", True) for x in list(p.inventory) + list(p.equipment.values()) if x):
                 self.log("You have nothing to identify.", GREY)
@@ -204,6 +209,81 @@ class ItemActions:
             self.log("Click the item to identify.", GREY)
             return True
         return False
+
+    # ------------------------------------------------------------ quest items
+    def read_quest_item(self, it):
+        p = self.player
+        from . import quests
+        if it.use == "book_skill":
+            p.inventory.remove(it)
+            it.inv_pos = None
+            p.skills.points += 1
+            self.log("You read the Book of Skill. +1 skill point!", (0, 220, 0))
+            return True
+        if it.use == "horadric_scroll":
+            quests.read_horadric_scroll(self, it)
+            return True
+        return False
+
+    # ------------------------------------------------------------ the Horadric Cube
+    def cube_insert(self, box, it=None):
+        """Put the cursor item into the cube (dropped on the cube in the backpack)."""
+        from . import cube as cb
+        it = it if it is not None else self.held
+        if it is None or it is box:
+            return False
+        if not cb.cube_add(box, it):
+            self.log("The cube is full.", GREY)
+            return False
+        if it is self.held:
+            self.held = None
+        return True
+
+    def cube_place(self, box, x0, y0):
+        """Drop the cursor item into the cube's grid (swaps with one item, like the backpack)."""
+        from . import cube as cb
+        it = self.held
+        if it is None or it is box or getattr(it, "code", "") == "box":
+            return False
+        ok, over = cb.fits(box, it, x0, y0)
+        if not ok or len(over) > 1:
+            return False
+        swap = over[0] if over else None
+        if swap is not None:
+            box.contents.remove(swap)
+            swap.cube_pos = None
+        it.cube_pos = (x0, y0)
+        box.contents.append(it)
+        self.held = swap
+        return True
+
+    def cube_pick(self, box, it):
+        if self.held is not None or it not in (getattr(box, "contents", None) or []):
+            return False
+        box.contents.remove(it)
+        it.cube_pos = None
+        self.held = it
+        return True
+
+    def transmute(self, box):
+        from . import cube as cb
+        ok, msg = cb.transmute(self, box)
+        self.log(msg, (199, 179, 119) if ok else GREY)
+        if ok:
+            self.emit("transmute", box)
+            from . import quests
+            quests.on_transmute(self, box)
+        return ok
+
+    def cube_portal(self, what):
+        """Wirt's Leg + a Tome of Town Portal in the Rogue Encampment: the Secret Cow Level."""
+        if what != "cow" or self.level_id != 1:
+            return None
+        p = self.player
+        cell = self._free_cell_near((p.x + 2, p.y + 1), 4)
+        self.objects.append(dict(kind="portal", cell=cell, level=1, oid=0, used=False, target=39))
+        self.emit("nova", p, cell, 3, "fire")
+        return "A red portal opens... Moo?"
 
     def _consume(self, it):
         p = self.player

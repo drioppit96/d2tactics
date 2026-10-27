@@ -65,6 +65,9 @@ class ActInfo:
         return ids
 
 
+PORTAL_KINDS = ("portal", "arcane_portal", "duriel_portal")
+
+
 def setup(world, built, grid, rng, info, level_key):
     """Fill a World with an Act 1 level."""
     b = built
@@ -116,6 +119,11 @@ def setup(world, built, grid, rng, info, level_key):
             world.exits[c] = 28
         if door:
             world.entries[28] = arrival_cell(grid, door, set(world.exits), rng)
+    if level_key == 39:
+        # the red portal from the camp puts you near a corner of the farm
+        c0 = _free_near(grid, (2 * 8 * SUB + 10, 2 * 8 * SUB + 10), 30)
+        if c0 is not None:
+            world.entries[1] = c0
     # ---- objects: waypoints and quest objects
     for kind, cell, owner, oid in b.objects:
         c = _free_near(grid, cell)
@@ -123,7 +131,7 @@ def setup(world, built, grid, rng, info, level_key):
             continue
         if kind == "waypoint":
             world.waypoints[c] = owner
-        elif kind == "portal":
+        elif kind in PORTAL_KINDS:
             # a fixed portal (Arcane Sanctuary, Canyon, Duriel's Lair): oid = where it leads;
             # coming back through it you arrive next to it
             world.objects.append(dict(kind=kind, cell=c, level=owner, oid=0, used=False, target=oid))
@@ -151,6 +159,24 @@ def setup(world, built, grid, rng, info, level_key):
         m.aware = False
         world.npcs.append(m)
         monsters.append(m)
+    # D2 places Jerhyn by code (no preset): in front of the palace door
+    if level_key == "desert" and 50 in world.entries and not any(n.npc == "jerhyn" for n in world.npcs):
+        door = world.entries[50]
+        cell = None
+        for r in range(3, 9):
+            for dx in range(-r, r + 1):
+                c = (door[0] + dx, door[1] + r)
+                if grid.walkable(*c) and c not in world.exits and c not in {m.pos for m in monsters}:
+                    cell = c
+                    break
+            if cell:
+                break
+        if cell:
+            t = content.monster_template("jerhyn") if content and "jerhyn" in content.monstats else None
+            m = Monster("zombie", *cell, rng=rng, template=t)
+            m.npc, m.name, m.ai, m.aware = "jerhyn", NPC_NAMES.get("jerhyn", "Jerhyn"), "npc", False
+            world.npcs.append(m)
+            monsters.append(m)
     world.monsters = monsters
     # ---- monsters
     taken = {m.pos for m in monsters}
@@ -285,7 +311,8 @@ def _spawn_preset(world, name, cell, owner, taken, info):
         if m is None:
             return
         m.boss = {"Corpsefire": "corpsefire", "The Countess": "countess", "The Smith": "smith",
-                  "Griswold": "griswold"}.get(name, "superunique")
+                  "Griswold": "griswold", "Coldworm the Burrower": "coldworm",
+                  "Fangskin": "fangskin", "Bloodwitch the Wild": "bloodwitch"}.get(name, "superunique")
         lo, hi = _int(su.get("mingrp")), _int(su.get("maxgrp"))
         for c in _scatter(world, cell2, rng.randint(lo, max(lo, hi)) if hi else 0, taken):
             _spawn(world, mid, c, lvl + 1, taken, champion=False)
@@ -383,6 +410,9 @@ def make_world(kit, info, content, level_key, seed=None, player=None, char_class
         b, grid, rng = act2.build_desert(kit, seed, content)
     elif level_key == 46:
         b, grid, rng = act2.build_canyon(kit, seed, content)
+    elif level_key == 39:
+        from .act1 import build_cow
+        b, grid, rng = build_cow(kit, seed, content)
     elif level_key in act2.DUNGEONS:
         real = act2.CURRENT_REAL or act2.real_tomb(getattr(player, "name", None) or char_name)
         b, grid, rng = act2.build_level(kit, level_key, seed, real=real)
