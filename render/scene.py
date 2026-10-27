@@ -28,6 +28,7 @@ class UnitView:
         self.facing = unit.facing
         self.lunge_to = None
         self.slide = None
+        self.stop_t = 0.0       # a short grace before "walk" turns into "stand" between steps
 
     @property
     def dead(self):
@@ -79,6 +80,7 @@ class Scene:
         self.show_grid = False
         self.show_labels = False
         self.selected = None      # monster under the mouse (highlighted)
+        self.walk_target = None   # where you are walking to (you face it, not the next tile)
         self.skill_area = None    # (cells, hit cells, out of range) of the right skill under the mouse
         self.opts = {}
         self._sel_draw = None
@@ -361,18 +363,35 @@ class Scene:
             tx, ty = v.path[0]
             dx, dy = tx - v.rx, ty - v.ry
             dist = math.hypot(dx, dy)
-            if dist > 0.01:
-                v.facing = ((dx > 0.01) - (dx < -0.01), (dy > 0.01) - (dy < -0.01))
+            goal = self.walk_target if v.unit.is_player else None
+            if goal is not None and math.hypot(goal[0] - v.rx, goal[1] - v.ry) > 0.7:
+                # face where you are going: a zig-zag of tiles still reads as one straight walk
+                v.facing = (goal[0] - v.rx, goal[1] - v.ry)
+            elif dist > 0.01:
+                v.facing = (dx, dy) if v.unit.is_player else \
+                    ((dx > 0.01) - (dx < -0.01), (dy > 0.01) - (dy < -0.01))
             step = v.speed * dt
             v.t += dt * 1.6
-            if dist <= step:
+            v.mode = "WL"
+            v.stop_t = 0.12
+            # carry over what is left of this frame's movement into the next tile (no stop at each tile)
+            while v.path and dist <= step:
                 v.rx, v.ry = float(tx), float(ty)
                 v.path.pop(0)
-                if not v.path:
-                    v.mode = "NU"
-            else:
+                step -= dist
+                if v.path:
+                    tx, ty = v.path[0]
+                    dx, dy = tx - v.rx, ty - v.ry
+                    dist = math.hypot(dx, dy)
+            if v.path and dist > 0:
                 v.rx += dx / dist * step
                 v.ry += dy / dist * step
+            return
+        if v.mode == "WL" and v.stop_t > 0:
+            v.stop_t -= dt          # the next step usually arrives within a frame or two
+            v.t += dt * 1.6
+            if v.stop_t <= 0:
+                v.mode = "NU"
             return
         if v.slide:
             (sx, sy), (ex, ey), t = v.slide

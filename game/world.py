@@ -468,7 +468,29 @@ class World(SkillCaster, ItemActions):
         return self.grid.reachable(self.player.pos, self.player.ap, blocked=self.occupied(self.player))
 
     def path_for_player(self, cell):
-        return self.grid.find_path(self.player.pos, cell, blocked=self.occupied(self.player))
+        blocked = self.occupied(self.player)
+        line = self._straight_path(self.player.pos, cell, blocked)
+        if line is not None:
+            return line
+        return self.grid.find_path(self.player.pos, cell, blocked=blocked)
+
+    def _straight_path(self, a, b, blocked):
+        """A straight line of tiles when nothing is in the way (A* would walk all diagonal steps
+        first and then turn - an L instead of the straight walk D2 does)."""
+        if a == b or max(abs(a[0] - b[0]), abs(a[1] - b[1])) > 40:
+            return None
+        from .skillcast import _line
+        g = self.grid
+        path = _line(a, b)
+        prev = a
+        for c in path:
+            if not g.walkable(*c) or c in blocked:
+                return None
+            dx, dy = c[0] - prev[0], c[1] - prev[1]
+            if dx and dy and (not g.walkable(prev[0] + dx, prev[1]) or not g.walkable(prev[0], prev[1] + dy)):
+                return None
+            prev = c
+        return path
 
     def player_move_to(self, cell, pickup=True):
         if not self.player_can_act():

@@ -1281,6 +1281,8 @@ class Game:
             self.scene.alt_held = False
         self._hold_walk(mouse, dt)
         self.advance_walk()
+        if getattr(self, "scene", None) is not None:
+            self.scene.walk_target = self.walk_goal if self.walk_queue and self.world.mode == "explore" else None
         tp = time.perf_counter()
         self._warm_skill_art()
         self._perf_mark("prep", tp)
