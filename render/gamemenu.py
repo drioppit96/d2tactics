@@ -14,7 +14,7 @@ HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OPTIONS_FILE = os.path.join(HERE, "options.ini")
 
 DEFAULTS = {"light_radius": 100, "highlight_monster": True, "highlight_tile": True,
-            "show_move_range": True, "monster_names": True}
+            "show_move_range": True, "show_skill_area": True, "monster_names": True}
 LIGHT_STEPS = [50, 75, 100, 125, 150, 200, 250, 300]
 
 
@@ -82,6 +82,7 @@ class GameMenu:
                 ("HIGHLIGHT MONSTER: " + onoff("highlight_monster"), "hl_mon"),
                 ("HIGHLIGHT TILE: " + onoff("highlight_tile"), "hl_tile"),
                 ("SHOW MOVE RANGE: " + onoff("show_move_range"), "range"),
+                ("SHOW SKILL AREA: " + onoff("show_skill_area"), "area"),
                 ("PREVIOUS MENU", "back")]
 
     def activate(self, action, step=1):
@@ -105,9 +106,11 @@ class GameMenu:
             o["highlight_monster"] = not o["highlight_monster"]
         elif action == "hl_tile":
             o["highlight_tile"] = not o["highlight_tile"]
+        elif action == "area":
+            o["show_skill_area"] = not o["show_skill_area"]
         elif action == "range":
             o["show_move_range"] = not o["show_move_range"]
-        if action in ("light", "hl_mon", "hl_tile", "range"):
+        if action in ("light", "hl_mon", "hl_tile", "range", "area"):
             save_options(o)
             g.apply_options()
 
@@ -126,7 +129,7 @@ class GameMenu:
             self.activate(items[self.sel][1])
         elif key in (pygame.K_LEFT, pygame.K_a, pygame.K_RIGHT, pygame.K_d):
             act = items[self.sel][1]
-            if act in ("light", "hl_mon", "hl_tile", "range"):
+            if act in ("light", "hl_mon", "hl_tile", "range", "area"):
                 self.activate(act, -1 if key in (pygame.K_LEFT, pygame.K_a) else 1)
 
     def click(self, pos, button=1):

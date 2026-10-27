@@ -44,6 +44,23 @@ def _line(a, b):
     return out
 
 
+def _fan_targets(src, dst, n, length):
+    """End points of n missiles fanned out around the line src -> dst (D2 Teeth / Charged Bolt)."""
+    import math
+    dx, dy = dst[0] - src[0], dst[1] - src[1]
+    if dx == 0 and dy == 0:
+        dx = 1
+    a0 = math.atan2(dy, dx)
+    fan = math.radians(min(100.0, 14.0 * (n - 1)))
+    step = fan / (n - 1) if n > 1 else 0.0
+    out = [dst]                          # the first one always flies straight at what you aimed at
+    for i in range(1, n):
+        off = step * ((i + 1) // 2) * (1 if i % 2 else -1)
+        a = a0 + off
+        out.append((int(round(src[0] + math.cos(a) * length)), int(round(src[1] + math.sin(a) * length))))
+    return out
+
+
 def _extend(a, b, length):
     """A straight line from a through b, `length` cells long."""
     dx, dy = b[0] - a[0], b[1] - a[1]
@@ -409,6 +426,127 @@ class SkillCaster:
                     return hit, c
         return hit, (cells[-1] if cells else dst)
 
+    def _missile_path(self, src, dst, pierce=False, max_len=SPELL_RANGE):
+        """(cells the missile flies over, units it hits) - stops at walls and, unless it pierces,
+        at the first enemy."""
+        cells = _line(src, dst)[:max_len] if max(abs(dst[0] - src[0]), abs(dst[1] - src[1])) >= max_len \
+            else _extend(src, dst, max_len)
+        path, hit = [], []
+        for c in cells:
+            if not self.grid.in_bounds(*c) or not self.grid.walkable(*c):
+                break
+            path.append(c)
+            u = self.unit_at(c)
+            if u is not None and u is not self.player and u.ai != "npc" and not getattr(u, "ally", False):
+                if u not in hit:
+                    hit.append(u)
+                if not pierce:
+                    break
+        return path, hit
+
+    def _spread_count(self, s, env):
+        n = s.extra.get("targets", 1)
+        if n == "calc1":
+            n = max(1, env.calc("calc1"))
+        return max(1, min(24, int(n)))
+
+    def _spread_shots(self, s, env, cell):
+        """[(path cells, unit hit or None)] for each missile of a fan."""
+        p = self.player
+        n = self._spread_count(s, env)
+        out = []
+        for end in _fan_targets(p.pos, cell, n, SPELL_RANGE):
+            path, hit = self._missile_path(p.pos, end, max_len=SPELL_RANGE)
+            out.append((path, hit[0] if hit else None))
+        return out
+
+    def skill_preview(self, name, cell):
+        """Cells a skill would cover if cast at `cell` -> (cells, cells of monsters it hits), or None
+        for skills that don't aim (the frontend highlights them under the mouse)."""
+        p = self.player
+        book = getattr(p, "skills", None)
+        if not name or book is None or name not in book.tree or cell is None:
+            return None
+        s = book.tree[name]
+        k = s.kind
+        env = self._skill_env(name)
+        x = s.extra
+        sq = lambda c, r: {(c[0] + dx, c[1] + dy) for dx in range(-r, r + 1) for dy in range(-r, r + 1)}
+
+        def body(m):
+            return sq(m.pos, getattr(m, "radius", 0))
+        cells, hits = set(), set()
+        if k == "missile":
+            if s.weapon and not x.get("spread") and not x.get("splash") and not x.get("pierce"):
+                return None
+            if self._spread_count(s, env) > 1 and x.get("spread"):
+                for path, m in self._spread_shots(s, env, cell):
+                    cells.update(path)
+                    if m is not None:
+                        hits |= body(m)
+            else:
+                path, hit = self._missile_path(p.pos, cell, pierce=bool(x.get("pierce")))
+                cells.update(path)
+                for m in hit:
+                    hits |= body(m)
+                if x.get("splash"):
+                    centre = hit[0].pos if hit else (path[-1] if path else cell)
+                    area = sq(centre, x["splash"])
+                    cells |= {c for c in area if self.grid.walkable(*c)}
+                    for m in self.enemies():
+                        if chebyshev(m.pos, centre) <= x["splash"]:
+                            hits |= body(m)
+        elif k == "nova":
+            r = x.get("radius") or env.radius() or 4
+            if s.key in ("Frost Nova", "Nova", "Poison Nova"):
+                r = max(r, 5)
+            cells = {c for c in sq(p.pos, r) if self.grid.walkable(*c) and c != p.pos}
+            for m in self.enemies():
+                if self.udist(m, p) <= r and self.grid.line_of_sight(p.pos, m.pos):
+                    hits |= body(m)
+        elif k in ("area", "curse"):
+            if k == "curse" and x.get("self_centred"):
+                cell = p.pos
+            r = (x.get("radius") or env.radius() or 2) if k == "area" else (env.radius() or 2)
+            if s.key == "Attract":
+                r = 0
+            cells = {c for c in sq(cell, r) if self.grid.walkable(*c)}
+            for m in self.enemies():
+                if chebyshev(m.pos, cell) <= r:
+                    hits |= body(m)
+        elif k == "line":
+            length = x.get("length", 5)
+            if x.get("across"):
+                dx, dy = cell[0] - p.x, cell[1] - p.y
+                px, py = (-(dy > 0) + (dy < 0), (dx > 0) - (dx < 0))
+                if px == 0 and py == 0:
+                    px = 1
+                line = [(cell[0] + px * i, cell[1] + py * i) for i in range(-(length // 2), length // 2 + 1)]
+            else:
+                line = _extend(p.pos, cell, length)
+            cells = {c for c in line if self.grid.walkable(*c)}
+            for m in self.enemies():
+                if m.pos in cells:
+                    hits |= body(m)
+        elif k == "corpse_blast":
+            corpse = next((c for c in self.corpses if not getattr(c, "exploded", False)
+                           and chebyshev(c.pos, cell) <= 1), None)
+            if corpse is None:
+                return None
+            r = max(2, env.radius() or 3)
+            cells = {c for c in sq(corpse.pos, r) if self.grid.walkable(*c)}
+            for m in self.enemies():
+                if self.udist(m, corpse) <= r:
+                    hits |= body(m)
+        elif k == "chain":
+            path, hit = self._missile_path(p.pos, cell)
+            cells.update(path)
+            for m in hit:
+                hits |= body(m)
+        else:
+            return None
+        return cells, hits
+
     def _k_missile(self, s, env, target, cell, ap, mana):
         p = self.player
         x = s.extra
@@ -424,30 +562,34 @@ class SkillCaster:
                 return False
         if not self._in_range(cell, SPELL_RANGE, los=False):
             return False
-        n = x.get("targets", 1)
-        if n == "calc1":
-            n = max(1, env.calc("calc1"))
-        n = max(1, min(12, int(n)))
-        foes = []
-        if n > 1:
-            # spread: the n nearest enemies in front of you (towards the target cell)
-            cand = [m for m in self.enemies() if self.udist(m, p) <= SPELL_RANGE
-                    and self.grid.line_of_sight(p.pos, m.pos)]
-            ref = cell
-            cand.sort(key=lambda m: (chebyshev(m.pos, ref), self.udist(m, p)))
-            foes = cand[:n]
-        wake = foes[:]
+        n = self._spread_count(s, env)
         self._spend(ap, mana, cell, "attack" if s.weapon else "cast")
         kind = {"fire": "fireball", "cold": "cold", "ltng": "ltng", "pois": "spike", "mag": "bone"}.get(s.element, "arrow" if s.weapon else "spike")
         vm = self.vis_missile(s) or (self.weapon_missile(p) if s.weapon else None)
-        if n > 1 and foes:
-            hits = 0
-            for i, m in enumerate(foes):
-                self.emit("projectile", p, p.pos, m.pos, kind, vm)
-                if self._missile_hit(s, env, m):
-                    hits += 1
-            self._wake(wake)
+        if n > 1 and x.get("spread"):
+            # a fan of missiles (Teeth, Charged Bolt, Multiple Shot): each flies its own line and hits
+            # the first monster on it - several can hit the same one
+            shots = self._spread_shots(s, env, cell)
+            hit_any = [m for _, m in shots if m is not None]
+            self._wake(list({id(m): m for m in hit_any}.values()))
+            for path, m in shots:
+                end = m.pos if m is not None else (path[-1] if path else cell)
+                self.emit("projectile", p, p.pos, end, kind, vm)
+                if m is not None and m.alive:
+                    self._missile_hit(s, env, m)
             return True
+        if n > 1:
+            # Strafe: one shot at each of the n nearest monsters in sight
+            cand = [m for m in self.enemies() if self.udist(m, p) <= SPELL_RANGE
+                    and self.grid.line_of_sight(p.pos, m.pos)]
+            cand.sort(key=lambda m: (chebyshev(m.pos, cell), self.udist(m, p)))
+            foes = cand[:n]
+            if foes:
+                self._wake(foes)
+                for m in foes:
+                    self.emit("projectile", p, p.pos, m.pos, kind, vm)
+                    self._missile_hit(s, env, m)
+                return True
         hit, end = self._first_hit_on_line(p.pos, cell, pierce=bool(x.get("pierce")))
         self.emit("projectile", p, p.pos, hit[-1].pos if hit else end, kind, vm)
         if hit:

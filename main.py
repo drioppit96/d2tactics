@@ -593,6 +593,32 @@ class Game:
                 return u
         return None
 
+    def _skill_area(self, cell):
+        """Tiles your right-click skill would cover at `cell` (missile paths, blast areas)."""
+        w = self.world
+        p = w.player
+        rs = getattr(p, "right_skill", None)
+        if not rs or not self.opts.get("show_skill_area", True) or not hasattr(w, "skill_preview"):
+            return None
+        g = w.grid
+        if cell is None or not g.in_bounds(*cell) or not g.explored[cell[1]][cell[0]] or cell == p.pos:
+            return None
+        key = ("sk", rs, cell, p.pos, w.round, p.skills.level(rs),
+               tuple(m.pos for m in w.monsters if m.alive), len(getattr(w, "corpses", ())))
+        if key not in self._path_cache:
+            self._trim_cache()
+            try:
+                pv = w.skill_preview(rs, cell)
+            except Exception:
+                pv = None
+            if pv is not None:
+                from game.skillcast import SPELL_RANGE
+                kind = p.skills.tree[rs].kind
+                far = kind != "nova" and chebyshev(cell, p.pos) > SPELL_RANGE
+                pv = (pv[0], pv[1], far)
+            self._path_cache[key] = pv
+        return self._path_cache[key]
+
     def loot_on_screen(self):
         """[(cell, item)] for every item lying on the visible part of the map, nearest first."""
         w = self.world
@@ -978,6 +1004,7 @@ class Game:
             if not self.opts.get("show_move_range", True):
                 highlight = None
         m = self.monster_under_mouse(mouse) or self.monster_at(cell)
+        self.scene.skill_area = self._skill_area(m.pos if m is not None and m.ai != "npc" else cell)
         tip = None
         preview = None
         key_base = (p.pos, w.mode, p.ap, w.round, len(w.living_monsters()))

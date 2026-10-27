@@ -85,7 +85,7 @@ MASTERY_TYPES = {"Sword Mastery": {"swor", "knif"}, "Axe Mastery": {"axe"}, "Mac
 OVERRIDES = {
     # Amazon
     "Magic Arrow": dict(kind="missile", weapon=True), "Fire Arrow": dict(kind="missile", weapon=True),
-    "Cold Arrow": dict(kind="missile", weapon=True), "Multiple Shot": dict(kind="missile", weapon=True, targets="calc1"),
+    "Cold Arrow": dict(kind="missile", weapon=True), "Multiple Shot": dict(kind="missile", weapon=True, targets="calc1", spread=True),
     "Exploding Arrow": dict(kind="missile", weapon=True, splash=2), "Ice Arrow": dict(kind="missile", weapon=True),
     "Guided Arrow": dict(kind="missile", weapon=True, always_hit=True),
     "Strafe": dict(kind="missile", weapon=True, targets="calc1"),

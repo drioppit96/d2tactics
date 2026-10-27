@@ -79,6 +79,7 @@ class Scene:
         self.show_grid = False
         self.show_labels = False
         self.selected = None      # monster under the mouse (highlighted)
+        self.skill_area = None    # (cells, hit cells, out of range) of the right skill under the mouse
         self.opts = {}
         self._sel_draw = None
         self.flags = set()       # game_over / victory
@@ -455,6 +456,14 @@ class Scene:
                 self._diamond(surf, cam, x, y, (80, 200, 90, 90) if ok else (210, 60, 50, 90))
         if hover_cell and g.in_bounds(*hover_cell) and g.explored[hover_cell[1]][hover_cell[0]]:
             self._diamond(surf, cam, *hover_cell, (255, 255, 255, 40), outline=True)
+        if self.skill_area:
+            cells, hits, far = self.skill_area
+            for (x, y) in cells:
+                if g.in_bounds(x, y) and g.explored[y][x] and (x, y) not in hits:
+                    self._diamond(surf, cam, x, y, (120, 120, 120, 45) if far else (255, 170, 40, 55))
+            for (x, y) in hits:
+                if g.in_bounds(x, y):
+                    self._diamond(surf, cam, x, y, (120, 120, 120, 70) if far else (235, 60, 30, 105))
         sel = self.selected if self.selected is not None and self.selected.alive else None
         self._sel_draw = None
         if sel is not None and self.opts.get("highlight_tile", True):

@@ -69,7 +69,12 @@ Whirlwind +3); switching auras 1 AP. Your maximum AP grows: 8, +1 at levels 10/2
 **Monsters:** the one under the mouse is outlined in red with its tile(s) marked, and its info box
 sits to its left. Big monsters (Gargantuan Beasts, crow nests, Andariel ...) fill 3x3 cells.
 
-**Esc menu:** Options (light radius, monster / tile highlight, move range), Save and Exit Game
+**Aiming:** with a right-click skill selected, the tiles it will cover light up under the mouse -
+missile paths, Teeth / Charged Bolt / Multiple Shot fans, Fire Ball splash, novas, curse and
+blast areas; monsters it will hit are marked red (grey = out of range). Fans fly in a cone: the
+first missile goes where you aim, each one hits the first monster on its line.
+
+**Esc menu:** Options (light radius, monster / tile highlight, move range, skill area), Save and Exit Game
 (back to the hero screen), Return to Game. Options are kept in options.ini.
 
 **Loot window (V):** every item lying on the screen; click one to pick it up (in combat only
