@@ -456,6 +456,7 @@ class Scene:
                 self._diamond(surf, cam, x, y, (80, 200, 90, 90) if ok else (210, 60, 50, 90))
         if hover_cell and g.in_bounds(*hover_cell) and g.explored[hover_cell[1]][hover_cell[0]]:
             self._diamond(surf, cam, *hover_cell, (255, 255, 255, 40), outline=True)
+        self._draw_hazards(surf, cam, g)
         if self.skill_area:
             cells, hits, far = self.skill_area
             for (x, y) in cells:
@@ -490,6 +491,7 @@ class Scene:
             drawables.append((v.rx + v.ry + (0 if not v.dead else -0.4), layer, "unit", v))
         drawables.sort(key=lambda d: (d[0], d[1]))
 
+        far = []                 # enemies outside your light: drawn again, dimmed, above the darkness
         self._labels = []
         self.unit_hits = []      # (world-space rect, unit) for mouse picking, back to front
         # where the player is on screen: scenery drawn after him that covers him goes see-through
@@ -532,6 +534,9 @@ class Scene:
                 rect = assets.draw_unit(surf, u, pose, feet, s, max(0.35, b))
                 if u is sel and not v.dead:
                     self._sel_draw = (u, dict(pose), feet)
+                elif use_tiles and u.alive and not v.dead and not u.is_player and not getattr(u, "ally", False) \
+                        and math.hypot(v.rx - pv.rx, v.ry - pv.ry) > light * 0.7:
+                    far.append((u, dict(pose), feet))
                 if u.alive and not v.dead and hasattr(assets, "draw_overlay"):
                     for st in self._unit_states(u):
                         for ov in assets.state_overlays(st):
@@ -578,12 +583,51 @@ class Scene:
 
         if use_tiles:
             self._draw_darkness(surf, cam, light)
+            for u, pose, feet in far:
+                self._draw_ghost(surf, cam, u, pose, feet)
         if sel is not None:
             self._draw_selected(surf, cam, sel)
 
     def _footprint(self, u):
         r = getattr(u, "radius", 0)
         return [(u.x + dx, u.y + dy) for dy in range(-r, r + 1) for dx in range(-r, r + 1)]
+
+    HAZARD_COLORS = {"fire": (255, 120, 30, 70), "cold": (120, 170, 255, 70), "pois": (90, 220, 60, 70),
+                     "ltng": (230, 230, 120, 60)}
+
+    def _draw_hazards(self, surf, cam, g):
+        """Fire Wall, Blaze trails, Meteor fire, Blizzard ...: what keeps burning on the ground."""
+        hz = getattr(self.world, "hazards", None)
+        if not hz:
+            return
+        assets = self.assets
+        for i, h in enumerate(hz):
+            cells = h["cells"]
+            col = self.HAZARD_COLORS.get(h.get("elem"), (255, 120, 30, 60))
+            vis = h.get("vis")
+            dense = len(cells) <= 12
+            for (x, y) in cells:
+                if not g.in_bounds(x, y) or not g.visible[y][x]:
+                    continue
+                self._diamond(surf, cam, x, y, col)
+                if vis and hasattr(assets, "draw_missile") and (dense or (x + 2 * y) % 3 == 0):
+                    sx, sy = cam.cell_to_screen(x, y)
+                    # each cell starts its loop at a different point so the flames don't pulse together
+                    assets.draw_missile(surf, vis, (sx, sy), (0, 1), self.clock + (x * 7 + y * 13) % 10 * 0.07,
+                                        loop=True)
+
+    def _draw_ghost(self, surf, cam, u, pose, feet):
+        """A monster beyond your light radius, shown dimmed so you can see what is coming."""
+        size = 300
+        tmp = pygame.Surface((size, size), pygame.SRCALPHA)
+        tmp.fill((0, 0, 0, 0))
+        fx, fy = size // 2, size - 50
+        try:
+            self.assets.draw_unit(tmp, u, pose, (fx, fy), cam.scale, 1.0)
+        except Exception:
+            return
+        tmp.fill((150, 140, 135, 230), special_flags=pygame.BLEND_RGBA_MULT)
+        surf.blit(tmp, (int(feet[0] - fx), int(feet[1] - fy)))
 
     def _draw_selected(self, surf, cam, u):
         """The monster under the mouse: drawn again above the darkness with a red rim, and its

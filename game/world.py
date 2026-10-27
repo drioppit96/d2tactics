@@ -312,7 +312,8 @@ class World(SkillCaster, ItemActions):
 
     def sight_radius(self):
         # on D2 maps you see terrain well beyond your light radius, like in the game
-        return self.player.light + (6 if self.tilemap is not None else 0)
+        # (enemies show up about a screen away, even outside your light)
+        return max(self.player.light + 6, 26) if self.tilemap is not None else self.player.light
 
     # ------------------------------------------------------------ helpers
     def log(self, text, color=(220, 220, 220)):
@@ -483,8 +484,10 @@ class World(SkillCaster, ItemActions):
         p = self.player
         for step in path:
             p.face(*step)
+            prev = p.pos
             p.x, p.y = step
             walked.append(step)
+            self.blaze_step(prev)
             if self.mode == "combat":
                 p.ap -= 1
             else:
@@ -1670,8 +1673,18 @@ class World(SkillCaster, ItemActions):
         return True
 
     def _walk(self, m, steps):
+        walked = []
         for c in steps:
             m.face(*c)
             m.x, m.y = c
             m.ap -= 1
-        self.emit("move", m, list(steps))
+            walked.append(c)
+            if getattr(self, "hazards", None) and self.in_hazard(m, c):
+                # show the walk up to the fire first, then the burn
+                self.emit("move", m, walked)
+                walked = []
+                self.hazard_step(m, c)
+                if not m.alive:
+                    return
+        if walked:
+            self.emit("move", m, walked)

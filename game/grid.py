@@ -124,29 +124,57 @@ class Grid:
         return True
 
     def update_visibility(self, origin, radius):
+        """What you can see: rays from you to the edge of the radius, stopped by walls.
+        (Casting rays is far cheaper than a line-of-sight test per cell, so the radius can be a
+        whole screen.)"""
         vis = self.visible
         for x, y in self._lit:
             vis[y][x] = False
         lit = self._lit = []
         ox, oy = origin
-        for y in range(max(0, oy - radius), min(self.h, oy + radius + 1)):
-            for x in range(max(0, ox - radius), min(self.w, ox + radius + 1)):
-                if (x - ox) ** 2 + (y - oy) ** 2 > radius * radius:
-                    continue
-                if self.line_of_sight(origin, (x, y)):
-                    self.visible[y][x] = True
-                    lit.append((x, y))
-                    if not self.explored[y][x]:
-                        self.explored[y][x] = True
-                        self.new_explored.append((x, y))
-                        self.explored_cells.append((x, y))
-                    # reveal the walls bordering visible floor too
-                    for dx, dy in DIRS8:
-                        nx, ny = x + dx, y + dy
-                        if self.in_bounds(nx, ny) and self.cells[ny][nx] == WALL:
-                            self.visible[ny][nx] = True
-                            lit.append((nx, ny))
-                            if not self.explored[ny][nx]:
-                                self.explored[ny][nx] = True
-                                self.new_explored.append((nx, ny))
-                                self.explored_cells.append((nx, ny))
+        if not self.in_bounds(ox, oy):
+            return
+        explored, cells, w, h = self.explored, self.cells, self.w, self.h
+        r2 = radius * radius
+        new = self.new_explored
+        allc = self.explored_cells
+
+        def mark(x, y):
+            if not vis[y][x]:
+                vis[y][x] = True
+                lit.append((x, y))
+                if not explored[y][x]:
+                    explored[y][x] = True
+                    new.append((x, y))
+                    allc.append((x, y))
+        mark(ox, oy)
+        ends = []
+        for i in range(-radius, radius + 1):
+            ends += [(ox + i, oy - radius), (ox + i, oy + radius), (ox - radius, oy + i), (ox + radius, oy + i)]
+        for x1, y1 in ends:
+            x0, y0 = ox, oy
+            dx, dy = abs(x1 - x0), -abs(y1 - y0)
+            sx = 1 if x0 < x1 else -1
+            sy = 1 if y0 < y1 else -1
+            err = dx + dy
+            while (x0, y0) != (x1, y1):
+                e2 = 2 * err
+                if e2 >= dy:
+                    err += dy
+                    x0 += sx
+                if e2 <= dx:
+                    err += dx
+                    y0 += sy
+                if not (0 <= x0 < w and 0 <= y0 < h) or (x0 - ox) ** 2 + (y0 - oy) ** 2 > r2:
+                    break
+                mark(x0, y0)
+                if cells[y0][x0] == WALL:
+                    break
+        # reveal the walls bordering visible floor too
+        for x, y in list(lit):
+            if cells[y][x] == WALL:
+                continue
+            for ddx, ddy in DIRS8:
+                nx, ny = x + ddx, y + ddy
+                if 0 <= nx < w and 0 <= ny < h and cells[ny][nx] == WALL:
+                    mark(nx, ny)

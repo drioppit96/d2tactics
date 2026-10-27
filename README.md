@@ -66,6 +66,12 @@ Whirlwind +3); switching auras 1 AP. Your maximum AP grows: 8, +1 at levels 10/2
 
 **Dying:** you wake up in the Rogue Encampment and lose half your gold (press R).
 
+**Seeing them coming:** you see about a screen around you; monsters outside your light are shown
+dimmed instead of hiding in the dark.
+
+**On the ground:** Fire Wall, Blaze (a fire trail behind you while it lasts), Meteor and Blizzard keep
+burning / freezing for a few turns; monsters standing in it or walking through it get hurt.
+
 **Monsters:** the one under the mouse is outlined in red with its tile(s) marked, and its info box
 sits to its left. Big monsters (Gargantuan Beasts, crow nests, Andariel ...) fill 3x3 cells.
 

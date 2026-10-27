@@ -515,7 +515,7 @@ class SkillCaster:
                 if chebyshev(m.pos, cell) <= r:
                     hits |= body(m)
         elif k == "line":
-            length = x.get("length", 5)
+            length = self._line_length(s, env)
             if x.get("across"):
                 dx, dy = cell[0] - p.x, cell[1] - p.y
                 px, py = (-(dy > 0) + (dy < 0), (dx > 0) - (dx < 0))
@@ -598,12 +598,14 @@ class SkillCaster:
             self._missile_hit(s, env, m)
         if x.get("splash"):
             centre = hit[0].pos if hit else end
+            if s.key == "Frozen Orb":
+                self.emit("nova", p, centre, x["splash"], "cold", "frozenorbbolt")   # the orb bursts into ice bolts
             others = [m for m in self.enemies() if chebyshev(m.pos, centre) <= x["splash"] and m not in hit]
             self._wake(others)
             for m in others:
                 self.skill_damage(env, m, 100 if not s.weapon else 60, show=False)
             if x.get("linger"):
-                self._add_hazard(centre, x["splash"], env, x["linger"])
+                self._add_hazard(centre, x["splash"], env, x["linger"], self.ground_missile(s))
         return True
 
     def _missile_hit(self, s, env, m):
@@ -642,14 +644,14 @@ class SkillCaster:
         for m in foes:
             self.skill_damage(env, m)
         if s.extra.get("linger"):
-            self._add_hazard(cell, r, env, s.extra["linger"])
+            self._add_hazard(cell, r, env, s.extra["linger"], self.ground_missile(s))
         return True
 
     def _k_line(self, s, env, target, cell, ap, mana):
         p = self.player
         if cell is None:
             return False
-        length = s.extra.get("length", 5)
+        length = self._line_length(s, env)
         if s.extra.get("across"):
             # a wall across the line of fire, centred on the target cell
             if not self._in_range(cell):
@@ -673,20 +675,66 @@ class SkillCaster:
             if s.extra.get("knock") and m.alive:
                 self._knockback(p, m)
         if s.extra.get("linger"):
-            self.hazards.append({"cells": set(cells), "env": env, "turns": s.extra["linger"]})
+            self.hazards.append({"cells": {c for c in cells}, "env": env, "turns": s.extra["linger"],
+                                 "vis": self.ground_missile(s), "elem": s.element, "hit": set()})
         return True
 
-    def _add_hazard(self, centre, r, env, turns):
+    @staticmethod
+    def _line_length(s, env):
+        n = s.extra.get("length", 5)
+        if s.key == "Fire Wall":
+            n = 5 + 2 * (env.lvl // 2)     # D2's wall grows with the skill level
+        return n
+
+    GROUND_MISSILES = {"Fire Wall": "firewall", "Meteor": "meteorfire", "Blizzard": "blizzard1",
+                       "Blaze": "blaze", "Immolation Arrow": "immolationfire", "Fire Ball": "meteorfire",
+                       "Firestorm": "firestorm", "Poison Nova": "poisonnova", "Volcano": "meteorfire",
+                       "Armageddon": "meteorfire", "Wake of Fire Sentry": "firewall"}
+
+    def ground_missile(self, s):
+        """The Missiles.txt animation that keeps burning / freezing on the ground for a skill."""
+        return self.GROUND_MISSILES.get(s.key) or self.vis_missile(s, area=True)
+
+    def _add_hazard(self, centre, r, env, turns, vis=None):
         cells = {(centre[0] + dx, centre[1] + dy) for dx in range(-r, r + 1) for dy in range(-r, r + 1)}
-        self.hazards.append({"cells": cells, "env": env, "turns": turns})
+        cells = {c for c in cells if self.grid.walkable(*c)}
+        self.hazards.append({"cells": cells, "env": env, "turns": turns, "vis": vis,
+                             "elem": env.s.element, "hit": set()})
+
+    def in_hazard(self, unit, cell):
+        return not unit.is_player and not getattr(unit, "ally", False) and any(
+            cell in h["cells"] and id(unit) not in h["hit"] for h in self.hazards)
+
+    def hazard_step(self, unit, cell):
+        """A monster walking into fire / ice on the ground gets hurt (once per hazard per round)."""
+        for h in getattr(self, "hazards", ()):
+            if cell in h["cells"] and id(unit) not in h["hit"] and unit.alive and not getattr(unit, "ally", False) \
+                    and not unit.is_player:
+                h["hit"].add(id(unit))
+                self.skill_damage(h["env"], unit, 50, show=False)
+
+    def blaze_step(self, cell):
+        """Blaze: every step you take leaves burning ground behind you (D2)."""
+        p = self.player
+        if "Blaze" not in getattr(p, "buffs", {}) or "Blaze" not in p.skills.tree:
+            return
+        env = self._skill_env("Blaze")
+        if not hasattr(self, "hazards"):
+            self.hazards = []
+        self.hazards.append({"cells": {cell}, "env": env, "turns": 3, "vis": "blaze", "elem": "fire",
+                             "hit": set(), "trail": True})
+        trail = [h for h in self.hazards if h.get("trail")]
+        for h in trail[:-24]:              # outside combat turns don't pass: keep the trail short
+            self.hazards.remove(h)
 
     def tick_hazards(self):
         keep = []
         for h in getattr(self, "hazards", []):
             for m in self.enemies():
-                if m.pos in h["cells"]:
+                if m.pos in h["cells"] and id(m) not in h["hit"]:
                     m.aware = True
                     self.skill_damage(h["env"], m, 50, show=False)
+            h["hit"] = set()
             h["turns"] -= 1
             if h["turns"] > 0:
                 keep.append(h)
@@ -826,7 +874,7 @@ class SkillCaster:
                 stats[ed[0] + "_dmg"] = (ed[1], ed[2])
         if key == "Holy Shield":
             stats["block"] = stats.get("block", 0) + 25
-        if s.extra.get("periodic") or key == "Blaze":
+        if s.extra.get("periodic"):
             extra["periodic"] = key
         p.buffs[key] = {"turns": turns, "stats": stats, "title": s.title, **extra}
         self._spend(ap, mana, None, "cast")
