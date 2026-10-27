@@ -78,16 +78,9 @@ class Game:
         self.opts = load_options()
         self.menu = None
         if getattr(self.assets, "act_kit", None) is not None:
-            # D2 files: start at D2's character creation screen
+            # D2 files: start at D2's character select screen (creation when there are no heroes yet)
             self.hud = self.make_hud()
-            from render.charcreate import CharCreate
-            try:
-                self.creator = CharCreate(self)
-                self.state = "create"
-            except Exception:
-                import traceback
-                traceback.print_exc()
-                self.creator = None
+            self.open_frontend()
         if self.state != "create":
             self.new_world()
         self.running = True
@@ -328,6 +321,20 @@ class Game:
             h.show_skills = False
         elif opt == "Identify Items":
             w.identify_all()
+        elif opt == "Level 99 (test)":
+            # TESTING ONLY: jump to level 99 with every stat and skill point the levels give
+            p = w.player
+            if p.level >= 99:
+                w.log("Akara: You are already as strong as anyone can be.", (220, 210, 170))
+            else:
+                before = p.level
+                p.gain_xp(max(0, p.xp_threshold(98) - p.xp))
+                p.recalc()
+                p.hp, p.mana = p.max_hp, p.max_mana
+                w.emit("levelup", p.level)
+                w.log("Akara: Level %d -> 99. You have %d stat points and %d skill points to spend."
+                      % (before, p.stat_points, p.skills.points), (199, 179, 119))
+                self.save()
         elif opt == "Hire":
             from game import quests
             q = w.player.quests
@@ -419,14 +426,32 @@ class Game:
         """D2: Save and Exit Game -> back to the hero select screen."""
         self.save()
         self.menu = None
-        from render.charcreate import CharCreate
+        self.open_frontend(select=True)
+        if self.state != "create":
+            self.running = False
+
+    def open_frontend(self, select=None):
+        """Character select (if you have heroes, or select=True) or character creation."""
+        from game.save import list_saves
+        if select is None:
+            try:
+                select = bool(list_saves())
+            except Exception:
+                select = False
         try:
-            self.creator = CharCreate(self)
+            if select:
+                from render.charselect import CharSelect
+                self.creator = CharSelect(self)
+            else:
+                from render.charcreate import CharCreate
+                self.creator = CharCreate(self)
             self.state = "create"
         except Exception:
             import traceback
             traceback.print_exc()
-            self.running = False
+            if select:
+                return self.open_frontend(select=False)
+            self.creator = None
 
     def prebuild(self, target):
         """Generate a level in the background so entering it needs no loading screen."""

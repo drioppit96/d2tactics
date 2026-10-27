@@ -24,11 +24,11 @@ sys.path.insert(0, ROOT)
 
 from d2.mpq import MPQSet  # noqa: E402
 
-BATCH = 5 if "--batch5" in sys.argv else 4 if "--batch4" in sys.argv else 3 if "--batch3" in sys.argv else \
+BATCH = 6 if "--batch6" in sys.argv else 5 if "--batch5" in sys.argv else 4 if "--batch4" in sys.argv else 3 if "--batch3" in sys.argv else \
     2 if "--batch2" in sys.argv else 1
-OUT = os.path.join(ROOT, {1: "d2samples", 2: "d2samples2", 3: "d2samples3", 4: "d2samples4", 5: "d2samples5"}[BATCH])
+OUT = os.path.join(ROOT, {1: "d2samples", 2: "d2samples2", 3: "d2samples3", 4: "d2samples4", 5: "d2samples5", 6: "d2samples6"}[BATCH])
 ZIP_PATH = OUT + ".zip"
-BUDGET = {1: 45, 2: 30, 3: 40, 4: 45, 5: 45}[BATCH] * 1024 * 1024        # stay well under upload limits
+BUDGET = {1: 45, 2: 30, 3: 40, 4: 45, 5: 45, 6: 45}[BATCH] * 1024 * 1024        # stay well under upload limits
 
 COMPONENTS = ["HD", "TR", "LG", "RA", "LA", "RH", "LH", "SH",
               "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8"]
@@ -512,6 +512,39 @@ class Extractor:
                         n += 1
         print("  %d files" % n)
 
+    # ------------------------------------------------------------ batch 6: hero select screen, monster weapons
+    def step6_charselect(self):
+        print("Character select screen, popups, palettes...")
+        n = self._grab_pattern("data\\global\\ui\\charselect\\", 6 * 1024 * 1024)
+        for f in ("PopUpOkCancel.dc6", "PopUp_340x224.dc6", "OkCancelButtonBlank.dc6", "WideButtonBlank.dc6"):
+            if self.grab("data\\global\\ui\\FrontEnd\\" + f) is not None:
+                n += 1
+        for name in ("act1", "fechar", "sky", "units", "menu0", "menu1", "static", "loading"):
+            if self.grab("data\\global\\palette\\%s\\pal.dat" % name) is not None:
+                n += 1
+        print("  %d files" % n)
+
+    def step6_monsters(self):
+        print("Act 1 monsters that fight with weapons (Moon Clan, Dark Hunters, archers)...")
+        n = 0
+        for tok in ("GM", "CR", "SK", "BN", "BR", "SI"):
+            prefix = "data\\global\\monsters\\%s\\" % tok.lower()
+            start = self.total
+            for name in sorted(self.known):
+                low = name.lower()
+                if not low.startswith(prefix) or self.total - start > 5 * 1024 * 1024:
+                    continue
+                stem = low.rsplit("\\", 1)[-1].rsplit(".", 1)[0]
+                if low.endswith(".cof"):
+                    ok = stem[2:4] in ("nu", "wl", "a1", "gh") and stem[4:] in ("1hs", "2hs", "bow", "hth")
+                elif low.endswith(".dcc"):
+                    ok = stem[7:9] in ("nu", "a1") and stem[9:] in ("1hs", "2hs", "bow", "hth")
+                else:
+                    ok = False
+                if ok and self.grab(name) is not None:
+                    n += 1
+        print("  %d files" % n)
+
     def finish(self):
         with open(os.path.join(OUT, "manifest.json"), "w") as f:
             json.dump({"files": self.manifest, "missing": self.tried_missing[:3000],
@@ -563,8 +596,10 @@ def main():
         steps = (ex.step2_listfiles, ex.step3_ui, ex.step3_act1_maps)
     elif BATCH == 4:
         steps = (ex.step2_listfiles, ex.step4_frontend, ex.step4_classes)
-    else:
+    elif BATCH == 5:
         steps = (ex.step2_listfiles, ex.step5_palettes, ex.step5_frontend, ex.step5_objects)
+    else:
+        steps = (ex.step2_listfiles, ex.step6_charselect, ex.step6_monsters)
     for step in steps:
         try:
             step()

@@ -74,6 +74,12 @@ missile paths, Teeth / Charged Bolt / Multiple Shot fans, Fire Ball splash, nova
 blast areas; monsters it will hit are marked red (grey = out of range). Fans fly in a cone: the
 first missile goes where you aim, each one hits the first monster on its line.
 
+**Heroes:** the game opens on D2's character select screen - your heroes standing in their gear,
+two columns of four (mouse wheel / arrows when you have more). Double click or OK plays,
+Create New Character opens the creation screen, Delete Character asks first and moves the
+save to saves\deleted. *Testing:* Akara has a "Level 99 (test)" option that gives you every
+level with all its stat and skill points (will be removed later).
+
 **Esc menu:** Options (light radius, monster / tile highlight, move range, skill area), Save and Exit Game
 (back to the hero screen), Return to Game. Options are kept in options.ini.
 

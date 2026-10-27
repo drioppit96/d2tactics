@@ -13,7 +13,7 @@ RED = (255, 80, 80)
 
 VENDORS = {"akara": "akara", "charsi": "charsi", "gheed": "gheed"}
 NPC_OPTIONS = {
-    "akara": ["Talk", "Trade"], "charsi": ["Talk", "Trade"], "gheed": ["Talk", "Trade", "Gamble"],
+    "akara": ["Talk", "Trade", "Level 99 (test)"],   # TEST ONLY - remove the last entry later "charsi": ["Talk", "Trade"], "gheed": ["Talk", "Trade", "Gamble"],
     "kashya": ["Talk", "Hire"], "cain1": ["Talk", "Identify Items"], "warriv1": ["Talk", "Go East"],
 }
 STORE_W, STORE_H = 10, 10

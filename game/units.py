@@ -328,7 +328,7 @@ class Player(Unit):
         """Returns number of levels gained."""
         self.xp += amount
         gained = 0
-        while self.xp >= self.xp_to_next():
+        while self.level < 99 and self.xp >= self.xp_to_next():
             self.level += 1
             self.stat_points += 5
             if hasattr(self, "skills"):

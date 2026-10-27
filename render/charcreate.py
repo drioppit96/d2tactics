@@ -52,14 +52,17 @@ class Anim:
         return len(self.frames) / float(self.fps) if self.frames else 0.0
 
 
-class CharCreate:
-    def __init__(self, game):
+class FrontEnd:
+    """Shared bits of D2's front-end screens: palettes, DC6 loading, 800x600 layout, text, cursor."""
+    PALETTES = ("fechar", "sky", "units", "act1")
+
+    def _setup(self, game):
         self.game = game
         self.assets = game.assets
         self.src = self.assets.src
         self.palette = None
-        for p in ("data\\global\\palette\\fechar\\pal.dat", "data\\global\\palette\\sky\\pal.dat",
-                  "data\\global\\palette\\units\\pal.dat", "data\\global\\palette\\act1\\pal.dat"):
+        for name in self.PALETTES:
+            p = "data\\global\\palette\\%s\\pal.dat" % name
             if self.src.has(p):
                 try:
                     self.palette = load_palette(self.src.read(p))
@@ -71,38 +74,19 @@ class CharCreate:
             if self.src.has(p):
                 self.unit_palette = load_palette(self.src.read(p))
                 break
-        self.bg = self._background()
-        # D2's hero select is drawn entirely in the front-end palette (heroes and fire too);
-        # only the buttons use the units palette
-        self.fire = self._anim(FE + "fire.dc6")
-        self.anims = {}
-        for code, folder, pre, pos in HEROES:
-            base = FE + folder + "\\" + pre
-            a = {k: self._anim(base + suffix + ".dc6")
-                 for k, suffix in (("idle", "nu1"), ("hover", "nu2"), ("forward", "fw"), ("selected", "nu3"),
-                                   ("back", "bw"))}
-            a["forward_fx"] = self._anim(base + "fws.dc6")
-            a["selected_fx"] = self._anim(base + "nu3s.dc6")
-            a["back_fx"] = self._anim(base + "bws.dc6")
-            self.anims[code] = a
-        self.state = {c: ("idle", 0.0) for c, _, _, _ in HEROES}
-        try:
-            from game.save import list_saves
-            self.saves = list_saves()[:8]
-        except Exception:
-            self.saves = []
-        self.selected = None
-        self.hover = None
-        self.name = ""
-        self.t = 0.0
-        self.buttons = self._frames(FE + "mediumbuttonblank.dc6", pal=self.unit_palette) or \
-            self._frames("data\\global\\ui\\PANEL\\mediumbuttonblank.dc6", pal=self.unit_palette)
         hud = getattr(game, "hud", None)
         self.f30 = getattr(hud, "f30", None)
         self.f16 = getattr(hud, "f16", None)
         self.f10 = getattr(hud, "f10", None)
+        self.f42 = None
+        if hud is not None and hasattr(hud, "f16"):
+            try:
+                from .d2hud import D2Font
+                self.f42 = D2Font(self.src, "font42")
+            except Exception:
+                self.f42 = None
+        self.t = 0.0
 
-    # ------------------------------------------------------------ loading
     def _frames(self, path, pal=None):
         if not self.src.has(path):
             return None
@@ -129,9 +113,10 @@ class CharCreate:
         fr = self._frames(path, pal)
         return Anim(fr) if fr else None
 
-    def _background(self):
-        for name in ("charactercreationscreenEXP.dc6", "charactercreate.dc6", "CharacterCreate.dc6"):
-            fr = self._frames(FE + name)
+    def _tiled(self, paths, pal=None):
+        """A full-screen DC6 stored as 256x256 tiles -> one 800x600 surface (first file found)."""
+        for path in paths:
+            fr = self._frames(path, pal)
             if fr:
                 bg = pygame.Surface((800, 600))
                 bg.fill((0, 0, 0))
@@ -149,7 +134,6 @@ class CharCreate:
                 return bg
         return None
 
-    # ------------------------------------------------------------ layout helpers
     def _scale(self):
         W, H = self.game.screen.get_size()
         k = min(W / 800.0, H / 600.0)
@@ -159,6 +143,78 @@ class CharCreate:
         k, ox, oy = self._scale()
         return (pos[0] - ox) / k, (pos[1] - oy) / k
 
+    def _present(self, screen, canvas):
+        k, ox, oy = self._scale()
+        img = pygame.transform.smoothscale(canvas, (int(800 * k), int(600 * k))) if abs(k - 1) > 0.01 else canvas
+        screen.fill((0, 0, 0))
+        screen.blit(img, (int(ox), int(oy)))
+        hud = getattr(self.game, "hud", None)
+        if hud is not None and getattr(hud, "cursor", None):
+            mx, my = pygame.mouse.get_pos()
+            cur = hud.cursor[0]
+            if cur is not None:
+                screen.blit(pygame.transform.smoothscale(cur, (int(cur.get_width() * k), int(cur.get_height() * k))), (mx, my))
+
+    def _text(self, surf, font, text, color, x, y, center=False):
+        if font is None:
+            f = self.game.fonts["med"]
+            img = f.render(text, True, color)
+        else:
+            img = font.render(text, color, self.assets.indexed_surface)
+        if center:
+            x -= img.get_width() / 2
+        surf.blit(img, (int(x), int(y)))
+        return img.get_width()
+
+    def _button(self, canvas, frames, rect, label, enabled=True, font=None):
+        if frames and frames[0][0] is not None:
+            canvas.blit(frames[0][0], rect.topleft)
+        else:
+            pygame.draw.rect(canvas, (40, 34, 26), rect)
+            pygame.draw.rect(canvas, (120, 110, 80), rect, 1)
+        self._text(canvas, font or self.f16, label, WHITE if enabled else GREY, rect.centerx, rect.y + 10, center=True)
+
+
+class CharCreate(FrontEnd):
+    def __init__(self, game):
+        self._setup(game)
+        self.bg = self._background()
+        # D2's hero select is drawn entirely in the front-end palette (heroes and fire too);
+        # only the buttons use the units palette
+        self.fire = self._anim(FE + "fire.dc6")
+        self.anims = {}
+        for code, folder, pre, pos in HEROES:
+            base = FE + folder + "\\" + pre
+            a = {k: self._anim(base + suffix + ".dc6")
+                 for k, suffix in (("idle", "nu1"), ("hover", "nu2"), ("forward", "fw"), ("selected", "nu3"),
+                                   ("back", "bw"))}
+            a["forward_fx"] = self._anim(base + "fws.dc6")
+            a["selected_fx"] = self._anim(base + "nu3s.dc6")
+            a["back_fx"] = self._anim(base + "bws.dc6")
+            self.anims[code] = a
+        self.state = {c: ("idle", 0.0) for c, _, _, _ in HEROES}
+        try:
+            from game.save import list_saves
+            self.has_saves = bool(list_saves())
+        except Exception:
+            self.has_saves = False
+        self.selected = None
+        self.hover = None
+        self.name = ""
+        self.buttons = self._frames(FE + "mediumbuttonblank.dc6", pal=self.unit_palette) or \
+            self._frames("data\\global\\ui\\PANEL\\mediumbuttonblank.dc6", pal=self.unit_palette)
+
+    def _background(self):
+        return self._tiled([FE + n for n in ("charactercreationscreenEXP.dc6", "charactercreate.dc6",
+                                              "CharacterCreate.dc6")])
+
+    def leave(self):
+        """EXIT: back to the character select screen (or quit when there is nobody to select)."""
+        if self.has_saves:
+            self.game.open_frontend(select=True)
+        else:
+            self.game.running = False
+
     def _hero_rect(self, code, pos):
         a = self.anims.get(code, {})
         an = a.get("idle")
@@ -167,9 +223,6 @@ class CharCreate:
             img, xo, yo = fr
             return pygame.Rect(pos[0] + xo, pos[1] + yo - img.get_height(), img.get_width(), img.get_height())
         return pygame.Rect(pos[0] - 30, pos[1] - 110, 60, 110)
-
-    def save_rect(self, i):
-        return pygame.Rect(14, 120 + i * 30, 250, 26)
 
     def ok_rect(self):
         return pygame.Rect(627, 552, 128, 35)
@@ -185,12 +238,8 @@ class CharCreate:
                 self.confirm()
                 return
             if self.exit_rect().collidepoint((lx, ly)):
-                self.game.running = False
+                self.leave()
                 return
-            for i, d in enumerate(self.saves):
-                if self.save_rect(i).collidepoint((lx, ly)):
-                    self.game.start_act(d.get("cls", "bar"), d.get("name", "Hero"), saved=d)
-                    return
             for code, _, _, pos in sorted(HEROES, key=lambda h: -h[3][1]):
                 if self._hero_rect(code, pos).collidepoint((lx, ly)):
                     self.select(code)
@@ -209,7 +258,7 @@ class CharCreate:
                 if self.selected:
                     self.select(None)
                 else:
-                    self.game.running = False
+                    self.leave()
             elif ev.key == pygame.K_BACKSPACE:
                 self.name = self.name[:-1]
             else:
@@ -287,18 +336,6 @@ class CharCreate:
             self._text(canvas, self.f16, BLURB[show], GOLD, 400, 64, center=True)
         else:
             self._text(canvas, self.f30, "Select Hero Class", WHITE, 400, 24, center=True)
-        # saved heroes (click to continue)
-        if self.saves:
-            self._text(canvas, self.f16, "Continue:", GOLD, 18, 96)
-            lx, ly = self._to_logical(pygame.mouse.get_pos())
-            for i, d in enumerate(self.saves):
-                r = self.save_rect(i)
-                bg = pygame.Surface(r.size, pygame.SRCALPHA)
-                bg.fill((70, 56, 30, 210) if r.collidepoint((lx, ly)) else (0, 0, 0, 170))
-                canvas.blit(bg, r.topleft)
-                pygame.draw.rect(canvas, (120, 110, 80), r, 1)
-                label = "%s - level %d %s" % (d.get("name", "?"), d.get("level", 1), NAMES.get(d.get("cls"), "?"))
-                self._text(canvas, self.f16, label, WHITE, r.x + 6, r.y + 5)
         # name box, OK / EXIT
         if self.selected:
             self._text(canvas, self.f16, "Character Name", GOLD, 400, 488, center=True)
@@ -309,29 +346,5 @@ class CharCreate:
             self._text(canvas, self.f16, self.name + cursor, WHITE, box.x + 6, box.y + 5)
         for rect, label in ((self.exit_rect(), "EXIT"), (self.ok_rect(), "OK")) if self.selected else \
                 ((self.exit_rect(), "EXIT"),):
-            if self.buttons and self.buttons[0][0] is not None:
-                canvas.blit(self.buttons[0][0], rect.topleft)
-            else:
-                pygame.draw.rect(canvas, (40, 34, 26), rect)
-                pygame.draw.rect(canvas, (120, 110, 80), rect, 1)
-            col = WHITE if label == "EXIT" or self.selected else GREY
-            self._text(canvas, self.f16, label, col, rect.centerx, rect.y + 10, center=True)
-        img = pygame.transform.smoothscale(canvas, (int(800 * k), int(600 * k))) if abs(k - 1) > 0.01 else canvas
-        screen.fill((0, 0, 0))
-        screen.blit(img, (int(ox), int(oy)))
-        hud = getattr(self.game, "hud", None)
-        if hud is not None and getattr(hud, "cursor", None):
-            mx, my = pygame.mouse.get_pos()
-            cur = hud.cursor[0]
-            if cur is not None:
-                screen.blit(pygame.transform.smoothscale(cur, (int(cur.get_width() * k), int(cur.get_height() * k))), (mx, my))
-
-    def _text(self, surf, font, text, color, x, y, center=False):
-        if font is None:
-            f = self.game.fonts["med"]
-            img = f.render(text, True, color)
-        else:
-            img = font.render(text, color, self.assets.indexed_surface)
-        if center:
-            x -= img.get_width() / 2
-        surf.blit(img, (int(x), int(y)))
+            self._button(canvas, self.buttons, rect, label)
+        self._present(screen, canvas)

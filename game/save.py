@@ -108,6 +108,22 @@ def save_character(player, difficulty="normal"):
     return path
 
 
+def delete_character(name):
+    """Delete a hero: the save is moved to saves/deleted (move it back to undo)."""
+    path = os.path.join(SAVE_DIR, _safe(name) + ".json")
+    if not os.path.isfile(path):
+        return False
+    trash = os.path.join(SAVE_DIR, "deleted")
+    os.makedirs(trash, exist_ok=True)
+    dest = os.path.join(trash, _safe(name) + ".json")
+    n = 1
+    while os.path.exists(dest):
+        n += 1
+        dest = os.path.join(trash, "%s (%d).json" % (_safe(name), n))
+    os.replace(path, dest)
+    return True
+
+
 def list_saves():
     out = []
     if not os.path.isdir(SAVE_DIR):
