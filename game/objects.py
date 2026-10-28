@@ -448,6 +448,10 @@ def _loot(world, o):
     if kind == "xbarrel":
         _explode(world, o, lvl)
         return True
+    data = data_for(c)
+    trap = _int(data.rows.get(o["oid"], {}).get("trapprob")) if data else 0
+    if trap and rng.randrange(100) < trap:
+        _trap(world, o, lvl)
     if kind in ("weapon_rack", "armor_rack"):
         b = c.pick_base(max(1, lvl), rng, ("weapon",) if kind == "weapon_rack" else ("armor",))
         if b:
@@ -472,6 +476,18 @@ def _loot(world, o):
     if not drops and kind in OPEN_WORD:
         world.log("It's empty.", (160, 160, 160))
     return True
+
+
+def _trap(world, o, lvl):
+    """D2's trapped chests: fire, lightning or poison bursts out when you open them."""
+    rng = world.rng
+    el = rng.choice(("fire", "ltng", "pois", "cold"))
+    mis = {"fire": "fireexplode", "ltng": "chargedboltexplode", "pois": "poisonnova", "cold": "iceexplode"}[el]
+    world.emit("explosion", o["cell"], mis)
+    world.log("It was trapped!", (255, 140, 60))
+    p = world.player
+    if p.alive and chebyshev(p.pos, o["cell"]) <= 3:
+        world.elem_hit(p, el, 1 + lvl, 4 + lvl * 3, None, 75, show=False)
 
 
 def _pick(c, lvl, rng, mf, gf, nothing):

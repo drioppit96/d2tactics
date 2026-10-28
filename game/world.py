@@ -475,12 +475,12 @@ class World(SkillCaster, ItemActions):
         for m in self.living_monsters():
             if m.aware or m.ai == "npc":
                 continue
-            if self.udist(m, p) <= SIGHT and self.grid.line_of_sight(m.pos, p.pos):
+            if self.udist(m, p) <= getattr(m, "sight", SIGHT) and self.grid.line_of_sight(m.pos, p.pos):
                 newly.append(m)
         for m in list(newly):
             m.aware = True
             for o in self.living_monsters():
-                if not o.aware and o.ai != "npc" and self.udist(o, m) <= ALERT_RADIUS:
+                if not o.aware and o.ai != "npc" and self.udist(o, m) <= ALERT_RADIUS and not getattr(o, "sight", None):
                     o.aware = True
                     newly.append(o)
         if newly and self.mode == "explore":
@@ -488,8 +488,8 @@ class World(SkillCaster, ItemActions):
             self.round = 1
             self.player.ap = self.player.max_ap
             self.emit("combat_start")
-            names = sorted({m.name for m in newly})
-            self.log(f"Combat! {', '.join(names)} spotted you.", RED)
+            names = sorted({m.name for m in newly if not getattr(m, "hidden", False)})
+            self.log(f"Combat! {', '.join(names)} spotted you." if names else "Combat! A trap!", RED)
         return newly
 
     def check_combat_end(self):
@@ -1248,6 +1248,11 @@ class World(SkillCaster, ItemActions):
         self.tick_player_buffs()
         p.ap = p.max_ap + min(3, p.frenzy)
         p.frenzy = 0
+        if p.effects.get("chilled"):          # Cold Enchanted / Holy Freeze: you are slowed
+            p.ap = max(1, p.ap - 2)
+            p.effects["chilled"] -= 1
+            if p.effects["chilled"] <= 0:
+                p.effects.pop("chilled")
         p.mana = min(p.max_mana, p.mana + self.mana_regen())
         if getattr(p, "regen", 0):
             p.hp = min(p.max_hp, p.hp + p.regen)
@@ -1528,12 +1533,17 @@ class World(SkillCaster, ItemActions):
         dealt = dmg
         if dmg > 0:
             self._damage(target, dmg, attacker)
-        from . import durability, itemfx
+        from . import durability, itemfx, monmods
         if attacker.is_player:
             durability.wear(self, attacker, "weapon")
             itemfx.on_hit(self, attacker, target, dmg, ranged=bool(ranged_kind))
+            if not target.is_player:
+                monmods.on_struck(self, target)
+                if not ranged_kind:
+                    monmods.thorns(self, target, attacker, dmg)
         elif target.is_player and dmg > 0:
             durability.wear(self, target, "armor")
+            monmods.on_monster_hit(self, attacker, target, dmg)
             itemfx.on_struck(self, attacker)
         if mods.get("elem") and target.alive:
             et, lo, hi, ln = mods["elem"]
@@ -1572,7 +1582,7 @@ class World(SkillCaster, ItemActions):
         return True
 
     def _knockback(self, src_unit, target, cells=1):
-        if getattr(target, "radius", 0):
+        if getattr(target, "radius", 0) or getattr(target, "stationary", False):
             return          # too big to push around
         for _ in range(cells):
             dx = (target.x > src_unit.x) - (target.x < src_unit.x)
@@ -1626,6 +1636,9 @@ class World(SkillCaster, ItemActions):
             return
         self.corpses.append(unit)
         p = self.player
+        if getattr(unit, "mods", None):
+            from . import monmods
+            monmods.on_death(self, unit)
         gained = p.gain_xp(unit.xp_value * (100 + max(0, getattr(p, "xp_pct", 0))) // 100)
         if getattr(p, "life_kill", 0) and p.alive:
             p.hp = min(p.max_hp, p.hp + p.life_kill)
@@ -1679,6 +1692,15 @@ class World(SkillCaster, ItemActions):
         eff = m.effects
         if not self.monster_status(m):
             return
+        if getattr(m, "mods", None) or getattr(m, "aura", None):
+            from . import monmods
+            monmods.turn_start(self, m)
+            if not p.alive:
+                return
+        if getattr(m, "special", None):
+            from . import specialmon
+            if specialmon.turn(self, m):
+                return
         for k in ("bc", "taunt"):
             if eff.get(k + "_turns"):
                 eff[k + "_turns"] -= 1
@@ -1757,6 +1779,8 @@ class World(SkillCaster, ItemActions):
             m.ap -= m.attack_cost
             kind = "fireball" if m.ai == "shaman" else "spike"
             self._resolve_attack(m, p, ranged_kind=kind)
+            if getattr(m, "multishot", False) and p.alive:
+                self._resolve_attack(m, p, ranged_kind=kind, quiet_anim=True)   # Multiple Shots
             return True
         if d <= m.range and los:
             return False    # in position, out of AP

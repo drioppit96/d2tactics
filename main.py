@@ -888,7 +888,7 @@ class Game:
         if not g.in_bounds(*cell):
             return None
         u = self.world.unit_at(cell)
-        if u is None or u.is_player:
+        if u is None or u.is_player or getattr(u, "hidden", False):
             return None
         if not g.visible[cell[1]][cell[0]] and not any(v is u for _, v in getattr(self.scene, "unit_hits", [])):
             return None         # only what is drawn on screen can be picked
@@ -1314,9 +1314,11 @@ class Game:
         if m:
             hc, cost = w.preview_attack(m, "attack")
             dist = w.udist(p, m) if hasattr(w, "udist") else chebyshev(p.pos, m.pos)
-            name_col = GOLD if m.unique else TEXT
+            name_col = GOLD if m.unique else ((110, 110, 255) if getattr(m, "champion", False) else TEXT)
             lines = [m.name, f"Level {m.level}   Life {self.scene.view(m).shown_hp}/{m.max_hp}",
                      f"Attack: {int(hc * 100)}% to hit, {cost} AP"]
+            if getattr(m, "mod_names", None):
+                lines.insert(1, ", ".join(m.mod_names))
             rs = getattr(p, "right_skill", None)
             sk = p.skills.tree.get(rs) if rs and getattr(p, "skills", None) else None
             if sk is not None:
@@ -1346,7 +1348,10 @@ class Game:
                     steps = len(path)
                     lines.append(f"Walk {steps} + attack = {steps + cost} AP" if w.mode == "combat" else f"Walk {steps}")
                     preview = [(c, w.mode == "explore" or i < p.ap) for i, c in enumerate(path)]
-            tip = (lines, [name_col] + [TEXT] * (len(lines) - 1))
+            cols = [name_col] + [TEXT] * (len(lines) - 1)
+            if getattr(m, "mod_names", None):
+                cols[1] = (110, 110, 255)
+            tip = (lines, cols)
             self._tip_unit = m
             self.scene.selected = m
         else:

@@ -520,6 +520,8 @@ class Scene:
                 drawables.append((c[0] + c[1] - 0.5, 0.2, "object", ("waypoint", lid, c, False)))
         for v in self.views.values():
             cx, cy = int(round(v.rx)), int(round(v.ry))
+            if getattr(v.unit, "hidden", False):
+                continue                   # hidden traps and the hell meteors' spawners
             if not v.unit.is_player and not self.unit_seen(v.unit, cam, v):
                 continue
             layer = 0.5 if v.dead else 2

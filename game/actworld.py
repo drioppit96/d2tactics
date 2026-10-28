@@ -16,11 +16,10 @@ NPC_IDS = {"gheed", "cain1", "akara", "rogue1", "kashya", "warriv1", "charsi", "
            "cain2", "act2male", "act2female", "act2guard1", "act2guard4", "act2guard5", "act2vendor1",
            "act2vendor2", "fish", "tyrael1", "place_talkingguard", "place_dumbguard"}
 # map markers that aren't fighters in this game (traps and towers come later)
-NOT_SPAWNED = ("trap-", "firetower", "lightningspire", "gargoyletrap", "sarcophagus", "place_npc_pack",
-               "place_maggot", "place_tightspotboss", "compellingorb", "mephistospirit", "window", "hellmeteor",
-               "trappedsoul", "catapult", "baalthrone", "baaltaunt", "worldstoneeffect", "evilhut", "place_dead",
-               "injuredbarb", "act5barb", "place_reanimateddead", "place_tentacle", "place_amphibian",
-               "place_fetishnest", "place_mosquitonest", "regurgitator", "malachai")
+# presets that are not monsters to spawn here (traps, nests, towers... are game.specialmon's)
+NOT_SPAWNED = ("trap-", "place_npc_pack", "place_tightspotboss", "compellingorb", "mephistospirit", "window",
+               "baalthrone", "baaltaunt", "worldstoneeffect", "place_dead", "injuredbarb", "act5barb",
+               "place_reanimateddead", "place_amphibian", "malachai", "catapultspotter", "place_maggotegg")
 # boss presets named by their MonStats id
 BOSS_IDS = {"radament": ("Radament", "radament"), "duriel": ("Duriel", "duriel"),
             "summoner": ("The Summoner", "summoner"), "mephisto": ("Mephisto", "mephisto"),
@@ -266,19 +265,18 @@ def _spawn(world, mid, cell, lvl, taken, unique=False, name=None, champion=False
     t = _template(world, mid, lvl, unique)
     if t is None:
         return None
-    if champion:
-        t = dict(t)
-        t["hp"] = (t["hp"][0] * 3, t["hp"][1] * 3)
-        t["dmg"] = (t["dmg"][0] * 2, t["dmg"][1] * 2)
-        t["xp"] *= 3
-        t["level"] += 2
     m = Monster(t["ai"] if t["ai"] in ("fallen", "shaman") else "zombie", *cell, rng=world.rng, template=t)
     m.kind = {"fallen": "fallen", "shaman": "shaman"}.get(t["ai"], "d2")
     m.ai = t["ai"]
     m.unique = unique
-    m.champion = champion
+    m.champion = False
     if name:
         m.name = name
+    if champion:
+        from . import monmods
+        monmods.make_champion(world, m, champion if isinstance(champion, int) and champion is not True else None)
+    from .specialmon import tag_roster_monster
+    tag_roster_monster(world, m)
     world.monsters.append(m)
     taken.add(cell)
     return m
@@ -323,6 +321,9 @@ def _spawn_preset(world, name, cell, owner, taken, info):
         if c is not None:
             world.objects.append(dict(kind="orb", cell=c, level=owner, oid=0, used=False))
         return
+    from . import specialmon
+    if specialmon.spawn_preset(world, name, cell, owner, lvl, taken):
+        return
     if name.lower().startswith(NOT_SPAWNED):
         return
     if name.lower() in BOSS_IDS:
@@ -358,7 +359,8 @@ def _spawn_preset(world, name, cell, owner, taken, info):
         pct = _int(name.replace("place_group", "")) if name.startswith("place_group") else 100
         if rng.randrange(100) >= pct:
             return
-        _pack(world, cell, rng.choice(roster), lvl, taken, champion=name in ("place_unique_pack", "place_champion"))
+        _pack(world, cell, rng.choice(roster), lvl, taken, champion=name == "place_champion",
+              unique=name == "place_unique_pack")
         return
     su = _superunique(world, name)
     if su is not None:
@@ -370,6 +372,8 @@ def _spawn_preset(world, name, cell, owner, taken, info):
         m = _spawn(world, mid, cell2, lvl + 3, taken, unique=True, name=shown)
         if m is None:
             return
+        from . import monmods
+        monmods.apply(world, m, [_int(su.get("mod%d" % i)) for i in (1, 2, 3) if _int(su.get("mod%d" % i))])
         m.boss = {"Corpsefire": "corpsefire", "The Countess": "countess", "The Smith": "smith",
                   "Griswold": "griswold", "Coldworm the Burrower": "coldworm",
                   "Fangskin": "fangskin", "Bloodwitch the Wild": "bloodwitch",
@@ -380,7 +384,9 @@ def _spawn_preset(world, name, cell, owner, taken, info):
                   "Sszark the Burning": "sszark", "Dac Farren": "dacfarren", "The Feature Creep": "hephasto"}.get(name, "superunique")
         lo, hi = _int(su.get("mingrp")), _int(su.get("maxgrp"))
         for c in _scatter(world, cell2, rng.randint(lo, max(lo, hi)) if hi else 0, taken):
-            _spawn(world, mid, c, lvl + 1, taken, champion=False)
+            mm = _spawn(world, mid, c, lvl + 1, taken, champion=False)
+            if mm is not None:
+                monmods.pass_aura(m, mm)
 
 
 def _scatter(world, centre, n, taken, radius=6, gap=2):
@@ -405,7 +411,7 @@ def _scatter(world, centre, n, taken, radius=6, gap=2):
     return out
 
 
-def _pack(world, centre, mid, lvl, taken, champion=False):
+def _pack(world, centre, mid, lvl, taken, champion=False, unique=False):
     c = world.content
     t = _template(world, mid, lvl)
     if t is None:
@@ -418,9 +424,25 @@ def _pack(world, centre, mid, lvl, taken, champion=False):
         plo, phi = t["party"] if t["party"][1] else (2, 4)
         members += [t["minion"]] * rng.randint(max(1, plo), max(1, phi))
     members = members[:7]
+    from . import monmods
+    if champion:                 # D2: a champion pack is 2-4 champions of one kind
+        members = [mid] * rng.randint(2, 4)
+        kinds = [monmods.CHAMPION, monmods.CHAMPION, monmods.BERSERK, monmods.FANATIC, monmods.GHOSTLY]
+        champion = rng.choice(kinds)
+    elif unique:                 # a unique with its minions
+        members = [mid] * rng.randint(3, 6)
     spots = _scatter(world, centre, len(members), taken, radius=5 + len(members) // 3)
+    boss = None
     for i, (m, cell) in enumerate(zip(members, spots)):
-        _spawn(world, m, cell, lvl, taken, champion=champion and i == 0)
+        u = _spawn(world, m, cell, lvl, taken, champion=champion)
+        if u is None:
+            continue
+        if unique and boss is None:
+            monmods.make_unique(world, u)
+            boss = u
+        elif boss is not None:
+            u.minion_of = boss
+            monmods.pass_aura(boss, u)
 
 
 def reach_tiles(grid, seeds):
@@ -500,7 +522,9 @@ def _populate(world, lid, rect, taken, safe, info):
         weights.append(t["rarity"] if t else 1)
     for c in centres:
         mid = rng.choices(roster, weights=weights)[0]
-        _pack(world, c, mid, lvl, taken)
+        r = rng.random()
+        # D2 sprinkles unique and champion packs among the ordinary ones
+        _pack(world, c, mid, lvl, taken, unique=r < 0.04, champion=0.04 <= r < 0.10)
 
 
 # ---------------------------------------------------------------- building whole worlds
