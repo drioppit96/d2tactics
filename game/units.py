@@ -153,6 +153,12 @@ class Player(Unit):
         for it in self.equipment.values():
             if it and (it.mod_list is None or (self.level >= it.levelreq and self.base_str + self._raw("str") >= it.reqstr
                                                 and self.base_dex + self._raw("dex") >= it.reqdex)):
+                if getattr(it, "max_dur", 0) and getattr(it, "dur", 1) <= 0:
+                    continue            # broken: does nothing until repaired
+                out.append(it)
+        # charms work from the backpack (D2: not from the stash or the cube)
+        for it in getattr(self, "inventory", []):
+            if getattr(it, "charm", False) and it.mod_list is not None and self.level >= it.levelreq:
                 out.append(it)
         return out
 
@@ -309,6 +315,12 @@ class Player(Unit):
         if sb is not None:
             self._active.append(sb)
         self._skill_items()
+        try:
+            from . import itemfx
+            itemfx.refresh(self)
+        except Exception:
+            import traceback
+            traceback.print_exc()
         old_max = getattr(self, "max_hp", None)
         s0, d0, e0, v0 = self.start_stats
         life = v0 + cs["hpadd"] + (self.vitality - v0) * cs["lpv"] / 4.0 + (self.level - 1) * cs["lpl"] / 4.0 + self.mod("life")

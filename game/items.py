@@ -155,8 +155,8 @@ class Item:
             return D2_COLORS["unique"]
         if self.gem is not None and self.gem[0] != "jewel":
             return ORANGE if self.gem[0] == "rune" else WHITE
-        if self.sockets and self.rarity == "normal":
-            return (150, 150, 150)       # D2: socketed white items are grey
+        if (self.sockets or getattr(self, "ethereal", False)) and self.rarity == "normal":
+            return (150, 150, 150)       # D2: socketed and ethereal white items are grey
         return D2_COLORS.get(self.rarity, WHITE)
 
     @property
@@ -232,6 +232,11 @@ class Item:
             out.append(("Defense: %d" % self.defense, WHITE))
         if self.block:
             out.append(("Chance to Block: %d%%" % self.block, WHITE))
+        if getattr(self, "max_dur", 0):
+            if self.dur <= 0:
+                out.append(("Durability: 0 of %d (Broken)" % self.max_dur, RED_TEXT))
+            else:
+                out.append(("Durability: %d of %d" % (self.dur, self.max_dur), WHITE))
 
         def req(text, ok):
             out.append((text, WHITE if ok else RED_TEXT))
@@ -257,19 +262,28 @@ class Item:
             else:
                 merged[k] = v
                 order.append(k)
+        charges = getattr(self, "charges", None) or {}
         for code, par in order:
             v = merged[(code, par)]
             t = props.text(code, v, par)
+            if code == "charged" and charges:
+                ch = charges.get(props.skill_name(par))
+                if ch:
+                    t = "Level %d %s (%d/%d Charges)" % (ch[2], props.skill_name(par), ch[0], ch[1])
             if t:
                 out.append((t, D2_COLORS["magic"]))
         for t in self.extra_lines:
             out.append((t, D2_COLORS["magic"]))
+        if getattr(self, "ethereal", False):
+            out.append(("Ethereal (Cannot be Repaired)", D2_COLORS["magic"]))
         if self.sockets:
             out.append(("Socketed (%d)" % self.sockets, D2_COLORS["magic"]))
             for f in self.socketed:
                 out.append(("  " + f.name, (170, 170, 170)))
         if getattr(self, "set_name", None):
             out += self._set_lines(player)
+        if getattr(self, "charm", False):
+            out.append(("Keep in Inventory to Gain Bonus", (170, 170, 170)))
         return out
 
     def _set_lines(self, player):

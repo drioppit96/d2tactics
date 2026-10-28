@@ -228,6 +228,11 @@ def setup(world, built, grid, rng, info, level_key):
         _spawn_preset(world, name, cell, owner, taken, info)
     from .acts import TOWN_IDS
     world._reach = reach_tiles(grid, [c for c in safe if c] + ([world._default_start()] if world.npcs else []))
+    from . import objects as gobjects
+    import time as _t
+    _t0 = _t.time()
+    gobjects.populate(world, b, info, taken, safe)
+    world._obj_time = _t.time() - _t0
     for lid, rect in world.areas.items():
         if lid in TOWN_IDS or lid == 20:
             continue

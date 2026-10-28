@@ -340,6 +340,9 @@ class Game:
             h.show_skills = False
         elif opt == "Identify Items":
             w.identify_all()
+        elif opt == "Repair":
+            from game import durability
+            durability.repair_all(w)
         elif opt == "Level 99 (test)":
             # TESTING ONLY: jump to level 99 with every stat and skill point the levels give
             p = w.player
@@ -916,6 +919,13 @@ class Game:
         h.show_waypoints = False
         h.store = None
 
+    def open_stash(self):
+        p = self.world.player
+        if getattr(p, "stash", None) is None:
+            from game.cube import make_stash
+            p.stash = make_stash()
+        self.open_cube(p.stash)
+
     def toggle_panel(self, name):
         h = self.hud
         if name == "inv":
@@ -979,6 +989,8 @@ class Game:
                 self.toggle_panel(action)
             elif action == "cube_close":
                 h.show_cube = False
+            elif action == "stash_gold":
+                w.stash_gold(deposit=(button == 1))
             elif action == "transmute":
                 if h.cube_item is not None and w.held is None:
                     w.transmute(h.cube_item)
@@ -1128,6 +1140,13 @@ class Game:
                 obj = w.object_at(cell) if hasattr(w, "object_at") else None
                 wp = w.waypoint_at(cell) if hasattr(w, "waypoint_at") else None
                 if obj is not None and cell not in w.ground:
+                    if obj.get("generic"):
+                        stand = w.object_stand_cell(obj)
+                        if stand == p.pos:
+                            w.use_object(obj)
+                        elif stand is not None:
+                            self.walk_to(stand, ("object", obj))
+                        return
                     self.walk_to(obj["cell"], ("object", obj), adjacent=True)
                     return
                 if wp is not None and cell not in w.ground:
@@ -1354,7 +1373,12 @@ class Game:
                 label = {"cairn": "Cairn Stone", "inifuss": "Tree of Inifuss", "tome": "Moldy Tome",
                          "malus": "Horadric Malus", "cage": "Cain's Cage", "portal": "Portal to Tristram",
                          "tp": "Town Portal (to the Rogue Encampment)", "tp_back": "Town Portal (back)"}
-                tip = ([label.get(obj["kind"], obj["kind"]), "Click to use"], [(90, 200, 255), TEXT])
+                if obj.get("generic"):
+                    from game.objects import tooltip as _otip
+                    lines = _otip(obj)
+                    tip = (lines, [(90, 200, 255)] + [TEXT] * (len(lines) - 1))
+                else:
+                    tip = ([label.get(obj["kind"], obj["kind"]), "Click to use"], [(90, 200, 255), TEXT])
             if hasattr(w, "waypoint_at") and w.waypoint_at(cell) is not None:
                 tip = (["Waypoint", "Click to travel"], [(90, 200, 255), TEXT])
             items = w.ground.get(cell)
@@ -1414,6 +1438,15 @@ class Game:
             self.scene.alt_held = False
         self._hold_walk(mouse, dt)
         self.advance_walk()
+        if getattr(self.world, "open_stash", False):
+            self.world.open_stash = False
+            self.open_stash()
+        h = self.hud
+        if getattr(h, "show_cube", False) and getattr(getattr(h, "cube_item", None), "code", "") == "stash":
+            from game.grid import chebyshev as _cheb
+            pp = self.world.player.pos
+            if not any(o.get("kind") == "stash" and _cheb(o["cell"], pp) <= 5 for o in self.world.objects):
+                h.show_cube = False         # walked away from the stash
         if getattr(self, "scene", None) is not None:
             self.scene.walk_target = self.walk_goal if self.walk_queue and self.world.mode == "explore" else None
         tp = time.perf_counter()

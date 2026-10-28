@@ -86,11 +86,13 @@ class SkillCaster:
 
     def _mastery(self, et):
         b = getattr(self.player, "bonus", {}) or {}
-        return b.get({"fire": "fire_mastery", "cold": "cold_mastery", "ltng": "ltng_mastery", "pois": "pois_mastery"}.get(et, ""), 0)
+        items = self.player.mod("extra_" + et) if et in ("fire", "cold", "ltng", "pois") else 0   # +% to X skill damage
+        return b.get({"fire": "fire_mastery", "cold": "cold_mastery", "ltng": "ltng_mastery", "pois": "pois_mastery"}.get(et, ""), 0) + items
 
     def _pierce(self, et):
         b = getattr(self.player, "bonus", {}) or {}
-        return b.get(et + "_pierce", 0)
+        items = self.player.mod("pierce_" + et) if et in ("fire", "cold", "ltng", "pois") else 0  # -% to enemy X resistance
+        return b.get(et + "_pierce", 0) + items
 
     def mstat(self, m, stat):
         """A monster's stat change from curses / auras."""
@@ -144,6 +146,11 @@ class SkillCaster:
                 self.log("%s is immune to %s." % (target.name, {"fire": "fire", "cold": "cold", "ltng": "lightning", "mag": "magic"}.get(et, et)), GREY)
             return 0
         dmg = max(0, dmg * (100 - res) // 100)
+        if dmg > 0 and getattr(target, "is_player", False):
+            from .itemfx import absorb
+            dmg, healed = absorb(target, et, dmg)
+            if healed:
+                self.emit("heal", target, healed)
         if dmg <= 0:
             return 0
         self._damage(target, dmg, src)
@@ -941,13 +948,26 @@ class SkillCaster:
             self.emit("projectile", p, p.pos, m.pos, {"ltng": "ltng", "fire": "fireball", "cold": "cold"}.get(env.s.element, "spike"))
             self.skill_damage(env, m, 100, show=False)
 
+    def _auras(self):
+        """(name, env) of every aura on you: the one you chose plus the ones your items give."""
+        p = self.player
+        out = []
+        name = getattr(p, "active_aura", None)
+        if name and name in p.skills.tree and p.skills.level(name):
+            out.append((name, self._skill_env(name)))
+        from .skills import SkillEnv
+        for n, lvl in (getattr(p.skills, "item_auras", {}) or {}).items():
+            if n in p.skills.tree and n != name:
+                out.append((n, SkillEnv(p.skills, p.skills.tree[n], lvl)))
+        return out
+
     def aura_turn(self):
         """Once per round: offensive auras damage, Prayer heals, Meditation restores mana."""
+        for name, env in self._auras():
+            self._aura_turn_one(name, env)
+
+    def _aura_turn_one(self, name, env):
         p = self.player
-        name = getattr(p, "active_aura", None)
-        if not name or not p.skills.level(name):
-            return
-        env = self._skill_env(name)
         r = max(2, min(8, env.radius() or 5))
         if name == "Prayer":
             heal = max(1, env.calc("calc1") or (env.lvl + 1))
@@ -992,12 +1012,18 @@ class SkillCaster:
 
     def aura_stats(self):
         """Player stat changes from the active aura (summed into Player.recalc)."""
-        p = self.player
-        name = getattr(p, "active_aura", None)
         out = {}
-        if not name or name not in p.skills.tree or not p.skills.level(name):
-            return out
-        env = self._skill_env(name)
+        for name, env in self._auras():
+            for k, v in self._aura_stats_one(name, env).items():
+                if isinstance(v, tuple):
+                    a = out.get(k, (0, 0))
+                    out[k] = (a[0] + v[0], a[1] + v[1])
+                else:
+                    out[k] = out.get(k, 0) + v
+        return out
+
+    def _aura_stats_one(self, name, env):
+        out = {}
         for st, v in env.stats("aurastat", 6):
             ours = STAT_MAP.get(st)
             if ours:
@@ -1408,6 +1434,11 @@ class SkillCaster:
                 eff.pop("poison")
             else:
                 eff["poison"] = [per, turns]
+            if not m.alive:
+                return False
+        if eff.get("bleed"):
+            from .itemfx import tick_bleed
+            tick_bleed(self, m)
             if not m.alive:
                 return False
         self.tick_curses(m)

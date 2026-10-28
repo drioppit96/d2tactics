@@ -122,6 +122,7 @@ class World(SkillCaster, ItemActions):
         self.entries = {}
         self.waypoints = {}
         self.objects = []
+        self.obj_block = set()       # cells chests, closed doors, shrines... stand on
         self.level_key = level_key
         self.town_rect = None
         self.cursor_mode = None      # ("identify", scroll) while choosing an item
@@ -384,6 +385,9 @@ class World(SkillCaster, ItemActions):
                     cells.add(m.pos)
         if self.player.alive and self.player is not exclude:
             cells.add(self.player.pos)
+        ob = getattr(self, "obj_block", None)
+        if ob:
+            cells |= ob
         return cells
 
     @staticmethod
@@ -766,12 +770,19 @@ class World(SkillCaster, ItemActions):
             targets = [m for m in self.living_monsters() if m.ai != "npc" and self.udist(m, p) == 1]
         else:
             targets = [target]
+        from . import itemfx
+        itemfx.on_attack(self, target)
         for t in targets:
             for _ in range(swings):
                 if not t.alive:
                     break
                 hp0 = t.hp
                 hit = self._resolve_attack(p, t, skill, ranged_kind="arrow" if shoot else None)
+                if hit and shoot:
+                    nxt = itemfx.pierce_next(self, p, t)
+                    if nxt is not None:
+                        self.log("The missile pierces!", GREY)
+                        self._resolve_attack(p, nxt, skill, ranged_kind="arrow", quiet_anim=True)
                 if hit and skill == "Frenzy":
                     p.frenzy += 1
                 if hit and generic:
@@ -789,6 +800,8 @@ class World(SkillCaster, ItemActions):
     def _tick_buffs(self):
         p = self.player
         changed = False
+        from . import durability
+        durability.tick_self_repair(p)
         for k in ("shout", "bo", "bcmd", "concentrate", "berserk"):
             if p.effects.get(k):
                 p.effects[k] -= 1
@@ -833,10 +846,32 @@ class World(SkillCaster, ItemActions):
         if not name or name == "attack":
             return p.attack_cost, 0
         book = p.skills
+        if getattr(self, "_free_cast", False):
+            return 0, 0
+        if book.charged_only(name):
+            return book.ap_cost(name, p.attack_cost), 0      # charges cost no mana
         return book.ap_cost(name, p.attack_cost), book.mana_cost(name)
 
     def use_skill(self, name, target=None, cell=None):
         """Right mouse button: use the selected skill on a monster, a cell or around you."""
+        p = self.player
+        book = getattr(p, "skills", None)
+        if book is not None and name and not getattr(self, "_free_cast", False) and book.charged_only(name):
+            lvl, it = book.charged[name]
+            ok = self._use_skill(name, target, cell)
+            if ok:
+                ch = it.charges.get(name)
+                if ch:
+                    ch[0] = max(0, ch[0] - 1)
+                    if ch[0] == 0:
+                        self.log("%s: no charges left." % book.tree[name].title, GREY)
+                        if p.right_skill == name:
+                            p.right_skill = None
+                    p.recalc()
+            return ok
+        return self._use_skill(name, target, cell)
+
+    def _use_skill(self, name, target=None, cell=None):
         p = self.player
         if not self.player_can_act():
             return False
@@ -1051,10 +1086,38 @@ class World(SkillCaster, ItemActions):
 
     # ------------------------------------------------------------ objects and waypoints
     def object_at(self, cell, radius=1):
+        from .objects import clickable
+        best = None
         for o in self.objects:
-            if chebyshev(o["cell"], cell) <= radius:
+            if not clickable(o):
+                continue
+            if o.get("generic"):
+                sx, sy = o.get("size", (1, 1))
+                if abs(o["cell"][0] - cell[0]) <= max(1, sx // 2) and abs(o["cell"][1] - cell[1]) <= max(1, sy // 2):
+                    if best is None or chebyshev(o["cell"], cell) < chebyshev(best["cell"], cell):
+                        best = o
+            elif chebyshev(o["cell"], cell) <= radius:
                 return o
-        return None
+        return best
+
+    def object_stand_cell(self, obj):
+        """Where to stand to use a big object (next to its footprint, closest to you)."""
+        from .objects import footprint
+        p = self.player
+        fp = set(footprint(obj["cell"], obj.get("size", (1, 1))))
+        occ = self.occupied(p)
+        cand = set()
+        for x, y in fp:
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    c = (x + dx, y + dy)
+                    if c not in fp and self.grid.walkable(*c) and c not in occ:
+                        cand.add(c)
+        if p.pos in cand:
+            return p.pos
+        if not cand:
+            return None
+        return min(cand, key=lambda c: (chebyshev(c, p.pos), c))
 
     def waypoint_at(self, cell, radius=2):
         for c in self.waypoints:
@@ -1064,9 +1127,19 @@ class World(SkillCaster, ItemActions):
 
     def use_object(self, obj):
         p = self.player
-        if chebyshev(p.pos, obj["cell"]) > 2 or not self.player_can_act():
+        if obj.get("generic"):
+            from .objects import footprint
+            near = min(chebyshev(p.pos, c) for c in footprint(obj["cell"], obj.get("size", (1, 1))))
+            if near > 2 or not self.player_can_act():
+                return False
+        elif chebyshev(p.pos, obj["cell"]) > 2 or not self.player_can_act():
             return False
         p.face(*obj["cell"])
+        if obj.get("generic"):
+            from . import objects
+            if obj["kind"] not in ("door", "stash"):
+                self.emit("attack", p, obj["cell"], "cast")
+            return objects.operate(self, obj)
         self.emit("attack", p, obj["cell"], "cast")
         from . import quests
         return quests.on_object(self, obj)
@@ -1141,6 +1214,8 @@ class World(SkillCaster, ItemActions):
 
     def _maybe_auto_end(self):
         """In combat, end the turn automatically when the player can't do anything useful."""
+        if getattr(self, "_free_cast", False):
+            return                  # a chance-to-cast spell never ends your turn
         if self.mode == "combat" and self.turn == "player" and self.player.ap <= 0:
             self.end_player_turn()
 
@@ -1426,6 +1501,16 @@ class World(SkillCaster, ItemActions):
             if crit and self.rng.random() * 100 < min(75, crit):
                 dmg *= 2
                 self.log("Critical strike!", YELLOW)
+            else:
+                from .itemfx import deadly
+                dmg, ds = deadly(self, attacker, dmg)
+                if ds:
+                    self.log("Deadly strike!", YELLOW)
+            if dmg and not target.is_player:
+                if getattr(target, "undead", False):
+                    dmg = dmg * (100 + attacker.mod("dmg_undead")) // 100
+                if getattr(target, "demon", False):
+                    dmg = dmg * (100 + attacker.mod("dmg_demon")) // 100
             if dmg and getattr(target, "curses", None):
                 amp = -self.mstat(target, "dr_pct")
                 if amp:
@@ -1443,6 +1528,13 @@ class World(SkillCaster, ItemActions):
         dealt = dmg
         if dmg > 0:
             self._damage(target, dmg, attacker)
+        from . import durability, itemfx
+        if attacker.is_player:
+            durability.wear(self, attacker, "weapon")
+            itemfx.on_hit(self, attacker, target, dmg, ranged=bool(ranged_kind))
+        elif target.is_player and dmg > 0:
+            durability.wear(self, target, "armor")
+            itemfx.on_struck(self, attacker)
         if mods.get("elem") and target.alive:
             et, lo, hi, ln = mods["elem"]
             dealt += self.elem_hit(target, et, lo, hi, attacker, ln, show=False)
@@ -1540,6 +1632,8 @@ class World(SkillCaster, ItemActions):
         if getattr(p, "mana_kill", 0):
             p.mana = min(p.max_mana, p.mana + p.mana_kill)
         if gained:
+            from . import itemfx
+            itemfx.on_levelup(self)
             self.emit("levelup", p.level)
             self.log(f"Level up! You are now level {p.level}. Press C to spend stat points.", YELLOW)
         if self.content:
@@ -1557,8 +1651,10 @@ class World(SkillCaster, ItemActions):
                 self.emit("victory")
             else:
                 self.log("%s is slain!" % unit.name, (199, 179, 119))
-        from . import quests
+        from . import quests, itemfx
         quests.on_monster_killed(self, unit)
+        if source is p:
+            itemfx.on_kill(self, unit)
         # D2 flavour: fallen scatter when a pack mate dies
         for m in self.living_monsters():
             if m.ai == "fallen" and self.udist(m, unit) <= 5 and self.rng.random() < 0.5:
@@ -1569,7 +1665,10 @@ class World(SkillCaster, ItemActions):
         """Spread drops around so each pile can be clicked."""
         cand = [origin] + [(origin[0] + dx, origin[1] + dy) for dx, dy in DIRS8]
         for c in cand:
-            if self.grid.walkable(*c) and c not in self.ground:
+            if self.grid.walkable(*c) and c not in self.ground and c not in getattr(self, "obj_block", ()):
+                return c
+        for c in cand:
+            if self.grid.walkable(*c) and c not in getattr(self, "obj_block", ()):
                 return c
         return origin
 

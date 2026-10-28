@@ -502,6 +502,44 @@ class D2Assets(AssetProvider):
                "orifice", "journal", "eye_chest", "brain_chest", "heart_chest", "gidbinn", "lamtome", "orb",
                "hellforge", "prison")
 
+    def _obj_frames(self, tok, mode):
+        key = ("obj", tok)
+        sp = self.sprites.get(key)
+        if sp is None:
+            sp = self.sprites[key] = UnitSprites(self, "objects", tok, {}, "HTH")
+        try:
+            fr = sp.frames(mode, (0, 1))
+        except Exception:
+            fr = None
+        return [f for f in fr if f[0] is not None] if fr else None
+
+    def draw_gen_object(self, surf, o, pos, s, clock=0.0):
+        """Chests, barrels, shrines, doors, torches...: neutral, operating (played once) and opened."""
+        tok = o["token"]
+        mode = o.get("mode", "NU")
+        fr, idx = None, 0
+        if mode == "NU":
+            fr = self._obj_frames(tok, "NU")
+            if fr and o.get("cycle"):
+                idx = int(clock * 12) % len(fr)
+        else:
+            op = self._obj_frames(tok, "OP")
+            t = clock - o["op_t"] if o.get("op_t") is not None else 1e9
+            if op and t * 15 < len(op):
+                fr, idx = op, int(t * 15)
+            else:
+                on = self._obj_frames(tok, "ON")
+                if on:
+                    fr, idx = on, (int(clock * 12) % len(on) if len(on) > 1 else 0)
+                elif op:
+                    fr, idx = op, len(op) - 1
+                else:
+                    fr = self._obj_frames(tok, "NU")
+        if not fr:
+            return
+        img, x0, y0 = fr[idx % len(fr)]
+        surf.blit(img, (int(pos[0] + x0), int(pos[1] + y0)))
+
     def draw_object(self, surf, kind, oid, pos, s, clock=0.0, used=False):
         """Quest objects and waypoints with D2's object graphics (placeholder marker if missing)."""
         toks = self.OBJECT_TOKENS.get(kind, [])

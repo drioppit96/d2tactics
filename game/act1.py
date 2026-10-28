@@ -129,6 +129,7 @@ class Built:
         self.tm.floor2 = {}
         self.warps = []           # (tile (tx, ty), main, level row id of the level owning it)
         self.objects = []         # (kind/id, cell, owner level)
+        self.gen_objects = []     # (DS1 object number, cell, owner level): chests, doors, shrines...
         self.presets = []         # (monpreset name, cell, owner level)
         self.npcs = []
         self.areas = {}           # level id -> (x0, y0, x1, y1) cell rect
@@ -204,6 +205,10 @@ def stamp(b, ds, tiles, ox, oy, rng, owner, skip_npc_objects=False):
                     continue
                 if c.hidden:
                     continue
+                if c.orientation in (8, 9):
+                    if not hasattr(b, "doors"):
+                        b.doors = []
+                    b.doors.append((pos, c.orientation, owner))
                 if c.orientation in SKIP_ORIENT or c.orientation == 0:
                     continue
                 orients = [c.orientation, 4] if c.orientation == 3 else [c.orientation]
@@ -230,6 +235,10 @@ def stamp(b, ds, tiles, ox, oy, rng, owner, skip_npc_objects=False):
                 b.presets.append((name, cell, owner))
         elif typ == 2 and oid in quest_objects:
             b.objects.append((quest_objects[oid], cell, owner, oid))
+        elif typ == 2:
+            if not hasattr(b, "gen_objects"):
+                b.gen_objects = []
+            b.gen_objects.append((oid, cell, owner))
 
 
 # ---------------------------------------------------------------- fast walkability

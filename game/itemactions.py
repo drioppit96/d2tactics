@@ -17,22 +17,22 @@ VENDORS = {"akara": "akara", "charsi": "charsi", "gheed": "gheed",
            "jamella": "jamella", "halbu": "halbu", "larzuk": "larzuk", "malah": "malah", "drehya": "drehya"}
 NPC_OPTIONS = {
     "akara": ["Talk", "Trade", "Level 99 (test)"],             # TEST ONLY: "Level 99 (test)", remove later
-    "charsi": ["Talk", "Trade"], "gheed": ["Talk", "Trade", "Gamble"],
+    "charsi": ["Talk", "Trade", "Repair"], "gheed": ["Talk", "Trade", "Gamble"],
     "kashya": ["Talk", "Hire"], "cain1": ["Talk", "Identify Items"],
     "warriv1": ["Talk", "Go East", "Go East (test)"],          # TEST ONLY: "Go East (test)", remove later
     # Lut Gholein
-    "fara": ["Talk", "Trade"], "drognan": ["Talk", "Trade"], "lysander": ["Talk", "Trade"],
+    "fara": ["Talk", "Trade", "Repair"], "drognan": ["Talk", "Trade"], "lysander": ["Talk", "Trade"],
     "elzix": ["Talk", "Trade", "Gamble"], "greiz": ["Talk", "Hire"], "atma": ["Talk"], "jerhyn": ["Talk"],
     "geglash": ["Talk"], "meshif1": ["Talk", "Sail East", "Sail East (test)"],   # TEST ONLY: "(test)" "tyrael1": ["Talk"], "warriv2": ["Talk", "Go West"], "cain2": ["Talk", "Identify Items"],
     # Kurast Docks
     "ormus": ["Talk", "Trade"], "alkor": ["Talk", "Trade", "Gamble"], "asheara": ["Talk", "Trade", "Hire"],
-    "hratli": ["Talk", "Trade"], "cain3": ["Talk", "Identify Items", "To Act 4 (test)"],   # TEST ONLY: "To Act 4 (test)"
+    "hratli": ["Talk", "Trade", "Repair"], "cain3": ["Talk", "Identify Items", "To Act 4 (test)"],   # TEST ONLY: "To Act 4 (test)"
     "meshif2": ["Talk", "Sail West"], "natalya": ["Talk"],
     # the Pandemonium Fortress
     "tyrael2": ["Talk", "Travel to Harrogath", "Travel to Harrogath (test)"],             # TEST ONLY: "(test)"
-    "jamella": ["Talk", "Trade", "Gamble"], "halbu": ["Talk", "Trade"], "cain4": ["Talk", "Identify Items"],
+    "jamella": ["Talk", "Trade", "Gamble"], "halbu": ["Talk", "Trade", "Repair"], "cain4": ["Talk", "Identify Items"],
     # Harrogath
-    "larzuk": ["Talk", "Trade", "Imbue Sockets"], "malah": ["Talk", "Trade"], "drehya": ["Talk", "Trade", "Gamble"],
+    "larzuk": ["Talk", "Trade", "Repair", "Imbue Sockets"], "malah": ["Talk", "Trade"], "drehya": ["Talk", "Trade", "Gamble"],
     "qual-kehk": ["Talk", "Hire"], "nihlathak": ["Talk"], "tyrael3": ["Talk"], "cain6": ["Talk", "Identify Items"],
 }
 STORE_W, STORE_H = 10, 10
@@ -264,7 +264,7 @@ class ItemActions:
         """Drop the cursor item into the cube's grid (swaps with one item, like the backpack)."""
         from . import cube as cb
         it = self.held
-        if it is None or it is box or getattr(it, "code", "") == "box":
+        if it is None or it is box or (getattr(it, "code", "") == "box" and getattr(box, "code", "") == "box"):
             return False
         ok, over = cb.fits(box, it, x0, y0)
         if not ok or len(over) > 1:
@@ -284,6 +284,19 @@ class ItemActions:
         box.contents.remove(it)
         it.cube_pos = None
         self.held = it
+        return True
+
+    def stash_gold(self, deposit=True):
+        p = self.player
+        st = getattr(p, "stash", None)
+        if st is None:
+            return False
+        if deposit:
+            st.gold += p.gold
+            p.gold = 0
+        else:
+            p.gold += st.gold
+            st.gold = 0
         return True
 
     def transmute(self, box):

@@ -276,6 +276,15 @@ class Scene:
         if kind in ("game_over", "victory"):
             self.flags.add(kind)
             return 0
+        if kind == "object":
+            ev[1]["op_t"] = self.clock          # a chest opens, a barrel breaks, a door swings
+            return 0
+        if kind == "explosion":
+            name = ev[2] if len(ev) > 2 else "explosivepotionexp"
+            anim = self.assets.missile_anim(name) if hasattr(self.assets, "missile_anim") else None
+            if anim is not None:
+                self.effects.append(["missile", name, cell_to_world(*ev[1]), 0.0, anim.duration() or 0.5])
+            return 0.1
         return 0
 
     # ------------------------------------------------------------ update
@@ -502,7 +511,10 @@ class Scene:
         for o in getattr(world, "objects", ()):
             x, y = o["cell"]
             if x0 - 4 <= x <= x1 + 4 and y0 - 4 <= y <= y1 + 4:
-                drawables.append((x + y, 1.5, "object", (o["kind"], o.get("oid", 0), o["cell"], o.get("used"))))
+                if o.get("generic"):
+                    drawables.append((x + y, 1.5, "gobject", o))
+                else:
+                    drawables.append((x + y, 1.5, "object", (o["kind"], o.get("oid", 0), o["cell"], o.get("used"))))
         for c, lid in getattr(world, "waypoints", {}).items():
             if x0 - 4 <= c[0] <= x1 + 4 and y0 - 4 <= c[1] <= y1 + 4:
                 drawables.append((c[0] + c[1] - 0.5, 0.2, "object", ("waypoint", lid, c, False)))
@@ -540,6 +552,9 @@ class Scene:
                 okind, oid, cell, used = obj
                 if hasattr(assets, "draw_object"):
                     assets.draw_object(surf, okind, oid, cam.cell_to_screen(*cell), s, self.clock, used)
+            elif kind == "gobject":
+                if hasattr(assets, "draw_gen_object"):
+                    assets.draw_gen_object(surf, obj, cam.cell_to_screen(*obj["cell"]), s, self.clock)
             elif kind == "item":
                 cell, it = obj
                 b = 1.0 if use_tiles else self.brightness(cell[0], cell[1], light)

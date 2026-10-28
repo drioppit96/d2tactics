@@ -37,7 +37,11 @@ def _item_dict(it):
                 cube_pos=list(it.cube_pos) if getattr(it, "cube_pos", None) else None,
                 unique_name=getattr(it, "unique_name", None), set_item=getattr(it, "set_item", None),
                 jewel_props=[list(p) for p in getattr(it, "jewel_props", []) or []] or None,
-                invfile=getattr(it, "invfile", "") or "")
+                invfile=getattr(it, "invfile", "") or "",
+                max_dur=getattr(it, "max_dur", 0) or 0, dur=getattr(it, "dur", 0) or 0,
+                ethereal=bool(getattr(it, "ethereal", False)), grade=getattr(it, "grade", "") or "",
+                charm=bool(getattr(it, "charm", False)),
+                charges={k: list(v) for k, v in (getattr(it, "charges", None) or {}).items()} or None)
 
 
 def _item_from(d, content):
@@ -103,6 +107,17 @@ def _item_from(d, content):
         si = content.set_item_by_index.get(d["set_item"])
         if si is not None:
             content.attach_set(it, si)
+    if d.get("max_dur"):
+        it.max_dur, it.dur = d["max_dur"], d.get("dur", d["max_dur"])
+    if d.get("ethereal"):
+        it.ethereal = True
+    if d.get("grade"):
+        it.grade = d["grade"]
+    if d.get("charges"):
+        it.charges = {k: list(v) for k, v in d["charges"].items()}
+    if d.get("charm"):
+        it.charm = True
+        it.slot = None
     if d.get("jewel_props"):
         it.jewel_props = [tuple(p) for p in d["jewel_props"]]
         it.slot = None
@@ -125,6 +140,8 @@ def save_character(player, difficulty="normal"):
         hireling_kind=getattr(p, "hireling_kind", ""), quest_stats=dict(getattr(p, "quest_stats", {}) or {}), act=int(getattr(p, "current_act", 1) or 1),
         equipment={k: _item_dict(v) for k, v in p.equipment.items()},
         inventory=[_item_dict(it) for it in p.inventory], belt=[_item_dict(it) for it in p.belt],
+        stash=dict(gold=getattr(getattr(p, "stash", None), "gold", 0),
+                   items=[_item_dict(it) for it in (getattr(getattr(p, "stash", None), "contents", None) or [])]),
     )
     path = os.path.join(SAVE_DIR, _safe(p.name) + ".json")
     tmp = path + ".tmp"
@@ -196,6 +213,18 @@ def build_player(data, content):
         p.equipment[k] = _item_from(data.get("equipment", {}).get(k), content)
     p.inventory = [it for it in (_item_from(d, content) for d in data.get("inventory", [])) if it is not None]
     p.belt = [it for it in (_item_from(d, content) for d in data.get("belt", [])) if it is not None]
+    from .cube import make_stash, cube_add
+    p.stash = make_stash()
+    sd = data.get("stash") or {}
+    p.stash.gold = sd.get("gold", 0) or 0
+    for d in sd.get("items", []) or []:
+        it = _item_from(d, content)
+        if it is None:
+            continue
+        if getattr(it, "cube_pos", None) is not None:
+            p.stash.contents.append(it)
+        else:
+            cube_add(p.stash, it)
     # anything without a valid backpack spot gets re-packed
     loose = [it for it in p.inventory if getattr(it, "inv_pos", None) is None]
     for it in loose:

@@ -109,7 +109,7 @@ class D2Hud:
         self.frames = {}
         for n in ("800ctrlpnl7", "hlthmana", "overlap", "invchar6", "minipanel", "minipanelbtn", "level",
                   "runbutton", "mediumbuttonblank", "blank", "buysellbtn", "skillpoints", "buysell", "buyselltabs",
-                  "gemsocket", "supertransmogrifier", "miniconvert"):
+                  "gemsocket", "supertransmogrifier", "miniconvert", "tradestash"):
             self.frames[n] = self._load(PANEL + n + ".dc6", required=n in ("800ctrlpnl7", "hlthmana", "invchar6"))
         self.cursor = self._load("data\\global\\ui\\CURSOR\\ohand.dc6")
         self._class_art = {}
@@ -749,22 +749,29 @@ class D2Hud:
     CUBE_BUTTON = (145, 259, 32, 32)
     CUBE_CLOSE = (275, 384, 32, 32)
 
+    STASH_GRID = (73, 82)
+
+    def _grid_geom(self):
+        from game.cube import dims
+        box = self.cube_item
+        if getattr(box, "code", "") == "stash":
+            return self.STASH_GRID, dims(box)
+        return self.CUBE_GRID, dims(box)
+
     def cube_cell_at(self, pos):
-        if not getattr(self, "show_cube", False):
+        if not getattr(self, "show_cube", False) or self.cube_item is None:
             return None
         lx, ly = self.logical(pos)
-        gx, gy = self.CUBE_GRID
+        (gx, gy), (W, H) = self._grid_geom()
         cx, cy = int((lx - gx) // CELL), int((ly - gy) // CELL)
-        from game.cube import W, H
         if 0 <= cx < W and 0 <= cy < H:
             return cx, cy
         return None
 
     def cube_anchor(self, item):
-        from game.cube import W, H
+        (gx, gy), (W, H) = self._grid_geom()
         w, h = max(1, item.invw or 1), max(1, item.invh or 1)
         mx, my = self.mouse
-        gx, gy = self.CUBE_GRID
         fx = int(round((mx - gx) / CELL - w / 2.0))
         fy = int(round((my - gy) / CELL - h / 2.0))
         return max(0, min(W - w, fx)), max(0, min(H - h, fy))
@@ -773,13 +780,25 @@ class D2Hud:
         from game import cube as cb
         p = world.player
         box = self.cube_item
-        fr = self.frames.get("supertransmogrifier") or self.frames.get("blank") or self.frames["invchar6"]
-        self._panel_bg(surf, 0, fr, 0)
-        self.text(surf, self.f16, "Horadric Cube", GOLD, 0, 104, "center", 320)
-        gx, gy = self.CUBE_GRID
+        stash = getattr(box, "code", "") == "stash"
+        if stash:
+            fr = self.frames.get("tradestash") or self.frames.get("blank") or self.frames["invchar6"]
+            self._panel_bg(surf, 0, fr, 0)
+            self.text(surf, self.f16, "Stash", GOLD, 96, 51, "center", 150)
+            self.text(surf, self.f10, "Gold in stash: %d" % getattr(box, "gold", 0), WHITE, 96, 25, "center", 150)
+            self.region(73, 20, 176, 22, "stash_gold")
+            mx0, my0 = self.mouse
+            if pygame.Rect(73, 20, 176, 22).collidepoint((int(mx0), int(my0))) and getattr(world, "held", None) is None:
+                self.hover_lines = [("Left click: put your gold in the stash", WHITE),
+                                    ("Right click: take the stash's gold", WHITE)]
+        else:
+            fr = self.frames.get("supertransmogrifier") or self.frames.get("blank") or self.frames["invchar6"]
+            self._panel_bg(surf, 0, fr, 0)
+            self.text(surf, self.f16, "Horadric Cube", GOLD, 0, 104, "center", 320)
+        (gx, gy), (GW, GH) = self._grid_geom()
         mx, my = self.mouse
         held = getattr(world, "held", None)
-        self.region(gx, gy, cb.W * CELL, cb.H * CELL, "cube_grid")
+        self.region(gx, gy, GW * CELL, GH * CELL, "cube_grid")
         for it in getattr(box, "contents", []) or []:
             if getattr(it, "cube_pos", None) is None:
                 continue
@@ -795,11 +814,14 @@ class D2Hud:
         if held is not None and self.cube_cell_at((mx * self.s, my * self.s)) is not None:
             ax, ay = self.cube_anchor(held)
             ok, over = cb.fits(box, held, ax, ay)
-            good = ok and len(over) <= 1 and held.code != "box"
+            good = ok and len(over) <= 1 and (held.code != "box" or stash)
             w, h = max(1, held.invw or 1), max(1, held.invh or 1)
             tint = pygame.Surface((int(w * CELL * self.s), int(h * CELL * self.s)), pygame.SRCALPHA)
             tint.fill((0, 120, 0, 70) if good else (140, 0, 0, 70))
             surf.blit(tint, self.P(gx + ax * CELL, gy + ay * CELL))
+        if stash:
+            self._close_button(surf, self.CUBE_CLOSE, 0, "cube_close")
+            return
         bx, by, bw, bh = self.CUBE_BUTTON
         btn = self.frames.get("miniconvert") or []
         hot = pygame.Rect(bx, by, bw, bh).collidepoint((int(mx), int(my)))
@@ -975,7 +997,7 @@ class D2Hud:
         mx, my = self.mouse
         clvl = p.level
         for name, s in book.tree.items():
-            if s.page != self.skill_page:
+            if s.page != self.skill_page or name in getattr(book, "foreign", ()):
                 continue
             x = ox + 15 + (s.col - 1) * 69
             y = 15 + (s.row - 1) * 68

@@ -167,6 +167,11 @@ class D2Content:
             "normal_only": bool(self.types.get(tcode, {}).get("normal") == "1"),
         }
         b["cost"] = _int(r.get("cost"))
+        b["dur"] = 0 if r.get("nodurability") == "1" else _int(r.get("durability"))
+        tt = self.types.get(tcode, {})
+        nvar = _int(tt.get("varinvgfx"))
+        if nvar:
+            b["varinv"] = [tt.get("invgfx%d" % i) for i in range(1, nvar + 1) if tt.get("invgfx%d" % i)]
         b["tiers"] = (r.get("normcode", ""), r.get("ubercode", ""), r.get("ultracode", ""))
         b["gamble"] = _int(r.get("gamble cost"))
         b["shop"] = {}
@@ -221,6 +226,9 @@ class D2Content:
                 pass              # rings and amulets are equipment
             elif code == "jew":
                 b["jewel"] = True  # magic / rare, goes into sockets
+            elif code in ("cm1", "cm2", "cm3"):
+                b["charm"] = True  # works from the backpack
+                b["magic_only"] = True
             elif code != "gld":
                 return None       # quest items, keys, charms: not used
         return b
@@ -273,7 +281,7 @@ class D2Content:
     _late = []
 
     def pick_base(self, ilvl, rng, kinds=("weapon", "armor", "misc")):
-        cands = [b for b in self.bases if b["kind"] in kinds and b["slot"] and b["qlvl"] <= ilvl
+        cands = [b for b in self.bases if b["kind"] in kinds and (b["slot"] or b.get("charm")) and b["qlvl"] <= ilvl
                  and "gem" not in b and "use" not in b and "potion" not in b]
         if not cands:
             return None
@@ -305,6 +313,8 @@ class D2Content:
         if quality in ("unique", "set"):
             it = (self.make_unique if quality == "unique" else self.make_set_item)(base, ilvl, rng, identified)
             if it is not None:
+                from . import durability
+                durability.init(it, base, rng)
                 return it
             quality = "rare"
         self._force = force or {}
@@ -324,6 +334,9 @@ class D2Content:
             it.ilvl = max(1, int(ilvl))
             if base.get("jewel"):
                 self._finish_jewel(it, rng)
+            if base.get("kind") in ("weapon", "armor") and not base.get("quest"):
+                from . import durability
+                durability.init(it, base, rng, ethereal_ok=not (force or {}) and quality != "crafted")
         return it
 
     def _make_item(self, base, ilvl, rng, quality="normal", sockets=None, identified=None, plain=False):
@@ -443,6 +456,13 @@ class D2Content:
         it.strbonus, it.dexbonus = base.get("strbonus", 0), base.get("dexbonus", 0)
         it.affixes = affixes
         it.base_defense = raw_def
+        if base.get("varinv"):
+            it.invfile = rng.choice(base["varinv"])
+        if base.get("charm"):
+            it.charm = True
+            it.slot = None
+        if quality == "normal" and base["kind"] in ("weapon", "armor") and not plain and not self._force:
+            self._normal_grade(it, base, rng)
         if quality in ("magic", "rare", "crafted") and identified is not True:
             it.identified = bool(identified)
         # D2: a normal item can come with sockets (up to what the base and item level allow)
@@ -451,6 +471,55 @@ class D2Content:
         if sockets:
             it.sockets = min(sockets, self.max_sockets(base, ilvl)) or sockets
         return it
+
+    # ------------------------------------------------------------ superior / low quality / ethereal
+    _qrows = None
+
+    def _quality_tables(self):
+        if self._qrows is None:
+            try:
+                self._qrows = [r for r in read_table(self.src, "QualityItems") if r.get("nummods")]
+            except Exception:
+                self._qrows = []
+            try:
+                self._lowq = [r.get("name", "") for r in read_table(self.src, "LowQualityItems") if r.get("name")]
+            except Exception:
+                self._lowq = []
+            if not self._lowq:
+                self._lowq = ["Crude", "Cracked", "Damaged", "Low Quality"]
+        return self._qrows, self._lowq
+
+    def _normal_grade(self, it, base, rng):
+        """D2's normal items come superior (better), low quality (worse) or plain."""
+        rows, lowq = self._quality_tables()
+        r = rng.random()
+        if r < 0.08 and rows:
+            armor = base["kind"] == "armor"
+            cand = [q for q in rows if (q.get("armor") == "1") == armor]
+            q = rng.choice(cand or rows)
+            it.grade = "superior"
+            for i in (1, 2):
+                code = q.get("mod%dcode" % i)
+                if not code:
+                    continue
+                v = rng.randint(_int(q.get("mod%dmin" % i)), max(_int(q.get("mod%dmin" % i)), _int(q.get("mod%dmax" % i))))
+                if code == "dur%":
+                    it.dur_pct = v
+                    continue
+                key = PROP_MAP.get(code, (code,))[0]
+                it.mods[key] = it.mods.get(key, 0) + v
+                it.mod_list.append((code, v))
+            if it.base_defense is not None:
+                it.defense = it.base_defense * (100 + it.mods.get("edef", 0)) // 100 + it.mods.get("def", 0)
+            it.name = "Superior " + it.name
+        elif r < 0.16:
+            it.grade = "low"
+            if it.dmg:
+                it.dmg = (max(1, it.dmg[0] * 3 // 4), max(1, it.dmg[1] * 3 // 4))
+            if it.base_defense is not None:
+                it.base_defense = max(1, it.base_defense * 3 // 4)
+                it.defense = it.base_defense
+            it.name = rng.choice(lowq) + " " + it.name
 
     def _finish_jewel(self, it, rng):
         """A jewel: its properties go into the item it is socketed in."""
@@ -615,6 +684,8 @@ class D2Content:
         """normal / magic / rare / set / unique, roughly D2's odds (better with magic find)."""
         if base.get("normal_only"):
             return "normal"
+        if base.get("charm"):
+            return "magic"
         # D2's magic find has diminishing returns for uniques and sets
         mf_u = mf * 250.0 / (mf + 250) if mf > 0 else mf
         mf_s = mf * 500.0 / (mf + 500) if mf > 0 else mf

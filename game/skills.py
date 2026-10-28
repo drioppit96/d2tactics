@@ -478,9 +478,26 @@ class SkillBook:
         page = getattr(s, "page", 0) if s is not None else 0
         return self.item_bonus + self.tab_bonus.get(page, 0) + self.single_bonus.get(name, 0)
 
+    granted = {}             # skills items give you (not learned / other classes): level
+    charged = {}             # skills with charges on items: (level, item)
+    procs = []               # chance-to-cast: (event, chance, skill, level)
+    item_auras = {}          # auras items give: level
+    forced = {}              # a skill cast at a set level right now (procs, charges)
+
     def level(self, name):
+        if name in self.forced:
+            return self.forced[name]
         base = self.levels.get(name, 0)
-        return base + self.bonus + self.item_levels(name) if base else 0
+        if base:
+            return base + self.bonus + self.item_levels(name)
+        if name in self.granted:
+            return self.granted[name]
+        if name in self.charged:
+            return self.charged[name][0]
+        return 0
+
+    def charged_only(self, name):
+        return name in self.charged and not self.levels.get(name) and name not in self.granted
 
     def can_learn(self, name, clvl):
         s = self.tree.get(name)
@@ -496,7 +513,11 @@ class SkillBook:
         return True
 
     def actives(self):
-        return [n for n in self.levels if self.tree[n].kind != "passive"]
+        out = [n for n in self.levels if self.tree[n].kind != "passive"]
+        for n in list(self.granted) + list(self.charged):
+            if n not in out and n in self.tree and self.tree[n].kind != "passive":
+                out.append(n)
+        return out
 
     def env(self, name, lvl=None):
         return SkillEnv(self, self.tree[name], lvl)

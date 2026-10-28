@@ -325,9 +325,15 @@ def cells(cube, ignore=None):
     return taken
 
 
+def dims(cube):
+    """Grid size of a container: the cube (3 x 4) or the stash (6 x 8)."""
+    return getattr(cube, "grid_size", None) or (W, H)
+
+
 def fits(cube, it, x0, y0):
     w, h = _size(it)
-    if x0 < 0 or y0 < 0 or x0 + w > W or y0 + h > H:
+    GW, GH = dims(cube)
+    if x0 < 0 or y0 < 0 or x0 + w > GW or y0 + h > GH:
         return False, []
     taken = cells(cube)
     over = []
@@ -342,11 +348,12 @@ def fits(cube, it, x0, y0):
 def cube_add(cube, it):
     if getattr(cube, "contents", None) is None:
         cube.contents = []
-    if it is cube or getattr(it, "code", "") == "box":
+    if it is cube or (getattr(it, "code", "") == "box" and getattr(cube, "code", "") == "box"):
         return False
     w, h = _size(it)
-    for x0 in range(W - w + 1):
-        for y0 in range(H - h + 1):
+    GW, GH = dims(cube)
+    for x0 in range(GW - w + 1):
+        for y0 in range(GH - h + 1):
             ok, over = fits(cube, it, x0, y0)
             if ok and not over:
                 it.cube_pos = (x0, y0)
@@ -357,3 +364,13 @@ def cube_add(cube, it):
 
 def at(cube, x, y):
     return cells(cube).get((x, y))
+
+
+def make_stash():
+    """The stash in every town: a 6 x 8 grid (D2 1.14) plus gold."""
+    from .items import Item
+    st = Item("Stash", "stash", None, kind="misc")
+    st.contents = []
+    st.grid_size = (6, 8)
+    st.gold = 0
+    return st
