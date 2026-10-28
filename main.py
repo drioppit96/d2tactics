@@ -339,9 +339,9 @@ class Game:
             h.show_skills = False
         elif opt == "Identify Items":
             w.identify_all()
-        elif opt == "Repair":
+        elif opt == "Recharge":
             from game import durability
-            durability.repair_all(w)
+            durability.recharge_all(w)
         elif opt == "Level 99 (test)":
             # TESTING ONLY: jump to level 99 with every stat and skill point the levels give
             p = w.player

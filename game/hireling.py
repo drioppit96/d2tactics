@@ -107,8 +107,6 @@ def wearable(merc, it, st=None):
     """Requirements met (hirelings have their own strength / dexterity / level)."""
     if it.mod_list is None:
         return True
-    if getattr(it, "max_dur", 0) and getattr(it, "dur", 1) <= 0:
-        return False
     if st is None:
         st = dict(str=999, dex=999)
     return merc["level"] >= it.levelreq and st["str"] >= it.reqstr and st["dex"] >= it.reqdex

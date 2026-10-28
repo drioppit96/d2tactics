@@ -38,7 +38,6 @@ def _item_dict(it):
                 unique_name=getattr(it, "unique_name", None), set_item=getattr(it, "set_item", None),
                 jewel_props=[list(p) for p in getattr(it, "jewel_props", []) or []] or None,
                 invfile=getattr(it, "invfile", "") or "",
-                max_dur=getattr(it, "max_dur", 0) or 0, dur=getattr(it, "dur", 0) or 0,
                 ethereal=bool(getattr(it, "ethereal", False)), grade=getattr(it, "grade", "") or "",
                 charm=bool(getattr(it, "charm", False)),
                 charges={k: list(v) for k, v in (getattr(it, "charges", None) or {}).items()} or None)
@@ -107,8 +106,6 @@ def _item_from(d, content):
         si = content.set_item_by_index.get(d["set_item"])
         if si is not None:
             content.attach_set(it, si)
-    if d.get("max_dur"):
-        it.max_dur, it.dur = d["max_dur"], d.get("dur", d["max_dur"])
     if d.get("ethereal"):
         it.ethereal = True
     if d.get("grade"):

@@ -79,7 +79,7 @@ TEXT = {
     "heal-kill": "+{0} Life after each Kill", "ignore-ac": "Ignore Target's Defense",
     "dmg-ac": "-{0} to Monster Defense Per Hit", "ac-miss": "+{0} Defense vs. Missile",
     "ac-hth": "+{0} Defense vs. Melee", "reduce-ac": "-{0}% Target Defense", "red-dmg%": "Damage Reduced by {0}%",
-    "noheal": "Prevent Monster Heal", "indestruct": "Indestructible", "ethereal": "Ethereal (Cannot be Repaired)",
+    "noheal": "Prevent Monster Heal", "indestruct": "Indestructible", "ethereal": "Ethereal",
     "res-fire-max": "+{0}% to Maximum Fire Resist", "res-cold-max": "+{0}% to Maximum Cold Resist",
     "res-ltng-max": "+{0}% to Maximum Lightning Resist", "res-pois-max": "+{0}% to Maximum Poison Resist",
     "res-all-max": "+{0}% to All Maximum Resistances", "fireskill": "+{0} to Fire Skills",

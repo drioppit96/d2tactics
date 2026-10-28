@@ -263,7 +263,10 @@ through whole caves (`World` + simple attack/move loop) to check balance.
   Town objects other than the stash are decoration.
 - Stash: player.stash (cube.make_stash, a 6x8 container using cube_pos like the cube); the
   cube panel code draws it with tradestash.dc6 (grid at 73, 82).
-- game/durability.py (max_dur / dur / ethereal, wear in World._resolve_attack, repairs),
+- game/durability.py: only ethereal items now (no durability, nothing breaks); smiths recharge
+  charges. Arrows / bolts (aqv / cqv, base["quiver"]) go in the shield slot next to a bow /
+  crossbow (World._put_on keeps them together), get d2content._quiver_stats and only count in
+  Player.active_items with the matching weapon.
   d2content._normal_grade (superior from QualityItems.txt, low quality), charms (cm1-3, active
   from the backpack in Player.active_items).
 - game/itemfx.py: SkillBook.granted / charged / procs / item_auras / forced (refresh() after every

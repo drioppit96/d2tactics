@@ -226,6 +226,11 @@ class D2Content:
                 pass              # rings and amulets are equipment
             elif code == "jew":
                 b["jewel"] = True  # magic / rare, goes into sockets
+            elif code in ("aqv", "cqv"):
+                # arrows / bolts: an off-hand item for bows / crossbows (no ammunition count)
+                b["quiver"] = "bow" if code == "aqv" else "xbow"
+                b["slot"] = "shield"
+                b["qlvl"] = max(1, b["qlvl"])
             elif code in ("cm1", "cm2", "cm3"):
                 b["charm"] = True  # works from the backpack
                 b["magic_only"] = True
@@ -257,6 +262,9 @@ class D2Content:
             a = self._affix_row(r)
             if not a["mods"] or any(m[0] in SKIP_CODES for m in a["mods"]):
                 continue
+            from .durability import NO_DUR_CODES
+            if all(m[0] in NO_DUR_CODES for m in a["mods"]):
+                continue                    # durability affixes: nothing to do in this game
             out.append(a)
         return out
 
@@ -461,6 +469,8 @@ class D2Content:
         if base.get("charm"):
             it.charm = True
             it.slot = None
+        if base.get("quiver"):
+            self._quiver_stats(it, base, ilvl, rng)
         if quality == "normal" and base["kind"] in ("weapon", "armor") and not plain and not self._force:
             self._normal_grade(it, base, rng)
         if quality in ("magic", "rare", "crafted") and identified is not True:
@@ -520,6 +530,21 @@ class D2Content:
                 it.base_defense = max(1, it.base_defense * 3 // 4)
                 it.defense = it.base_defense
             it.name = rng.choice(lowq) + " " + it.name
+
+    def _quiver_stats(self, it, base, ilvl, rng):
+        """Arrows and bolts never run out; instead they carry stats for archers, growing with
+        the item level: arrows aim (attack rating, damage %), bolts hit hard (+damage), both pierce."""
+        from . import props
+        L = max(1, int(ilvl))
+        if base["quiver"] == "bow":
+            plist = [("att", "", 5 + L, min(300, 10 + L * 3)),
+                     ("dmg%", "", min(35, 3 + L // 3), min(45, 8 + L // 2)),
+                     ("pierce", "", min(25, 3 + L // 4), min(33, 6 + L // 3))]
+        else:
+            plist = [("dmg-min", "", 1 + L // 12, 1 + L // 8), ("dmg-max", "", 2 + L // 8, 3 + L // 4),
+                     ("pierce", "", min(35, 8 + L // 3), min(50, 12 + L // 2)),
+                     ("att", "", L, min(200, L * 2))]
+        props.apply(it, plist, rng)
 
     def _finish_jewel(self, it, rng):
         """A jewel: its properties go into the item it is socketed in."""

@@ -17,22 +17,22 @@ VENDORS = {"akara": "akara", "charsi": "charsi", "gheed": "gheed",
            "jamella": "jamella", "halbu": "halbu", "larzuk": "larzuk", "malah": "malah", "drehya": "drehya"}
 NPC_OPTIONS = {
     "akara": ["Talk", "Trade", "Level 99 (test)"],             # TEST ONLY: "Level 99 (test)", remove later
-    "charsi": ["Talk", "Trade", "Repair"], "gheed": ["Talk", "Trade", "Gamble"],
+    "charsi": ["Talk", "Trade", "Recharge"], "gheed": ["Talk", "Trade", "Gamble"],
     "kashya": ["Talk", "Hire"], "cain1": ["Talk", "Identify Items"],
     "warriv1": ["Talk", "Go East", "Go East (test)"],          # TEST ONLY: "Go East (test)", remove later
     # Lut Gholein
-    "fara": ["Talk", "Trade", "Repair"], "drognan": ["Talk", "Trade"], "lysander": ["Talk", "Trade"],
+    "fara": ["Talk", "Trade", "Recharge"], "drognan": ["Talk", "Trade"], "lysander": ["Talk", "Trade"],
     "elzix": ["Talk", "Trade", "Gamble"], "greiz": ["Talk", "Hire"], "atma": ["Talk"], "jerhyn": ["Talk"],
     "geglash": ["Talk"], "meshif1": ["Talk", "Sail East", "Sail East (test)"],   # TEST ONLY: "(test)" "tyrael1": ["Talk"], "warriv2": ["Talk", "Go West"], "cain2": ["Talk", "Identify Items"],
     # Kurast Docks
     "ormus": ["Talk", "Trade"], "alkor": ["Talk", "Trade", "Gamble"], "asheara": ["Talk", "Trade", "Hire"],
-    "hratli": ["Talk", "Trade", "Repair"], "cain3": ["Talk", "Identify Items", "To Act 4 (test)"],   # TEST ONLY: "To Act 4 (test)"
+    "hratli": ["Talk", "Trade", "Recharge"], "cain3": ["Talk", "Identify Items", "To Act 4 (test)"],   # TEST ONLY: "To Act 4 (test)"
     "meshif2": ["Talk", "Sail West"], "natalya": ["Talk"],
     # the Pandemonium Fortress
     "tyrael2": ["Talk", "Travel to Harrogath", "Travel to Harrogath (test)"],             # TEST ONLY: "(test)"
-    "jamella": ["Talk", "Trade", "Gamble"], "halbu": ["Talk", "Trade", "Repair"], "cain4": ["Talk", "Identify Items"],
+    "jamella": ["Talk", "Trade", "Gamble"], "halbu": ["Talk", "Trade", "Recharge"], "cain4": ["Talk", "Identify Items"],
     # Harrogath
-    "larzuk": ["Talk", "Trade", "Repair", "Imbue Sockets"], "malah": ["Talk", "Trade"], "drehya": ["Talk", "Trade", "Gamble"],
+    "larzuk": ["Talk", "Trade", "Recharge", "Imbue Sockets"], "malah": ["Talk", "Trade"], "drehya": ["Talk", "Trade", "Gamble"],
     "qual-kehk": ["Talk", "Hire"], "nihlathak": ["Talk"], "tyrael3": ["Talk"], "cain6": ["Talk", "Identify Items"],
 }
 STORE_W, STORE_H = 10, 10

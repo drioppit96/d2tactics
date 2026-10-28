@@ -232,11 +232,6 @@ class Item:
             out.append(("Defense: %d" % self.defense, WHITE))
         if self.block:
             out.append(("Chance to Block: %d%%" % self.block, WHITE))
-        if getattr(self, "max_dur", 0):
-            if self.dur <= 0:
-                out.append(("Durability: 0 of %d (Broken)" % self.max_dur, RED_TEXT))
-            else:
-                out.append(("Durability: %d of %d" % (self.dur, self.max_dur), WHITE))
 
         def req(text, ok):
             out.append((text, WHITE if ok else RED_TEXT))
@@ -263,7 +258,10 @@ class Item:
                 merged[k] = v
                 order.append(k)
         charges = getattr(self, "charges", None) or {}
+        from .durability import NO_DUR_CODES
         for code, par in order:
+            if code in NO_DUR_CODES:
+                continue
             v = merged[(code, par)]
             t = props.text(code, v, par)
             if code == "charged" and charges:
@@ -275,7 +273,7 @@ class Item:
         for t in self.extra_lines:
             out.append((t, D2_COLORS["magic"]))
         if getattr(self, "ethereal", False):
-            out.append(("Ethereal (Cannot be Repaired)", D2_COLORS["magic"]))
+            out.append(("Ethereal", D2_COLORS["magic"]))
         if self.sockets:
             out.append(("Socketed (%d)" % self.sockets, D2_COLORS["magic"]))
             for f in self.socketed:
@@ -284,6 +282,10 @@ class Item:
             out += self._set_lines(player)
         if getattr(self, "charm", False):
             out.append(("Keep in Inventory to Gain Bonus", (170, 170, 170)))
+        q = self.base.get("quiver") if isinstance(getattr(self, "base", None), dict) else None
+        if q:
+            out.append(("Off-hand: works with a %s (never runs out)" % ("Bow" if q == "bow" else "Crossbow"),
+                        (170, 170, 170)))
         return out
 
     def _set_lines(self, player):

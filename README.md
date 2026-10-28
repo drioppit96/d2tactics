@@ -82,9 +82,12 @@ fire, monster, exploding and poison shrines) and wells. Doors open and close (cl
 monsters can't open them). Torches, braziers and fires burn. Every town has a stash (6x8, plus
 gold: left click the gold box to put your gold in, right click to take it).
 
-**More items:** superior and low quality items, ethereal items, durability (weapons wear when
-they hit, armor when you are hit, broken items do nothing) and repairs at the smiths (Charsi,
-Fara, Hratli, Halbu, Larzuk: "Repair" also recharges charges). Small, large and grand charms work
+**More items:** superior and low quality items and ethereal items (+50% damage / defense).
+Nothing wears out (no durability) and nothing runs out: bows, crossbows, throwing weapons and
+missile skills never use ammunition. Arrows and bolts are off-hand items for bows / crossbows
+with archer stats that grow with the item level (arrows: attack rating, enhanced damage,
+pierce; bolts: +damage, pierce). The smiths (Charsi, Fara, Hratli, Halbu, Larzuk) "Recharge"
+items with charges. Small, large and grand charms work
 from the backpack. Item properties that act: chance to cast (on striking, when struck, on attack,
 on kill, on level up), skills with charges (they show in your skill list, no mana), auras when
 equipped, +skills of other classes, deadly strike, crushing blow, open wounds (bleeding), pierce,

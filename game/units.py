@@ -150,11 +150,14 @@ class Player(Unit):
     def active_items(self):
         """Equipped items whose requirements are met (D2 ignores the rest)."""
         out = []
+        wpn = self.equipment.get("weapon")
+        wanc = set(wpn.base.get("ancestors", ())) if wpn is not None and isinstance(getattr(wpn, "base", None), dict) else set()
         for it in self.equipment.values():
+            q = it.base.get("quiver") if it is not None and isinstance(getattr(it, "base", None), dict) else None
+            if q and q not in wanc:
+                continue                # arrows only help a bow, bolts a crossbow
             if it and (it.mod_list is None or (self.level >= it.levelreq and self.base_str + self._raw("str") >= it.reqstr
                                                 and self.base_dex + self._raw("dex") >= it.reqdex)):
-                if getattr(it, "max_dur", 0) and getattr(it, "dur", 1) <= 0:
-                    continue            # broken: does nothing until repaired
                 out.append(it)
         # charms work from the backpack (D2: not from the stash or the cube)
         for it in getattr(self, "inventory", []):

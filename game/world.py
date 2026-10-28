@@ -1315,10 +1315,15 @@ class World(SkillCaster, ItemActions):
             removed.append(p.equipment[slot])
         p.equipment[slot] = it
         weapon = p.equipment.get("weapon")
-        if slot == "weapon" and it.two_handed and p.equipment.get("shield"):
+
+        def goes_with(q, w):            # arrows with a bow, bolts with a crossbow (both two-handed)
+            qb = q.base if isinstance(getattr(q, "base", None), dict) else {}
+            wb = w.base if isinstance(getattr(w, "base", None), dict) else {}
+            return bool(qb.get("quiver")) and qb["quiver"] in wb.get("ancestors", ())
+        if slot == "weapon" and it.two_handed and p.equipment.get("shield") and not goes_with(p.equipment["shield"], it):
             removed.append(p.equipment["shield"])
             p.equipment["shield"] = None
-        if slot == "shield" and weapon is not None and weapon.two_handed:
+        if slot == "shield" and weapon is not None and weapon.two_handed and not goes_with(it, weapon):
             removed.append(weapon)
             p.equipment["weapon"] = None
         return removed
