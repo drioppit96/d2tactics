@@ -74,6 +74,37 @@ the skill tree); "per character level" properties grow with you; +maximum resist
 reduced by %, life/mana after each kill and extra experience work. Uniques and sets drop
 rarely (better with magic find, more from bosses) and can be gambled.
 
+**Objects:** D2's chests, caskets, urns, barrels (some explode), baskets, corpses, rocks, weapon
+racks, armor stands and bookshelves - from the map pieces and each area's own random objects
+(Levels.txt / ObjGroup.txt) - open or break for loot; some chests are trapped. Shrines (Shrines.txt:
+refilling, health, mana, armor, combat, resist, skill, mana recharge, experience, portal, gem,
+fire, monster, exploding and poison shrines) and wells. Doors open and close (click them;
+monsters can't open them). Torches, braziers and fires burn. Every town has a stash (6x8, plus
+gold: left click the gold box to put your gold in, right click to take it).
+
+**More items:** superior and low quality items, ethereal items, durability (weapons wear when
+they hit, armor when you are hit, broken items do nothing) and repairs at the smiths (Charsi,
+Fara, Hratli, Halbu, Larzuk: "Repair" also recharges charges). Small, large and grand charms work
+from the backpack. Item properties that act: chance to cast (on striking, when struck, on attack,
+on kill, on level up), skills with charges (they show in your skill list, no mana), auras when
+equipped, +skills of other classes, deadly strike, crushing blow, open wounds (bleeding), pierce,
++% to fire / cold / lightning / poison skill damage, -% to enemy resistance, elemental absorb.
+
+**Monsters:** unique and champion packs with D2's modifiers (Extra Strong, Extra Fast, Cursed,
+Magic Resistant, Fire / Cold / Lightning Enchanted, Mana Burn, Teleportation, Spectral Hit, Stone
+Skin, Multiple Shots, auras; Champion, Berserker, Fanatic, Ghostly) and random unique names;
+monsters cast their MonStats skills (bolts, novas, blizzards, curses, teleports, charges, heals,
+summons). Traps, fire towers, lightning spires, gargoyle traps, catapults, trapped souls, nests that
+hatch monsters, Act 3's water tentacles, regurgitators and the River of Flame's falling meteors.
+Bosses: Mephisto keeps to his side of the moat, Diablo comes when all five seals are open (the
+seals call his three lieutenants) and fires his lightning hose, Baal sends five waves before he
+flees and splits in two in the Worldstone Chamber, the Ancients wake at the altar, Nihlathak
+explodes corpses and calls minions.
+
+**Hirelings:** your hireling (Rogue, Desert Guard, Iron Wolf, Barbarian) levels up with your kills
+(Hireling.txt), wears a helm, armor, its kind of weapon (and a shield for Iron Wolves) - press O
+or click it - uses its skills and aura, and is resurrected for gold by the one who hired it.
+
 Without a D2 path the game falls back to placeholder art (a Barbarian in a generated cave).
 
 ## Run it (Windows)
@@ -142,7 +173,7 @@ automatically by Play D2 Tactics.bat) makes decoding about twice as fast; withou
 runs. F11 shows a performance readout (frame time split into logic / world / interface, sprite
 decoding, background preparation progress).
 
-**Keys:** Space = end turn - V = loot window - I = inventory - C = character - T = skill tree - Q = quest log - Tab = automap
+**Keys:** Space = end turn - V = loot window - I = inventory - C = character - T = skill tree - Q = quest log - O = hireling - Tab = automap
 (full / corner / off) - Alt (hold) or L = item names - F = fast animations - F1-F8 = right skill -
 mouse wheel = zoom - F11 = performance readout - Esc = close panels / game menu
 

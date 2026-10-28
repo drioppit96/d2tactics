@@ -127,15 +127,13 @@ def talk(world, npc):
             hire_rogue(world)
             lines = ["Kashya: Blood Raven is gone. You have earned my respect - and a Rogue to watch your back."]
             world.log("Quest completed: Sisters' Burial Grounds. A Rogue scout joins you.", DONE_COLOR)
-        elif q["blood_raven"] == "done" and getattr(p, "has_hireling", False) and \
-                not any(getattr(a, "hireling", False) for a in world.allies()):
-            cost = 50 * p.level
-            if p.gold >= cost:
-                p.gold -= cost
-                hire_rogue(world)
-                lines = ["Kashya: Your scout fell? Take another one - %d gold for her gear." % cost]
+        elif q["blood_raven"] == "done" and getattr(getattr(p, "merc", None), "get", lambda k: None)("dead"):
+            from . import hireling
+            cost = hireling.resurrect_cost(p.merc)
+            if hireling.resurrect(world):
+                lines = ["Kashya: Back on your feet, %s. Don't waste her again." % p.merc["name"]]
             else:
-                lines = ["Kashya: I can send another scout with you for %d gold." % cost]
+                lines = ["Kashya: I can bring %s back for %d gold." % (p.merc["name"], cost)]
         elif q["den"] == "done":
             lines = ["Kashya: So you cleared the Den. Maybe you're worth something after all."]
     elif who == "charsi":
@@ -164,38 +162,15 @@ def talk(world, npc):
 
 
 def hire_rogue(world):
-    """Kashya's reward: a Rogue scout (D2's hireling) who follows and fights for you."""
-    c = world.content
+    """Kashya's reward: a Rogue scout (D2's hireling) who follows, fights, levels up and wears gear."""
+    from . import hireling
     p = world.player
-    t = None
-    if c is not None:
-        key = c.monstats_key("roguehire") or c.monstats_key("rogue1")
-        if key:
-            t = dict(c.monster_template(key, level=max(1, p.level)))
-    if t is None:
-        return
-    t["ai"] = "ranged"
-    t["rng"] = 8
-    t["name"] = "Rogue Scout"
-    t["hp"] = (t["hp"][0] * 3 + 40, t["hp"][1] * 3 + 40)
-    t["dmg"] = (max(2, t["dmg"][0]) + p.level // 2, max(4, t["dmg"][1]) + p.level)
-    from .units import Monster
-    spots = [(p.x + dx, p.y + dy) for dx in (-1, 1, 0, -2, 2) for dy in (-1, 1, 0, -2, 2)]
-    occ = world.occupied()
-    cell = next((s for s in spots if world.grid.walkable(*s) and s not in occ), None)
-    if cell is None:
-        return
-    m = Monster("rogue", cell[0], cell[1], level=p.level, rng=world.rng, template=t)
-    world._make_ally(m)
-    m.ai = "ally_ranged"
-    m.range = 8
-    m.name = "Rogue Scout"
-    m.summon_skill = "hireling"
-    m.hireling = True
-    p.has_hireling = True
-    p.hireling_kind = "rogue"
-    world.monsters.append(m)
-    world.emit("resurrect", m)
+    merc = getattr(p, "merc", None)
+    if merc is not None and merc["kind"] != "rogue" and not merc.get("dead"):
+        return hireling.spawn(world)
+    if merc is not None and merc.get("dead"):
+        merc["dead"] = False
+    hireling.spawn(world, "rogue")
 
 
 def _reward_item(world, kind, who):

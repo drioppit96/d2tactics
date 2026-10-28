@@ -481,3 +481,4 @@ class Monster(Unit):
         self.curses = {}
         self.ally = False
         self.life_turns = None
+        self.mskills = list(t.get("skills", []) or [])     # MonStats Skill1-8 this game knows

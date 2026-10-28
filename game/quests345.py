@@ -292,9 +292,10 @@ def blocked(world, target):
     if target == 100 and q.get("khalim") not in ("orb", "done") and q.get("mephisto") not in ("cleared", "done"):
         return "The Compelling Orb's power seals the Durance of Hate. Smash it with Khalim's Will."
     if target == 132 and getattr(world, "level_key", None) == 131:
-        left = [m for m in world.monsters if m.alive and not m.ally and getattr(m, "ai", "") != "npc"]
-        if left:
-            return "Baal laughs from his throne: kill his minions first (%d left)." % len(left)
+        from .bosses import waves_done
+        if not waves_done(world):
+            n = getattr(world, "baal_wave", 0)
+            return "Baal laughs from his throne: defeat his minions first (wave %d of 5)." % max(1, n)
     if target == 128 and q.get("ancients") not in ("cleared", "done") and q.get("baal") == "none":
         return "The Ancients bar the way into the Worldstone Keep. Prove yourself first."
     return None
@@ -534,10 +535,10 @@ def on_killed(world, unit):
         q["baal"] = "cleared"
         world.log("Baal, the Lord of Destruction, is dead! Talk to Tyrael in Harrogath.", QUEST_COLOR)
         world.emit("victory")
-    if getattr(world, "level_key", None) == 131:
-        left = [m for m in world.monsters if m.alive and not m.ally and getattr(m, "ai", "") != "npc"]
-        if not left:
-            world.log("The throne room is clear. Baal flees into the Worldstone Chamber - follow him!", QUEST_COLOR)
+    if getattr(world, "level_key", None) == 131 and getattr(unit, "wave", None):
+        from .bosses import waves_done
+        if waves_done(world):
+            world.log("The last wave falls. Baal flees into the Worldstone Chamber - follow him!", QUEST_COLOR)
 
 
 def on_transmute(world, box):

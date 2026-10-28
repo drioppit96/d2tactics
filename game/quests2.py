@@ -220,51 +220,43 @@ HIRELINGS = {"act2hire": ("Desert Guard", "Greiz", "melee"), "act3hire": ("Iron 
 
 
 def hire_guard(world, free=False, kind="act2hire"):
-    """A hireling of the act (D2's act2hire / act3hire / act5hire1) for gold."""
-    c = world.content
+    """A hireling of the act (D2's act2hire / act3hire / act5hire1) for gold - or your dead one back."""
+    from . import hireling
     p = world.player
-    if c is None:
-        return False
     title, boss, style = HIRELINGS.get(kind, HIRELINGS["act2hire"])
-    if any(getattr(a, "hireling", False) for a in world.allies()):
-        world.log("%s: You already have a hireling at your side." % boss, TALK)
+    merc = getattr(p, "merc", None)
+    if free:
+        return hireling.spawn(world, kind) is not None
+    if merc is not None and merc.get("dead"):
+        cost = hireling.resurrect_cost(merc)
+        if not hireling.resurrect(world):
+            world.log("%s: I can bring %s back for %d gold." % (boss, merc["name"], cost), TALK)
+            return False
+        return True
+    if any(getattr(a, "hireling", False) and a.alive for a in world.allies()) and merc is not None \
+            and merc["kind"] == kind:
+        world.log("%s: You already have one of mine at your side." % boss, TALK)
         return False
-    cost = 0 if free else 60 * p.level + 100
+    cost = 60 * p.level + 100
     if p.gold < cost:
         world.log("%s: %d gold, and one of mine is yours." % (boss, cost), TALK)
         return False
-    key = c.monstats_key(kind)
-    if not key:
-        return False
-    t = dict(c.monster_template(key, level=max(1, p.level)))
-    t["name"] = title
-    t["hp"] = (t["hp"][0] * 3 + 60, t["hp"][1] * 3 + 60)
-    t["dmg"] = (max(3, t["dmg"][0]) + p.level // 2, max(6, t["dmg"][1]) + p.level)
-    if style == "ranged":
-        t["ai"] = "ranged"
-        t["rng"] = 8
-    from .units import Monster
-    occ = world.occupied()
-    spots = [(p.x + dx, p.y + dy) for dx in (-1, 1, 0, -2, 2) for dy in (-1, 1, 0, -2, 2)]
-    cell = next((s for s in spots if world.grid.walkable(*s) and s not in occ), None)
-    if cell is None:
-        return False
     p.gold -= cost
-    m = Monster(kind, cell[0], cell[1], level=p.level, rng=world.rng, template=t)
-    world._make_ally(m)
-    if style == "ranged":
-        m.ai = "ally_ranged"
-        m.range = 8
-    m.name = title
-    m.summon_skill = "hireling"
-    m.hireling = True
-    p.has_hireling = True
-    p.hireling_kind = kind
-    world.monsters.append(m)
-    world.emit("resurrect", m)
-    if not free:
-        world.log("%s: Keep them alive." % boss, TALK)
-    return True
+    # the old hireling leaves; whatever they wore goes back to you
+    for a in list(world.allies()):
+        if getattr(a, "hireling", False):
+            a.alive = False
+            world.emit("death", a)
+    if merc is not None:
+        for it in (merc.get("items") or {}).values():
+            if it is not None and not p.inv_add(it):
+                world.ground.setdefault(p.pos, []).append(it)
+                world.emit("drop", p.pos, it)
+    p.merc = hireling.new_merc(world, kind)
+    m = hireling.spawn(world, kind)
+    if m is not None:
+        world.log("%s: %s will fight for you. Keep them alive." % (boss, p.merc["name"]), TALK)
+    return m is not None
 
 
 # ------------------------------------------------------------------ places

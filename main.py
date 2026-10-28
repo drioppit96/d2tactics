@@ -155,13 +155,12 @@ class Game:
             ensure_cain(self.world)
             from game import quests
             quests.restore(self.world)
-            if getattr(player, "has_hireling", False):
-                if getattr(player, "hireling_kind", "") in ("act2hire", "act3hire", "act5hire1"):
-                    from game.quests2 import hire_guard
-                    hire_guard(self.world, free=True, kind=player.hireling_kind)
-                else:
-                    from game.quests import hire_rogue
-                    hire_rogue(self.world)
+            if getattr(player, "merc", None) is not None or getattr(player, "has_hireling", False):
+                from game import hireling
+                if getattr(player, "merc", None) is None:
+                    kind = getattr(player, "hireling_kind", "") or "rogue"
+                    player.merc = hireling.new_merc(self.world, kind if kind in hireling.KINDS else "rogue")
+                hireling.spawn(self.world)
         self.loading("Preparing your hero...")
         if hasattr(a, "warm"):
             a.warm(self.world.player, self.loading)
@@ -919,6 +918,18 @@ class Game:
         h.show_waypoints = False
         h.store = None
 
+    def toggle_merc(self):
+        h = self.hud
+        if getattr(self.world.player, "merc", None) is None:
+            self.world.log("You have no hireling.", (160, 160, 160))
+            return
+        h.show_merc = not getattr(h, "show_merc", False)
+        if h.show_merc:
+            h.show_char = h.show_quests = h.show_cube = False
+            h.show_waypoints = False
+            h.store = None
+            h.show_inv = True
+
     def open_stash(self):
         p = self.world.player
         if getattr(p, "stash", None) is None:
@@ -989,6 +1000,19 @@ class Game:
                 self.toggle_panel(action)
             elif action == "cube_close":
                 h.show_cube = False
+            elif action == "merc_close":
+                h.show_merc = False
+            elif action == "merc_slot":
+                from game import hireling
+                if getattr(w.player, "merc", None) is None:
+                    return
+                if w.held is not None:
+                    back = hireling.equip(w, arg, w.held)
+                    if back is not w.held:
+                        w.held = back
+                else:
+                    w.held = hireling.unequip(w, arg)
+                return
             elif action == "stash_gold":
                 w.stash_gold(deposit=(button == 1))
             elif action == "transmute":
@@ -1121,6 +1145,9 @@ class Game:
         cell = self.cam.screen_to_cell(*pos)
         m = self.monster_under_mouse(pos) or self.monster_at(cell)
         if m is not None and getattr(m, "ally", False):
+            if getattr(m, "hireling", False) and button == 1:
+                self.toggle_merc()        # click your hireling: its inventory
+                return
             m = None                      # your own minions can't be attacked
         p = w.player
         if w.mode == "explore" and self.can_walk():
@@ -1237,6 +1264,8 @@ class Game:
             h.show_loot = not getattr(h, "show_loot", False)        # loot window
         elif key == pygame.K_l:
             self.scene.show_labels = not self.scene.show_labels    # keep item names on
+        elif key == pygame.K_o:
+            self.toggle_merc()
         elif key == pygame.K_f:
             self.scene.speed = 1.0 if self.scene.speed > 1 else 2.5
         elif pygame.K_F1 <= key <= pygame.K_F8:

@@ -310,6 +310,9 @@ def _superunique(world, name):
 
 
 def _spawn_preset(world, name, cell, owner, taken, info):
+    from . import bosses
+    if not getattr(world, "deferred_off", False) and bosses.defer_preset(world, name, cell, owner):
+        return
     lvl = info.monster_level(owner)
     roster = info.roster(owner)
     rng = world.rng
@@ -333,6 +336,8 @@ def _spawn_preset(world, name, cell, owner, taken, info):
         m = _spawn(world, mid, _free_near(world.grid, cell, 8), lvl + 2, taken, unique=True, name=title)
         if m is not None:
             m.boss = boss
+            if boss == "ancients":
+                bosses.make_dormant(m)      # statues until you touch the altar
         return
     if name == "The Cow King" and owner != 39:
         return      # D2 only puts him on the Moo Moo Farm (some outdoor presets carry his marker)

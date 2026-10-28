@@ -960,6 +960,13 @@ class SkillCaster:
         for n, lvl in (getattr(p.skills, "item_auras", {}) or {}).items():
             if n in p.skills.tree and n != name:
                 out.append((n, SkillEnv(p.skills, p.skills.tree[n], lvl)))
+        from .hireling import aura
+        ma = aura(self)
+        if ma and ma[0] != name and ma[0] not in [o[0] for o in out]:
+            from .itemfx import _skill
+            s = _skill(p.skills, ma[0])
+            if s is not None:
+                out.append((ma[0], SkillEnv(p.skills, s, ma[1])))
         return out
 
     def aura_turn(self):

@@ -140,6 +140,10 @@ def save_character(player, difficulty="normal"):
         hireling_kind=getattr(p, "hireling_kind", ""), quest_stats=dict(getattr(p, "quest_stats", {}) or {}), act=int(getattr(p, "current_act", 1) or 1),
         equipment={k: _item_dict(v) for k, v in p.equipment.items()},
         inventory=[_item_dict(it) for it in p.inventory], belt=[_item_dict(it) for it in p.belt],
+        merc=(dict(kind=p.merc["kind"], hid=p.merc["hid"], name=p.merc["name"], level=p.merc["level"],
+                   xp=p.merc["xp"], dead=bool(p.merc.get("dead")),
+                   items={k: _item_dict(v) for k, v in (p.merc.get("items") or {}).items() if v is not None})
+              if getattr(p, "merc", None) else None),
         stash=dict(gold=getattr(getattr(p, "stash", None), "gold", 0),
                    items=[_item_dict(it) for it in (getattr(getattr(p, "stash", None), "contents", None) or [])]),
     )
@@ -213,6 +217,11 @@ def build_player(data, content):
         p.equipment[k] = _item_from(data.get("equipment", {}).get(k), content)
     p.inventory = [it for it in (_item_from(d, content) for d in data.get("inventory", [])) if it is not None]
     p.belt = [it for it in (_item_from(d, content) for d in data.get("belt", [])) if it is not None]
+    md = data.get("merc")
+    if md:
+        p.merc = dict(kind=md.get("kind", "rogue"), hid=md.get("hid", 0), name=md.get("name", "Hireling"),
+                      level=md.get("level", 1), xp=md.get("xp", 0), dead=bool(md.get("dead")),
+                      items={k: _item_from(v, content) for k, v in (md.get("items") or {}).items() if v})
     from .cube import make_stash, cube_add
     p.stash = make_stash()
     sd = data.get("stash") or {}

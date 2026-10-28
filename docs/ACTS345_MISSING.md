@@ -9,7 +9,8 @@ there), the monster packs and the tables. Tested headless (no Windows / MPQ run 
   animations come straight from your MPQs, so they should show.
 - expansion\siege\debris.dt1 is named by the barricade cliff borders but is not in the files
   (probably not in D2 either): a few cliff edge decorations are not drawn.
-- No obj.txt (1.14d doesn't ship it): most act 3-5 object numbers are unknown - see below.
+- No obj.txt (1.14d doesn't ship it): the object numbers of the map pieces come from D2R's
+  objpreset table instead (game/objpreset.py).
 
 ## Placed by code (D2's real spot unknown)
 - Waypoints of the Kurast Docks, the jungle areas, Lower / Upper Kurast, Travincal, the
@@ -25,18 +26,19 @@ there), the monster packs and the tables. Tested headless (no Windows / MPQ run 
   beside the Spider Forest / Flayer Jungle; the 13 Bloody Foothills strips are in random order;
   the barricade areas are 8 x 5 blocks (D2 sizes them per game); Act 5 cliff borders use the
   Act 1 border numbering (looks plausible, not verified piece by piece).
-- Chaos Sanctuary: Diablo is there from the start (the five seals are not needed).
-- Throne of Destruction: no five waves - the portal to the Worldstone Chamber opens when the
-  throne room is cleared.
-- Arreat Summit: the three Ancients fight at once (no altar).
+- Chaos Sanctuary, Throne of Destruction, Arreat Summit: seals, Baal's five waves and the
+  Ancients' altar work (game/bosses.py); timing is per turn, not D2's real-time.
 - The Golden Bird: the jade figurine drops from the first boss / unique you kill in the jungle.
 - Siege on Harrogath: Larzuk sockets your first unsocketed equipped weapon / armour / helm /
   shield (no item window). Betrayal of Harrogath: Anya gives an item instead of personalizing.
 - Rescue on Mount Arreat: break the prisons (D2 object 58) - the freed soldiers don't fight.
-- Not spawned yet: catapults, traps, act 3 tentacles, fetish / mosquito nests, the Regurgitator,
-  trapped souls, Baal's taunt, Malachai.
-- Boss powers use their MonStats attacks (Mephisto's moat, Diablo's lightning hose, Baal's
-  clone and tentacles are not special-cased).
+- Not spawned yet: Baal's taunt, Malachai, the windows of Harrogath.
+- Monster skills: game/monskills.py knows about 80 of D2's monster skills; damage is level
+  based (D2 takes it from Missiles.txt per missile), others fall back to the plain attack.
+- Doors: D2 picks the door object per tileset by code; here a table (game/objects.DOOR_PAIRS)
+  hangs doors in Acts 1-2 dungeons, cottages and tombs (Act 3-5 doorways stay open).
+- Random object counts per area follow Levels.txt / ObjGroup.txt chances per 8x8 tile room;
+  D2's exact "density" use is unknown.
 - Not built: Uber Tristram / Pandemonium (Hell 1-3), Nightmare and Hell difficulty.
 
 ## Test-only options (remove later)

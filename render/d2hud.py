@@ -109,7 +109,7 @@ class D2Hud:
         self.frames = {}
         for n in ("800ctrlpnl7", "hlthmana", "overlap", "invchar6", "minipanel", "minipanelbtn", "level",
                   "runbutton", "mediumbuttonblank", "blank", "buysellbtn", "skillpoints", "buysell", "buyselltabs",
-                  "gemsocket", "supertransmogrifier", "miniconvert", "tradestash"):
+                  "gemsocket", "supertransmogrifier", "miniconvert", "tradestash", "npcinv"):
             self.frames[n] = self._load(PANEL + n + ".dc6", required=n in ("800ctrlpnl7", "hlthmana", "invchar6"))
         self.cursor = self._load("data\\global\\ui\\CURSOR\\ohand.dc6")
         self._class_art = {}
@@ -254,6 +254,8 @@ class D2Hud:
             self._draw_cube(surf, world)
         elif getattr(self, "show_waypoints", False):
             self._draw_waypoints(surf, world)
+        elif getattr(self, "show_merc", False) and getattr(p, "merc", None):
+            self._draw_merc(surf, world)
         elif self.show_quests:
             self._draw_quests(surf, p)
         elif self.show_char:
@@ -298,7 +300,8 @@ class D2Hud:
     def _draw_log(self, surf, scene):
         lines = [l for l in scene.log if l[2] < 9][-6:]
         y = 6
-        x0 = 330 if (self.show_char or self.show_quests or getattr(self, "show_cube", False)) else 8
+        x0 = 330 if (self.show_char or self.show_quests or getattr(self, "show_cube", False)
+                     or getattr(self, "show_merc", False)) else 8
         for text, col, age in lines:
             img = self.f16.render(text, col, self.ind)
             sc = self.S(img)
@@ -748,6 +751,62 @@ class D2Hud:
     CUBE_GRID = (117, 138)
     CUBE_BUTTON = (145, 259, 32, 32)
     CUBE_CLOSE = (275, 384, 32, 32)
+
+    # ------------------------------------------------------------ the hireling
+    MERC_SLOTS = {"helm": (131, 2, 60, 60), "armor": (131, 71, 60, 90), "weapon": (16, 44, 60, 117),
+                  "shield": (247, 44, 60, 117)}
+
+    def _draw_merc(self, surf, world):
+        from game import hireling
+        p = world.player
+        merc = p.merc
+        fr = self.frames.get("npcinv") or self.frames.get("blank") or self.frames["invchar6"]
+        self._panel_bg(surf, 0, fr, 0)
+        t, f10, f16 = self.text, self.f10, self.f16
+        mx, my = self.mouse
+        held = getattr(world, "held", None)
+        k = hireling.KINDS.get(merc["kind"], {})
+        for slot, (x, y, w, h) in self.MERC_SLOTS.items():
+            if slot == "shield" and not k.get("shield"):
+                continue
+            it = (merc.get("items") or {}).get(slot)
+            hot = pygame.Rect(x, y, w, h).collidepoint((int(mx), int(my)))
+            if held is not None and hot:
+                ok = hireling.can_wear(merc, held, slot)
+                tint = pygame.Surface((int(w * self.s), int(h * self.s)), pygame.SRCALPHA)
+                tint.fill((0, 120, 0, 70) if ok else (140, 0, 0, 70))
+                surf.blit(tint, self.P(x, y))
+            if it is not None:
+                self._icon(surf, it, x, y, w, h)
+                if hot and held is None:
+                    self.hover_lines = it.describe_lines(p)
+            self.region(x, y, w, h, "merc_slot", slot)
+        st = hireling.stats(world.content, merc) or {}
+        dead = merc.get("dead")
+        t(surf, f16, merc["name"], GOLD if not dead else RED, 4, 200, "center", 153)
+        t(surf, f16, hireling.TITLES.get(merc["kind"], ""), GOLD, 161, 200, "center", 155)
+        t(surf, f10, "Experience", GOLD, 5, 224, "center", 124)
+        t(surf, f16, str(merc["xp"]), WHITE, 5, 239, "center", 124)
+        t(surf, f10, "Level", GOLD, 135, 224, "center", 51)
+        t(surf, f16, str(merc["level"]), WHITE, 135, 239, "center", 51)
+        t(surf, f10, "Next Level", GOLD, 191, 224, "center", 124)
+        t(surf, f16, str(hireling.xp_needed(world.content, merc)), WHITE, 191, 239, "center", 124)
+        unit = next((a for a in world.allies() if getattr(a, "hireling", False) and a.alive), None)
+        life = "%d/%d" % (unit.hp, unit.max_hp) if unit is not None else ("dead" if dead else str(st.get("hp", 0)))
+        rows = [("Strength", st.get("str", 0), "Dexterity", st.get("dex", 0)),
+                ("Damage", "%d-%d" % tuple(st.get("dmg", (0, 0))), "Defense", st.get("defense", 0)),
+                ("Life", life, "Attack Rating", st.get("ar", 0)),
+                ("Resistances", "%d%%" % st.get("res", 0), "Skill", (st.get("skills") or [("-", 0)])[-1][0][:12])]
+        for i, (a, av, b, bv) in enumerate(rows):
+            y = 266 + i * 24
+            t(surf, f10, a, GOLD, 6, y + 2, "center", 99)
+            t(surf, f10, str(av), WHITE, 106, y + 2, "center", 50)
+            t(surf, f10, b, GOLD, 164, y + 2, "center", 98)
+            t(surf, f10, str(bv), WHITE, 263, y + 2, "center", 52)
+        if dead:
+            t(surf, f10, "Dead - %s brings them back for %d gold" % (k.get("seller", "the hiring NPC"),
+                                                                   hireling.resurrect_cost(merc)), RED, 4, 372, "center", 260)
+        self._close_button(surf, self.CUBE_CLOSE, 0, "merc_close")
 
     STASH_GRID = (73, 82)
 

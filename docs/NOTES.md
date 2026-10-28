@@ -249,3 +249,31 @@ through whole caves (`World` + simple attack/move loop) to check balance.
   prisons. Everything else quest-related is placed by code (eye chest, Gidbinn altar, Lam Esen's
   lectern, the Compelling Orb from its monpreset spot, Anya, Nihlathak, Diablo).
 - NPCs D2 places by code: Jerhyn, Hratli, Larzuk, Tyrael (actworld.CODE_NPCS); Anya after the rescue.
+
+## Objects, monster modifiers, bosses, hirelings (late 2026)
+- game/objpreset.py: (act, DS1 object number) -> Objects.txt Id (D2R's objpreset table; same ids
+  as 1.14d's internal obj.txt). act1.stamp keeps every type-2 object in b.gen_objects and the
+  door wall tiles (orientation 8 / 9) in b.doors.
+- game/objects.py: world.objects entries with generic=True (kind chest / casket / urn / barrel /
+  xbarrel / corpse / weapon_rack / armor_rack / bookshelf / shrine / well / door / stash / seal /
+  altar / decor; token, size, mode NU/OP/ON, op_t for the animation). Kinds come from
+  Objects.txt OperateFn. Random objects: Levels.txt ObjGrp/ObjPrb -> ObjGroup.txt, rolled per
+  8x8-tile room, placed only where the ring around the footprint is walkable (never cuts a path).
+  Blocking cells live in world.obj_block (added to world.occupied()); doors block while closed.
+  Town objects other than the stash are decoration.
+- Stash: player.stash (cube.make_stash, a 6x8 container using cube_pos like the cube); the
+  cube panel code draws it with tradestash.dc6 (grid at 73, 82).
+- game/durability.py (max_dur / dur / ethereal, wear in World._resolve_attack, repairs),
+  d2content._normal_grade (superior from QualityItems.txt, low quality), charms (cm1-3, active
+  from the backpack in Player.active_items).
+- game/itemfx.py: SkillBook.granted / charged / procs / item_auras / forced (refresh() after every
+  recalc); foreign skills are put into book.tree (book.foreign; hidden in the skill tree panel).
+  cast_free() casts with world._free_cast (no AP / mana, never ends the turn).
+- game/monmods.py (MonUMod ids, unique / champion), game/monskills.py (MonStats Skill1-8 ->
+  bolt / nova / area / cone / curse / teleport / charge / melee / heal / summon / ce / tentacles /
+  hose), game/specialmon.py (traps, turrets, nests, tentacles, regurgitators, meteors; m.special,
+  m.hidden, m.stationary, m.sight), game/bosses.py (seals, Baal's waves, clone, Ancients' altar,
+  Mephisto's leash; deferred presets in world.deferred).
+- game/hireling.py: player.merc dict saved with the hero; stats from Hireling.txt per level
+  (str/dex and damage per level in 1/8, resist in 1/4, skill levels in 1/32), gear slots helm /
+  armor / weapon / shield, xp to next = Exp/Lvl * L^2 * (L+1) / 10, capped at your level.

@@ -206,6 +206,12 @@ def turn(world, m):
             _shoot(world, m, tgt, m.elem, m.trap_missile, lo, hi, area=1 if m.range >= 12 else 0)
         return True
     if kind == "tentacle":
+        if m.life_turns is not None:
+            m.life_turns -= 1
+            if m.life_turns < 0:
+                m.alive = False
+                world.emit("death", m)
+                return True
         if d <= getattr(m, "reach", 2):
             world._resolve_attack(m, tgt)
         return True

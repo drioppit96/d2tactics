@@ -14,7 +14,8 @@ from .grid import chebyshev
 
 # Objects.txt OperateFn -> what the object is in this game
 OPERATE_KIND = {1: "casket", 3: "urn", 4: "chest", 5: "barrel", 7: "xbarrel", 14: "corpse", 19: "armor_rack",
-                20: "weapon_rack", 26: "bookshelf", 2: "shrine", 22: "well", 8: "door", 29: "door", 32: "stash"}
+                20: "weapon_rack", 26: "bookshelf", 2: "shrine", 22: "well", 8: "door", 29: "door", 32: "stash",
+                52: "seal", 54: "seal", 55: "seal", 56: "seal", 65: "altar"}
 DECOR_FNS = {0, 11, 13}               # torches, braziers, fires, banners, bodies on stakes: drawn only
 LOOT_KINDS = {"casket", "urn", "chest", "barrel", "xbarrel", "corpse", "armor_rack", "weapon_rack", "bookshelf"}
 BREAKS = {"urn", "barrel", "xbarrel"}           # D2: these break when you open them
@@ -166,6 +167,10 @@ def make(world, oid, cell, owner, data, town=False):
             o["mode"] = "ON"
     elif kind == "stash":
         o["name"] = "Stash"
+    elif kind == "seal":
+        o["name"] = "Seal"
+    elif kind == "altar":
+        o["name"] = "Ancients' Altar"
     elif kind in ("weapon_rack", "armor_rack"):
         o["name"] = "Weapon Rack" if kind == "weapon_rack" else "Armor Stand"
     elif kind == "decor":
@@ -389,6 +394,9 @@ def _place_random(world, data, oid, lid, rect, taken, used_cells, clear_of):
 def operate(world, o):
     """Click on a generic object. Returns True if something happened."""
     kind = o["kind"]
+    if kind in ("seal", "altar"):
+        from . import bosses
+        return bosses.operate(world, o)
     if kind == "door":
         return _door(world, o)
     if kind == "stash":
@@ -659,6 +667,10 @@ def tooltip(o):
         return [o["name"], "Click to " + ("close" if o.get("open") else "open")]
     if k == "stash":
         return ["Stash", "Click to open"]
+    if k == "seal":
+        return ["Seal", "Click to open"]
+    if k == "altar":
+        return ["Ancients' Altar", "Touch it to call the Ancients"]
     return [o["name"]]
 
 

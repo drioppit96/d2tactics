@@ -472,6 +472,8 @@ class World(SkillCaster, ItemActions):
     def check_awareness(self):
         newly = []
         p = self.player
+        from . import bosses
+        bosses.on_player_move(self)
         for m in self.living_monsters():
             if m.aware or m.ai == "npc":
                 continue
@@ -1548,6 +1550,15 @@ class World(SkillCaster, ItemActions):
         if mods.get("elem") and target.alive:
             et, lo, hi, ln = mods["elem"]
             dealt += self.elem_hit(target, et, lo, hi, attacker, ln, show=False)
+        if not attacker.is_player and getattr(attacker, "hit_elem", None) and target.alive:
+            for et, (lo, hi) in attacker.hit_elem.items():      # hirelings: their skill and gear
+                if target.alive:
+                    dealt += self.elem_hit(target, et, lo, hi, attacker, 50, show=False)
+        if getattr(attacker, "hit_stun", 0) and target.alive and not target.is_player and \
+                self.rng.randrange(100) < attacker.hit_stun:
+            target.effects["stun"] = max(target.effects.get("stun", 0), 1)
+        if not attacker.is_player and getattr(attacker, "ally", False) and getattr(attacker, "leech", 0) and dealt:
+            attacker.hp = min(attacker.max_hp, attacker.hp + max(1, dealt * attacker.leech // 100))
         if attacker.is_player and target is not attacker:
             leech = attacker.leech + mods.get("leech", 0)
             if leech and attacker.hp < attacker.max_hp:
@@ -1627,7 +1638,11 @@ class World(SkillCaster, ItemActions):
         unit.hp = 0
         self.emit("death", unit)
         if getattr(unit, "ally", False):
-            self.log("%s dies." % unit.name, GREY)
+            if getattr(unit, "hireling", False):
+                from . import hireling
+                hireling.on_death(self, unit)
+            else:
+                self.log("%s dies." % unit.name, GREY)
             return
         if unit.is_player:
             self.game_over = True
@@ -1640,6 +1655,8 @@ class World(SkillCaster, ItemActions):
             from . import monmods
             monmods.on_death(self, unit)
         gained = p.gain_xp(unit.xp_value * (100 + max(0, getattr(p, "xp_pct", 0))) // 100)
+        from . import hireling
+        hireling.gain_xp(self, unit.xp_value)
         if getattr(p, "life_kill", 0) and p.alive:
             p.hp = min(p.max_hp, p.hp + p.life_kill)
         if getattr(p, "mana_kill", 0):
@@ -1697,6 +1714,10 @@ class World(SkillCaster, ItemActions):
             monmods.turn_start(self, m)
             if not p.alive:
                 return
+        if getattr(m, "boss", None) or getattr(m, "dormant", False):
+            from . import bosses
+            if bosses.turn_pre(self, m):
+                return
         if getattr(m, "special", None):
             from . import specialmon
             if specialmon.turn(self, m):
@@ -1727,6 +1748,10 @@ class World(SkillCaster, ItemActions):
             guard += 1
             if m.ai == "shaman" and self._try_resurrect(m):
                 continue
+            if getattr(m, "mskills", None):
+                from . import monskills
+                if monskills.try_cast(self, m):
+                    continue
             if m.range > 1:
                 acted = self._ranged_step(m)
             else:
