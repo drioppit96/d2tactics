@@ -603,7 +603,7 @@ class D2Hud:
                       x, 48, "center", tw - 4)
             self.region(x, 44, tw - 4, 20, "q_tab", a)
         y = 74
-        for title, status, text in journal(p, self.q_act if self.q_act in (1, 2) else 0):
+        for title, status, text in journal(p, self.q_act):
             col = {"done": GREY, "active": WHITE, "cleared": YELLOW}.get(status, (110, 105, 95))
             self.text(surf, self.f16, title, GOLD if status != "none" else (120, 110, 90), 20, y)
             y += 17
@@ -623,8 +623,6 @@ class D2Hud:
                 self.text(surf, self.f10, line, col, 26, y)
                 y += 13
             y += 8
-        if self.q_act > 2:
-            self.text(surf, self.f10, "This act's quests come in a later update.", GREY, 20, y)
         self._close_button(surf, CHAR_CLOSE, 0, "quests")
 
     # ------------------------------------------------------------ vendors

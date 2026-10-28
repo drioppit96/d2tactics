@@ -17,10 +17,19 @@ NPC_IDS = {"gheed", "cain1", "akara", "rogue1", "kashya", "warriv1", "charsi", "
            "act2vendor2", "fish", "tyrael1", "place_talkingguard", "place_dumbguard"}
 # map markers that aren't fighters in this game (traps and towers come later)
 NOT_SPAWNED = ("trap-", "firetower", "lightningspire", "gargoyletrap", "sarcophagus", "place_npc_pack",
-               "place_maggot", "place_tightspotboss")
+               "place_maggot", "place_tightspotboss", "compellingorb", "mephistospirit", "window", "hellmeteor",
+               "trappedsoul", "catapult", "baalthrone", "baaltaunt", "worldstoneeffect", "evilhut", "place_dead",
+               "injuredbarb", "act5barb", "place_reanimateddead", "place_tentacle", "place_amphibian",
+               "place_fetishnest", "place_mosquitonest", "regurgitator", "malachai")
 # boss presets named by their MonStats id
 BOSS_IDS = {"radament": ("Radament", "radament"), "duriel": ("Duriel", "duriel"),
-            "summoner": ("The Summoner", "summoner")}
+            "summoner": ("The Summoner", "summoner"), "mephisto": ("Mephisto", "mephisto"),
+            "diablo": ("Diablo", "diablo"), "izual": ("Izual", "izual"),
+            "baalcrab": ("Baal", "baal"), "nihlathakboss": ("Nihlathak", "nihlathak"),
+            # the Ancients' statues on Arreat Summit wake up as the three Ancients
+            "ancientstatue1": ("Talic the Defender", "ancients", "ancientbarb1"),
+            "ancientstatue2": ("Madawc the Guardian", "ancients", "ancientbarb2"),
+            "ancientstatue3": ("Korlic the Protector", "ancients", "ancientbarb3")}
 
 
 def _int(v, d=0):
@@ -66,6 +75,7 @@ class ActInfo:
 
 
 PORTAL_KINDS = ("portal", "arcane_portal", "duriel_portal")
+CODE_NPCS = {"jungle": ["hratli"], "siege": ["larzuk", "tyrael3"]}
 
 
 def setup(world, built, grid, rng, info, level_key):
@@ -98,6 +108,14 @@ def setup(world, built, grid, rng, info, level_key):
         for c in cells:
             world.exits[c] = target
         world.entries.setdefault(target, arrival_cell(grid, cells, set(world.exits), rng))
+    # ---- seamless edges between two worlds (e.g. the jungle's end and Lower Kurast): cells -> level
+    for cells, target in getattr(b, "edge_exits", []) or []:
+        cells = [c for c in cells if grid.walkable(*c)]
+        if not cells:
+            continue
+        for c in cells:
+            world.exits[c] = target
+        world.entries.setdefault(target, arrival_cell(grid, cells, set(world.exits), rng, dist=5))
     # ---- doors without warp tiles (Barracks <-> Outer Cloister)
     if level_key == 28:
         edge = [(x, y) for y in range(grid.h) for x in (0, 1, grid.w - 2, grid.w - 1) if grid.walkable(x, y)] + \
@@ -126,7 +144,7 @@ def setup(world, built, grid, rng, info, level_key):
             world.entries[1] = c0
     # ---- objects: waypoints and quest objects
     for kind, cell, owner, oid in b.objects:
-        c = _free_near(grid, cell)
+        c = _free_near(grid, cell, 10)
         if c is None:
             continue
         if kind == "waypoint":
@@ -177,6 +195,31 @@ def setup(world, built, grid, rng, info, level_key):
             m.npc, m.name, m.ai, m.aware = "jerhyn", NPC_NAMES.get("jerhyn", "Jerhyn"), "npc", False
             world.npcs.append(m)
             monsters.append(m)
+    # NPCs D2 places by code (no preset in the town's DS1): near the middle of the town
+    for npc_id in CODE_NPCS.get(level_key, ()):
+        if any(n.npc == npc_id for n in world.npcs) or not world.town_rect:
+            continue
+        x0, y0, x1, y1 = world.town_rect
+        occ = {m.pos for m in monsters}
+        cx, cy = (x0 + x1) // 2 + rng.randint(-25, 25), (y0 + y1) // 2 + rng.randint(-25, 25)
+        cell = None
+        for r in range(0, 60, 2):
+            for dx in range(-r, r + 1, 2):
+                for dy in (-r, r):
+                    c = (cx + dx, cy + dy)
+                    if grid.walkable(*c) and c not in occ and c not in world.exits:
+                        cell = c
+                        break
+                if cell:
+                    break
+            if cell:
+                break
+        if cell:
+            t = content.monster_template(npc_id) if content and npc_id in content.monstats else None
+            m = Monster("zombie", *cell, rng=rng, template=t)
+            m.npc, m.name, m.ai, m.aware = npc_id, NPC_NAMES.get(npc_id, npc_id.title()), "npc", False
+            world.npcs.append(m)
+            monsters.append(m)
     world.monsters = monsters
     # ---- monsters
     taken = {m.pos for m in monsters}
@@ -184,6 +227,7 @@ def setup(world, built, grid, rng, info, level_key):
     for name, cell, owner in b.presets:
         _spawn_preset(world, name, cell, owner, taken, info)
     from .acts import TOWN_IDS
+    world._reach = reach_tiles(grid, [c for c in safe if c] + ([world._default_start()] if world.npcs else []))
     for lid, rect in world.areas.items():
         if lid in TOWN_IDS or lid == 20:
             continue
@@ -268,11 +312,19 @@ def _spawn_preset(world, name, cell, owner, taken, info):
     rng = world.rng
     if name in NPC_IDS or name in ("chicken", "cow", "camel"):
         return
+    if name == "compellingorb":
+        # Travincal's Compelling Orb: an object you smash with Khalim's Will
+        c = _free_near(world.grid, cell, 8)
+        if c is not None:
+            world.objects.append(dict(kind="orb", cell=c, level=owner, oid=0, used=False))
+        return
     if name.lower().startswith(NOT_SPAWNED):
         return
     if name.lower() in BOSS_IDS:
-        title, boss = BOSS_IDS[name.lower()]
-        m = _spawn(world, name.lower(), _free_near(world.grid, cell), lvl + 2, taken, unique=True, name=title)
+        entry = BOSS_IDS[name.lower()]
+        title, boss = entry[0], entry[1]
+        mid = entry[2] if len(entry) > 2 else name.lower()
+        m = _spawn(world, mid, _free_near(world.grid, cell, 8), lvl + 2, taken, unique=True, name=title)
         if m is not None:
             m.boss = boss
         return
@@ -282,16 +334,16 @@ def _spawn_preset(world, name, cell, owner, taken, info):
         base = "fallenshaman" if name.endswith("shaman") else "fallen"
         mid = next((m for m in roster if m.startswith(base) and (base != "fallen" or not m.startswith("fallenshaman"))),
                    base + "1")
-        _spawn(world, mid, _free_near(world.grid, cell), lvl, taken)
+        _spawn(world, mid, _free_near(world.grid, cell, 8), lvl, taken)
         return
     if name == "place_bloodraven":
-        m = _spawn(world, "bloodraven", _free_near(world.grid, cell), lvl + 2, taken, unique=True, name="Blood Raven")
+        m = _spawn(world, "bloodraven", _free_near(world.grid, cell, 8), lvl + 2, taken, unique=True, name="Blood Raven")
         if m is not None:
             m.boss = "blood_raven"
             m.xp_value *= 2
         return
     if name == "andariel":
-        m = _spawn(world, "andariel", _free_near(world.grid, cell), lvl, taken, unique=True, name="Andariel")
+        m = _spawn(world, "andariel", _free_near(world.grid, cell, 8), lvl, taken, unique=True, name="Andariel")
         if m is not None:
             m.boss = "andariel"
         return
@@ -306,13 +358,21 @@ def _spawn_preset(world, name, cell, owner, taken, info):
     su = _superunique(world, name)
     if su is not None:
         mid = su.get("class", "")
-        cell2 = _free_near(world.grid, cell)
-        m = _spawn(world, mid, cell2, lvl + 3, taken, unique=True, name=su.get("name") or name)
+        cell2 = _free_near(world.grid, cell, 8)
+        shown = su.get("name") or name
+        if world.content is not None and getattr(world.content, "strings", None) is not None:
+            shown = world.content.strings.get(shown, shown)
+        m = _spawn(world, mid, cell2, lvl + 3, taken, unique=True, name=shown)
         if m is None:
             return
         m.boss = {"Corpsefire": "corpsefire", "The Countess": "countess", "The Smith": "smith",
                   "Griswold": "griswold", "Coldworm the Burrower": "coldworm",
-                  "Fangskin": "fangskin", "Bloodwitch the Wild": "bloodwitch"}.get(name, "superunique")
+                  "Fangskin": "fangskin", "Bloodwitch the Wild": "bloodwitch",
+                  "Ismail Vilehand": "council", "Geleb Flamefinger": "council", "Bremm Sparkfist": "council",
+                  "Toorc Icefist": "council", "Wyand Voidfinger": "council", "Maffer Dragonhand": "council",
+                  "Siege Boss": "shenk", "Grand Vizier of Chaos": "seal", "Lord De Seis": "seal",
+                  "Infector of Souls": "seal", "Witch Doctor Endugu": "endugu",
+                  "Sszark the Burning": "sszark", "Dac Farren": "dacfarren", "The Feature Creep": "hephasto"}.get(name, "superunique")
         lo, hi = _int(su.get("mingrp")), _int(su.get("maxgrp"))
         for c in _scatter(world, cell2, rng.randint(lo, max(lo, hi)) if hi else 0, taken):
             _spawn(world, mid, c, lvl + 1, taken, champion=False)
@@ -358,6 +418,45 @@ def _pack(world, centre, mid, lvl, taken, champion=False):
         _spawn(world, m, cell, lvl, taken, champion=champion and i == 0)
 
 
+def reach_tiles(grid, seeds):
+    """Tiles (5x5 cells) you can walk to from the entrances: monsters only spawn there
+    (no packs stranded on a lava lake or behind a cliff)."""
+    if not seeds:
+        return None
+    tw, th = grid.w // 5, grid.h // 5
+    ok = bytearray(tw * th)
+    for ty in range(th):
+        for tx in range(tw):
+            if grid.walkable(tx * 5 + 2, ty * 5 + 2) or grid.walkable(tx * 5 + 1, ty * 5 + 1):
+                ok[ty * tw + tx] = 1
+    seen = bytearray(tw * th)
+    stack = []
+    for c in seeds:
+        t = (c[0] // 5, c[1] // 5)
+        if 0 <= t[0] < tw and 0 <= t[1] < th:
+            i = t[1] * tw + t[0]
+            if not seen[i]:
+                seen[i] = 1
+                stack.append(i)
+    while stack:
+        i = stack.pop()
+        x, y = i % tw, i // tw
+        for j in (i - 1 if x > 0 else -1, i + 1 if x < tw - 1 else -1, i - tw if y > 0 else -1, i + tw if y < th - 1 else -1):
+            if j >= 0 and ok[j] and not seen[j]:
+                seen[j] = 1
+                stack.append(j)
+    return (seen, tw, th)
+
+
+def _reachable(world, c):
+    r = getattr(world, "_reach", None)
+    if r is None:
+        return True
+    seen, tw, th = r
+    tx, ty = c[0] // 5, c[1] // 5
+    return 0 <= tx < tw and 0 <= ty < th and seen[ty * tw + tx]
+
+
 def _populate(world, lid, rect, taken, safe, info):
     roster = info.roster(lid)
     if not roster:
@@ -381,7 +480,7 @@ def _populate(world, lid, rect, taken, safe, info):
     while len(centres) < n_packs and tries < n_packs * 40:
         tries += 1
         c = (rng.randrange(x0, x1), rng.randrange(y0, y1))
-        if not g.walkable(*c) or c in taken:
+        if not g.walkable(*c) or c in taken or not _reachable(world, c):
             continue
         if any(chebyshev(c, s) < 22 for s in safe if s):
             continue
@@ -400,6 +499,26 @@ def _populate(world, lid, rect, taken, safe, info):
 
 
 # ---------------------------------------------------------------- building whole worlds
+# the outdoor worlds of Acts 3-5: key -> (module, builder)
+LATE_WORLDS = {"jungle": ("act3", "build_jungle"), "kurast": ("act3", "build_kurast"),
+               "mesa": ("act4", "build_mesa"), "lava": ("act4", "build_lava"),
+               "siege": ("act5", "build_siege"), 117: ("act5", "build_tundra")}
+
+
+def _late_dungeon(level_key):
+    if not isinstance(level_key, int) or level_key < 75:
+        return None
+    import importlib
+    for mod in ("act3", "act4", "act5"):
+        try:
+            m = importlib.import_module("game." + mod)
+        except ImportError:
+            continue
+        if level_key in getattr(m, "DUNGEONS", {}):
+            return m
+    return None
+
+
 def make_world(kit, info, content, level_key, seed=None, player=None, char_class="bar", char_name=None):
     """level_key: "wild" (the whole outdoor act) or a dungeon level id."""
     from .world import World
@@ -413,6 +532,12 @@ def make_world(kit, info, content, level_key, seed=None, player=None, char_class
     elif level_key == 39:
         from .act1 import build_cow
         b, grid, rng = build_cow(kit, seed, content)
+    elif level_key in LATE_WORLDS:
+        mod, fn = LATE_WORLDS[level_key]
+        import importlib
+        b, grid, rng = getattr(importlib.import_module("game." + mod), fn)(kit, seed, content)
+    elif _late_dungeon(level_key):
+        b, grid, rng = _late_dungeon(level_key).build_level(kit, level_key, seed)
     elif level_key in act2.DUNGEONS:
         real = act2.CURRENT_REAL or act2.real_tomb(getattr(player, "name", None) or char_name)
         b, grid, rng = act2.build_level(kit, level_key, seed, real=real)

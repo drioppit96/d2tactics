@@ -37,7 +37,16 @@ NPC_NAMES = {"akara": "Akara", "charsi": "Charsi", "gheed": "Gheed", "kashya": "
              "cain1": "Deckard Cain", "rogue1": "Rogue Scout", "navi": "Flavie", "chicken": "Chicken",
              "warriv2": "Warriv", "atma": "Atma", "drognan": "Drognan", "fara": "Fara", "greiz": "Greiz",
              "elzix": "Elzix", "lysander": "Lysander", "meshif1": "Meshif", "geglash": "Geglash", "jerhyn": "Jerhyn", "tyrael1": "Tyrael",
-             "cain2": "Deckard Cain"}
+             "cain2": "Deckard Cain",
+             # Kurast Docks
+             "cain3": "Deckard Cain", "ormus": "Ormus", "alkor": "Alkor", "asheara": "Asheara", "hratli": "Hratli",
+             "meshif2": "Meshif", "natalya": "Natalya",
+             # the Pandemonium Fortress
+             "tyrael2": "Tyrael", "jamella": "Jamella", "halbu": "Halbu", "cain4": "Deckard Cain",
+             # Harrogath
+             "larzuk": "Larzuk", "drehya": "Anya", "malah": "Malah", "nihlathak": "Nihlathak",
+             "qual-kehk": "Qual-Kehk", "tyrael3": "Tyrael", "cain6": "Deckard Cain"}
+HEALERS = {"akara", "fara", "ormus", "jamella", "malah"}
 NPC_LINES = {
     "akara": "Akara: Rest a moment, I will mend your wounds.",
     "charsi": "Charsi: My forge isn't ready for trading yet - check back soon!",
@@ -58,6 +67,24 @@ NPC_LINES = {
     "geglash": "Geglash: Want to know a secret? Me neither.",
     "jerhyn": "Jerhyn: An evil has taken the palace. My men keep it sealed - for now.",
     "cain2": "Deckard Cain: Stay awhile and listen... and bring me what you cannot read.",
+    "cain3": "Deckard Cain: Kurast... once the jewel of the east. The Zakarum rot it from within.",
+    "ormus": "Ormus: Ormus sees much, stranger. Ormus will mend your wounds, if you ask.",
+    "alkor": "Alkor: Potions, poultices... and a little gamble now and then, eh?",
+    "asheara": "Asheara: The Iron Wolves fight for coin. Hire one, if you can afford it.",
+    "hratli": "Hratli: My forge is hot. What do you need?",
+    "meshif2": "Meshif: The ship can take you back to Lut Gholein whenever you wish.",
+    "natalya": "Natalya: ...",
+    "tyrael2": "Tyrael: This is the last bastion of the High Heavens. Diablo waits in the Chaos Sanctuary.",
+    "jamella": "Jamella: Welcome, hero. Rest - and trade, if you need.",
+    "halbu": "Halbu: My hammer serves the Light.",
+    "cain4": "Deckard Cain: Even here, in Hell's own shadow, I will help you all I can.",
+    "larzuk": "Larzuk: Baal's armies batter our walls every day. My smithy is open.",
+    "drehya": "Anya: Thank you for freeing me. I will help you however I can.",
+    "malah": "Malah: Come, let me tend to you.",
+    "nihlathak": "Nihlathak: What do you want, outsider?",
+    "qual-kehk": "Qual-Kehk: My men are trapped out there. Free them, and they fight for you.",
+    "tyrael3": "Tyrael: Baal climbs Mount Arreat to corrupt the Worldstone. You must stop him.",
+    "cain6": "Deckard Cain: Harrogath stands - for now. The Ancients guard the summit of Arreat.",
 }
 GREEN = (100, 220, 100)
 YELLOW = (255, 230, 90)
@@ -202,7 +229,9 @@ class World(SkillCaster, ItemActions):
 
     def _default_start(self):
         """Where a new game starts: next to Warriv in the camp; in dungeons at the way in."""
-        warriv = [n.pos for n in self.npcs if getattr(n, "npc", "") in ("warriv1", "warriv2")]
+        from .acts import TOWN_START_NPC
+        starts = set(TOWN_START_NPC.values())
+        warriv = [n.pos for n in self.npcs if getattr(n, "npc", "") in starts]
         if warriv:
             wx, wy = warriv[0]
             taken = {n.pos for n in self.monsters}
@@ -652,7 +681,7 @@ class World(SkillCaster, ItemActions):
                 self.log(line, (220, 210, 170))
         else:
             self.log(NPC_LINES.get(npc.npc, npc.name + ": Hello."), (220, 210, 170))
-        if npc.npc == "akara":
+        if npc.npc in HEALERS:
             p.hp, p.mana = p.max_hp, p.max_mana
             self.emit("heal", p, 0)
         from .itemactions import NPC_OPTIONS

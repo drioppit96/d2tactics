@@ -495,15 +495,18 @@ class D2Assets(AssetProvider):
                      "cage": ["GI"], "waypoint": ["WN", "WP", "W7"], "portal": ["PP", "TP"], "tp": ["TP"], "tp_back": ["TP"],
                      "arcane_portal": ["AY", "PP"], "duriel_portal": ["PP"], "orifice": ["HA"],
                      "cube_chest": ["XK"], "staff_chest": ["XK"], "scroll_chest": ["XK"], "viper_altar": ["ZA"],
-                     "journal": ["TT"], "wirt": ["BP"]}
+                     "journal": ["TT"], "wirt": ["BP"],
+                     "eye_chest": ["XK"], "brain_chest": ["XK"], "heart_chest": ["XK"], "gidbinn": ["GA"],
+                     "lamtome": ["AB"], "orb": ["55"], "hellforge": ["UX"], "prison": ["GI"], "anya": ["2N"]}
     USED_ON = ("waypoint", "cage", "inifuss", "cube_chest", "staff_chest", "scroll_chest", "viper_altar",
-               "orifice", "journal")
+               "orifice", "journal", "eye_chest", "brain_chest", "heart_chest", "gidbinn", "lamtome", "orb",
+               "hellforge", "prison")
 
     def draw_object(self, surf, kind, oid, pos, s, clock=0.0, used=False):
         """Quest objects and waypoints with D2's object graphics (placeholder marker if missing)."""
         toks = self.OBJECT_TOKENS.get(kind, [])
         if kind == "waypoint":
-            from game.act2 import WAYPOINT_TOKEN
+            from game.acts import WAYPOINT_TOKEN
             if oid in WAYPOINT_TOKEN:
                 toks = [WAYPOINT_TOKEN[oid]] + [t for t in toks if t != WAYPOINT_TOKEN[oid]]
         if kind == "cairn" and isinstance(oid, int) and 7 <= oid <= 11:

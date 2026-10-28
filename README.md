@@ -42,6 +42,21 @@ The Summoner (Horazon's Journal opens the portal to the Canyon) and The Seven To
 in the orifice opens Duriel's Lair; Tyrael, Jerhyn, Meshif). Travel: Warriv "Go East" (for now
 also "Go East (test)" without killing Andariel).
 
+**Acts 3-5:** built the same way from D2's own presets. Act 3: Kurast Docks, the Spider
+Forest, Great Marsh and Flayer Jungle (D2's 32x32 river pieces), Lower Kurast, the Bazaar,
+Upper Kurast, the Causeway and Travincal, the spider caves, Swampy Pit, Flayer Dungeon, the
+Kurast Sewers, the six temples and the Durance of Hate. Act 4: the Pandemonium Fortress, the
+Outer Steppes, Plains of Despair, City of the Damned, the River of Flame (Hellforge) and the
+Chaos Sanctuary. Act 5: Harrogath, the Bloody Foothills, Frigid Highlands, Arreat Plateau,
+the ice caves, the Frozen River, the Frozen Tundra, Arreat Summit, Nihlathak's Temple and its
+halls, the Worldstone Keep, the Throne of Destruction and the Worldstone Chamber. Every act's
+NPCs, traders (Ormus, Alkor, Asheara, Hratli, Jamella, Halbu, Larzuk, Malah, Anya), healers,
+hirelings (Iron Wolves, barbarians), waypoints and all 18 quests of Acts 3-5 (Golden Bird ...
+Eve of Destruction). Travel: Meshif (Act 2 <-> 3), Mephisto's portal (3 -> 4), Tyrael (4 -> 5).
+Test-only travel options (remove later): Warriv "Go East (test)", Meshif "Sail East (test)",
+Cain in Kurast "To Act 4 (test)", Tyrael "Travel to Harrogath (test)". What is simplified or
+still missing: docs/ACTS345_MISSING.md.
+
 **Horadric Cube:** right click it in the backpack (or drop items on it). Every D2 recipe from
 CubeMain.txt: gem and rune upgrades, potions, 3 rings -> amulet, rerolls, socketing, prismatic
 and garnet rings ..., the Horadric Staff, and Wirt's Leg + a Tome of Town Portal in the Rogue

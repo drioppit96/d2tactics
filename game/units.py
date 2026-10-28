@@ -261,6 +261,8 @@ class Player(Unit):
         for b in getattr(self, "buffs", {}).values():
             for k, v in b.get("stats", {}).items():
                 add(k, v)
+        for k, v in (getattr(self, "quest_stats", None) or {}).items():     # Potion of Life, Malah's scroll
+            add(k, v)
         if self.aura_source is not None:
             try:
                 for k, v in self.aura_source().items():

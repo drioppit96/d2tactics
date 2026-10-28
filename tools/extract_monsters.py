@@ -250,7 +250,7 @@ def main():
     for r in mons:
         mid = (r.get("id") or "").strip()
         tok = (r.get("code") or "").strip().upper()
-        if not mid or not tok or tok in ("XX", "NONE"):
+        if not mid or not tok or tok == "NONE":          # XX = the Minions of Destruction (dummies just have no files)
             continue
         m2 = ms2.get((r.get("monstatsex") or mid).lower(), {})
         wc = ((m2.get("basew") or "hth").replace('"', "").strip() or "hth").upper()

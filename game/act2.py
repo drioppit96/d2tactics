@@ -224,7 +224,7 @@ def build_ring(kit, level_id, spec, seed=None):
         if (rx, ry) == way:
             b.role_rooms = {"way": (rx * rw, ry * rh, rw, rh)}
     b.areas[level_id] = (0, 0, b.tm.tw * SUB, b.tm.th * SUB)
-    b.tm.drawn = set(b.tm.floor) | set(b.tm.walls)
+    b.tm.drawn = set(b.tm.floor) | set(b.tm.walls) | set(b.tm.floor2)
     grid = make_grid(b.tm)
     if spec.get("waypoint"):
         _ensure_waypoint(b, grid, level_id, dict(spec, waypoint_centre=False))
@@ -432,7 +432,7 @@ def build_desert(kit, seed=None, content=None):
                 sand(bx0 + bx * BLOCK, by0 + by * BLOCK)
                 taken.add((bx, by))
     # Lut Gholein's waypoint (obj.txt would also find the DS1's own)
-    b.tm.drawn = set(b.tm.floor) | set(b.tm.walls)
+    b.tm.drawn = set(b.tm.floor) | set(b.tm.walls) | set(b.tm.floor2)
     grid = make_grid(b.tm)
     if not any(k == "waypoint" and o == 40 for k, _, o, _ in b.objects):
         x0, y0, x1, y1 = b.town_rect
@@ -527,6 +527,6 @@ def build_canyon(kit, seed=None, content=None):
     for bx, by in inner:
         if (bx, by) not in taken:
             sand(bx * BLOCK, by * BLOCK)
-    b.tm.drawn = set(b.tm.floor) | set(b.tm.walls)
+    b.tm.drawn = set(b.tm.floor) | set(b.tm.walls) | set(b.tm.floor2)
     grid = make_grid(b.tm)
     return b, grid, rng

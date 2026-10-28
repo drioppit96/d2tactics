@@ -265,11 +265,16 @@ def make_grid(tm):
             break
         for (tx, ty), (_, tile) in src.items():
             bl = _mask(tile, 1)
+            alone = (tx, ty) not in tm.floor          # a second-layer floor with nothing under it is the floor
             for sy in range(SUB):
                 y = ty * SUB + sy
-                if y >= H or not bl[sy]:
-                    continue
+                if y >= H:
+                    break
                 row = cells[y]
+                if alone:
+                    row[tx * SUB:tx * SUB + SUB] = [FLOOR] * SUB
+                if not bl[sy]:
+                    continue
                 for i in bl[sy]:
                     if tx * SUB + i < W:
                         row[tx * SUB + i] = WALL
@@ -559,7 +564,7 @@ def build_outdoors(kit, seed=None, content=None):
                 b.areas[27] = (tx0 * SUB, ty0 * SUB, (tx0 + ST) * SUB, fy * SUB)
                 b.court_rect = (cx, cy, cw, ch)
         b.mg_from = mg_from
-    b.tm.drawn = set(b.tm.floor) | set(b.tm.walls)
+    b.tm.drawn = set(b.tm.floor) | set(b.tm.walls) | set(b.tm.floor2)
     grid = make_grid(b.tm)
     _connect(b, grid, pos, links, kit, rng, openings)
     return b, grid, rng
@@ -631,7 +636,7 @@ def build_cow(kit, seed=None, content=None):
     b.presets = [p for p in b.presets if p[0] == "The Cow King"]
     b.npcs = []
     b.objects = []
-    b.tm.drawn = set(b.tm.floor) | set(b.tm.walls)
+    b.tm.drawn = set(b.tm.floor) | set(b.tm.walls) | set(b.tm.floor2)
     grid = make_grid(b.tm)
     if not b.presets:
         for _ in range(200):
@@ -708,12 +713,13 @@ class MazeKit:
         self.kit, self.spec = kit, spec
         self.rooms = {}
         folder, prefix = spec["folder"], spec["prefix"]
+        self.variants = spec.get("variants", ("", "1", "2", "3", "4"))
         for combo in COMBOS:
-            for n in ("", "1", "2", "3", "4"):
+            for n in self.variants:
                 ds = kit.ds1(folder + "%s%s%s.ds1" % (prefix, combo, n))
                 if ds is not None:
                     self.rooms.setdefault(frozenset(combo), []).append(ds)
-        if len(self.rooms) < 15:
+        if len(self.rooms) < spec.get("min_kinds", 15):
             raise FileNotFoundError("%s rooms missing (%d of 15 kinds)" % (name, len(self.rooms)))
         any_room = next(iter(self.rooms.values()))[0]
         self.rw, self.rh = any_room.width - 1, any_room.height - 1
@@ -723,8 +729,9 @@ class MazeKit:
         if not pat:
             return None
         cands = []
-        for n in ("", "1", "2", "3", "4"):
-            nm = pat.format(d=_canon(exits), x=_canon(exits), n=n)
+        pats = pat if isinstance(pat, (list, tuple)) else [pat]
+        for p, n in [(p, n) for p in pats for n in tuple(self.variants) + ("",)]:
+            nm = p.format(d=_canon(exits), x=_canon(exits), n=n)
             ds = self.kit.ds1(self.spec["folder"] + nm + ".ds1")
             if ds is not None and ds not in cands:
                 cands.append(ds)
@@ -753,7 +760,7 @@ def build_maze(kit, level_id, spec, seed=None):
         mk = kit.mazes[spec["kit"]] = MazeKit(kit, spec["kit"])
     rng = random.Random(seed)
     roles = spec.get("roles", [])
-    cols = rows = 5 if spec["rooms"] > 9 else 4
+    cols = rows = spec.get("grid", 5 if spec["rooms"] > 9 else 4)
     for attempt in range(60):
         layout = _grow(spec["rooms"], rng, cols, rows)
         assign = {}
@@ -761,7 +768,8 @@ def build_maze(kit, level_id, spec, seed=None):
         rng.shuffle(leaves)
         ok = True
         for role in roles:
-            if mk.spec["roles"].get(role, "").find("{x}") >= 0:
+            rp = mk.spec["roles"].get(role, "")
+            if "{x}" in (rp if isinstance(rp, str) else " ".join(rp)):
                 cand = [c for c, ex in layout.items() if c not in assign and mk.role_room(role, ex, rng) is not None]
             else:
                 cand = [c for c in leaves if c not in assign and mk.role_room(role, layout[c], rng) is not None]
@@ -796,7 +804,7 @@ def build_maze(kit, level_id, spec, seed=None):
     used = set()
     for (tx, ty) in b.tm.floor:
         used.add((tx, ty))
-    b.tm.drawn = set(b.tm.floor) | set(b.tm.walls)
+    b.tm.drawn = set(b.tm.floor) | set(b.tm.walls) | set(b.tm.floor2)
     return b, grid, rng
 
 
@@ -825,7 +833,7 @@ def build_preset(kit, level_id, spec, seed=None):
         act_tables(b, spec.get("act", 1), kit)
         stamp(b, ds, kit.tiles_for(ds, spec.get("lvltype")), 0, 0, rng, level_id)
         b.areas[level_id] = (0, 0, ds.width * SUB, ds.height * SUB)
-    b.tm.drawn = set(b.tm.floor) | set(b.tm.walls)
+    b.tm.drawn = set(b.tm.floor) | set(b.tm.walls) | set(b.tm.floor2)
     grid = make_grid(b.tm)
     return b, grid, rng
 

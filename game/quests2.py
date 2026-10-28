@@ -215,26 +215,34 @@ def talk(world, npc):
     return lines
 
 
-def hire_guard(world, free=False):
-    """Greiz: an Act 2 desert mercenary (D2's act2hire) who fights in melee."""
+HIRELINGS = {"act2hire": ("Desert Guard", "Greiz", "melee"), "act3hire": ("Iron Wolf", "Asheara", "ranged"),
+             "act5hire1": ("Barbarian", "Qual-Kehk", "melee")}
+
+
+def hire_guard(world, free=False, kind="act2hire"):
+    """A hireling of the act (D2's act2hire / act3hire / act5hire1) for gold."""
     c = world.content
     p = world.player
     if c is None:
         return False
+    title, boss, style = HIRELINGS.get(kind, HIRELINGS["act2hire"])
     if any(getattr(a, "hireling", False) for a in world.allies()):
-        world.log("Greiz: You already have a sword at your side.", TALK)
+        world.log("%s: You already have a hireling at your side." % boss, TALK)
         return False
     cost = 0 if free else 60 * p.level + 100
     if p.gold < cost:
-        world.log("Greiz: %d gold, and one of my men is yours." % cost, TALK)
+        world.log("%s: %d gold, and one of mine is yours." % (boss, cost), TALK)
         return False
-    key = c.monstats_key("act2hire")
+    key = c.monstats_key(kind)
     if not key:
         return False
     t = dict(c.monster_template(key, level=max(1, p.level)))
-    t["name"] = "Desert Guard"
+    t["name"] = title
     t["hp"] = (t["hp"][0] * 3 + 60, t["hp"][1] * 3 + 60)
     t["dmg"] = (max(3, t["dmg"][0]) + p.level // 2, max(6, t["dmg"][1]) + p.level)
+    if style == "ranged":
+        t["ai"] = "ranged"
+        t["rng"] = 8
     from .units import Monster
     occ = world.occupied()
     spots = [(p.x + dx, p.y + dy) for dx in (-1, 1, 0, -2, 2) for dy in (-1, 1, 0, -2, 2)]
@@ -242,17 +250,20 @@ def hire_guard(world, free=False):
     if cell is None:
         return False
     p.gold -= cost
-    m = Monster("act2hire", cell[0], cell[1], level=p.level, rng=world.rng, template=t)
+    m = Monster(kind, cell[0], cell[1], level=p.level, rng=world.rng, template=t)
     world._make_ally(m)
-    m.name = "Desert Guard"
+    if style == "ranged":
+        m.ai = "ally_ranged"
+        m.range = 8
+    m.name = title
     m.summon_skill = "hireling"
     m.hireling = True
     p.has_hireling = True
-    p.hireling_kind = "act2hire"
+    p.hireling_kind = kind
     world.monsters.append(m)
     world.emit("resurrect", m)
     if not free:
-        world.log("Greiz: He's yours. Keep him alive.", TALK)
+        world.log("%s: Keep them alive." % boss, TALK)
     return True
 
 

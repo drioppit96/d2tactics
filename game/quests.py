@@ -58,8 +58,9 @@ def init(player):
         player.quests = {q: "none" for q, _ in ACT1}
     for q, _ in ACT1:
         player.quests.setdefault(q, "none")
-    from . import quests2
+    from . import quests2, quests345
     quests2.init(player)
+    quests345.init(player)
     if not hasattr(player, "waypoints"):
         player.waypoints = {1}
     if not hasattr(player, "visited"):
@@ -84,9 +85,11 @@ def talk(world, npc):
     q = p.quests
     lines = []
     who = npc.npc
-    from . import quests2
+    from . import quests2, quests345
     if who in quests2.NPC_ACT2:
         return quests2.talk(world, npc)
+    if who in quests345.NPCS:
+        return quests345.talk(world, npc)
     if who == "akara":
         if q["den"] == "none":
             _start(world, "den")
@@ -230,14 +233,16 @@ def on_enter(world, lid):
         _start(world, "malus")
     if lid in (34, 35, 36, 37) and q["andariel"] == "none":
         _start(world, "andariel")
-    from . import quests2
+    from . import quests2, quests345
     quests2.on_enter(world, lid)
+    quests345.on_enter(world, lid)
 
 
 def restore(world):
     init(world.player)
-    from . import quests2
+    from . import quests2, quests345
     quests2.restore(world)
+    quests345.restore(world)
 
 
 def read_horadric_scroll(world, it):
@@ -248,14 +253,15 @@ def read_horadric_scroll(world, it):
 
 def on_transmute(world, box):
     init(world.player)
-    from . import quests2
+    from . import quests2, quests345
     quests2.on_transmute(world, box)
+    quests345.on_transmute(world, box)
 
 
 def blocked(world, target):
     init(world.player)
-    from . import quests2
-    return quests2.blocked(world, target)
+    from . import quests2, quests345
+    return quests2.blocked(world, target) or quests345.blocked(world, target)
 
 
 def on_object(world, obj):
@@ -264,8 +270,10 @@ def on_object(world, obj):
     init(p)
     q = p.quests
     k = obj["kind"]
-    from . import quests2
+    from . import quests2, quests345
     r = quests2.on_object(world, obj)
+    if r is None:
+        r = quests345.on_object(world, obj)
     if r is not None:
         return r
     if k == "inifuss":
@@ -354,8 +362,9 @@ def on_monster_killed(world, unit=None):
     q = p.quests
     boss = getattr(unit, "boss", None) if unit is not None else None
     if unit is not None:
-        from . import quests2
+        from . import quests2, quests345
         quests2.on_killed(world, unit)
+        quests345.on_killed(world, unit)
     if boss == "blood_raven" and q["blood_raven"] in ("none", "active"):
         q["blood_raven"] = "cleared"
         world.log("Blood Raven is slain! Return to Kashya.", QUEST_COLOR)
@@ -396,7 +405,9 @@ def journal(player, act=1):
     init(player)
     out = []
     from . import quests2
-    table, texts = {1: (ACT1, JOURNAL), 2: (quests2.ACT2, quests2.JOURNAL)}.get(act, ([], {}))
+    from . import quests345
+    table, texts = {1: (ACT1, JOURNAL), 2: (quests2.ACT2, quests2.JOURNAL)}.get(
+        act, (quests345.ACTS.get(act, []), quests345.JOURNAL))
     for qid, title in table:
         st = player.quests.get(qid, "none")
         text = texts.get(qid, {}).get(st, "")

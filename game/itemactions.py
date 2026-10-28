@@ -12,7 +12,9 @@ GREY = (170, 170, 170)
 RED = (255, 80, 80)
 
 VENDORS = {"akara": "akara", "charsi": "charsi", "gheed": "gheed",
-           "fara": "fara", "lysander": "lysander", "drognan": "drognan", "elzix": "elzix"}
+           "fara": "fara", "lysander": "lysander", "drognan": "drognan", "elzix": "elzix",
+           "ormus": "ormus", "alkor": "alkor", "asheara": "asheara", "hratli": "hralti",      # D2's own spelling
+           "jamella": "jamella", "halbu": "halbu", "larzuk": "larzuk", "malah": "malah", "drehya": "drehya"}
 NPC_OPTIONS = {
     "akara": ["Talk", "Trade", "Level 99 (test)"],             # TEST ONLY: "Level 99 (test)", remove later
     "charsi": ["Talk", "Trade"], "gheed": ["Talk", "Trade", "Gamble"],
@@ -21,7 +23,17 @@ NPC_OPTIONS = {
     # Lut Gholein
     "fara": ["Talk", "Trade"], "drognan": ["Talk", "Trade"], "lysander": ["Talk", "Trade"],
     "elzix": ["Talk", "Trade", "Gamble"], "greiz": ["Talk", "Hire"], "atma": ["Talk"], "jerhyn": ["Talk"],
-    "geglash": ["Talk"], "meshif1": ["Talk", "Sail East"], "tyrael1": ["Talk"], "warriv2": ["Talk", "Go West"], "cain2": ["Talk", "Identify Items"],
+    "geglash": ["Talk"], "meshif1": ["Talk", "Sail East", "Sail East (test)"],   # TEST ONLY: "(test)" "tyrael1": ["Talk"], "warriv2": ["Talk", "Go West"], "cain2": ["Talk", "Identify Items"],
+    # Kurast Docks
+    "ormus": ["Talk", "Trade"], "alkor": ["Talk", "Trade", "Gamble"], "asheara": ["Talk", "Trade", "Hire"],
+    "hratli": ["Talk", "Trade"], "cain3": ["Talk", "Identify Items", "To Act 4 (test)"],   # TEST ONLY: "To Act 4 (test)"
+    "meshif2": ["Talk", "Sail West"], "natalya": ["Talk"],
+    # the Pandemonium Fortress
+    "tyrael2": ["Talk", "Travel to Harrogath", "Travel to Harrogath (test)"],             # TEST ONLY: "(test)"
+    "jamella": ["Talk", "Trade", "Gamble"], "halbu": ["Talk", "Trade"], "cain4": ["Talk", "Identify Items"],
+    # Harrogath
+    "larzuk": ["Talk", "Trade", "Imbue Sockets"], "malah": ["Talk", "Trade"], "drehya": ["Talk", "Trade", "Gamble"],
+    "qual-kehk": ["Talk", "Hire"], "nihlathak": ["Talk"], "tyrael3": ["Talk"], "cain6": ["Talk", "Identify Items"],
 }
 STORE_W, STORE_H = 10, 10
 TAB_NAMES = {"armo": "Armor", "weap": "Weapons", "misc": "Misc", "gamble": "Gamble"}
@@ -230,7 +242,9 @@ class ItemActions:
         if it.use == "horadric_scroll":
             quests.read_horadric_scroll(self, it)
             return True
-        return False
+        from . import quests345
+        quests.init(p)
+        return quests345.read_item(self, it)
 
     # ------------------------------------------------------------ the Horadric Cube
     def cube_insert(self, box, it=None):

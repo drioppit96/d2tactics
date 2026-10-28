@@ -156,9 +156,9 @@ class Game:
             from game import quests
             quests.restore(self.world)
             if getattr(player, "has_hireling", False):
-                if getattr(player, "hireling_kind", "") == "act2hire":
+                if getattr(player, "hireling_kind", "") in ("act2hire", "act3hire", "act5hire1"):
                     from game.quests2 import hire_guard
-                    hire_guard(self.world, free=True)
+                    hire_guard(self.world, free=True, kind=player.hireling_kind)
                 else:
                     from game.quests import hire_rogue
                     hire_rogue(self.world)
@@ -179,8 +179,8 @@ class Game:
         self.world.log("Left click: move / talk / attack. Right click: your skill. Space: end turn. Tab: map.",
                        (170, 170, 170))
         self._start_scene()
-        if saved is not None and int(saved.get("act", 1) or 1) == 2:
-            self.travel_act(2)                 # D2: you continue in the town of the act you were in
+        if saved is not None and int(saved.get("act", 1) or 1) > 1:
+            self.travel_act(int(saved.get("act", 1)))   # D2: you continue in the town of the act you were in
         self.prebuild_from(self.world)
         self.start_sprite_prebuild()
         if self.asset_warning:
@@ -360,9 +360,13 @@ class Game:
         elif opt == "Sail East":
             q = w.player.quests
             if q.get("tombs") in ("cleared", "done"):
-                w.log("Meshif: Kurast will have to wait - Act 3 comes in the next update.", (220, 210, 170))
+                w.log("Meshif: To Kurast!", (220, 210, 170))
+                self.travel_act(3)
             else:
                 w.log("Meshif: Not while Duriel's evil holds the seas. Talk to Jerhyn.", (220, 210, 170))
+        elif opt == "Hire" and npc.npc in ("asheara", "qual-kehk"):
+            from game import quests2
+            quests2.hire_guard(w, kind="act3hire" if npc.npc == "asheara" else "act5hire1")
         elif opt == "Hire":
             from game import quests
             q = w.player.quests
@@ -388,6 +392,23 @@ class Game:
         elif opt == "Go West":
             w.log("Warriv: Back to the Rogue Encampment.", (220, 210, 170))
             self.travel_act(1)
+        elif opt in ("Sail East (test)", "To Act 4 (test)", "Travel to Harrogath (test)"):
+            # TESTING ONLY: travel on without the act's last quest
+            self.travel_act({"Sail East (test)": 3, "To Act 4 (test)": 4, "Travel to Harrogath (test)": 5}[opt])
+        elif opt == "Sail West":
+            w.log("Meshif: Back to Lut Gholein, then.", (220, 210, 170))
+            self.travel_act(2)
+        elif opt == "Travel to Harrogath":
+            q = w.player.quests
+            if q.get("diablo") in ("cleared", "done"):
+                q["diablo"] = "done"
+                w.log("Tyrael: Go now - Harrogath needs you.", (220, 210, 170))
+                self.travel_act(5)
+            else:
+                w.log("Tyrael: Diablo still lives. The way to Harrogath stays closed.", (220, 210, 170))
+        elif opt == "Imbue Sockets":
+            from game import quests345
+            quests345.larzuk_sockets(w)
 
     def current_act(self):
         from game.acts import act_of
@@ -501,8 +522,12 @@ class Game:
                 for mid in info.roster(lid):
                     if mid not in ids:
                         ids.append(mid)
-        for mid in ("andariel", "bloodraven", "corpsefire", "smith", "griswold", "countess",
-                    "radament", "duriel", "summoner"):
+        bosses = {1: ("andariel", "bloodraven", "corpsefire", "smith", "griswold", "countess"),
+                  2: ("radament", "duriel", "summoner"),
+                  3: ("mephisto", "councilmember1", "councilmember2", "councilmember3", "fetishshaman4"),
+                  4: ("diablo", "izual", "hephasto", "fingermage3", "doomknight3", "megademon3"),
+                  5: ("baalcrab", "nihlathakboss", "ancientbarb1", "ancientbarb2", "ancientbarb3", "overseer1")}
+        for mid in bosses.get(self.current_act(), ()):
             if mid not in ids:
                 ids.append(mid)
         plan["monsters"] = ids
@@ -1525,7 +1550,14 @@ class Game:
         elif "victory" in self.scene.flags:
             if getattr(self.world, "level_key", None) is not None:
                 q = getattr(self.world.player, "quests", {})
-                if self.current_act() == 2 and q.get("tombs") in ("cleared", "done"):
+                act = self.current_act()
+                late = {3: ("mephisto", "Mephisto is dead - Act 3 complete!"),
+                        4: ("diablo", "Diablo is dead - Act 4 complete!"),
+                        5: ("baal", "Baal is dead - you have saved Sanctuary!")}.get(act)
+                if late and q.get(late[0]) in ("cleared", "done"):
+                    img = self.fonts["med"].render(late[1], True, GOLD)
+                    self.screen.blit(img, (W / 2 - img.get_width() / 2, 84))
+                elif self.current_act() == 2 and q.get("tombs") in ("cleared", "done"):
                     img = self.fonts["med"].render("Duriel is dead - Act 2 complete!", True, GOLD)
                     self.screen.blit(img, (W / 2 - img.get_width() / 2, 84))
                 elif q.get("andariel") in ("cleared", "done") and self.current_act() == 1:

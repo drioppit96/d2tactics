@@ -67,7 +67,8 @@ def _int(v, default=0):
 
 # quest items you use with a right click
 QUEST_NAMES = {"msf": "Staff of Kings", "vip": "Amulet of the Viper"}
-QUEST_USE = {"box": "cube", "ass": "book_skill", "tr1": "horadric_scroll", "xyz": "potion_of_life"}
+QUEST_USE = {"box": "cube", "ass": "book_skill", "tr1": "horadric_scroll", "xyz": "potion_of_life",
+             "tr2": "scroll_resist"}
 
 
 class D2Content:

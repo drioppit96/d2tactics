@@ -221,3 +221,31 @@ through whole caves (`World` + simple attack/move loop) to check balance.
   into the host. Picture invjw1-6 (random).
 - roll_quality: unique 0.6%, set 1%, rare 2.5%, magic 18% of item drops (MF with D2's diminishing
   returns for uniques/sets, x3 for bosses).
+
+## Acts 3-5 (game/act3.py, act4.py, act5.py, drlg.py, quests345.py)
+
+- Worlds: "jungle" (75-78), "kurast" (79-83), "mesa" (103-106), "lava" (107+108), "siege" (109-112),
+  117 alone; all other levels are their own world. acts.GROUPS maps level -> world key,
+  actworld.LATE_WORLDS world key -> builder. The jungle's tail and Lower Kurast's south gate are
+  seamless edges between two worlds: Built.edge_exits = [(cells, target level)].
+- drlg.block_area: an area of N x M blocks (Kurast 8, mesa 8, barricade 16) with D2's border
+  presets (Act 1 numbering: 1 S, 2 W, 3 N, 4 E, 5 SW, 6 NW, 7 NE, 8 SE; mesa "o" = opening),
+  fixed specials (gates, entrances, exits, transitions), free specials, fills (biggest first) on
+  plain ground (laid first, so presets with gaps leave no holes). drlg.full_pieces drops the
+  barricade presets with cliff gaps.
+- Jungle: 2 x 6 river pieces Riv<exits>; the exits = a random spanning tree over the 12 cells.
+  Clearings Spid / Bog / Pyg (only for 1-2 exit combos): Spid "" W0 = Spider Cave, Spid2 W1 =
+  Spider Cavern, Pyg "" W0 = Swampy Pit, Pyg2 W1 = Flayer Dungeon.
+- Kurast: Slums (79) / Burbs (80) / Metro (81); Burbs/Metro Sewer0 W0, Sewer1 W1 -> Sewers,
+  Temple2 W2, Temple3 W3 -> the temples; Bridge (Causeway) W2/W3 -> Ruined Fane / Disused Reliquary.
+- Sewers 1: four ladder rooms sewer<xx>_warp (W0-W3 -> Bazaar x2, Upper Kurast x2) - rebuilt until
+  both towns are reachable (spec need_warps).
+- River of Flame: maze of 13 lava rooms; its top middle room opens north into the Chaos
+  Sanctum cross (bridge, entry, wings, heart: Diablo is placed at the heart by code).
+- Floors that exist only on the DS1's second floor layer are floor (the Chaos Sanctum, Act 3+).
+- Monsters only spawn on tiles reachable from the entrances (actworld.reach_tiles).
+- DS1 object ids found from the presets: act 3 84 waypoint (Durance), 113 heart chest, 115 brain
+  chest (112 is a plain chest); act 4 42 Hellforge; act 5 101/103/118/119/120 waypoints, 58
+  prisons. Everything else quest-related is placed by code (eye chest, Gidbinn altar, Lam Esen's
+  lectern, the Compelling Orb from its monpreset spot, Anya, Nihlathak, Diablo).
+- NPCs D2 places by code: Jerhyn, Hratli, Larzuk, Tyrael (actworld.CODE_NPCS); Anya after the rescue.
