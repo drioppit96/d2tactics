@@ -234,8 +234,8 @@ def populate(world, built, info, taken, safe):
         if oid is None:
             continue
         kind = data.kind(oid)
-        if kind is None:
-            continue
+        if kind is None or kind == "door":
+            continue                    # no doors in this game: doorways are always open
         if kind == "decor":
             if not g.in_bounds(*cell):
                 continue
@@ -256,7 +256,7 @@ def populate(world, built, info, taken, safe):
             o["block"] = [] if o["kind"] != "door" else [c for c in o["block"] if c not in world.exits]
         world.objects.append(o)
         used_cells.add(cell)
-    _doors(world, built, data, used_cells)
+    # (D2's doors are left out: doorways stay open - they only got in the way)
     # random objects per room
     rng = world.rng
     for lid, rect in world.areas.items():
