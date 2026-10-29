@@ -61,6 +61,57 @@ def _fan_targets(src, dst, n, length):
     return out
 
 
+def _ray(start, ux, uy, length, include_start):
+    """Cells along a straight ray (DDA: one cell per step along the main axis)."""
+    m = max(abs(ux), abs(uy)) or 1.0
+    sx, sy = ux / m, uy / m
+    out = [start] if include_start else []
+    for t in range(1, length + 1):
+        c = (int(round(start[0] + sx * t)), int(round(start[1] + sy * t)))
+        if not out or out[-1] != c:
+            out.append(c)
+    return out
+
+
+def _volley_rays(src, dst, n, length, free=None):
+    """Cells of each missile of a volley (Multiple Shot, Charged Bolt, Teeth...): the 1st flies straight
+    at what you aimed at, the 2nd and 3rd fly beside it (parallel, one cell to each side), the rest fan
+    out to both sides, wider and wider."""
+    import math
+    dx, dy = dst[0] - src[0], dst[1] - src[1]
+    if dx == 0 and dy == 0:
+        dx = 1
+    a0 = math.atan2(dy, dx)
+    ux, uy = math.cos(a0), math.sin(a0)
+    # one cell to the side, perpendicular to the aim
+    # (an axis step, so diagonal volleys - straight across the screen - make one solid band)
+    px, py = -uy, ux
+    side = (1 if px > 0 else -1, 0) if abs(px) >= abs(py) else (0, 1 if py > 0 else -1)
+    rays = [_ray(src, ux, uy, length, False)]
+    for sign in (1, -1):
+        if len(rays) >= n:
+            break
+        st = (src[0] + side[0] * sign, src[1] + side[1] * sign)
+        if free is not None and not free(st):
+            rays.append(_ray(src, ux, uy, length, False))
+        else:
+            rays.append(_ray(st, ux, uy, length, True))
+    pairs = (n - 3 + 1) // 2
+    step = math.radians(min(14.0, 70.0 / max(1, pairs)))
+    k = 0
+    while len(rays) < n:
+        k += 1
+        for sign in (1, -1):
+            if len(rays) >= n:
+                break
+            a = a0 + sign * k * step
+            st = (src[0] + side[0] * sign, src[1] + side[1] * sign)
+            if free is not None and not free(st):
+                st = src
+            rays.append(_ray(st, math.cos(a), math.sin(a), length, st != src))
+    return rays
+
+
 def _extend(a, b, length):
     """A straight line from a through b, `length` cells long."""
     dx, dy = b[0] - a[0], b[1] - a[1]
@@ -497,9 +548,19 @@ class SkillCaster:
         out = []
         R = self._missile_reach(s)
         foes = self._foe_index(p.pos, R)
-        for end in _fan_targets(p.pos, cell, n, R):
-            path, hit = self._missile_path(p.pos, end, max_len=R, foes=foes)
-            out.append((path, hit[0] if hit else None))
+        g = self.grid
+        free = lambda c: g.in_bounds(*c) and g.walkable(*c)
+        for ray in _volley_rays(p.pos, cell, n, R, free):
+            path, hit = [], None
+            for c in ray:
+                if not free(c):
+                    break
+                path.append(c)
+                u = foes.get(c)
+                if u is not None:
+                    hit = u
+                    break
+            out.append((path, hit))
         return out
 
     def skill_preview(self, name, cell):
@@ -618,7 +679,8 @@ class SkillCaster:
             # the whole volley flies at once, then the hits land
             for path, m in shots:
                 end = m.pos if m is not None else (path[-1] if path else cell)
-                self.emit("projectile", p, p.pos, end, kind, vm)
+                start = path[0] if path and path[0] != end and chebyshev(path[0], p.pos) == 1 else p.pos
+                self.emit("projectile", p, start, end, kind, vm)
             for path, m in shots:
                 if m is not None and m.alive:
                     self._missile_hit(s, env, m)
