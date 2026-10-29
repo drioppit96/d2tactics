@@ -99,6 +99,13 @@ class Automap:
                 p = (int(ox + mx * k), int(oy + my * k))
                 if clip.collidepoint(p):
                     pygame.draw.rect(surf, WP_C, (p[0] - 3, p[1] - 2, 7, 5), 1)
+        if getattr(w, "reveal_monsters", False):        # the last few monsters of a "clear it" quest
+            for m in w.monsters:
+                if m.alive and not m.ally and m.ai != "npc" and not getattr(m, "hidden", False):
+                    mx, my = self.to_map(m.x, m.y)
+                    p = (int(ox + mx * k), int(oy + my * k))
+                    if clip.collidepoint(p):
+                        pygame.draw.circle(surf, (255, 40, 40), p, max(2, int(2.5 * k)))
         for m in w.npcs:
             if w.grid.explored[m.y][m.x]:
                 mx, my = self.to_map(m.x, m.y)

@@ -355,14 +355,19 @@ def on_monster_killed(world, unit=None):
         world.log("The Smith falls. The Malus must be close by.", QUEST_COLOR)
     if getattr(world, "level_key", None) == 8 or world.level_id == "den":
         if q["den"] in ("none", "active"):
-            left = [m for m in world.monsters if m.alive and getattr(m, "ai", "") != "npc" and not m.ally]
+            left = [m for m in world.monsters if m.alive and getattr(m, "ai", "") != "npc" and not m.ally
+                    and not getattr(m, "hidden", False) and not getattr(m, "invulnerable", False)]
             if not left:
                 q["den"] = "cleared"
+                world.reveal_monsters = False
                 world.log("The Den of Evil has been cleansed! Return to Akara.", QUEST_COLOR)
                 world.emit("quest", "den")
-            elif len(left) <= 5 and not getattr(world, "_den_hint", False):
-                world._den_hint = True
-                world.log("Only a few monsters remain in the Den...", (170, 170, 170))
+            elif len(left) <= 8:
+                world.reveal_monsters = True
+                if len(left) != getattr(world, "_den_left", None):
+                    world._den_left = len(left)
+                    world.log("%d monster%s left in the Den - shown in red on the map (Tab)." %
+                              (len(left), "" if len(left) == 1 else "s"), (170, 170, 170))
 
 
 def _countess_gold(world, unit):

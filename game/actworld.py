@@ -236,6 +236,46 @@ def setup(world, built, grid, rng, info, level_key):
         if lid in TOWN_IDS or lid == 20:
             continue
         _populate(world, lid, rect, taken, safe, info)
+    _drop_unreachable(world, [c for c in safe if c] + ([world._default_start()] if world.npcs else []))
+
+
+def _drop_unreachable(world, seeds):
+    """Monsters standing where you can never walk (some D2 presets put them in the rock) are
+    removed - otherwise "kill everything" quests like the Den of Evil could never be finished."""
+    g = world.grid
+    W, H = g.w, g.h
+    keep = lambda m: m.ai == "npc" or getattr(m, "boss", None) or getattr(m, "special", None) or m.ally
+    if W * H <= 900000:
+        seen = bytearray(W * H)
+        stack = []
+        for c in seeds:
+            if g.walkable(*c) and not seen[c[1] * W + c[0]]:
+                seen[c[1] * W + c[0]] = 1
+                stack.append(c[1] * W + c[0])
+        cells = g.cells
+        while stack:
+            i = stack.pop()
+            x, y = i % W, i // W
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)):
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < W and 0 <= ny < H:
+                    j = ny * W + nx
+                    if not seen[j] and cells[ny][nx] == 0:
+                        if dx and dy and (cells[y][nx] != 0 or cells[ny][x] != 0):
+                            continue
+                        seen[j] = 1
+                        stack.append(j)
+        if not any(seen):
+            return
+
+        def ok(m):
+            r = getattr(m, "radius", 0)
+            return any(seen[(m.y + dy) * W + (m.x + dx)] for dx in range(-r - 1, r + 2) for dy in range(-r - 1, r + 2)
+                       if 0 <= m.x + dx < W and 0 <= m.y + dy < H)
+    else:
+        def ok(m):
+            return _reachable(world, m.pos)
+    world.monsters = [m for m in world.monsters if keep(m) or ok(m)]
 
 
 def _free_near(grid, cell, radius=4):
