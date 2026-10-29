@@ -51,8 +51,8 @@ class Grid:
         """
         if start == goal:
             return []
-        if not self.walkable(*goal):
-            return None
+        if not self.walkable(*goal) or (goal in blocked and not allow_goal_blocked):
+            return None             # (searching the whole map for a cell nobody can stand on is slow)
         open_heap = [(chebyshev(start, goal), 0, start)]
         came = {start: None}
         cost = {start: 0}

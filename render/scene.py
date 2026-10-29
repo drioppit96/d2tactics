@@ -531,6 +531,7 @@ class Scene:
         far = []                 # enemies outside your light: drawn again, dimmed, above the darkness
         self._labels = []
         self.unit_hits = []      # (world-space rect, unit) for mouse picking, back to front
+        self.object_hits = []    # (world-space rect, object) the same for chests, shrines, doors ...
         # where the player is on screen: scenery drawn after him that covers him goes see-through
         ppx, ppy = cam.cell_to_screen(pv.rx, pv.ry)
         prect = pygame.Rect(int(ppx - 22), int(ppy - 86), 44, 92)
@@ -556,7 +557,9 @@ class Scene:
                     assets.draw_object(surf, okind, oid, cam.cell_to_screen(*cell), s, self.clock, used)
             elif kind == "gobject":
                 if hasattr(assets, "draw_gen_object"):
-                    assets.draw_gen_object(surf, obj, cam.cell_to_screen(*obj["cell"]), s, self.clock)
+                    r = assets.draw_gen_object(surf, obj, cam.cell_to_screen(*obj["cell"]), s, self.clock)
+                    if r is not None and obj["kind"] != "decor":
+                        self.object_hits.append((r, obj))       # click the picture, like D2
             elif kind == "item":
                 cell, it = obj
                 b = 1.0 if use_tiles else self.brightness(cell[0], cell[1], light)

@@ -827,6 +827,17 @@ class Game:
                 return u
         return None
 
+    def object_under_mouse(self, pos):
+        """A chest / shrine / door ... whose picture is under the mouse (front-most first)."""
+        from game.objects import clickable
+        W, H = self.screen.get_size()
+        wx = (pos[0] - W / 2) / self.cam.scale + self.cam.wx
+        wy = (pos[1] - H / 2) / self.cam.scale + self.cam.wy
+        for rect, o in reversed(getattr(self.scene, "object_hits", [])):
+            if clickable(o) and rect.collidepoint((int(wx), int(wy))):
+                return o
+        return None
+
     def _skill_area(self, cell):
         """Tiles your right-click skill would cover at `cell` (missile paths, blast areas)."""
         w = self.world
@@ -1170,7 +1181,7 @@ class Game:
                 return
             if button == 1 and m is None:
                 g = w.grid
-                obj = w.object_at(cell) if hasattr(w, "object_at") else None
+                obj = self.object_under_mouse(pos) or (w.object_at(cell) if hasattr(w, "object_at") else None)
                 wp = w.waypoint_at(cell) if hasattr(w, "waypoint_at") else None
                 if obj is not None and cell not in w.ground:
                     if obj.get("generic"):
@@ -1410,7 +1421,7 @@ class Game:
                 t = w.exits[cell]
                 label = ("To " + info.name(t)) if info and isinstance(t, int) else names.get(t, "Exit")
                 tip = ([label], [(240, 210, 90)])
-            obj = w.object_at(cell) if hasattr(w, "object_at") else None
+            obj = self.object_under_mouse(mouse) or (w.object_at(cell) if hasattr(w, "object_at") else None)
             if obj is not None:
                 label = {"cairn": "Cairn Stone", "inifuss": "Tree of Inifuss", "tome": "Moldy Tome",
                          "malus": "Horadric Malus", "cage": "Cain's Cage", "portal": "Portal to Tristram",

@@ -539,6 +539,7 @@ class D2Assets(AssetProvider):
             return
         img, x0, y0 = fr[idx % len(fr)]
         surf.blit(img, (int(pos[0] + x0), int(pos[1] + y0)))
+        return pygame.Rect(int(pos[0] + x0), int(pos[1] + y0), img.get_width(), img.get_height())
 
     def draw_object(self, surf, kind, oid, pos, s, clock=0.0, used=False):
         """Quest objects and waypoints with D2's object graphics (placeholder marker if missing)."""
