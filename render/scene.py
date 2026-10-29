@@ -643,8 +643,8 @@ class Scene:
             return False
         if g.visible[cy][cx]:
             return True
-        if getattr(u, "ally", False):
-            return True
+        if getattr(u, "ally", False) or getattr(u, "ai", "") == "npc":
+            return True                 # your followers and the town's people are always shown
         if not u.alive or v.dead:
             return g.explored[cy][cx]
         sx, sy = cam.cell_to_screen(v.rx, v.ry)
