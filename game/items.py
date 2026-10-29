@@ -106,7 +106,8 @@ QUEST_HINTS = {"cube": "Right click to open. Put items in and press Transmute",
                "horadric_scroll": "Right click to read",
                "msf": "Cube it with the Viper Amulet",
                "vip": "Cube it with the Staff of Kings",
-               "hst": "Place it in the orifice in Tal Rasha's Tomb"}
+               "hst": "Place it in the orifice in Tal Rasha's Tomb",
+               "bks": "Bring it to Akara"}
 
 
 TOME_MAX = 100          # scrolls a Tome of Town Portal / Identify holds
@@ -187,6 +188,8 @@ class Item:
                 out.append(("Holds %d item%s" % (n, "" if n == 1 else "s"), WHITE))
             if hint:
                 out.append((hint, (170, 170, 170)))
+            for t in self.extra_lines:
+                out.append((t, (199, 179, 119)))
             out.append(("Quest Item", (170, 170, 170)))
             return out
         if self.kind == "potion":

@@ -91,7 +91,17 @@ def talk(world, npc):
     if who in quests345.NPCS:
         return quests345.talk(world, npc)
     if who == "akara":
-        if q["den"] == "none":
+        if q["cain"] in ("active", "scroll", "stones") and (_has(world, "bks") or
+                                                            (q["cain"] != "active" and not _has(world, "bkd"))):
+            # D2: Akara deciphers the Scroll of Inifuss - it shows the order of the Cairn Stones
+            from .quests2 import take_item
+            take_item(world, "bks")
+            _cairn_key(world)
+            q["cain"] = "stones"
+            lines = ["Akara: This scroll is written in the old tongue. Let me read it...",
+                     "Akara: It names the Cairn Stones in the Stony Field, in the order you must touch them."]
+            world.log("Akara gives you the Key to the Cairn Stones (hover it to see the order).", QUEST_COLOR)
+        elif q["den"] == "none":
             _start(world, "den")
             lines = ["Akara: A cave in the Blood Moor - the Den of Evil - festers with demons.",
                      "Akara: Cleanse it of every last one, and I will teach you something of value."]
@@ -107,11 +117,7 @@ def talk(world, npc):
             _start(world, "cain")
             lines = ["Akara: Deckard Cain, the last of the Horadrim, is held in Tristram.",
                      "Akara: The way there is sealed. Find the Tree of Inifuss in the Dark Wood - its scroll holds the key."]
-        elif q["cain"] == "scroll":
-            q["cain"] = "stones"
-            lines = ["Akara: The scroll shows the order of the Cairn Stones in the Stony Field.",
-                     "Akara: Touch them, and the way to Tristram will open."]
-            world.log("The Cairn Stones in the Stony Field will open a portal to Tristram.", QUEST_COLOR)
+
         elif q["cain"] == "cleared":
             q["cain"] = "done"
             _reward_item(world, "ring", "Akara")
@@ -159,6 +165,30 @@ def talk(world, npc):
         else:
             lines = ["Warriv: The pass east is held by the Maiden. Until she falls, the caravan stays."]
     return lines
+
+
+CAIRN_NAMES = {7: "Alpha", 8: "Beta", 9: "Gamma", 10: "Delta", 11: "Lambda"}
+
+
+def _has(world, code):
+    from .quests2 import has_item
+    return has_item(world.player, code, world)
+
+
+def _cairn_key(world):
+    """The deciphered scroll: a random order of the five stones, kept with the hero."""
+    p = world.player
+    if not getattr(p, "cairn_order", None):
+        order = list(CAIRN_NAMES)
+        world.rng.shuffle(order)
+        p.cairn_order = order
+    if _has(world, "bkd"):
+        return
+    from .quests2 import give_item
+    it = give_item(world, "bkd")
+    if it is not None:
+        it.extra_lines = ["Touch the Cairn Stones in this order:",
+                          " - ".join(CAIRN_NAMES[i] for i in p.cairn_order)]
 
 
 def hire_rogue(world):
@@ -252,9 +282,12 @@ def on_object(world, obj):
     if r is not None:
         return r
     if k == "inifuss":
-        if q["cain"] in ("none", "active"):
-            q["cain"] = "scroll"
-            world.log("You take the Scroll of Inifuss from the tree. Bring it to Akara.", QUEST_COLOR)
+        if q["cain"] in ("none", "active") and not obj["used"] and not _has(world, "bks"):
+            if q["cain"] == "none":
+                _start(world, "cain")
+            from .quests2 import give_item
+            give_item(world, "bks", near=obj["cell"])          # D2: the scroll falls from the tree
+            world.log("A scroll falls from the Tree of Inifuss. Bring it to Akara.", QUEST_COLOR)
             obj["used"] = True
             return True
         world.log("The tree is silent now.", (170, 170, 170))
@@ -264,6 +297,16 @@ def on_object(world, obj):
             return False
         if obj["used"]:
             return False
+        order = getattr(p, "cairn_order", None)
+        if order:
+            done = sum(1 for o in world.objects if o["kind"] == "cairn" and o["used"])
+            if done < len(order) and obj.get("oid") != order[done]:
+                for o in world.objects:
+                    if o["kind"] == "cairn":
+                        o["used"] = False
+                world.emit("nova", p, obj["cell"], 1, "fire")
+                world.log("The stones fall silent - wrong order. Look at the Key to the Cairn Stones.", (255, 80, 80))
+                return True
         obj["used"] = True
         world.emit("nova", p, obj["cell"], 1, "ltng")
         left = [o for o in world.objects if o["kind"] == "cairn" and not o["used"]]

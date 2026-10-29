@@ -1468,7 +1468,11 @@ class Game:
                     lines = _otip(obj)
                     tip = (lines, [(90, 200, 255)] + [TEXT] * (len(lines) - 1))
                 else:
-                    tip = ([label.get(obj["kind"], obj["kind"]), "Click to use"], [(90, 200, 255), TEXT])
+                    name = label.get(obj["kind"], obj["kind"])
+                if obj["kind"] == "cairn":
+                    from game.quests import CAIRN_NAMES
+                    name = "Cairn Stone %s" % CAIRN_NAMES.get(obj.get("oid"), "")
+                tip = ([name, "Click to use"], [(90, 200, 255), TEXT])
             if hasattr(w, "waypoint_at") and w.waypoint_at(cell) is not None:
                 tip = (["Waypoint", "Click to travel"], [(90, 200, 255), TEXT])
             items = w.ground.get(cell)
