@@ -489,3 +489,4 @@ class Monster(Unit):
         self.ally = False
         self.life_turns = None
         self.mskills = list(t.get("skills", []) or [])     # MonStats Skill1-8 this game knows
+        self.caster = bool(t.get("caster", t.get("ai") == "shaman"))   # one big spell, or move + a small one

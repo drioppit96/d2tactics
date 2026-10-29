@@ -1805,6 +1805,9 @@ class World(SkillCaster, ItemActions):
             m.panic -= 1
             self._move_away(m, m.ap)
             return
+        if getattr(m, "caster", False) and not getattr(m, "boss", None) and not getattr(m, "ally", False):
+            self._caster_turn(m)
+            return
         guard = 0
         while m.ap > 0 and m.alive and p.alive and guard < 12:
             guard += 1
@@ -1820,6 +1823,66 @@ class World(SkillCaster, ItemActions):
                 acted = self._melee_step(m)
             if not acted:
                 break
+
+    def _caster_turn(self, m):
+        """Spellcasters (shamans, skeleton and finger mages, liches, vampires, priests...): each turn
+        EITHER one big spell from where they stand (meteor, blizzard, nova, firewall...) - it takes the
+        whole turn - OR move and then one smaller attack (a bolt, a curse, their normal missile)."""
+        from . import monskills
+        if m.ai == "shaman" and self._try_resurrect(m):
+            return
+        p = self._monster_target(m)
+        if p is None or not p.alive:
+            return
+        # 1) the big one, without moving
+        if monskills.try_cast(self, m, size="big", chance=0.4):
+            m.ap = 0
+            return
+        # 2) move: teleport if it can, else walk into range (keeping the AP for the attack)
+        reach = monskills.small_reach(m)
+        d = self.udist(m, p)
+        los = self.grid.line_of_sight(m.pos, p.pos)
+        if d > reach or not los:
+            if not monskills.try_cast(self, m, size="move", chance=0.5):
+                self._caster_approach(m, p, reach)
+        elif d <= 1 and reach > 1 and m.ap >= m.attack_cost + 1 and not getattr(m, "stationary", False):
+            self._move_away(m, 1)         # casters step back out of your reach before they cast
+        m.ap = max(m.ap, m.attack_cost)
+        if not p.alive or not m.alive:
+            m.ap = 0
+            return
+        # 3) one smaller attack
+        if not monskills.try_cast(self, m, size="small", chance=0.6):
+            d = self.udist(m, p)
+            los = self.grid.line_of_sight(m.pos, p.pos)
+            if m.range > 1 and d <= m.range and los:
+                kind = "fireball" if m.ai == "shaman" else "spike"
+                self._resolve_attack(m, p, ranged_kind=kind)
+            elif d == 1 and self._adjacent_reachable(m.pos, p.pos):
+                self._resolve_attack(m, p)
+            elif any(monskills.spell_size(n) == "small" for n, _ in m.mskills):
+                monskills.try_cast(self, m, size="small", chance=1.0)
+        m.ap = 0
+
+    def _caster_approach(self, m, p, reach):
+        if getattr(m, "stationary", False):
+            return
+        budget = max(1, m.ap - m.attack_cost)
+        path = None if m.radius else \
+            self.grid.find_path(m.pos, p.pos, blocked=self.occupied(m), allow_goal_blocked=True)
+        if path:
+            path = path[:-1]
+        else:
+            path = self._path_to_adjacent(m, p.pos)
+        if not path:
+            return
+        steps = []
+        for c in path[:budget]:
+            steps.append(c)
+            if chebyshev(c, p.pos) <= reach and self.grid.line_of_sight(c, p.pos):
+                break
+        if steps:
+            self._walk(m, steps)
 
     def _monster_target(self, m):
         """Who a monster goes for: you, your minions (whoever is closer) - or, when confused, anyone."""

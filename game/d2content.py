@@ -919,8 +919,10 @@ class D2Content:
             "undead": r.get("lundead") == "1" or r.get("hundead") == "1", "demon": r.get("demon") == "1",
             "size": self.monster_size(r),
         }
-        from .monskills import skills_of
+        from .monskills import skills_of, is_caster
         t["skills"] = skills_of(r)
+        t["d2ai"] = ai_name
+        t["caster"] = is_caster(ai_name, t["skills"])
         if unique:
             t["hp"] = (t["hp"][0] * 4, t["hp"][1] * 4)
             t["dmg"] = (t["dmg"][0] * 3 // 2 + 1, t["dmg"][1] * 3 // 2 + 1)

@@ -47,6 +47,40 @@ SKILLS = {
     "Bone Spear": ("bolt", "mag", 0.9, "bonespear"), "Teeth": ("bolt", "mag", 0.7, "teeth"),
     "Iron Maiden": ("curse", "amp", 0, None), "Decrepify": ("curse", "weaken", 0, None),
 }
+# casters (D2 AI names) - see world._caster_turn: one big spell OR move + one small attack per turn
+CASTER_AIS = {"FallenShaman", "FetishShaman", "SkeletonMage", "FingerMage", "OblivionKnight", "GreaterMummy",
+              "Vampire", "HighPriest", "ZakarumPriest", "SuccubusWitch", "Imp", "WillOWisp"}
+SPELL_KINDS = {"bolt", "nova", "area", "cone", "hose", "ce", "curse", "prison"}
+BIG_KINDS = {"area", "nova", "hose", "ce", "summon", "tentacles"}
+MOVE_KINDS = {"teleport", "charge"}
+
+
+def spell_size(name):
+    """'big' (meteor, blizzard, novas, corpse explosion, summons: the caster's whole turn),
+    'move' (teleport, charge) or 'small' (bolts, curses, heals...)."""
+    kind, _el, power, _m = SKILLS[name]
+    if kind in MOVE_KINDS:
+        return "move"
+    if kind in BIG_KINDS or (kind == "bolt" and power >= 1.15):
+        return "big"
+    return "small"
+
+
+REACH = {"bolt": 7, "hose": 7, "area": 7, "cone": 4, "nova": 3, "curse": 7, "prison": 7, "touch": 1, "melee": 1}
+
+
+def small_reach(m):
+    """How close a caster comes before its smaller attack: its missile or its shortest-reaching small spell."""
+    r = [REACH[SKILLS[n][0]] for n, _ in getattr(m, "mskills", ()) if spell_size(n) == "small" and SKILLS[n][0] in REACH]
+    if m.range > 1:
+        r.append(m.range)
+    return min(r) if r else 1
+
+
+def is_caster(d2ai, skills):
+    return d2ai in CASTER_AIS or any(SKILLS[s][0] in SPELL_KINDS for s, _ in skills or ())
+
+
 CURSE_STATS = {"amp": ("Amplify Damage", {"dr_pct": -100}), "weaken": ("Weaken", {"ed": -33}),
                "def": ("Defense Curse", {"def_pct": -50}), "bloodmana": ("Blood Mana", {"mana_regen_pct": -100})}
 
@@ -90,8 +124,11 @@ def _targets_near(world, cell, r):
     return out
 
 
-def try_cast(world, m):
+def try_cast(world, m, size=None, chance=None):
+    """size: only spells of that size ('big' / 'small' / 'move'); chance overrides how often it tries."""
     sk = getattr(m, "mskills", None)
+    if size is not None and sk:
+        sk = [x for x in sk if spell_size(x[0]) == size]
     if not sk or m.ap < m.attack_cost:
         return False
     rng = world.rng
@@ -101,7 +138,8 @@ def try_cast(world, m):
     d = world.udist(m, tgt)
     los = world.grid.line_of_sight(m.pos, tgt.pos)
     boss = bool(getattr(m, "boss", None))
-    chance = 0.55 if boss else (0.5 if m.range > 1 else 0.3)
+    if chance is None:
+        chance = 0.55 if boss else (0.5 if m.range > 1 else 0.3)
     if rng.random() > chance:
         return False
     usable = []
