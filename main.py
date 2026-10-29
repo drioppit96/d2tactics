@@ -1404,11 +1404,17 @@ class Game:
             self.scene.selected = m
         else:
             g = w.grid
-            if g.in_bounds(*cell) and g.walkable(*cell) and cell != p.pos:
+            if g.in_bounds(*cell) and g.walkable(*cell) and cell != p.pos and w.mode == "combat":
                 key = ("c", cell) + key_base
                 if key not in self._path_cache:
                     self._trim_cache()
-                    self._path_cache[key] = w.path_for_player(cell)
+                    # a short, capped search: a cell you can't reach (inside a closed house, across a
+                    # river) must not make the game search the whole map every time the mouse moves
+                    blocked = w.occupied(p)
+                    path = w._straight_path(p.pos, cell, blocked)
+                    if path is None:
+                        path = g.find_path(p.pos, cell, blocked=blocked, max_cost=max(30, p.ap * 2), limit=6000)
+                    self._path_cache[key] = path
                 path = self._path_cache[key]
                 if path and w.mode == "combat":      # outside combat you just walk, no AP to plan
                     preview = [(c, i < p.ap) for i, c in enumerate(path)]

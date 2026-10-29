@@ -467,6 +467,9 @@ class Scene:
         if use_tiles:
             f2 = getattr(tm, "floor2", None)
             tx0, ty0 = max(0, x0 // 5 - 1), max(0, y0 // 5 - 1)
+            ptx, pty = int(pv.rx) // 5, int(pv.ry) // 5
+            inside = any(getattr(r[1], "orientation", 0) == 15
+                         for dx in (-1, 0, 1) for dy in (-1, 0, 1) for r in tm.walls.get((ptx + dx, pty + dy), ()))
             tx1, ty1 = min(tm.tw - 1, x1 // 5 + 1), min(tm.th - 1, y1 // 5 + 2)
             for ty in range(ty0, ty1 + 1):
                 for tx in range(tx0, tx1 + 1):
@@ -479,6 +482,9 @@ class Scene:
                     if ref2:
                         assets.draw_tile(surf, ref2, tx, ty, cam)
                     for wref in tm.walls.get((tx, ty), ()):
+                        if inside and getattr(wref[1], "orientation", 0) == 15 and \
+                                abs(tx - ptx) <= 8 and abs(ty - pty) <= 8:
+                            continue        # D2 takes the roof off the house you are in
                         # props sort by the back of their tile, so units next to them stay visible
                         drawables.append((tx * 5 + ty * 5 + 1, 0, "tile", (wref, tx, ty)))
         else:

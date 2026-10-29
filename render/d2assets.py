@@ -291,8 +291,14 @@ class D2Assets(AssetProvider):
         if not ts:
             return None
         img, x0, y0 = ts
-        sx, sy = cam.to_screen((tx - ty) * 80 - 80 + x0, (tx + ty) * 40 - 8 + y0)
+        sx, sy = cam.to_screen((tx - ty) * 80 - 80 + x0, (tx + ty) * 40 - 8 + y0 - self._roof_lift(ref))
         return pygame.Rect(int(sx), int(sy), img.get_width(), img.get_height())
+
+    @staticmethod
+    def _roof_lift(ref):
+        """Roof tiles (orientation 15) sit RoofHeight pixels above the floor (DT1 header)."""
+        t = ref[1]
+        return getattr(t, "roof_y", 0) if getattr(t, "orientation", 0) == 15 else 0
 
     def draw_tile(self, surf, ref, tx, ty, cam, alpha=None):
         ts = self.tile_surface(ref)
@@ -306,7 +312,7 @@ class D2Assets(AssetProvider):
                 faded.fill((255, 255, 255, alpha), special_flags=pygame.BLEND_RGBA_MULT)
                 self.tile_cache[key] = faded
             img = self.tile_cache[key]
-        sx, sy = cam.to_screen((tx - ty) * 80 - 80 + x0, (tx + ty) * 40 - 8 + y0)
+        sx, sy = cam.to_screen((tx - ty) * 80 - 80 + x0, (tx + ty) * 40 - 8 + y0 - self._roof_lift(ref))
         surf.blit(img, (int(sx), int(sy)))
 
     def player_look(self, p):
