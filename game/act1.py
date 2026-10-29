@@ -556,6 +556,10 @@ def build_outdoors(kit, seed=None, content=None):
                         put("Act1/Outdoors/%s.ds1" % OutdoorKit.EDGE[side], X, Y, lid)
         inner = [(bx, by) for bx in range(1, SLOT - 1) for by in range(1, SLOT - 1)]
         rng.shuffle(inner)
+        # plain grass under every inner block first: presets a tile short of their block (waypoint
+        # pads, camps, cave entrances) otherwise left a one-tile black line next to them
+        for bx, by in inner:
+            grass_block(tx0 + bx * BLOCK, ty0 + by * BLOCK)
 
         def place(name, w=1, h=1, owner=lid):
             for bx, by in inner:
@@ -614,6 +618,16 @@ def build_outdoors(kit, seed=None, content=None):
                 b.areas[27] = (tx0 * SUB, ty0 * SUB, (tx0 + ST) * SUB, fy * SUB)
                 b.court_rect = (cx, cy, cw, ch)
         b.mg_from = mg_from
+    # any one-tile gap left between two pieces gets grass
+    F = b.tm.floor
+    for (x, y) in list(F):
+        for dx, dy in ((1, 0), (0, 1)):
+            gap, far = (x + dx, y + dy), (x + 2 * dx, y + 2 * dy)
+            if gap not in F and far in F and gap not in b.tm.floor2:
+                main, sub = rng.choice(gcodes)
+                t = gtiles.pick(0, main, sub, rng.randrange(1 << 16))
+                if t:
+                    F[gap] = t
     b.tm.drawn = set(b.tm.floor) | set(b.tm.walls) | set(b.tm.floor2)
     grid = make_grid(b.tm)
     _connect(b, grid, pos, links, kit, rng, openings)
