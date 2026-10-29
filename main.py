@@ -161,6 +161,7 @@ class Game:
                                 seed=self._map_seed("wild", _Seed))
         self.world.player.map_seed = base
         self.levels["wild"] = self.world
+        self.restore_map("wild", self.world)
         if player is not None:
             from game.actworld import ensure_cain
             ensure_cain(self.world)
@@ -206,6 +207,7 @@ class Game:
                 self.world.player.current_act = self.current_act()      # you continue in this act's town
             except Exception:
                 pass
+            self.remember_maps()
             save_character(self.world.player, self.cfg.get("game", "difficulty"))
         except Exception:
             import traceback
@@ -247,6 +249,30 @@ class Game:
                     traceback.print_exc()
         self._builder_thread = threading.Thread(target=work, daemon=True)
         self._builder_thread.start()
+
+    def remember_maps(self):
+        """'Same maps every game': the automap you drew goes into the save with the maps' seeds."""
+        if not self.opts.get("fixed_maps", False):
+            return
+        from game.mapmemory import remember
+        p = self.world.player
+        for key, w in list(self.levels.items()):
+            try:
+                remember(p, key, w, self._map_seed(key))
+            except Exception:
+                import traceback
+                traceback.print_exc()
+
+    def restore_map(self, key, w):
+        if not self.opts.get("fixed_maps", False) or w is None:
+            return
+        from game.mapmemory import restore
+        try:
+            restore(self.world.player if getattr(self, "world", None) is not None else w.player, key, w,
+                    self._map_seed(key))
+        except Exception:
+            import traceback
+            traceback.print_exc()
 
     def _map_seed(self, key, player=None):
         """With "same maps every game" on, every area is built from the hero's own map seed."""
@@ -291,6 +317,7 @@ class Game:
         else:
             w = self._get_world(key, info.name(target))
         self.levels[key] = w
+        self.restore_map(key, w)
         if arrive is not None and (not w.grid.walkable(*arrive) or arrive in w.occupied()):
             arrive = w._free_cell_near(arrive, 5)
         spot = arrive or w.entries.get(src_level) or w.entries.get(target)
