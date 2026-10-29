@@ -294,20 +294,36 @@ class D2Assets(AssetProvider):
         sx, sy = cam.to_screen((tx - ty) * 80 - 80 + x0, (tx + ty) * 40 - 8 + y0 - self._roof_lift(ref))
         return pygame.Rect(int(sx), int(sy), img.get_width(), img.get_height())
 
-    lift_roofs = True      # the scene turns this off in dungeons, where roof pieces lie flat
+    lift_roofs = True      # kept for the scene; roofs are lifted everywhere, like D2
 
-    def _roof_lift(self, ref):
-        """Outdoor house roofs (orientation 15) sit RoofHeight pixels above the floor (DT1 header)."""
-        if not self.lift_roofs:
-            return 0
+    @staticmethod
+    def _roof_lift(ref):
+        """How far up a tile is drawn from its floor anchor (D2's YAdjust):
+        roofs (orientation 15) sit RoofHeight pixels up; walls hang from the bottom corner of
+        their floor diamond, so their block y = 0 is 80 pixels below the anchor."""
         t = ref[1]
-        return getattr(t, "roof_y", 0) if getattr(t, "orientation", 0) == 15 else 0
+        o = getattr(t, "orientation", 0)
+        if o == 15:
+            return getattr(t, "roof_y", 0)
+        if o in (0, 13):
+            return 0
+        return -80
 
-    def draw_tile(self, surf, ref, tx, ty, cam, alpha=None):
+    def draw_tile(self, surf, ref, tx, ty, cam, alpha=None, lit=False):
         ts = self.tile_surface(ref)
         if not ts:
             return
         img, x0, y0 = ts
+        if lit:
+            key = (id(ref[1]), "lit")
+            if key not in self.tile_cache:
+                bright = img.copy()
+                try:
+                    bright.fill((55, 50, 40), special_flags=pygame.BLEND_RGB_ADD)
+                except Exception:
+                    pass
+                self.tile_cache[key] = bright
+            img = self.tile_cache[key]
         if alpha is not None:
             key = (id(ref[1]), "a")
             if key not in self.tile_cache:

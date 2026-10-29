@@ -1080,7 +1080,7 @@ class SkillCaster:
         self.emit("teleport", p, src, cell)
         self.grid.update_visibility(p.pos, self.sight_radius())
         self.check_awareness()
-        if self.mode == "explore" and cell in self.exits and self.exits[cell]:
+        if self.mode == "explore" and cell in self.exits and self.exits[cell] and cell not in getattr(self, "warp_cell", {}):
             self.pending_exit = self.exits[cell]
         return True
 

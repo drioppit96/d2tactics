@@ -578,7 +578,8 @@ class World(SkillCaster, ItemActions):
             was_explore = self.mode == "explore"
             if self.check_awareness() and was_explore:
                 break   # spotted: stop walking, combat begins
-            if self.mode == "explore" and step in self.exits and self.exits[step]:
+            if self.mode == "explore" and step in self.exits and self.exits[step] and \
+                    (step not in getattr(self, "warp_cell", {}) or getattr(self, "want_warp", None) == self.exits[step]):
                 from . import quests
                 msg = quests.blocked(self, self.exits[step])
                 if msg:
@@ -594,6 +595,18 @@ class World(SkillCaster, ItemActions):
         if pickup and walked and walked[-1] == cell and cell in self.ground:
             self.player_pickup(cell)
         self._maybe_auto_end()
+        return True
+
+    def enter_warp(self, grp):
+        """Use a clicked entrance (cave mouth, stairs) - D2 only changes level when you click it."""
+        from . import quests
+        target = grp["target"]
+        msg = quests.blocked(self, target)
+        if msg:
+            self.log(msg, (220, 210, 170))
+            return False
+        self.want_warp = None
+        self.pending_exit = target
         return True
 
     def _auto_pickup_gold(self, cell):

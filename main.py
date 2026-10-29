@@ -816,6 +816,8 @@ class Game:
                 w.use_object(target)
             elif kind == "waypoint":
                 w.use_waypoint(target)
+            elif kind == "warp":
+                w.enter_warp(target)
 
     def advance_walk(self):
         w = self.world
@@ -863,6 +865,34 @@ class Game:
             if clickable(o) and rect.collidepoint((int(wx), int(wy))):
                 return o
         return None
+
+    def warp_under_mouse(self, pos, cell):
+        """The entrance (cave mouth, stairs) under the mouse: its cells or its picture, like D2's
+        LvlWarp select box."""
+        w = self.world
+        groups = getattr(w, "warp_groups", None)
+        if not groups or cell is None:
+            return None
+        g = w.grid
+        if not (g.in_bounds(*cell) and g.explored[cell[1]][cell[0]]):
+            return None
+        for grp in groups:
+            if any(abs(cell[0] - c[0]) <= 1 and abs(cell[1] - c[1]) <= 1 for c in grp["cells"]):
+                return grp
+        W, H = self.screen.get_size()
+        wx = (pos[0] - W / 2) / self.cam.scale + self.cam.wx
+        wy = (pos[1] - H / 2) / self.cam.scale + self.cam.wy
+        for grp in groups:
+            for tx, ty in grp["tiles"]:
+                cx, cy = (tx - ty) * 80, (tx + ty) * 40
+                if cx - 80 <= wx <= cx + 80 and cy - 120 <= wy <= cy + 50:
+                    return grp
+        return None
+
+    def exit_label(self, target):
+        names = {"den": "To the Den of Evil", "town": "To the Rogue Encampment"}
+        info = getattr(self.assets, "act_info", None)
+        return ("To " + info.name(target)) if info and isinstance(target, int) else names.get(target, "Exit")
 
     def _skill_area(self, cell):
         """Tiles your right-click skill would cover at `cell` (missile paths, blast areas)."""
@@ -1230,6 +1260,16 @@ class Game:
                     else:
                         self.walk_to(wp, ("waypoint", wp), adjacent=True)
                     return
+                grp = self.warp_under_mouse(pos, cell)
+                if grp is not None and cell not in w.ground:
+                    # D2: click the entrance to go through; walking over it does nothing
+                    if p.pos in grp["cells"] or any(chebyshev(p.pos, c) <= 1 for c in grp["cells"]):
+                        w.enter_warp(grp)
+                    else:
+                        for goal in sorted(grp["cells"], key=lambda c: chebyshev(c, p.pos))[:8]:
+                            if self.walk_to(goal, ("warp", grp)):
+                                break
+                    return
                 if cell == p.pos and cell in w.ground:
                     w.player_pickup(cell)
                 elif cell in w.ground:
@@ -1365,6 +1405,7 @@ class Game:
         self._tip_unit = None
         if getattr(self, "scene", None) is not None:
             self.scene.selected = None
+            self.scene.lit_warp = None
         if self.hud.over_ui(mouse):
             return None, None, None, None
         w = self.world
@@ -1452,12 +1493,12 @@ class Game:
                     if w.mode == "combat":
                         tip = ([f"{len(path)} AP" + ("" if len(path) <= p.ap else f"  (only {p.ap} left)")],
                                [TEXT if len(path) <= p.ap else (230, 120, 90)])
-            if cell in w.exits and w.exits[cell]:
-                names = {"den": "To the Den of Evil", "town": "To the Rogue Encampment"}
-                info = getattr(self.assets, "act_info", None)
-                t = w.exits[cell]
-                label = ("To " + info.name(t)) if info and isinstance(t, int) else names.get(t, "Exit")
-                tip = ([label], [(240, 210, 90)])
+            grp = self.warp_under_mouse(mouse, cell) if w.mode == "explore" else None
+            if grp is not None:
+                self.scene.lit_warp = grp
+                tip = ([self.exit_label(grp["target"])], [(240, 210, 90)])
+            elif cell in w.exits and w.exits[cell]:
+                tip = ([self.exit_label(w.exits[cell])], [(240, 210, 90)])
             obj = self.object_under_mouse(mouse) or (w.object_at(cell) if hasattr(w, "object_at") else None)
             if obj is not None:
                 label = {"cairn": "Cairn Stone", "inifuss": "Tree of Inifuss", "tome": "Moldy Tome",

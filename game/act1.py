@@ -127,6 +127,7 @@ class Built:
     def __init__(self, tw, th):
         self.tm = TileMap(tw, th)
         self.tm.floor2 = {}
+        self.tm.warp_tiles = {}   # (tx, ty) -> [(tile, lit tile)]: stairs drawn by the warp itself
         self.warps = []           # (tile (tx, ty), main, level row id of the level owning it)
         self.objects = []         # (kind/id, cell, owner level)
         self.gen_objects = []     # (DS1 object number, cell, owner level): chests, doors, shrines...
@@ -202,6 +203,16 @@ def stamp(b, ds, tiles, ox, oy, rng, owner, skip_npc_objects=False, keep_edges=T
                     continue
                 if c.orientation in (10, 11) and c.main < 8:
                     b.warps.append((pos, c.main, owner))
+                    if not c.hidden:
+                        # D2 draws a visible warp tile (crypt / jail / catacomb stairs) and swaps in its
+                        # lit version (sub + LvlWarp 'Tiles' = 2) while the mouse is over the entrance
+                        t = tiles.pick(c.orientation, c.main, c.sub)
+                        if t:
+                            lit = tiles.pick(c.orientation, c.main, c.sub + 2)
+                            wt = getattr(tm, "warp_tiles", None)
+                            if wt is None:
+                                wt = tm.warp_tiles = {}
+                            wt.setdefault(pos, []).append((t, lit))
                     continue
                 if c.hidden:
                     continue

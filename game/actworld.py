@@ -88,6 +88,8 @@ def setup(world, built, grid, rng, info, level_key):
     world.areas = dict(b.areas)
     world.town_rect = getattr(b, "town_rect", None)
     world.exits = {}
+    world.warp_groups = []       # clickable entrances: dict(target, tiles, cells)
+    world.warp_cell = {}         # entrance cell -> its group
     world.entries = {}           # level you came from -> where you arrive
     world.waypoints = {}         # cell -> level id
     world.objects = []           # quest objects: dict(kind, cell, level, state)
@@ -108,6 +110,11 @@ def setup(world, built, grid, rng, info, level_key):
             continue
         for c in cells:
             world.exits[c] = target
+        # D2: an entrance is used by clicking it, not by walking over it
+        grp = dict(target=target, tiles=set(tiles), cells=set(cells), owner=owner, main=main)
+        world.warp_groups.append(grp)
+        for c in cells:
+            world.warp_cell[c] = grp
         world.entries.setdefault(target, arrival_cell(grid, cells, set(world.exits), rng))
     # ---- seamless edges between two worlds (e.g. the jungle's end and Lower Kurast): cells -> level
     for cells, target in getattr(b, "edge_exits", []) or []:

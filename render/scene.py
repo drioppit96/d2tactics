@@ -463,8 +463,6 @@ class Scene:
         tm = getattr(world, "tilemap", None)
         use_tiles = tm is not None and hasattr(assets, "draw_tile")
         outdoors = getattr(world, "level_key", "wild") == "wild"
-        if hasattr(assets, "lift_roofs"):
-            assets.lift_roofs = outdoors
         drawables = []
         roofs = []
 
@@ -476,6 +474,15 @@ class Scene:
             inside = outdoors and any(getattr(r[1], "orientation", 0) == 15
                          for dx in (-1, 0, 1) for dy in (-1, 0, 1) for r in tm.walls.get((ptx + dx, pty + dy), ()))
             tx1, ty1 = min(tm.tw - 1, x1 // 5 + 1), min(tm.th - 1, y1 // 5 + 2)
+            wtiles = getattr(tm, "warp_tiles", None) or {}
+            # the entrance under the mouse lights up, like D2: its stairs swap to their lit version,
+            # a cave mouth (no stairs tile) has the walls around its marker brightened
+            grp = getattr(self, "lit_warp", None)
+            lit_pos, glow = set(), set()
+            if grp is not None:
+                lit_pos = set(grp["tiles"])
+                if not any(lt for p_ in lit_pos for _, lt in wtiles.get(p_, ())):
+                    glow = {(a + dx, b + dy) for a, b in lit_pos for dx in range(-2, 3) for dy in range(-2, 3)}
             for ty in range(ty0, ty1 + 1):
                 for tx in range(tx0, tx1 + 1):
                     if (tx, ty) not in tm.drawn:
@@ -487,12 +494,15 @@ class Scene:
                     if ref2:
                         assets.draw_tile(surf, ref2, tx, ty, cam)
                     for wref in tm.walls.get((tx, ty), ()):
-                        if outdoors and getattr(wref[1], "orientation", 0) == 15:
+                        if getattr(wref[1], "orientation", 0) == 15:
                             if not (inside and abs(tx - ptx) <= 8 and abs(ty - pty) <= 8):
                                 roofs.append((tx + ty, wref, tx, ty))   # D2 takes the roof off the house you are in
                             continue
                         # props sort by the back of their tile, so units next to them stay visible
-                        drawables.append((tx * 5 + ty * 5 + 1, 0, "tile", (wref, tx, ty)))
+                        drawables.append((tx * 5 + ty * 5 + 1, 0, "tile", (wref, tx, ty, (tx, ty) in glow)))
+                    for t_, lt in wtiles.get((tx, ty), ()):
+                        use = lt if (lt and (tx, ty) in lit_pos) else t_
+                        drawables.append((tx * 5 + ty * 5 + 1, 0, "tile", (use, tx, ty, False)))
         else:
             for y in range(y0, y1 + 1):
                 for x in range(x0, x1 + 1):
@@ -567,13 +577,17 @@ class Scene:
         player_key = pv.rx + pv.ry
         for key, _, kind, obj in drawables:
             if kind == "tile":
-                ref, tx, ty = obj
+                ref, tx, ty = obj[:3]
+                glow_ = len(obj) > 3 and obj[3]
                 alpha = None
                 if key > player_key and hasattr(assets, "tile_rect"):
                     r = assets.tile_rect(ref, tx, ty, cam)
                     if r is not None and r.colliderect(prect):
                         alpha = 105
-                assets.draw_tile(surf, ref, tx, ty, cam, alpha=alpha)
+                if glow_:
+                    assets.draw_tile(surf, ref, tx, ty, cam, alpha=alpha, lit=True)
+                else:
+                    assets.draw_tile(surf, ref, tx, ty, cam, alpha=alpha)
             elif kind == "wall":
                 x, y = obj
                 b = self.brightness(x, y, light) or 0.22
