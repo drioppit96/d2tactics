@@ -94,6 +94,7 @@ GREY = (170, 170, 170)
 # D2's melee hit chance is very low early on; in a turn-based game every miss costs a whole
 # action, so the player's attacks get a floor (settings.ini [game] min_hit_chance)
 PLAYER_HIT_FLOOR = 0.60
+POIS_FRAMES = 150   # weapon / charm poison: its total damage spread over ~3 turns, like D2's poison length
 
 
 def hit_chance(attacker, defender, ar_bonus_pct=0):
@@ -563,6 +564,10 @@ class World(SkillCaster, ItemActions):
                     p.hp += 1
                 if p.mana < p.max_mana:
                     p.mana = min(p.max_mana, p.mana + self.mana_regen() / 2.0)
+                if self._regen_steps % 2 == 0:
+                    self.tick_poison(p)
+                    for u in self.allies() + [m for m in self.monsters if m.alive and m.effects.get("poison")]:
+                        self.tick_poison(u)
                 if self._regen_steps % 10 == 0:
                     self._tick_buffs()           # buffs also run out while exploring
                     self.tick_player_buffs()
@@ -1286,6 +1291,9 @@ class World(SkillCaster, ItemActions):
         p.mana = min(p.max_mana, p.mana + self.mana_regen())
         if getattr(p, "regen", 0):
             p.hp = min(p.max_hp, p.hp + p.regen)
+        self.tick_poison(p)
+        if self.game_over:
+            return
         self.turn = "player"
         self.emit("turn", "player")
         self.check_combat_end()
@@ -1527,6 +1535,7 @@ class World(SkillCaster, ItemActions):
             return False
         dmg = self.rng.randint(*attacker.dmg) if attacker.dmg[1] > 0 else 0
         dmg = max(1, int(dmg * (100 + mods["dmg"]) / 100.0)) if attacker.dmg[1] > 0 else 0
+        weapon_pois = None
         aeff = getattr(attacker, "effects", {})
         if aeff.get("bc"):
             dmg = max(1, dmg * (100 - aeff.get("bc_dmg", 25)) // 100)
@@ -1558,9 +1567,14 @@ class World(SkillCaster, ItemActions):
             if dmg and getattr(target, "res", {}).get("phys"):
                 dmg = max(1, dmg * (100 - min(100, target.res["phys"])) // 100)
             for kind, (lo, hi) in getattr(attacker, "elem", {}).items():
+                if kind == "pois":
+                    weapon_pois = (lo, hi)       # D2: weapon poison is damage over time, applied below
+                    continue
                 extra = self.rng.randint(lo, max(lo, hi))
                 res = self._resist(target, kind)
                 dmg += max(0, extra * (100 - res) // 100)
+                if kind == "cold" and extra and res < 100 and not target.is_player:
+                    target.effects["chill"] = max(target.effects.get("chill", 0), 1)
         if target.is_player and getattr(target, "dr", 0) and not mods["magic"]:
             dmg = max(1, dmg - target.dr)
         if target.is_player and getattr(target, "dr_pct", 0) and not mods["magic"] and dmg > 1:
@@ -1580,13 +1594,15 @@ class World(SkillCaster, ItemActions):
             durability.wear(self, target, "armor")
             monmods.on_monster_hit(self, attacker, target, dmg)
             itemfx.on_struck(self, attacker)
+        if weapon_pois and target.alive:
+            dealt += self.elem_hit(target, "pois", weapon_pois[0], weapon_pois[1], attacker, POIS_FRAMES, show=False)
         if mods.get("elem") and target.alive:
             et, lo, hi, ln = mods["elem"]
             dealt += self.elem_hit(target, et, lo, hi, attacker, ln, show=False)
         if not attacker.is_player and getattr(attacker, "hit_elem", None) and target.alive:
             for et, (lo, hi) in attacker.hit_elem.items():      # hirelings: their skill and gear
                 if target.alive:
-                    dealt += self.elem_hit(target, et, lo, hi, attacker, 50, show=False)
+                    dealt += self.elem_hit(target, et, lo, hi, attacker, POIS_FRAMES if et == "pois" else 50, show=False)
         if getattr(attacker, "hit_stun", 0) and target.alive and not target.is_player and \
                 self.rng.randrange(100) < attacker.hit_stun:
             target.effects["stun"] = max(target.effects.get("stun", 0), 1)

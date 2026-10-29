@@ -125,6 +125,8 @@ class SkillCaster:
             total = self.rng.randint(int(lo), int(max(lo, hi)))
             total = total * (100 + self._mastery(et)) // 100 if src is self.player else total
             total = total * (100 - self._resist(target, et)) // 100
+            if getattr(target, "is_player", False):
+                total = total * (100 - min(75, max(0, target.mod("pois_len")))) // 100   # "Poison Length Reduced"
             if total <= 0:
                 if show:
                     self.log("%s is immune to poison." % target.name, GREY)
@@ -133,9 +135,14 @@ class SkillCaster:
             turns = max(1, min(4, int(round(secs / TURN_SECONDS))))
             per = max(1, total // turns)
             cur = target.effects.get("poison")
-            if not cur or cur[0] * cur[1] < per * turns:
-                target.effects["poison"] = [per, turns]
-            # the first tick lands right away
+            if cur and cur[0] * cur[1] >= per * turns:
+                return 0                      # D2: a weaker poison doesn't replace a stronger one
+            # the first tick lands right away, the rest at the start of the next turns
+            if turns > 1:
+                target.effects["poison"] = [per, turns - 1]
+                target.effects["poison_src"] = src
+            else:
+                target.effects.pop("poison", None)
             self._damage(target, per, src)
             return per
         dmg = self.rng.randint(int(lo), int(max(lo, hi)))
@@ -1328,6 +1335,9 @@ class SkillCaster:
             if not a.alive:
                 continue
             a.ap = a.max_ap
+            self.tick_poison(a)
+            if not a.alive:
+                continue
             if a.life_turns is not None:
                 a.life_turns -= 1
                 if a.life_turns < 0:
@@ -1441,17 +1451,27 @@ class SkillCaster:
             occ.add(a.pos)
 
     # ------------------------------------------------------------ monster statuses
+    def tick_poison(self, u):
+        """One turn of poison: D2 poison keeps eating life after the hit, and the unit stays green."""
+        eff = getattr(u, "effects", None)
+        if not eff or not eff.get("poison") or not u.alive:
+            return
+        per, turns = eff["poison"]
+        src = eff.get("poison_src") or (self.player if not getattr(u, "is_player", False) else None)
+        if per > 0:
+            self._damage(u, per, src)
+        turns -= 1
+        if turns <= 0:
+            eff.pop("poison", None)
+            eff.pop("poison_src", None)
+        else:
+            eff["poison"] = [eff["poison"][0], turns]
+
     def monster_status(self, m):
         """Start of a monster's turn: poison ticks, chill/freeze, curses. Returns False if it can't act."""
         eff = m.effects
         if eff.get("poison"):
-            per, turns = eff["poison"]
-            self._damage(m, per, self.player)
-            turns -= 1
-            if turns <= 0:
-                eff.pop("poison")
-            else:
-                eff["poison"] = [per, turns]
+            self.tick_poison(m)
             if not m.alive:
                 return False
         if eff.get("bleed"):

@@ -449,8 +449,29 @@ class D2Hud:
             self.text(surf, self.f10, "Round %d   (Space)" % world.round, GOLD, bx, by - 14, "center", 128)
             self.region(bx, by, 128, 35, "end_turn")
 
+    def _green_globe(self):
+        """D2's life globe turns green while you are poisoned: the red globe with red and green swapped."""
+        gg = getattr(self, "_gglobe", None)
+        if gg is None:
+            src = self.frames["hlthmana"][0]
+            gg = src
+            try:
+                gg = src.copy()
+                w, h = gg.get_size()
+                for yy in range(h):
+                    for xx in range(w):
+                        c = gg.get_at((xx, yy))
+                        if c[3]:
+                            gg.set_at((xx, yy), (c[1], c[0], c[2], c[3]))
+            except Exception:
+                gg = src
+            self._gglobe = gg
+        return gg
+
     def _globe(self, surf, idx, x, y, frac):
         g = self.frames["hlthmana"][idx]
+        if idx == 0 and (getattr(self.world.player, "effects", None) or {}).get("poison"):
+            g = self._green_globe()
         frac = max(0.0, min(1.0, frac))
         h = g.get_height()
         top = int(round(h * (1 - frac)))
