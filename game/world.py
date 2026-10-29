@@ -618,6 +618,8 @@ class World(SkillCaster, ItemActions):
                 p.gold += it.amount
             elif it.kind == "potion" and len(p.belt) < 4:
                 p.belt.append(it)
+            elif self._into_tome(it):
+                pass
             elif p.inv_add(it):
                 pass
             else:
@@ -629,6 +631,19 @@ class World(SkillCaster, ItemActions):
         if not items:
             del self.ground[cell]
         return True
+
+    def _into_tome(self, it):
+        """A scroll of Town Portal / Identify you pick up goes into a matching tome (D2)."""
+        from .items import TOME_MAX
+        base = it.base if isinstance(getattr(it, "base", None), dict) else {}
+        if not getattr(it, "use", None) or base.get("tome"):
+            return False
+        for t in self.player.inventory:
+            tb = t.base if isinstance(getattr(t, "base", None), dict) else {}
+            if t.use == it.use and tb.get("tome") and t.quantity < TOME_MAX:
+                t.quantity += 1
+                return True
+        return False
 
     def pickup_item(self, cell, it):
         """Loot window: take one item lying on the screen. Outside combat from anywhere you can see;
@@ -648,6 +663,8 @@ class World(SkillCaster, ItemActions):
             p.gold += it.amount
         elif it.kind == "potion" and len(p.belt) < 4:
             p.belt.append(it)
+        elif self._into_tome(it):
+            pass
         elif not p.inv_add(it):
             self.log("Your inventory is full.", GREY)
             return False

@@ -112,6 +112,7 @@ class D2Hud:
                   "gemsocket", "supertransmogrifier", "miniconvert", "tradestash", "npcinv"):
             self.frames[n] = self._load(PANEL + n + ".dc6", required=n in ("800ctrlpnl7", "hlthmana", "invchar6"))
         self.cursor = self._load("data\\global\\ui\\CURSOR\\ohand.dc6")
+        self.cursor_buysell = self._load("data\\global\\ui\\CURSOR\\buysell.dc6")   # 8 = identify (magnifying glass)
         self._class_art = {}
         self.skill_icons = None
         self.tree_back = None
@@ -1015,6 +1016,11 @@ class D2Hud:
             return
         mx, my = self.mouse
         if getattr(self.world, "held", None) is None:
+            mode = getattr(self.world, "cursor_mode", None)
+            bs = getattr(self, "cursor_buysell", None)
+            if mode and mode[0] == "identify" and bs and len(bs) > 8 and bs[8] is not None:
+                self.put(surf, bs[8], mx, my)       # D2's identify cursor
+                return
             self.put(surf, self.cursor[0], mx, my)
 
     # ------------------------------------------------------------ skill tree

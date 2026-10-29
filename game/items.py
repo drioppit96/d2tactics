@@ -109,6 +109,9 @@ QUEST_HINTS = {"cube": "Right click to open. Put items in and press Transmute",
                "hst": "Place it in the orifice in Tal Rasha's Tomb"}
 
 
+TOME_MAX = 100          # scrolls a Tome of Town Portal / Identify holds
+
+
 class Item:
     def __init__(self, name, code, slot, rarity="normal", mods=None, dmg=None, ap=None,
                  defense=0, amount=0, kind="equip"):

@@ -158,7 +158,8 @@ class ItemActions:
             return True
         if it.use and not it.base.get("tome"):
             # a scroll goes into a matching tome if you have one (D2)
-            tome = next((t for t in p.inventory if t.use == it.use and t.base.get("tome") and t.quantity < 20), None)
+            from .items import TOME_MAX
+            tome = next((t for t in p.inventory if t.use == it.use and t.base.get("tome") and t.quantity < TOME_MAX), None)
             if tome is not None:
                 p.gold -= cost
                 tome.quantity += 1
