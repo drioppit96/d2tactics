@@ -14,7 +14,7 @@ HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OPTIONS_FILE = os.path.join(HERE, "options.ini")
 
 DEFAULTS = {"light_radius": 100, "highlight_monster": True, "highlight_tile": True,
-            "show_move_range": True, "show_skill_area": True, "monster_names": True}
+            "show_move_range": True, "show_skill_area": True, "monster_names": True, "fixed_maps": False}
 LIGHT_STEPS = [50, 75, 100, 125, 150, 200, 250, 300]
 
 
@@ -83,6 +83,7 @@ class GameMenu:
                 ("HIGHLIGHT TILE: " + onoff("highlight_tile"), "hl_tile"),
                 ("SHOW MOVE RANGE: " + onoff("show_move_range"), "range"),
                 ("SHOW SKILL AREA: " + onoff("show_skill_area"), "area"),
+                ("SAME MAPS EVERY GAME: " + onoff("fixed_maps"), "fixed"),
                 ("PREVIOUS MENU", "back")]
 
     def activate(self, action, step=1):
@@ -110,7 +111,11 @@ class GameMenu:
             o["show_skill_area"] = not o["show_skill_area"]
         elif action == "range":
             o["show_move_range"] = not o["show_move_range"]
-        if action in ("light", "hl_mon", "hl_tile", "range", "area"):
+        elif action == "fixed":
+            o["fixed_maps"] = not o["fixed_maps"]
+            g.world.log("Maps: %s (from your next game on)." % ("the same every game - monsters still change"
+                        if o["fixed_maps"] else "new every game"), (199, 179, 119))
+        if action in ("light", "hl_mon", "hl_tile", "range", "area", "fixed"):
             save_options(o)
             g.apply_options()
 
@@ -129,7 +134,7 @@ class GameMenu:
             self.activate(items[self.sel][1])
         elif key in (pygame.K_LEFT, pygame.K_a, pygame.K_RIGHT, pygame.K_d):
             act = items[self.sel][1]
-            if act in ("light", "hl_mon", "hl_tile", "range", "area"):
+            if act in ("light", "hl_mon", "hl_tile", "range", "area", "fixed"):
                 self.activate(act, -1 if key in (pygame.K_LEFT, pygame.K_a) else 1)
 
     def click(self, pos, button=1):
@@ -195,3 +200,12 @@ class GameMenu:
             hw, hh = int(hint.get_width() * k * 0.6), int(hint.get_height() * k * 0.6)
             hs = pygame.transform.smoothscale(hint, (max(1, hw), max(1, hh)))
             surf.blit(hs, (int(W / 2 - hw / 2), int(H - 140 * k)))
+        # D2's hand cursor on top (the system cursor is hidden while playing)
+        hud = self.game.hud
+        cur = getattr(hud, "cursor", None)
+        if cur and cur[0] is not None:
+            img = cur[0]
+            sk = getattr(hud, "s", 1.0)
+            if abs(sk - 1.0) > 0.01:
+                img = pygame.transform.smoothscale(img, (max(1, int(img.get_width() * sk)), max(1, int(img.get_height() * sk))))
+            surf.blit(img, (int(mouse[0]), int(mouse[1])))

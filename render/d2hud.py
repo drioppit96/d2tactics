@@ -750,6 +750,14 @@ class D2Hud:
             self.text(surf, self.f16, name, col, 30, y)
             if on and lid != here:
                 self.region(20, y - 4, 280, 28, "waypoint", lid)
+        # TEST ONLY: remove later
+        bx, by = 20, 360
+        hot = pygame.Rect(bx, by, 190, 22).collidepoint((int(mx), int(my)))
+        box = pygame.Surface((int(190 * self.s), int(22 * self.s)), pygame.SRCALPHA)
+        box.fill((90, 40, 30, 220) if hot else (50, 20, 15, 200))
+        surf.blit(box, self.P(bx, by))
+        self.text(surf, self.f10, "Discover all waypoints (test)", WHITE, bx, by + 5, "center", 190)
+        self.region(bx, by, 190, 22, "wp_all")
         self._close_button(surf, CHAR_CLOSE, 0, "waypoints")
 
     # ------------------------------------------------------------ the Horadric Cube

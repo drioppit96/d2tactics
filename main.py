@@ -148,7 +148,18 @@ class Game:
         if saved is not None:
             from game.save import build_player
             player = build_player(saved, a.content)
-        self.world = make_world(a.act_kit, a.act_info, a.content, "wild", char_class=cls, char_name=name, player=player)
+        import random as _rnd
+        base = getattr(player, "map_seed", None) if player is not None else None
+        if base is None:
+            base = _rnd.randrange(1 << 30)          # the hero's own maps (Esc > Options > same maps)
+        if player is not None:
+            player.map_seed = base
+
+        class _Seed:
+            map_seed = base
+        self.world = make_world(a.act_kit, a.act_info, a.content, "wild", char_class=cls, char_name=name, player=player,
+                                seed=self._map_seed("wild", _Seed))
+        self.world.player.map_seed = base
         self.levels["wild"] = self.world
         if player is not None:
             from game.actworld import ensure_cain
@@ -217,6 +228,8 @@ class Game:
             return
         a = self.assets
 
+        hero = getattr(getattr(self, "world", None), "player", None)
+
         def work():
             from game.actworld import make_world
             from game.units import Player
@@ -225,7 +238,8 @@ class Game:
                 if key in self.levels or key in self._prebuilt:
                     continue
                 try:
-                    w = make_world(a.act_kit, a.act_info, a.content, key, player=Player(0, 0))
+                    w = make_world(a.act_kit, a.act_info, a.content, key, player=Player(0, 0),
+                                   seed=self._map_seed(key, hero))
                     w.events = []
                     self._prebuilt[key] = w
                 except Exception:
@@ -233,6 +247,17 @@ class Game:
                     traceback.print_exc()
         self._builder_thread = threading.Thread(target=work, daemon=True)
         self._builder_thread.start()
+
+    def _map_seed(self, key, player=None):
+        """With "same maps every game" on, every area is built from the hero's own map seed."""
+        if not self.opts.get("fixed_maps", False):
+            return None
+        p = player or getattr(getattr(self, "world", None), "player", None)
+        base = getattr(p, "map_seed", None) if p is not None else None
+        if base is None:
+            return None
+        import zlib
+        return zlib.crc32(("%d:%s" % (base, key)).encode()) & 0x3FFFFFFF
 
     def _get_world(self, key, title):
         from game.actworld import make_world
@@ -250,7 +275,8 @@ class Game:
                 return self._prebuilt.pop(key)
         self.loading("Entering %s..." % title)
         a = self.assets
-        return make_world(a.act_kit, a.act_info, a.content, key, player=self.world.player)
+        return make_world(a.act_kit, a.act_info, a.content, key, player=self.world.player,
+                          seed=self._map_seed(key))
 
     def change_level_act(self, target, arrive=None):
         from game.acts import world_of
@@ -1083,6 +1109,11 @@ class Game:
                 return
             elif action == "waypoints":
                 h.show_waypoints = False
+            elif action == "wp_all":                      # TEST ONLY: remove later
+                from game.acts import WAYPOINTS
+                p = w.player
+                p.waypoints = set(getattr(p, "waypoints", {1})) | {l for lst in WAYPOINTS.values() for l in lst}
+                w.log("Test: every waypoint of Acts 1-5 is now active.", (199, 179, 119))
             elif action == "skill_right":
                 h.skill_popup = not h.skill_popup
             elif action == "pick_skill":

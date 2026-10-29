@@ -480,8 +480,49 @@ def build_outdoors(kit, seed=None, content=None):
     stamp(b, town, kit.tiles_for(town, "Act 1 - Town"), ox, oy, rng, 1)
     b.town_rect = (ox * SUB, oy * SUB, (ox + tw) * SUB, (oy + th) * SUB)
 
+    # ---- the Burial Grounds: D2's fixed graveyard (Levels.txt: 40 x 48 tiles = the 24 x 32 graveyard
+    # preset inside one ring of border pieces), on the side that touches the Cold Plains
+    def burial_grounds():
+        sx, sy = pos[17]
+        nb = neighbours.get(17, {})
+        side = next(iter(nb))
+        idx = openings[(17, nb[side])]
+        bw, bh = 5, 6
+        if side in ("n", "s"):
+            rx, ry = max(0, min(SLOT - bw, idx - 2)), (0 if side == "n" else SLOT - bh)
+        else:
+            rx, ry = (0 if side == "w" else SLOT - bw), max(0, min(SLOT - bh, idx - 2))
+        tx0, ty0 = sx * ST + rx * BLOCK, sy * ST + ry * BLOCK
+        b.areas[17] = (tx0 * SUB, ty0 * SUB, (tx0 + bw * BLOCK) * SUB, (ty0 + bh * BLOCK) * SUB)
+        for bx in range(bw):
+            for by in range(bh):
+                en, es, ew, ee = by == 0, by == bh - 1, bx == 0, bx == bw - 1
+                if not (en or es or ew or ee):
+                    continue
+                X, Y = tx0 + bx * BLOCK, ty0 + by * BLOCK
+                vert = "n" if en else ("s" if es else None)
+                hor = "w" if ew else ("e" if ee else None)
+                if vert and hor:
+                    put("Act1/Outdoors/%s.ds1" % OutdoorKit.CORNER[(vert, hor)], X, Y, 17)
+                    continue
+                sd = vert or hor
+                along = (rx + bx) if vert else (ry + by)
+                if sd == side and along == idx:
+                    put("Act1/Outdoors/%so.ds1" % OutdoorKit.EDGE[sd], X, Y, 17)
+                else:
+                    name = "Act1/Outdoors/%s%s.ds1" % (OutdoorKit.EDGE[sd], rng.choice(["", "", "b", "c"]))
+                    if put(name, X, Y, 17) is None:
+                        put("Act1/Outdoors/%s.ds1" % OutdoorKit.EDGE[sd], X, Y, 17)
+        if put("act1\\graveyard\\gravey.ds1", tx0 + BLOCK, ty0 + BLOCK, 17) is None:
+            for bx in range(1, bw - 1):
+                for by in range(1, bh - 1):
+                    grass_block(tx0 + bx * BLOCK, ty0 + by * BLOCK)
+
     # ---- wilderness areas
     for lid in (2, 3, 4, 5, 6, 7, 17):
+        if lid == 17:
+            burial_grounds()
+            continue
         sx, sy = pos[lid]
         tx0, ty0 = sx * ST, sy * ST
         nb = neighbours.get(lid, {})

@@ -80,7 +80,9 @@ CODE_NPCS = {"jungle": ["hratli"], "siege": ["larzuk", "tyrael3"]}
 def setup(world, built, grid, rng, info, level_key):
     """Fill a World with an Act 1 level."""
     b = built
-    world.grid, world.rng, world.tilemap = grid, rng, b.tm
+    import random as _random
+    # the map comes from the builder's seed; monsters, chests and shrines are rolled anew each time
+    world.grid, world.rng, world.tilemap = grid, _random.Random(), b.tm
     world.level_key = level_key
     world.info = info
     world.areas = dict(b.areas)

@@ -54,7 +54,8 @@ NPCs, traders (Ormus, Alkor, Asheara, Hratli, Jamella, Halbu, Larzuk, Malah, Any
 hirelings (Iron Wolves, barbarians), waypoints and all 18 quests of Acts 3-5 (Golden Bird ...
 Eve of Destruction). Travel: Meshif (Act 2 <-> 3), Mephisto's portal (3 -> 4), Tyrael (4 -> 5).
 Test-only travel options (remove later): Warriv "Go East (test)", Meshif "Sail East (test)",
-Cain in Kurast "To Act 4 (test)", Tyrael "Travel to Harrogath (test)". What is simplified or
+Cain in Kurast "To Act 4 (test)", Tyrael "Travel to Harrogath (test)", "Discover all waypoints (test)"
+in the waypoint list. What is simplified or
 still missing: docs/ACTS345_MISSING.md.
 
 **Horadric Cube:** right click it in the backpack (or drop items on it). Every D2 recipe from
@@ -164,7 +165,8 @@ Create New Character opens the creation screen, Delete Character asks first and 
 save to saves\deleted. *Testing:* Akara has a "Level 99 (test)" option that gives you every
 level with all its stat and skill points (will be removed later).
 
-**Esc menu:** Options (light radius, monster / tile highlight, move range, skill area), Save and Exit Game
+**Esc menu:** Options (light radius, monster / tile highlight, move range, skill area, same maps every
+game - on: each hero keeps the same map layout every game, only monsters / chests change), Save and Exit Game
 (back to the hero screen), Return to Game. Options are kept in options.ini.
 
 **Loot window (V):** every item lying on the screen; click one to pick it up (in combat only

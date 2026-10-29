@@ -43,4 +43,5 @@ there), the monster packs and the tables. Tested headless (no Windows / MPQ run 
 
 ## Test-only options (remove later)
 Akara "Level 99 (test)", Warriv "Go East (test)", Meshif "Sail East (test)", Cain in the Docks
-"To Act 4 (test)", Tyrael "Travel to Harrogath (test)".
+"To Act 4 (test)", Tyrael "Travel to Harrogath (test)", the waypoint list's
+"Discover all waypoints (test)".
