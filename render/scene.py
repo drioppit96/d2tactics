@@ -14,6 +14,23 @@ NOVA_COLORS = {"fire": (255, 140, 40), "cold": (120, 180, 255), "ltng": (240, 24
                "mag": (230, 200, 255), "curse": (200, 40, 60), "phys": (220, 210, 190)}
 
 
+def status_tint(u):
+    """D2 colours a unit by its state: frozen / chilled blue, poisoned green, bleeding red."""
+    eff = getattr(u, "effects", None) or {}
+    if eff.get("freeze"):
+        return (80, 130, 255)
+    if eff.get("chill") or eff.get("chilled"):
+        return (125, 165, 255)
+    if eff.get("poison"):
+        return (110, 225, 100)
+    if eff.get("bleed"):
+        return (255, 120, 120)
+    for c in (getattr(u, "curses", None) or {}).values():
+        if "slow" in c.get("flags", ()) or c.get("stats", {}).get("slowed"):
+            return (125, 165, 255)
+    return None
+
+
 class UnitView:
     def __init__(self, unit):
         self.unit = unit
@@ -573,6 +590,9 @@ class Scene:
                 b = 1.0 if use_tiles else self.brightness(int(round(v.rx)), int(round(v.ry)), light)
                 pose = {"mode": v.mode, "phase": (v.t / v.dur) if v.dur and v.mode in ("A1", "SC", "DD", "GH") else v.t,
                         "flash": v.flash, "facing": v.facing}
+                tint = status_tint(u) if u.alive and not v.dead else None
+                if tint:
+                    pose["tint"] = tint
                 feet = cam.cell_to_screen(v.rx, v.ry)
                 rect = assets.draw_unit(surf, u, pose, feet, s, max(0.35, b))
                 if u is sel and not v.dead:
@@ -651,16 +671,12 @@ class Scene:
         m = self.SEEN_MARGIN * cam.scale
         if not (-m <= sx <= cam.sw + m and -m <= sy <= cam.sh + m + 60 * cam.scale):
             return False
+        # like D2: whatever is on screen shows - monsters that know about you, monsters near you and
+        # monsters on ground you have seen (no line-of-sight check: cave walls and stairs hid them)
+        if getattr(u, "aware", False) or g.explored[cy][cx]:
+            return True
         p = self.world.player
-        cache = self.__dict__.setdefault("_los", {})
-        key = id(u)
-        hit = cache.get(key)
-        if hit is None or hit[0] != (cx, cy) or hit[1] != p.pos:
-            if len(cache) > 3000:
-                cache.clear()
-            hit = ((cx, cy), p.pos, g.line_of_sight(p.pos, (cx, cy)))
-            cache[key] = hit
-        return hit[2]
+        return math.hypot(cx - p.x, cy - p.y) <= 12
 
     def _footprint(self, u):
         r = getattr(u, "radius", 0)

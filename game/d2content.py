@@ -293,10 +293,16 @@ class D2Content:
                  and "gem" not in b and "use" not in b and "potion" not in b]
         if not cands:
             return None
-        total = sum(b["rarity"] for b in cands)
+        # charms are rare finds (their Misc.txt rarity is high because D2 rolls them in their own
+        # treasure classes, not against every weapon and armour)
+        charms = [b for b in cands if b.get("charm")]
+        if charms and len(charms) < len(cands):
+            cands = charms if rng.random() < 0.015 else [b for b in cands if not b.get("charm")]
+        weight = lambda b: b["rarity"]
+        total = sum(weight(b) for b in cands)
         r = rng.uniform(0, total)
         for b in cands:
-            r -= b["rarity"]
+            r -= weight(b)
             if r <= 0:
                 return b
         return cands[-1]
