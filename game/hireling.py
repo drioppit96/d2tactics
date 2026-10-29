@@ -189,7 +189,7 @@ def spawn(world, kind=None, free=True):
         t["res"] = {"fire": st["res"], "cold": st["res"], "ltng": st["res"], "pois": st["res"]}
     t["name"] = merc["name"]
     t["ai"] = "ranged" if k["style"] == "ranged" else "melee"
-    t["rng"] = 8 if k["style"] == "ranged" else 1
+    t["rng"] = 16 if k["style"] == "ranged" else 1
     t["skills"] = []
     from .units import Monster
     occ = world.occupied()
@@ -202,7 +202,7 @@ def spawn(world, kind=None, free=True):
     world._make_ally(m)
     if k["style"] == "ranged":
         m.ai = "ally_ranged"
-        m.range = 8
+        m.range = 16
     m.name = merc["name"]
     m.summon_skill = "hireling"
     m.hireling = True

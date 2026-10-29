@@ -130,7 +130,7 @@ Fallout). Each turn you get **Action Points** (the stamina bar shows them).
 |---|---|
 | Move one cell | 1 AP |
 | Attack (left click a monster) | the weapon's D2 speed: Very Fast 1, Fast 2, Normal 3, Slow 4, Very Slow 5 AP (IAS makes it faster) |
-| Throw (javelins, throwing knives / axes) | choose "Throw" on the right skill button: same AP as an attack, range 7. Left click stabs / swings in melee, like D2 |
+| Throw (javelins, throwing knives / axes) | choose "Throw" on the right skill button: same AP as an attack, range 14. Left click stabs / swings in melee, like D2 |
 | Right click | your selected right skill (choose it on the right skill button, or F1-F8) |
 | Drink potion (keys 1-4) | 2 AP |
 | Pick up item | 1 AP (free outside combat) |

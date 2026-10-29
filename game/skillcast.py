@@ -475,14 +475,23 @@ class SkillCaster:
             n = max(1, env.calc("calc1"))
         return max(1, min(24, int(n)))
 
+    def _missile_reach(self, s):
+        """How far a missile skill flies: spells SPELL_RANGE, bow / javelin skills your weapon's reach."""
+        p = self.player
+        if s is not None and s.weapon:
+            return max(SPELL_RANGE, p.range if getattr(p, "ranged", False) else
+                       (getattr(p, "throw_range", SPELL_RANGE) if getattr(p, "throwing", False) else SPELL_RANGE))
+        return SPELL_RANGE
+
     def _spread_shots(self, s, env, cell):
         """[(path cells, unit hit or None)] for each missile of a fan."""
         p = self.player
         n = self._spread_count(s, env)
         out = []
-        foes = self._foe_index(p.pos, SPELL_RANGE)
-        for end in _fan_targets(p.pos, cell, n, SPELL_RANGE):
-            path, hit = self._missile_path(p.pos, end, max_len=SPELL_RANGE, foes=foes)
+        R = self._missile_reach(s)
+        foes = self._foe_index(p.pos, R)
+        for end in _fan_targets(p.pos, cell, n, R):
+            path, hit = self._missile_path(p.pos, end, max_len=R, foes=foes)
             out.append((path, hit[0] if hit else None))
         return out
 
@@ -511,7 +520,7 @@ class SkillCaster:
                     if m is not None:
                         hits |= body(m)
             else:
-                path, hit = self._missile_path(p.pos, cell, pierce=bool(x.get("pierce")))
+                path, hit = self._missile_path(p.pos, cell, pierce=bool(x.get("pierce")), max_len=self._missile_reach(s))
                 cells.update(path)
                 for m in hit:
                     hits |= body(m)
@@ -586,7 +595,8 @@ class SkillCaster:
                 names = {"miss": "a bow or crossbow", "jave": "javelins", "spea": "a spear", "thro": "a throwing weapon"}
                 self.log("%s needs %s." % (s.title, names.get(next(iter(need)), "the right weapon")), GREY)
                 return False
-        if not self._in_range(cell, SPELL_RANGE, los=False):
+        R = self._missile_reach(s)
+        if not self._in_range(cell, R, los=False):
             return False
         n = self._spread_count(s, env)
         self._spend(ap, mana, cell, "attack" if s.weapon else "cast")
@@ -608,7 +618,7 @@ class SkillCaster:
             return True
         if n > 1:
             # Strafe: one shot at each of the n nearest monsters in sight
-            cand = [m for m in self.enemies() if self.udist(m, p) <= SPELL_RANGE
+            cand = [m for m in self.enemies() if self.udist(m, p) <= R
                     and self.grid.line_of_sight(p.pos, m.pos)]
             cand.sort(key=lambda m: (chebyshev(m.pos, cell), self.udist(m, p)))
             foes = cand[:n]
@@ -619,7 +629,7 @@ class SkillCaster:
                 for m in foes:
                     self._missile_hit(s, env, m)
                 return True
-        hit, end = self._first_hit_on_line(p.pos, cell, pierce=bool(x.get("pierce")))
+        hit, end = self._first_hit_on_line(p.pos, cell, pierce=bool(x.get("pierce")), max_len=R)
         self.emit("projectile", p, p.pos, hit[-1].pos if hit else end, kind, vm)
         if hit:
             self._wake(hit)

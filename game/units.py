@@ -352,7 +352,7 @@ class Player(Unit):
         # melee weapons you can also Throw (D2's "Throw" skill on the right button)
         self.ranged = bool(wtypes & {"miss", "bow", "xbow"})
         self.throwing = bool(wtypes & {"jave", "ajav", "tkni", "taxe", "comb"})
-        self.throw_range = 7
+        self.throw_range = 14
         # attack AP = the weapon's D2 speed: very fast 1, fast 2, normal 3, slow 4, very slow 5.
         # Increased attack speed shifts it like D2 (about 10 speed per 20% IAS); bare hands are normal
         from .items import speed_tier
@@ -362,7 +362,7 @@ class Player(Unit):
             wsm = b.get("speed", {1: -20, 2: -10, 3: 0, 4: 10, 5: 20}.get(weapon.ap or 3, 0))
         self.attack_speed = wsm - self.mod("ias") // 2
         self.attack_cost = max(1, speed_tier(self.attack_speed)[0] + ATTACK_AP_OFFSET)
-        self.range = 10 if wtypes & {"miss", "bow", "xbow"} else (6 if self.ranged else 1)
+        self.range = 20 if wtypes & {"miss", "bow", "xbow"} else (12 if self.ranged else 1)
         ar = self.dexterity * 5 - 35 + cs["thf"] + self.mod("ar") + (self.level - 1) * 5
         self.ar = int(ar * (100 + self.mod("ar_pct") + pb["ar_pct"]) / 100)
         eff = getattr(self, "effects", {})
