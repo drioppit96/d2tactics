@@ -832,7 +832,7 @@ class Game:
         w = self.world
         p = w.player
         rs = getattr(p, "right_skill", None)
-        if not rs or not self.opts.get("show_skill_area", True) or not hasattr(w, "skill_preview"):
+        if not rs or rs == "throw" or not self.opts.get("show_skill_area", True) or not hasattr(w, "skill_preview"):
             return None
         g = w.grid
         if cell is None or not g.in_bounds(*cell) or not g.explored[cell[1]][cell[0]] or cell == p.pos:
@@ -1156,10 +1156,16 @@ class Game:
                 self.walk_to(m.pos, ("talk", m), adjacent=True)
                 return
             if m is not None and button == 1:
+                if getattr(p, "ranged", False) and w.udist(p, m) <= p.range and w.grid.line_of_sight(p.pos, m.pos):
+                    w.player_attack(m, "attack")          # bows shoot from where you stand
+                    return
                 self.walk_to(m.pos, ("attack", m), adjacent=True)
                 return
-            if m is not None and button == 3 and p.right_skill and p.skills.tree[p.right_skill].kind in ("attack", "melee") \
-                    and p.right_skill != "Leap Attack":
+            if m is not None and button == 3 and p.right_skill in ("throw", "Double Throw") and getattr(p, "throwing", False):
+                w.use_skill(p.right_skill, target=m)    # throws from where you stand (walks into range if needed)
+                return
+            if m is not None and button == 3 and p.right_skill and p.skills.tree.get(p.right_skill) is not None \
+                    and p.skills.tree[p.right_skill].kind in ("attack", "melee") and p.right_skill != "Leap Attack":
                 self.walk_to(m.pos, ("skill", m, p.right_skill), adjacent=True)
                 return
             if button == 1 and m is None:
@@ -1350,6 +1356,8 @@ class Game:
                 lines.insert(1, ", ".join(m.mod_names))
             rs = getattr(p, "right_skill", None)
             sk = p.skills.tree.get(rs) if rs and getattr(p, "skills", None) else None
+            if rs == "throw" and getattr(p, "throwing", False):
+                lines.append(f"Throw: {int(hc * 100)}% to hit, {cost} AP (range {p.throw_range})")
             if sk is not None:
                 ap, mana = w.skill_cost(rs)
                 if sk.kind in ("attack", "melee"):

@@ -201,7 +201,8 @@ def build_player(data, content):
     p.stat_points = data.get("stat_points", 0)
     p.skills.levels = {k: v for k, v in data.get("skills", {}).items() if k in p.skills.tree}
     p.skills.points = data.get("skill_points", 0)
-    p.right_skill = data.get("right_skill") if data.get("right_skill") in p.skills.tree else None
+    p.right_skill = data.get("right_skill") if (data.get("right_skill") in p.skills.tree
+                                                or data.get("right_skill") == "throw") else None
     p.quests = dict(data.get("quests", {}))
     p.waypoints = set(data.get("waypoints", [1]))
     p.visited = set(data.get("visited", [1]))

@@ -348,7 +348,11 @@ class Player(Unit):
         self.elem = {k: self.mod_range(k + "_dmg") for k in ("fire", "cold", "ltng", "pois", "mag")}
         self.elem = {k: v for k, v in self.elem.items() if v[1] > 0}
         wtypes = set(weapon.base.get("ancestors", ())) if weapon is not None and isinstance(getattr(weapon, "base", None), dict) else set()
-        self.ranged = bool(wtypes & {"miss", "bow", "xbow", "jave", "thro", "taxe", "tkni"}) and not (wtypes & {"spea"} and "jave" not in wtypes)
+        # bows / crossbows shoot with the normal attack; javelins and throwing knives / axes are
+        # melee weapons you can also Throw (D2's "Throw" skill on the right button)
+        self.ranged = bool(wtypes & {"miss", "bow", "xbow"})
+        self.throwing = bool(wtypes & {"jave", "ajav", "tkni", "taxe", "comb"})
+        self.throw_range = 7
         # attack AP = the weapon's D2 speed: very fast 1, fast 2, normal 3, slow 4, very slow 5.
         # Increased attack speed shifts it like D2 (about 10 speed per 20% IAS); bare hands are normal
         from .items import speed_tier

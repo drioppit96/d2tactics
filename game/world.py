@@ -715,8 +715,10 @@ class World(SkillCaster, ItemActions):
             self.log("Not enough mana.", GREY)
             return False
         cost = ap_cost if ap_cost is not None else self.attack_cost(skill)
-        shoot = skill == "attack" and getattr(p, "ranged", False)
-        if shoot and self.udist(p, target) <= p.range and self.grid.line_of_sight(p.pos, target.pos):
+        throw = skill in ("throw", "Double Throw") and getattr(p, "throwing", False)
+        shoot = (skill == "attack" and getattr(p, "ranged", False)) or throw
+        reach = p.throw_range if throw else p.range
+        if shoot and self.udist(p, target) <= reach and self.grid.line_of_sight(p.pos, target.pos):
             pass
         elif self.udist(p, target) > 1 or not self._adjacent_reachable(p.pos, target.pos):
             path = self.attack_path(p, target)
@@ -725,7 +727,7 @@ class World(SkillCaster, ItemActions):
             if shoot:
                 # walk only until the target is in range with a clear shot
                 for i, c in enumerate(path):
-                    if chebyshev(c, target.pos) <= p.range and self.grid.line_of_sight(c, target.pos):
+                    if chebyshev(c, target.pos) <= reach and self.grid.line_of_sight(c, target.pos):
                         path = path[: i + 1]
                         break
             if self.mode == "combat":
@@ -748,11 +750,13 @@ class World(SkillCaster, ItemActions):
             return False
         p.ap -= cost
         p.mana -= mana_cost
-        swings = 2 if skill in ("Double Swing", "Frenzy") else 1
+        swings = 2 if skill in ("Double Swing", "Frenzy", "Double Throw") else 1
         sk = p.skills.tree.get(skill) if hasattr(p, "skills") else None
         generic = sk is not None and sk.data is not None and skill not in GENERIC_EXCLUDED
         if generic:
             swings = self.melee_mods(p, skill)["hits"]
+            if skill == "Double Throw":
+                swings = 2
         if skill == "Concentrate":
             lv = p.skills.level(skill)
             p.effects["conc_pct"] = 100 + 10 * (lv - 1)
@@ -833,6 +837,8 @@ class World(SkillCaster, ItemActions):
     def select_right_skill(self, name):
         """The right mouse button skill; choosing an aura turns it on (D2), anything else turns it off."""
         p = self.player
+        if name == "throw" and not getattr(p, "throwing", False):
+            name = None
         p.right_skill = name
         s = p.skills.tree.get(name) if name else None
         aura = name if s is not None and s.kind == "aura" else None
@@ -845,7 +851,7 @@ class World(SkillCaster, ItemActions):
     def skill_cost(self, name):
         """(AP, mana) for using a learned skill right now."""
         p = self.player
-        if not name or name == "attack":
+        if not name or name in ("attack", "throw"):
             return p.attack_cost, 0
         book = p.skills
         if getattr(self, "_free_cast", False):
@@ -879,6 +885,11 @@ class World(SkillCaster, ItemActions):
             return False
         if not name or name == "attack":
             return self.player_attack(target) if target is not None else False
+        if name == "throw":
+            if not getattr(p, "throwing", False):
+                self.log("Throw needs a javelin, throwing knife or throwing axe.", GREY)
+                return False
+            return self.player_attack(target, "throw") if target is not None else False
         book = p.skills
         lv = book.level(name)
         if lv <= 0:
@@ -891,8 +902,8 @@ class World(SkillCaster, ItemActions):
         if s.kind == "attack":
             if target is None or getattr(target, "ai", "") == "npc":
                 return False
-            if name == "Double Throw":
-                self.log("Double Throw needs throwing weapons (coming later).", GREY)
+            if name == "Double Throw" and not getattr(p, "throwing", False):
+                self.log("Double Throw needs a throwing weapon.", GREY)
                 return False
             if name == "Leap Attack":
                 return self._leap(cell=None, target=target, ap=ap, mana=mana, lv=lv)
@@ -1443,7 +1454,7 @@ class World(SkillCaster, ItemActions):
     def _skill_mods(self, attacker, skill):
         """Damage / attack rating bonuses and effects of a melee skill at its current level."""
         m = {"dmg": 0, "ar": 0, "knock": False, "stun": 0, "magic": False, "elem": None, "always": False, "leech": 0}
-        if not attacker.is_player or skill in ("attack", None):
+        if not attacker.is_player or skill in ("attack", "throw", None):
             if skill == "bash":                       # monsters / placeholder Bash
                 m.update(dmg=50, ar=20, knock=True)
             return m

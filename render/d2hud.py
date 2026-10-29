@@ -473,6 +473,9 @@ class D2Hud:
             if self.generic_icons:
                 return self.generic_icons[0]
             return None
+        if name == "throw":
+            gi = self.generic_icons
+            return gi[6] if gi and len(gi) > 6 and gi[6] is not None else None
         s = p.skills.tree.get(name)
         if s and self.skill_icons and s.icon < len(self.skill_icons):
             return self.skill_icons[s.icon]
@@ -485,7 +488,7 @@ class D2Hud:
             k = self.s * 36.0 / max(icon.get_width(), 1)
             surf.blit(self.S(icon, k), self.P(x, y))
         else:
-            label = "ATK" if name in (None, "attack") else "".join(w[0] for w in name.split())[:3].upper()
+            label = "ATK" if name in (None, "attack") else "THR" if name == "throw" else "".join(w[0] for w in name.split())[:3].upper()
             self.text(surf, self.f16, label, GOLD, x, y + 11, "center", 36)
         self.region(x, y, 36, 36, "skill_" + side)
         mx, my = self.mouse
@@ -506,7 +509,7 @@ class D2Hud:
     def _draw_skill_popup(self, surf, p):
         """Choose the right-click skill: learned active skills in a row above the button."""
         px0, py0 = self.panel_origin
-        options = ["attack"] + [n for n in p.skills.actives()]
+        options = ["attack"] + (["throw"] if getattr(p, "throwing", False) else []) + [n for n in p.skills.actives()]
         per_row = 8
         for i, name in enumerate(options):
             row, col = divmod(i, per_row)
@@ -519,7 +522,7 @@ class D2Hud:
             if icon is not None:
                 surf.blit(self.S(icon, self.s * 36.0 / icon.get_width()), self.P(x, y))
             else:
-                lab = "ATK" if name == "attack" else "".join(w[0] for w in name.split())[:3].upper()
+                lab = "ATK" if name == "attack" else "THR" if name == "throw" else "".join(w[0] for w in name.split())[:3].upper()
                 self.text(surf, self.f16, lab, GOLD, x, y + 11, "center", 36)
             if name == (p.right_skill or "attack"):
                 pygame.draw.rect(surf, GOLD, self.R(x - 1, y - 1, 38, 38), 1)
@@ -527,7 +530,8 @@ class D2Hud:
             mx, my = self.mouse
             if pygame.Rect(int(x), int(y), 36, 36).collidepoint((int(mx), int(my))):
                 sk = p.skills.tree.get(name)
-                self.hover_lines = [("Attack" if name == "attack" else (sk.title if sk else name), GREEN if name != "attack" else WHITE)]
+                title = {"attack": "Attack", "throw": "Throw"}.get(name) or (sk.title if sk else name)
+                self.hover_lines = [(title, GREEN if name not in ("attack", "throw") else WHITE)]
 
     # ------------------------------------------------------------ panels
     def _panel_bg(self, surf, ox, frames, base=0):
