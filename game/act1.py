@@ -218,8 +218,10 @@ def stamp(b, ds, tiles, ox, oy, rng, owner, skip_npc_objects=False):
                         walls.append(t)
             if walls:
                 tm.walls[pos] = walls
-            elif pos in tm.walls:
+            elif pos in tm.walls and 0 < x < w - 1 and 0 < y < h - 1:
                 del tm.walls[pos]
+            # (a piece's outer row overlaps its neighbour's: an empty edge there must not wipe the
+            # walls and roofs of a house next to it)
     # what the DS1's object numbers mean depends on the act (Built carries the act's tables)
     monpreset = getattr(b, "monpreset", MONPRESET_A1)
     town_npcs = getattr(b, "town_npcs", TOWN_NPCS)

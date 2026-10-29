@@ -463,6 +463,7 @@ class Scene:
         tm = getattr(world, "tilemap", None)
         use_tiles = tm is not None and hasattr(assets, "draw_tile")
         drawables = []
+        roofs = []
 
         if use_tiles:
             f2 = getattr(tm, "floor2", None)
@@ -482,9 +483,10 @@ class Scene:
                     if ref2:
                         assets.draw_tile(surf, ref2, tx, ty, cam)
                     for wref in tm.walls.get((tx, ty), ()):
-                        if inside and getattr(wref[1], "orientation", 0) == 15 and \
-                                abs(tx - ptx) <= 8 and abs(ty - pty) <= 8:
-                            continue        # D2 takes the roof off the house you are in
+                        if getattr(wref[1], "orientation", 0) == 15:
+                            if not (inside and abs(tx - ptx) <= 8 and abs(ty - pty) <= 8):
+                                roofs.append((tx + ty, wref, tx, ty))   # D2 takes the roof off the house you are in
+                            continue
                         # props sort by the back of their tile, so units next to them stay visible
                         drawables.append((tx * 5 + ty * 5 + 1, 0, "tile", (wref, tx, ty)))
         else:
@@ -620,6 +622,9 @@ class Scene:
                     wy = (r.y - cam.sh / 2) / s + cam.wy
                     self.unit_hits.append((pygame.Rect(int(wx), int(wy), int(r.w / s), int(r.h / s)), u))
 
+        # roofs go on top of the walls and of whatever stands under them (D2 draws them last)
+        for _, wref, tx, ty in sorted(roofs, key=lambda r: r[0]):
+            assets.draw_tile(surf, wref, tx, ty, cam)
         for p in self.projectiles:
             wx, wy = p.pos()
             sp = cam.to_screen(wx, wy)
