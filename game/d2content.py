@@ -885,6 +885,11 @@ class D2Content:
         mid = mid.lower()
         r = self.monstats[mid]
         sfx = self.sfx
+        d2boss = r.get("boss") == "1"
+        if d2boss:
+            # D2's act and quest bosses (Andariel, Duriel, Mephisto, Diablo, Baal, Blood Raven...): their own
+            # MonStats level and life, never the extra boost of unique monsters
+            level, unique = None, False
         lvl = max(1, _int(r.get("level" + sfx) or r.get("level"), 1)) if level is None else max(1, level)
         ml = self.monlvl.get(lvl) or self.monlvl.get(1)
         base_hp, base_ac = _int(ml.get("hp" + sfx) or ml.get("hp")), _int(ml.get("ac" + sfx) or ml.get("ac"))
