@@ -106,7 +106,7 @@ def build_ring(kit, level_id, spec, seed=None):
         cands = [kit.ds1(folder + n + ".ds1") for n in names]
         cands = [d for d in cands if d is not None] or [sample]
         ds = rng.choice(cands)
-        stamp(b, ds, kit.tiles_for(ds, spec["lvltype"]), rx * rw, ry * rh, rng, level_id)
+        stamp(b, ds, kit.tiles_for(ds, spec["lvltype"]), rx * rw, ry * rh, rng, level_id, keep_edges=False)
     b.areas[level_id] = (0, 0, b.tm.tw * SUB, b.tm.th * SUB)
     b.tm.drawn = set(b.tm.floor) | set(b.tm.walls) | set(b.tm.floor2)
     grid = make_grid(b.tm)

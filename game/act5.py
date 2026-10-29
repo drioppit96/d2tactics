@@ -98,7 +98,7 @@ def build_temple(kit, level_id, spec, seed=None):
         name = pick_existing(kit, [TEMPLE + n + ".ds1" for n in names], rng)
         if name:
             ds = kit.ds1(name)
-            stamp(b, ds, kit.tiles_for(ds, "Act 5 - Temple"), rx * 40, ry * 40, rng, level_id)
+            stamp(b, ds, kit.tiles_for(ds, "Act 5 - Temple"), rx * 40, ry * 40, rng, level_id, keep_edges=False)
     b.areas[level_id] = (0, 0, 80 * SUB, 80 * SUB)
     b.tm.drawn = set(b.tm.floor) | set(b.tm.walls) | set(b.tm.floor2)
     grid = make_grid(b.tm)

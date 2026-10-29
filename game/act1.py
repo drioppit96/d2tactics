@@ -178,7 +178,7 @@ class LevelKit:
         return v or None
 
 
-def stamp(b, ds, tiles, ox, oy, rng, owner, skip_npc_objects=False):
+def stamp(b, ds, tiles, ox, oy, rng, owner, skip_npc_objects=False, keep_edges=True):
     """Copy a DS1 into the level: floors, walls, warp markers, monster presets, objects."""
     tm = b.tm
     w, h = ds.width, ds.height
@@ -218,7 +218,7 @@ def stamp(b, ds, tiles, ox, oy, rng, owner, skip_npc_objects=False):
                         walls.append(t)
             if walls:
                 tm.walls[pos] = walls
-            elif pos in tm.walls and 0 < x < w - 1 and 0 < y < h - 1:
+            elif pos in tm.walls and (not keep_edges or (0 < x < w - 1 and 0 < y < h - 1)):
                 del tm.walls[pos]
             # (a piece's outer row overlaps its neighbour's: an empty edge there must not wipe the
             # walls and roofs of a house next to it)
@@ -859,7 +859,7 @@ def build_maze(kit, level_id, spec, seed=None):
         ds = mk.role_room(role, ex, rng) if role else None
         if ds is None:
             ds = rng.choice(mk.rooms[frozenset(ex)])
-        stamp(b, ds, kit.tiles_for(ds, lt), rx * mk.rw, ry * mk.rh, rng, level_id)
+        stamp(b, ds, kit.tiles_for(ds, lt), rx * mk.rw, ry * mk.rh, rng, level_id, keep_edges=False)
         if role:
             b.__dict__.setdefault("role_rooms", {})[role] = (rx * mk.rw, ry * mk.rh, mk.rw, mk.rh)
         if role == "prev" and spec["kit"] == "barracks":

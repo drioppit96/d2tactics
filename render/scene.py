@@ -462,6 +462,9 @@ class Scene:
         psum = pv.rx + pv.ry
         tm = getattr(world, "tilemap", None)
         use_tiles = tm is not None and hasattr(assets, "draw_tile")
+        outdoors = getattr(world, "level_key", "wild") == "wild"
+        if hasattr(assets, "lift_roofs"):
+            assets.lift_roofs = outdoors
         drawables = []
         roofs = []
 
@@ -469,7 +472,8 @@ class Scene:
             f2 = getattr(tm, "floor2", None)
             tx0, ty0 = max(0, x0 // 5 - 1), max(0, y0 // 5 - 1)
             ptx, pty = int(pv.rx) // 5, int(pv.ry) // 5
-            inside = any(getattr(r[1], "orientation", 0) == 15
+            # D2 only takes roofs off outdoor houses; in dungeons the roof pieces are the wall tops
+            inside = outdoors and any(getattr(r[1], "orientation", 0) == 15
                          for dx in (-1, 0, 1) for dy in (-1, 0, 1) for r in tm.walls.get((ptx + dx, pty + dy), ()))
             tx1, ty1 = min(tm.tw - 1, x1 // 5 + 1), min(tm.th - 1, y1 // 5 + 2)
             for ty in range(ty0, ty1 + 1):
@@ -483,7 +487,7 @@ class Scene:
                     if ref2:
                         assets.draw_tile(surf, ref2, tx, ty, cam)
                     for wref in tm.walls.get((tx, ty), ()):
-                        if getattr(wref[1], "orientation", 0) == 15:
+                        if outdoors and getattr(wref[1], "orientation", 0) == 15:
                             if not (inside and abs(tx - ptx) <= 8 and abs(ty - pty) <= 8):
                                 roofs.append((tx + ty, wref, tx, ty))   # D2 takes the roof off the house you are in
                             continue

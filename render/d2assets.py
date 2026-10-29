@@ -294,9 +294,12 @@ class D2Assets(AssetProvider):
         sx, sy = cam.to_screen((tx - ty) * 80 - 80 + x0, (tx + ty) * 40 - 8 + y0 - self._roof_lift(ref))
         return pygame.Rect(int(sx), int(sy), img.get_width(), img.get_height())
 
-    @staticmethod
-    def _roof_lift(ref):
-        """Roof tiles (orientation 15) sit RoofHeight pixels above the floor (DT1 header)."""
+    lift_roofs = True      # the scene turns this off in dungeons, where roof pieces lie flat
+
+    def _roof_lift(self, ref):
+        """Outdoor house roofs (orientation 15) sit RoofHeight pixels above the floor (DT1 header)."""
+        if not self.lift_roofs:
+            return 0
         t = ref[1]
         return getattr(t, "roof_y", 0) if getattr(t, "orientation", 0) == 15 else 0
 

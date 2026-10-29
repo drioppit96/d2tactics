@@ -220,7 +220,7 @@ def build_ring(kit, level_id, spec, seed=None):
         cands = [kit.ds1(A2 + n) for n in names]
         cands = [d for d in cands if d is not None] or [sample]
         ds = rng.choice(cands)
-        stamp(b, ds, kit.tiles_for(ds, spec["lvltype"]), rx * rw, ry * rh, rng, level_id)
+        stamp(b, ds, kit.tiles_for(ds, spec["lvltype"]), rx * rw, ry * rh, rng, level_id, keep_edges=False)
         if (rx, ry) == way:
             b.role_rooms = {"way": (rx * rw, ry * rh, rw, rh)}
     b.areas[level_id] = (0, 0, b.tm.tw * SUB, b.tm.th * SUB)
