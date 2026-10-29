@@ -284,10 +284,8 @@ class D2Hud:
             texts, cols = tip
             anchor = getattr(self, "world_tip_anchor", None)
             if anchor is not None:
-                # monster info sits to the left of the monster, so it never covers it
-                a = pygame.Rect(int(anchor.x / self.s), int(anchor.y / self.s),
-                                int(anchor.w / self.s), int(anchor.h / self.s))
-                self.tooltip(surf, list(zip(texts, list(cols) + [WHITE] * len(texts))), self.mouse, left_of=a)
+                # monster info sits at the top of the screen, out of the way of the fight
+                self.tooltip(surf, list(zip(texts, list(cols) + [WHITE] * len(texts))), self.mouse, top=True)
             else:
                 self.tooltip(surf, list(zip(texts, list(cols) + [WHITE] * len(texts))), self.mouse)
         if self.hover_lines:
@@ -313,7 +311,7 @@ class D2Hud:
             y += 15
 
     # ------------------------------------------------------------ tooltip
-    def tooltip(self, surf, lines, at, left_of=None):
+    def tooltip(self, surf, lines, at, left_of=None, top=False):
         """lines: [(text, colour)] - drawn like D2's item description box."""
         if lines and isinstance(lines, tuple) and len(lines) == 2 and isinstance(lines[0], list):
             texts, cols = lines
@@ -321,7 +319,9 @@ class D2Hud:
         lh = 15
         w = max((self.f16.width(t) for t, _ in lines), default=10) + 14
         h = len(lines) * lh + 8
-        if left_of is not None:
+        if top:
+            x, y = self.lw / 2.0 - w / 2.0, 6          # monster info: the top centre of the screen
+        elif left_of is not None:
             x = left_of.x - w - 12
             if x < 4:
                 x = left_of.x + left_of.w + 12

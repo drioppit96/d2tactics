@@ -101,6 +101,8 @@ class Scene:
         self.skill_area = None    # (cells, hit cells, out of range) of the right skill under the mouse
         self.opts = {}
         self._sel_draw = None
+        self.mark_enemies = False  # X: every enemy in view gets a red outline, drawn over the walls
+        self._marks = []
         self.flags = set()       # game_over / victory
         self.clock = 0.0
         self.drop_time = {}
@@ -537,6 +539,9 @@ class Scene:
                 if g.in_bounds(x, y):
                     self._diamond(surf, cam, x, y, (120, 120, 120, 70) if far else (235, 60, 30, 105))
         sel = self.selected if self.selected is not None and self.selected.alive else None
+        self._marks = []
+        # enemies the right-click skill would hit get the red outline too
+        aoe_cells = set(self.skill_area[1]) if self.skill_area and self.skill_area[1] else set()
         self._sel_draw = None
         if sel is not None and self.opts.get("highlight_tile", True):
             for c in self._footprint(sel):
@@ -623,6 +628,10 @@ class Scene:
                 rect = assets.draw_unit(surf, u, pose, feet, s, max(0.35, b))
                 if u is sel and not v.dead:
                     self._sel_draw = (u, dict(pose), feet)
+                elif u.alive and not v.dead and not u.is_player and not getattr(u, "ally", False) \
+                        and getattr(u, "ai", "") != "npc" and \
+                        (self.mark_enemies or (aoe_cells and any(c in aoe_cells for c in self._footprint(u)))):
+                    self._marks.append((u, dict(pose), feet))
                 elif use_tiles and u.alive and not v.dead and not u.is_player and not getattr(u, "ally", False) \
                         and math.hypot(v.rx - pv.rx, v.ry - pv.ry) > light * 0.7:
                     far.append((u, dict(pose), feet))
@@ -677,6 +686,11 @@ class Scene:
             self._draw_darkness(surf, cam, light)
             for u, pose, feet in far:
                 self._draw_ghost(surf, cam, u, pose, feet)
+        for u, pose, feet in self._marks:
+            try:
+                self.assets.draw_unit(surf, u, dict(pose, outline=(255, 40, 30), no_shadow=True), feet, cam.scale, 1.0)
+            except Exception:
+                pass
         if sel is not None:
             self._draw_selected(surf, cam, sel)
 

@@ -187,7 +187,7 @@ class Game:
             self.world.log("Welcome back, %s (level %d %s)." % (name, self.world.player.level,
                                                               self.world.player.class_name), (199, 179, 119))
         self.save()
-        self.world.log("Left click: move / talk / attack. Right click: your skill. Space: end turn. Tab: map.",
+        self.world.log("Left click: move / talk / attack. Right click: your skill. Space: end turn. Tab: map. X: outline enemies.",
                        (170, 170, 170))
         self._start_scene()
         if saved is not None and int(saved.get("act", 1) or 1) > 1:
@@ -1377,6 +1377,9 @@ class Game:
             self.show_perf = not getattr(self, "show_perf", False)   # performance readout
         elif key == pygame.K_v:
             h.show_loot = not getattr(h, "show_loot", False)        # loot window
+        elif key == pygame.K_x:
+            self.scene.mark_enemies = not getattr(self.scene, "mark_enemies", False)   # red outlines on enemies
+            self.world.log("Enemy outlines %s (X)." % ("on" if self.scene.mark_enemies else "off"), (170, 170, 170))
         elif key == pygame.K_l:
             self.scene.show_labels = not self.scene.show_labels    # keep item names on
         elif key == pygame.K_o:
