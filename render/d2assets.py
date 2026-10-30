@@ -379,8 +379,47 @@ class D2Assets(AssetProvider):
                 except Exception:
                     pass
 
+    SHAPES = {"wolf": ("40", "wolf", "Wearwolf"), "bear": ("TG", "bear", "Wearbear")}
+
+    def _shape_sprites(self, unit):
+        """Druid Werewolf / Werebear: D2's wolf (40) and bear (TG) graphics while the form lasts."""
+        sh = self.SHAPES.get(getattr(unit, "shape", None) or "")
+        if not sh or sh[2] not in (getattr(unit, "buffs", None) or {}):
+            return None
+        token, mid, _ = sh
+        key = ("shape", token)
+        if key not in self.sprites:
+            self.sprites[key] = self._monster_sprites(token, mid, False)
+        return self.sprites[key]
+
+    def _monster_sprites(self, token, mid, unique):
+        arms = {}
+        ms = self.monstats.get((mid or "").lower(), {})
+        ms2 = self.monstats2.get((ms.get("monstatsex") or mid or "").lower(), {})
+        for comp in ("HD", "TR", "LG", "RA", "LA", "RH", "LH", "SH",
+                     "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8"):
+            v = ms2.get(comp.lower() + "v", "").replace('"', "")
+            opts = [x.strip().upper() for x in v.split(",") if x.strip() and x.strip() != "0"]
+            if unique and len(opts) > 1:
+                opts = opts[1:] + opts[:1]    # a different look for the boss
+            arms[comp] = opts
+        # MonStats2 BaseW: Moon Clan use 2hs, Dark Hunters 1hs, archers bow (their bow is a layer
+        # of the bow COFs) - with HTH they only had death animations
+        wc = (ms2.get("basew") or "hth").replace('"', "").strip().upper() or "HTH"
+        return UnitSprites(self, "monsters", token, arms, wc)
+
+    def _sprites_for_human(self, unit):
+        arms, hide, wclass = self.player_look(unit)
+        key = ("player", getattr(unit, "token", "BA"), wclass, hide, tuple(sorted((k, tuple(v)) for k, v in arms.items())))
+        if key not in self.sprites:
+            self.sprites[key] = UnitSprites(self, "chars", getattr(unit, "token", "BA") or "BA", arms, wclass, hide=hide)
+        return self.sprites[key]
+
     def _sprites_for(self, unit):
         if unit.is_player:
+            shp = self._shape_sprites(unit)
+            if shp is not None:
+                return shp
             arms, hide, wclass = self.player_look(unit)
             key = ("player", getattr(unit, "token", "BA"), wclass, hide, tuple(sorted((k, tuple(v)) for k, v in arms.items())))
             if key not in self.sprites:
@@ -388,21 +427,8 @@ class D2Assets(AssetProvider):
             return self.sprites[key]
         key = (unit.token, unit.unique, getattr(unit, "d2id", None))
         if key not in self.sprites:
-            arms = {}
             mid = getattr(unit, "d2id", None) or MONSTER_IDS.get(unit.token, "")
-            ms = self.monstats.get((mid or "").lower(), {})
-            ms2 = self.monstats2.get((ms.get("monstatsex") or mid or "").lower(), {})
-            for comp in ("HD", "TR", "LG", "RA", "LA", "RH", "LH", "SH",
-                         "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8"):
-                v = ms2.get(comp.lower() + "v", "").replace('"', "")
-                opts = [x.strip().upper() for x in v.split(",") if x.strip() and x.strip() != "0"]
-                if unit.unique and len(opts) > 1:
-                    opts = opts[1:] + opts[:1]    # a different look for the boss
-                arms[comp] = opts
-            # MonStats2 BaseW: Moon Clan use 2hs, Dark Hunters 1hs, archers bow (their bow is a layer
-            # of the bow COFs) - with HTH they only had death animations
-            wc = (ms2.get("basew") or "hth").replace('"', "").strip().upper() or "HTH"
-            self.sprites[key] = UnitSprites(self, "monsters", unit.token, arms, wc)
+            self.sprites[key] = self._monster_sprites(unit.token, mid, unit.unique)
         return self.sprites[key]
 
     # ---------------------------------------------------------------- items
@@ -455,6 +481,9 @@ class D2Assets(AssetProvider):
         sprites = self._sprites_for(unit)
         mode = pose["mode"]
         frames = sprites.frames(mode, pose.get("facing", unit.facing))
+        if not frames and unit.is_player and getattr(unit, "shape", None):
+            # an animation the wolf / bear doesn't have (dying, ...): the druid's own one
+            frames = self._sprites_for_human(unit).frames(mode, pose.get("facing", unit.facing))
         if not frames:
             return self.placeholder.draw_unit(surf, unit, pose, pos, s, b)
         n = len(frames)
