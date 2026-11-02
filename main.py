@@ -1226,6 +1226,25 @@ class Game:
                 else:
                     w.select_right_skill(None if name == "attack" else name)
                 h.skill_popup = False
+            elif action == "q_pick":
+                h.q_sel[arg[0]] = arg[1]
+            elif action == "respec":
+                p = w.player
+                s0, d0, e0, v0 = p.start_stats
+                back = (p.base_str - s0) + (p.base_dex - d0) + (p.base_vit - v0) + (p.base_eng - e0)
+                p.base_str, p.base_dex, p.base_vit, p.base_eng = s0, d0, v0, e0
+                p.stat_points += max(0, back)
+                n = p.skills.reset()
+                p.right_skill = None
+                p.left_skill = None
+                for b in ("Wearwolf", "Wearbear"):
+                    p.buffs.pop(b, None)
+                p.shape = None
+                p.recalc()
+                p.hp = min(p.hp, p.max_hp)
+                p.mana = min(p.mana, p.max_mana)
+                w.log("Respec: %d stat point%s and %d skill point%s back to spend." %
+                      (back, "" if back == 1 else "s", n, "" if n == 1 else "s"), (199, 179, 119))
             elif action == "reset_skills":
                 p = w.player
                 n = p.skills.reset()

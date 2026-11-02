@@ -1361,7 +1361,7 @@ class SkillCaster:
         if s.key == "Blade Sentinel":
             # D2's spinning blade: flies at enemies, cuts everything around it, a few hits then gone
             a.shots = min(8, 3 + env.lvl // 4)
-            a.range = 6
+            a.range = 12                    # it notices and flies to enemies up to 12 cells away
             a.combat_only = True
             a.stationary = False
         elif s.key.startswith("Wake of"):
