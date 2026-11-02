@@ -461,6 +461,11 @@ class Game:
                 self.travel_act(5)
             else:
                 w.log("Tyrael: Diablo still lives. The way to Harrogath stays closed.", (220, 210, 170))
+        elif opt == "Socket Item":
+            w.cursor_mode = ("socket", npc.npc)
+            h.show_inv = True
+            w.log("Click an item to add one socket (it costs twice the item's price). Esc when done.",
+                  (199, 179, 119))
         elif opt == "Imbue Sockets":
             from game import quests345
             quests345.larzuk_sockets(w)
@@ -1203,6 +1208,7 @@ class Game:
                 w.add_stat(arg)
             elif action == "wp_tab":
                 h.wp_act = arg
+                h.wp_page = 0
             elif action == "q_tab":
                 h.q_act = arg
             elif action == "waypoint":
@@ -1226,6 +1232,11 @@ class Game:
                 else:
                     w.select_right_skill(None if name == "attack" else name)
                 h.skill_popup = False
+            elif action == "q_dialogue":
+                title, status, text = arg
+                w.log("%s: %s" % (title, text if status != "done" else "Quest completed."), (220, 210, 170))
+            elif action == "wp_page":
+                h.wp_page = arg
             elif action == "q_pick":
                 h.q_sel[arg[0]] = arg[1]
             elif action == "respec":
@@ -1268,7 +1279,9 @@ class Game:
                     w.log("Learned %s (level %d)." % (p.skills.tree[arg].title, p.skills.levels[arg]), (0, 220, 0))
             elif action == "slot":
                 eq = w.player.equipment.get(arg)
-                if getattr(w, "cursor_mode", None) and w.cursor_mode[0] == "identify":
+                if getattr(w, "cursor_mode", None) and w.cursor_mode[0] == "socket":
+                    w.socket_item(eq)
+                elif getattr(w, "cursor_mode", None) and w.cursor_mode[0] == "identify":
                     w.identify_with(w.cursor_mode[1], eq)
                 elif w.held is not None and getattr(w.held, "gem", None) is not None and eq is not None:
                     w.insert_into(eq, w.held)
@@ -1284,7 +1297,9 @@ class Game:
                     return
                 p = w.player
                 target = p.inv_at(*cell)
-                if getattr(w, "cursor_mode", None) and w.cursor_mode[0] == "identify":
+                if getattr(w, "cursor_mode", None) and w.cursor_mode[0] == "socket":
+                    w.socket_item(target)
+                elif getattr(w, "cursor_mode", None) and w.cursor_mode[0] == "identify":
                     w.identify_with(w.cursor_mode[1], target)
                 elif w.held is not None and getattr(w.held, "gem", None) is not None and target is not None \
                         and getattr(target, "sockets", 0) and target is not w.held:

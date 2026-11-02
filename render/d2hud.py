@@ -667,11 +667,22 @@ class D2Hud:
             t(surf, f16, str(p.stat_points), WHITE, 10, 370, "center", 110)
         self._close_button(surf, CHAR_CLOSE, 0, "char")
 
-    QUEST_SLOTS = [(45, 84), (126, 84), (207, 84), (45, 165), (126, 165), (207, 165)]   # 68x68 icons, D2's 3 x 2
+    # D2's quest log (questbackground.dc6, 320x432): tabs on top, a 3 x 2 board of 80x95 sockets with the
+    # 72x86 quest icons, the quest's name bar and its description box, Play Dialogue + close at the bottom
+    QUEST_SOCKETS = [(40, 33), (120, 33), (200, 33), (40, 130), (120, 130), (200, 130)]
+    QUEST_SLOTS = [(x + 4, y + 4) for x, y in QUEST_SOCKETS]
     QUEST_ORDER = {1: ["den", "blood_raven", "malus", "cain", "tower", "andariel"]}         # D2's quest log order
+    QUEST_CLOSE = (278, 389, 32, 32)
+    WP_CLOSE = (272, 385, 32, 32)
+
+    def _quest_icon(self, act, n):
+        key = (act, n)
+        if key not in self._qicons:
+            self._qicons[key] = self._load("data\\global\\ui\\MENU\\a%dq%d.dc6" % (act, n))
+        return self._qicons[key]
 
     def _greyed(self, img):
-        """A grey copy of an icon (cached): D2's quest log greys out finished quests."""
+        """A grey copy of an icon (cached)."""
         cache = self.__dict__.setdefault("_grey_cache", {})
         g = cache.get(id(img))
         if g is None:
@@ -686,22 +697,16 @@ class D2Hud:
                         if a:
                             v = (r * 30 + gg * 59 + b * 11) // 100
                             g.set_at((xx, yy), (v, v, v, a))
-            g.fill((150, 150, 150, 255), special_flags=pygame.BLEND_RGBA_MULT) if hasattr(pygame, "BLEND_RGBA_MULT") else None
             cache[id(img)] = g
         return g
 
-    def _quest_icon(self, act, n):
-        key = (act, n)
-        if key not in self._qicons:
-            self._qicons[key] = self._load("data\\global\\ui\\MENU\\a%dq%d.dc6" % (act, n))
-        return self._qicons[key]
-
     def _act_tabs(self, surf, acts, current, action, frames_key):
-        """D2's act tabs (I - V) across the top of a panel."""
+        """D2's act tabs (63x31 each, bright = the open act) along the top of the panel."""
         tabs = self.frames.get(frames_key) or self.frames.get("expwaygatetabs")
-        mx, my = self.mouse
-        for i, a in enumerate(acts):
-            x, y, w = 16 + i * 58, 42, 56
+        for a in range(1, 6):
+            x, y, w = 2 + (a - 1) * 63, 0, 63
+            if a not in acts:
+                continue
             on = a == current
             f = None
             if tabs:
@@ -710,22 +715,22 @@ class D2Hud:
             if f is not None:
                 self.put(surf, f, x, y)
             else:
-                box = pygame.Surface((int((w - 2) * self.s), int(20 * self.s)), pygame.SRCALPHA)
+                box = pygame.Surface((int((w - 2) * self.s), int(28 * self.s)), pygame.SRCALPHA)
                 box.fill((70, 58, 30, 230) if on else (20, 16, 10, 200))
                 surf.blit(box, self.P(x, y))
-                pygame.draw.rect(surf, (120, 100, 60) if on else (70, 60, 40), self.R(x, y, w - 2, 20), 1)
+                pygame.draw.rect(surf, (120, 100, 60) if on else (70, 60, 40), self.R(x, y, w - 2, 28), 1)
                 self.text(surf, self.f16, "I II III IV V".split()[a - 1], WHITE if on else (150, 140, 120),
-                          x, y + 3, "center", w - 2)
-            self.region(x, y, w - 2, 22, action, a)
+                          x, y + 6, "center", w - 2)
+            self.region(x, y, w, 30, action, a)
 
     def _draw_quests(self, surf, p):
-        """D2's quest log: act tabs, a 3 x 2 board of quest icons on their sockets (completed / in
-        progress / not started), the chosen quest's name and what to do next."""
+        """D2's quest log: act tabs, the board of quest icons (in colour while the quest is under way,
+        grey once done after D2's completion animation, dark when not started), the chosen quest's
+        name and what to do next."""
         from game.quests import journal
         from game.acts import act_of
         bg = self.frames.get("questbackground")
         self._panel_bg(surf, 0, bg or self.frames.get("blank") or self.frames["invchar6"], 0)
-        self.text(surf, self.f30, "Quests", GOLD, 0, 10, "center", 320)
         here = act_of(self.world.level_id) if getattr(self, "world", None) and self.world.level_id else 1
         top = max([here, int(getattr(p, "current_act", 1) or 1)] + [act_of(l) for l in getattr(p, "visited", ()) if l])
         acts = list(range(1, min(5, top) + 1))
@@ -734,7 +739,6 @@ class D2Hud:
         act = self.q_act
         self._act_tabs(surf, acts, act, "q_tab", "expquesttabs")
         entries = journal(p, act)
-        # D2's order on the board (and the icon files a<act>q<n>.dc6 follow it)
         from game import quests as _q
         ids = [q for q, _ in ({1: _q.ACT1}.get(act) or [])]
         order = self.QUEST_ORDER.get(act)
@@ -749,58 +753,67 @@ class D2Hud:
         import time as _t
         seen = p.__dict__.setdefault("_quest_anim", {})
         for i, (title, status, text) in enumerate(entries[:6]):
+            sx, sy = self.QUEST_SOCKETS[i]
             x, y = self.QUEST_SLOTS[i]
             if sockets:
                 f = sockets[1 if i == sel and len(sockets) > 1 else 0]
                 if f is not None:
-                    self.put(surf, f, x - 4, y - 4)
+                    self.put(surf, f, sx, sy)
             else:
-                pygame.draw.rect(surf, (200, 170, 90) if i == sel else (60, 55, 45), self.R(x - 4, y - 4, 76, 76), 2)
+                pygame.draw.rect(surf, (200, 170, 90) if i == sel else (60, 55, 45), self.R(sx, sy, 80, 95), 2)
             icon = self._quest_icon(act, i + 1)
             if icon:
                 if status == "done":
-                    key = (act, i)
-                    t0 = seen.get(key)
+                    # D2 plays the completion animation once (the first time you look), then the grey icon
+                    t0 = seen.get((act, i))
                     if t0 is None:
-                        t0 = seen[key] = _t.time()          # D2 plays the completion animation once
+                        t0 = seen[(act, i)] = _t.time()
                     k = int((_t.time() - t0) * 12)
-                    idx = min(k, 24) if k < 24 else 24
+                    idx = k if k < 24 else 24
                 else:
                     idx = 25 if status != "none" else 26
                 f = icon[min(idx, len(icon) - 1)]
                 if f is not None:
-                    if status == "done" and idx >= 24:
-                        f = self._greyed(f)                 # finished: the icon goes grey
                     self.put(surf, f, x, y)
             else:
-                box = pygame.Surface((int(68 * self.s), int(68 * self.s)), pygame.SRCALPHA)
-                box.fill((50, 40, 25, 230) if status == "done" else ((35, 30, 22, 230) if status != "none" else (12, 12, 12, 230)))
+                box = pygame.Surface((int(72 * self.s), int(86 * self.s)), pygame.SRCALPHA)
+                box.fill((50, 40, 25, 230) if status not in ("done", "none") else ((40, 40, 40, 230) if status == "done" else (12, 12, 12, 230)))
                 surf.blit(box, self.P(x, y))
-                mark = {"done": "\u2713", "none": "?"}.get(status, "!")
                 self.text(surf, self.f30, "+" if status == "done" else ("?" if status == "none" else "!"),
-                          GOLD if status == "done" else ((200, 190, 160) if status != "none" else (80, 75, 65)),
-                          x, y + 18, "center", 68)
-            self.region(x, y, 68, 68, "q_pick", (act, i))
-            if pygame.Rect(int(x), int(y), 68, 68).collidepoint((int(mx), int(my))):
+                          GREY if status == "done" else ((230, 200, 120) if status != "none" else (80, 75, 65)),
+                          x, y + 26, "center", 72)
+            self.region(sx, sy, 80, 95, "q_pick", (act, i))
+            if pygame.Rect(int(sx), int(sy), 80, 95).collidepoint((int(mx), int(my))):
                 self.hover_lines = [(title, GOLD if status != "none" else GREY)]
-        # the chosen quest: name bar and description
         if entries:
             title, status, text = entries[sel]
-            self.text(surf, self.f16, title, GOLD if status != "none" else GREY, 20, 254, "center", 280)
+            self.text(surf, self.f16, title, WHITE if status != "none" else GREY, 0, 234, "center", 320)
             if status == "done":
                 text = "Quest completed."
-            words, line, y = (text or "").split(), "", 284
+            words, line, y = (text or "").split(), "", 262
             for wd in words:
                 trial = (line + " " + wd).strip()
-                if self.f16.width(trial) > 266:
-                    self.text(surf, self.f16, line, WHITE, 28, y)
-                    y += 17
+                if self.f16.width(trial) > 284:
+                    self.text(surf, self.f16, line, WHITE, 18, y)
+                    y += 16
                     line = wd
                 else:
                     line = trial
             if line:
-                self.text(surf, self.f16, line, WHITE, 28, y)
-        self._close_button(surf, CHAR_CLOSE, 0, "quests")
+                self.text(surf, self.f16, line, WHITE, 18, y)
+        # Play Quest Dialogue (D2 replays what the quest giver said): here the quest's text goes to the log
+        ql = self.frames.get("questlast")
+        if entries and entries[sel][1] != "none":
+            bx, by = 226, 389
+            hot = pygame.Rect(bx, by, 32, 32).collidepoint((int(mx), int(my)))
+            if ql:
+                f = ql[1 if hot and len(ql) > 1 else 0]
+                if f is not None:
+                    self.put(surf, f, bx + 1, by + 1)
+            self.region(bx, by, 32, 32, "q_dialogue", entries[sel])
+            if hot:
+                self.hover_lines = [("Play Quest Dialogue", WHITE)]
+        self._close_button(surf, self.QUEST_CLOSE, 0, "quests")
 
     # ------------------------------------------------------------ vendors
     STORE_GRID = (15, 62)
@@ -895,8 +908,9 @@ class D2Hud:
                 self._icon(surf, it.socketed[i], cx + 2, cy + 2, 24, 24)
 
     def _draw_waypoints(self, surf, world):
-        """D2's waypoint panel: act tabs, 'Choose your destination', one row per waypoint of the act
-        (icon + name; ones you haven't found are greyed out). Click one to travel."""
+        """D2's waypoint panel (waygatebackground.dc6): act tabs, then the act's waypoints in the nine
+        slots down the left - a blue gate for the ones you found, crossed out for the others. The boss
+        waypoints of this game are on a second page."""
         from game.acts import WAYPOINTS, act_of, BOSS_WAYPOINTS
         p = world.player
         info = getattr(world, "info", None)
@@ -910,46 +924,50 @@ class D2Hud:
             cur = act_of(here) if here else 1
             self.wp_act = cur if cur in acts else acts[-1]
         self._act_tabs(surf, acts, self.wp_act, "wp_tab", "expwaygatetabs")
-        self.text(surf, self.f16, "Choose your destination", GOLD, 0, 70, "center", 320)
-        icons = self.frames.get("waygateicons")
-        rows = WAYPOINTS[self.wp_act]
-        step = min(34, 270 // max(1, len(rows)))
         bosses = BOSS_WAYPOINTS.get(self.wp_act, [])
-        for i, lid in enumerate(rows):
-            y = 92 + i * step
+        base = [l for l in WAYPOINTS[self.wp_act] if l not in bosses]
+        page = getattr(self, "wp_page", 0) if bosses else 0
+        rows = bosses if page else base
+        self.text(surf, self.f16, "Boss waypoints" if page else "Choose your destination", GOLD, 0, 36, "center", 320)
+        icons = self.frames.get("waygateicons")
+        for i, lid in enumerate(rows[:9]):
+            y = 58 + i * 36
             name = info.name(lid) if info else str(lid)
             on = lid in got
-            hot = on and lid != here and pygame.Rect(16, y, 288, step - 2).collidepoint((int(mx), int(my)))
-            isz = min(28, step - 4)
+            hot = on and lid != here and pygame.Rect(15, y, 290, 34).collidepoint((int(mx), int(my)))
             if icons:
-                f = icons[(1 if hot and len(icons) > 1 else 0)] if on else None
+                k = (2 if lid == here else (1 if hot else 0)) if on else 3
+                f = icons[min(k, len(icons) - 1)]
                 if f is not None:
-                    k = isz / float(max(1, f.get_height()))
-                    surf.blit(self.S(f, self.s * k), self.P(22, y))
-                elif not on:
-                    pygame.draw.rect(surf, (40, 36, 30), self.R(22, y, isz, isz), 1)
+                    self.put(surf, f, 17, y + 2)
             else:
-                box = pygame.Surface((int(isz * self.s), int(isz * self.s)), pygame.SRCALPHA)
-                box.fill((90, 75, 40, 230) if (on and hot) else ((55, 48, 30, 230) if on else (15, 14, 12, 200)))
-                surf.blit(box, self.P(22, y))
-                pygame.draw.rect(surf, (140, 120, 70) if on else (45, 40, 32), self.R(22, y, isz, isz), 1)
-                if on:
-                    self.text(surf, self.f10, "x", (200, 180, 120), 22, y + isz // 2 - 5, "center", isz)
-            col = (GOLD if lid == here else ((255, 255, 255) if hot else (210, 200, 180))) if on else (95, 90, 80)
-            self.text(surf, self.f16, name, col, 62, y + (isz - 14) // 2)
-            if lid in bosses:
-                self.text(surf, self.f10, "boss", (200, 90, 70) if on else (100, 70, 60), 262, y + (isz - 10) // 2)
+                box = pygame.Surface((int(30 * self.s), int(30 * self.s)), pygame.SRCALPHA)
+                box.fill((60, 90, 150, 230) if on else (25, 22, 18, 220))
+                surf.blit(box, self.P(17, y + 2))
+            col = (GOLD if lid == here else ((255, 255, 255) if hot else (200, 190, 170))) if on else (95, 90, 80)
+            self.text(surf, self.f16, name, col, 58, y + 10)
             if on and lid != here:
-                self.region(16, y, 288, step - 2, "waypoint", lid)
+                self.region(15, y, 290, 34, "waypoint", lid)
+        if bosses:
+            # the second page: this game's boss waypoints
+            bx, by = 14, 394
+            hot = pygame.Rect(bx, by, 150, 22).collidepoint((int(mx), int(my)))
+            box = pygame.Surface((int(150 * self.s), int(22 * self.s)), pygame.SRCALPHA)
+            box.fill((80, 60, 30, 240) if hot else (40, 30, 20, 230))
+            surf.blit(box, self.P(bx, by))
+            pygame.draw.rect(surf, GOLD, self.R(bx, by, 150, 22), 1)
+            self.text(surf, self.f10, "< Waypoints" if page else "Boss waypoints >", GOLD if hot else WHITE,
+                      bx, by + 5, "center", 150)
+            self.region(bx, by, 150, 22, "wp_page", 0 if page else 1)
         # TEST ONLY: remove later
         bx, by = 170, 394
-        hot = pygame.Rect(bx, by, 140, 22).collidepoint((int(mx), int(my)))
-        box = pygame.Surface((int(140 * self.s), int(22 * self.s)), pygame.SRCALPHA)
+        hot = pygame.Rect(bx, by, 96, 22).collidepoint((int(mx), int(my)))
+        box = pygame.Surface((int(96 * self.s), int(22 * self.s)), pygame.SRCALPHA)
         box.fill((90, 40, 30, 220) if hot else (50, 20, 15, 200))
         surf.blit(box, self.P(bx, by))
-        self.text(surf, self.f10, "All waypoints (test)", WHITE, bx, by + 5, "center", 140)
-        self.region(bx, by, 140, 22, "wp_all")
-        self._close_button(surf, CHAR_CLOSE, 0, "waypoints")
+        self.text(surf, self.f10, "All (test)", WHITE, bx, by + 5, "center", 96)
+        self.region(bx, by, 96, 22, "wp_all")
+        self._close_button(surf, self.WP_CLOSE, 0, "waypoints")
 
     # ------------------------------------------------------------ the Horadric Cube
     CUBE_GRID = (117, 138)
@@ -1145,7 +1163,7 @@ class D2Hud:
                     surf.blit(tint, self.P(ox + x, y))
                 self._icon(surf, it, ox + x, y, w, h)
                 if hot and held is None:
-                    self.hover_lines = it.describe_lines(p)
+                    self.hover_lines = list(it.describe_lines(p)) + self._socket_cost_lines(it)
                     self._draw_sockets(surf, it, ox + x, y, w, h)
                 elif hot and held is not None and getattr(held, "gem", None) and getattr(it, "sockets", 0):
                     self._draw_sockets(surf, it, ox + x, y, w, h)
@@ -1177,7 +1195,7 @@ class D2Hud:
                 if self.store is not None:
                     from game.d2items import sell_price
                     lines.append(("Sell value: %d (right click)" % sell_price(it), GOLD))
-                self.hover_lines = lines
+                self.hover_lines = lines + self._socket_cost_lines(it)
         if held is not None:
             cell = self.grid_cell_at((mx * self.s, my * self.s))
             if cell:
@@ -1209,6 +1227,23 @@ class D2Hud:
         w, h = p._size(it)
         mx, my = self.mouse
         self._icon(surf, it, mx - w * CELL / 2.0, my - h * CELL / 2.0, w * CELL - 1, h * CELL - 1)
+
+    def _socket_cost_lines(self, it):
+        """While the blacksmith's socket service is open: what the next socket would cost."""
+        w = self.world
+        mode = getattr(w, "cursor_mode", None)
+        if not mode or mode[0] != "socket" or getattr(it, "kind", "") != "equip" or not isinstance(it.base, dict):
+            return []
+        c = getattr(w, "content", None)
+        cap = c.max_sockets(it.base, getattr(it, "ilvl", 1) or 1) if c is not None else it.base.get("maxsock", 0)
+        have = getattr(it, "sockets", 0) or 0
+        if cap <= 0:
+            return [("", WHITE), ("Can't have sockets", RED)]
+        if have >= cap:
+            return [("", WHITE), ("Sockets: %d / %d (full)" % (have, cap), GREY)]
+        cost = w.socket_cost(it)
+        return [("", WHITE), ("Sockets: %d / %d" % (have, cap), WHITE),
+                ("Add a socket: %d gold" % cost, GOLD if w.player.gold >= cost else RED)]
 
     def _draw_cursor(self, surf):
         if not self.cursor or not self.cursor[0]:

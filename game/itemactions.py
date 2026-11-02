@@ -17,22 +17,22 @@ VENDORS = {"akara": "akara", "charsi": "charsi", "gheed": "gheed",
            "jamella": "jamella", "halbu": "halbu", "larzuk": "larzuk", "malah": "malah", "drehya": "drehya"}
 NPC_OPTIONS = {
     "akara": ["Talk", "Trade", "Level 99 (test)"],             # TEST ONLY: "Level 99 (test)", remove later
-    "charsi": ["Talk", "Trade", "Recharge"], "gheed": ["Talk", "Trade", "Gamble"],
+    "charsi": ["Talk", "Trade", "Recharge", "Socket Item"], "gheed": ["Talk", "Trade", "Gamble"],
     "kashya": ["Talk", "Hire"], "cain1": ["Talk", "Identify Items"],
     "warriv1": ["Talk", "Go East", "Go East (test)"],          # TEST ONLY: "Go East (test)", remove later
     # Lut Gholein
-    "fara": ["Talk", "Trade", "Recharge"], "drognan": ["Talk", "Trade"], "lysander": ["Talk", "Trade"],
+    "fara": ["Talk", "Trade", "Recharge", "Socket Item"], "drognan": ["Talk", "Trade"], "lysander": ["Talk", "Trade"],
     "elzix": ["Talk", "Trade", "Gamble"], "greiz": ["Talk", "Hire"], "atma": ["Talk"], "jerhyn": ["Talk"],
     "geglash": ["Talk"], "meshif1": ["Talk", "Sail East", "Sail East (test)"],   # TEST ONLY: "(test)" "tyrael1": ["Talk"], "warriv2": ["Talk", "Go West"], "cain2": ["Talk", "Identify Items"],
     # Kurast Docks
     "ormus": ["Talk", "Trade"], "alkor": ["Talk", "Trade", "Gamble"], "asheara": ["Talk", "Trade", "Hire"],
-    "hratli": ["Talk", "Trade", "Recharge"], "cain3": ["Talk", "Identify Items", "To Act 4 (test)"],   # TEST ONLY: "To Act 4 (test)"
+    "hratli": ["Talk", "Trade", "Recharge", "Socket Item"], "cain3": ["Talk", "Identify Items", "To Act 4 (test)"],   # TEST ONLY: "To Act 4 (test)"
     "meshif2": ["Talk", "Sail West"], "natalya": ["Talk"],
     # the Pandemonium Fortress
     "tyrael2": ["Talk", "Travel to Harrogath", "Travel to Harrogath (test)"],             # TEST ONLY: "(test)"
-    "jamella": ["Talk", "Trade", "Gamble"], "halbu": ["Talk", "Trade", "Recharge"], "cain4": ["Talk", "Identify Items"],
+    "jamella": ["Talk", "Trade", "Gamble"], "halbu": ["Talk", "Trade", "Recharge", "Socket Item"], "cain4": ["Talk", "Identify Items"],
     # Harrogath
-    "larzuk": ["Talk", "Trade", "Recharge", "Imbue Sockets"], "malah": ["Talk", "Trade"], "drehya": ["Talk", "Trade", "Gamble"],
+    "larzuk": ["Talk", "Trade", "Recharge", "Imbue Sockets", "Socket Item"], "malah": ["Talk", "Trade"], "drehya": ["Talk", "Trade", "Gamble"],
     "qual-kehk": ["Talk", "Hire"], "nihlathak": ["Talk"], "tyrael3": ["Talk"], "cain6": ["Talk", "Identify Items"],
 }
 STORE_W, STORE_H = 10, 10
@@ -145,6 +145,47 @@ class ItemActions:
             store = Store(npc_id, tabs)
         cache[key] = (store, getattr(p, "_town_visit", 0))
         return store
+
+    def socket_cost(self, it):
+        """Each socket costs twice the item's price (its price without sockets: every one the same)."""
+        had = getattr(it, "sockets", 0)
+        it.sockets = 0
+        try:
+            return 2 * max(1, self.price_of(it))
+        finally:
+            it.sockets = had
+
+    def socket_item(self, it):
+        """The blacksmith adds one socket to an item (up to its D2 maximum) for twice its price."""
+        p = self.player
+        c = self.content
+        if it is None or getattr(it, "kind", "") != "equip" or not isinstance(getattr(it, "base", None), dict):
+            self.log("Only weapons and armor can be socketed.", GREY)
+            return False
+        if getattr(it, "runeword", None):
+            self.log("A runeword item can't get more sockets.", GREY)
+            return False
+        cap = c.max_sockets(it.base, getattr(it, "ilvl", 1) or 1) if c is not None else it.base.get("maxsock", 0)
+        have = getattr(it, "sockets", 0) or 0
+        if cap <= 0:
+            self.log("%s can't have sockets." % getattr(it, "shown_name", it.name), GREY)
+            return False
+        if have >= cap:
+            self.log("%s already has its most sockets (%d)." % (getattr(it, "shown_name", it.name), cap), GREY)
+            return False
+        cost = self.socket_cost(it)
+        if p.gold < cost:
+            self.log("A socket costs %d gold - you have %d." % (cost, p.gold), RED)
+            return False
+        p.gold -= cost
+        it.sockets = have + 1
+        if getattr(it, "socketed", None) is None:
+            it.socketed = []
+        p.recalc()
+        self.log("%s now has %d socket%s (-%d gold)%s." % (getattr(it, "shown_name", it.name), it.sockets,
+                 "" if it.sockets == 1 else "s", cost, "" if it.sockets < cap else ", the most it can have"),
+                 (199, 179, 119))
+        return True
 
     def price_of(self, it, store=None):
         if getattr(it, "gamble", False):
