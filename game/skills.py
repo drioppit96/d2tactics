@@ -309,6 +309,14 @@ class SkillEnv:
             return self.dm(int(n[2]), int(n[3]))
         if n.startswith("clc") and n[3:].isdigit():
             return self.calc("calc%s" % n[3:])
+        if n in ("macr", "math", "madm"):
+            # D2's weapon masteries: their crit / attack / damage passive stat at this level
+            want = {"macr": "crit", "math": "_th", "madm": "_dmg"}[n]
+            for i in range(1, 6):
+                st = self.r.get("passivestat%d" % i) or ""
+                if st.startswith("passive_mastery") and st.endswith(want):
+                    return self.calc("passivecalc%d" % i)
+            return 0
         if n == "toht":
             return self.tohit()
         if n == "edmn":
@@ -511,6 +519,13 @@ class SkillBook:
         self.levels[name] = self.levels.get(name, 0) + 1
         self.points -= 1
         return True
+
+    def reset(self):
+        """Unlearn everything: every point spent goes back to 'Skill Choices Remaining'."""
+        spent = sum(self.levels.values())
+        self.levels = {}
+        self.points += spent
+        return spent
 
     def actives(self):
         out = [n for n in self.levels if self.tree[n].kind != "passive"]

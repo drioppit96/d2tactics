@@ -145,6 +145,9 @@ def _nest(world, m):
 def tag_roster_monster(world, m):
     """Monsters from the area rosters that need special handling (vile mothers, maggot queens...)."""
     mid = (getattr(m, "d2id", "") or "").lower()
+    if mid.startswith(("crownest", "minionspawner", "demonspawner", "evilhole", "evilhut", "suckernest")):
+        _nest(world, m)                 # nests hatch their brood and never move
+        return
     if mid.startswith(MOBILE_SPAWNERS):
         c = world.content
         child = (c.monstats.get(mid, {}).get("spawn") or "").lower() if c is not None else ""

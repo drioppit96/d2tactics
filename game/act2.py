@@ -370,6 +370,27 @@ def build_desert(kit, seed=None, content=None):
         b.areas[lid] = (bx0 * SUB, by0 * SUB, (bx0 + size * BLOCK) * SUB, (by0 + size * BLOCK) * SUB)
         nb = nbr.get(lid, {})
         taken = set()
+        ring = 1 if size >= 8 else 0          # areas ~30% smaller: a second border ring inside
+        if ring:
+            for bx in range(1, size - 1):
+                for by in range(1, size - 1):
+                    en, es, ew, ee = by == 1, by == size - 2, bx == 1, bx == size - 2
+                    if not (en or es or ew or ee):
+                        continue
+                    taken.add((bx, by))
+                    X, Y = bx0 + bx * BLOCK, by0 + by * BLOCK
+                    vert = "n" if en else ("s" if es else None)
+                    hor = "w" if ew else ("e" if ee else None)
+                    if vert and hor:
+                        put("outdoors\\%s.ds1" % CORNER[(vert, hor)], X, Y, lid)
+                        continue
+                    side = vert or hor
+                    along = (bx + off[0]) if vert else (by + off[1])
+                    other = nb.get(side)
+                    if other is not None and abs(along - openings[(lid, other)]) <= (3 if other == 40 else 1):
+                        sand(X, Y)              # the way through stays open
+                        continue
+                    put("outdoors\\%s.ds1" % EDGE[side], X, Y, lid)
         for bx in range(size):
             for by in range(size):
                 en, es, ew, ee = by == 0, by == size - 1, bx == 0, bx == size - 1
@@ -393,13 +414,14 @@ def build_desert(kit, seed=None, content=None):
                         sand(X, Y)              # open passage into the neighbouring area
                         continue
                 put("outdoors\\%s.ds1" % EDGE[side], X, Y, lid)
-        inner = [(bx, by) for bx in range(1, size - 1) for by in range(1, size - 1)]
+        lo_b, hi_b = 1 + ring, size - 1 - ring
+        inner = [(bx, by) for bx in range(lo_b, hi_b) for by in range(lo_b, hi_b)]
         rng.shuffle(inner)
 
         def place(name, w=1, h=1, owner=lid):
             for bx, by in inner:
                 cells = [(bx + i, by + j) for i in range(w) for j in range(h)]
-                if all(1 <= c[0] < size - 1 and 1 <= c[1] < size - 1 and c not in taken for c in cells):
+                if all(lo_b <= c[0] < hi_b and lo_b <= c[1] < hi_b and c not in taken for c in cells):
                     if put(name, bx0 + bx * BLOCK, by0 + by * BLOCK, owner) is None:
                         return None
                     taken.update(cells)

@@ -83,6 +83,7 @@ class Player(Unit):
         from .skills import SkillBook, load_tree
         self.skills = SkillBook(tree if tree is not None else load_tree(), cls)
         self.right_skill = None     # skill used with the right mouse button
+        self.left_skill = None      # skill used with the left mouse button (None = normal attack)
         self.active_aura = None     # Paladin aura (the right skill when it is an aura)
         self.effects = {}           # Barbarian warcry buffs: name -> turns left
         self.buffs = {}             # other classes' buffs: skill -> {"turns", "stats", ...}
@@ -345,6 +346,16 @@ class Player(Unit):
             bonus = self.strength / 100.0
         mult = 1 + bonus + (self.mod("ed") + pb["ed"]) / 100.0
         self.dmg = (max(1, int(lo * mult)), max(1, int(hi * mult)))
+        # a second weapon in the off hand (Assassin claws, Barbarian one-handers): its own damage
+        off = self.equipment.get("shield")
+        self.dmg_off = None
+        if off is not None and off in self._active and getattr(off, "slot", None) == "weapon" and off.dmg:
+            olo, ohi = off.dmg
+            olo, ohi = olo + self.mod("mindmg") + flo, ohi + self.mod("maxdmg") + fhi
+            ob = (self.strength * off.strbonus + self.dexterity * off.dexbonus) / 10000.0 \
+                if off.mod_list is not None else self.strength / 100.0
+            om = 1 + ob + (self.mod("ed") + pb["ed"]) / 100.0
+            self.dmg_off = (max(1, int(olo * om)), max(1, int(max(ohi, olo) * om)))
         self.elem = {k: self.mod_range(k + "_dmg") for k in ("fire", "cold", "ltng", "pois", "mag")}
         self.elem = {k: v for k, v in self.elem.items() if v[1] > 0}
         wtypes = set(weapon.base.get("ancestors", ())) if weapon is not None and isinstance(getattr(weapon, "base", None), dict) else set()
@@ -363,6 +374,8 @@ class Player(Unit):
         self.attack_speed = wsm - self.mod("ias") // 2
         self.attack_cost = max(1, speed_tier(self.attack_speed)[0] + ATTACK_AP_OFFSET)
         self.range = 20 if wtypes & {"miss", "bow", "xbow"} else (12 if self.ranged else 1)
+        # spears, polearms (bardiches, scythes...) and staves reach 2 cells in melee
+        self.reach = 2 if wtypes & {"spea", "pole", "staf"} else 1
         ar = self.dexterity * 5 - 35 + cs["thf"] + self.mod("ar") + (self.level - 1) * 5
         self.ar = int(ar * (100 + self.mod("ar_pct") + pb["ar_pct"]) / 100)
         eff = getattr(self, "effects", {})
@@ -489,4 +502,6 @@ class Monster(Unit):
         self.ally = False
         self.life_turns = None
         self.mskills = list(t.get("skills", []) or [])     # MonStats Skill1-8 this game knows
+        if t.get("stationary"):
+            self.stationary = True          # D2 movement speed 0: crow nests, turrets, hydras, spawners
         self.caster = bool(t.get("caster", t.get("ai") == "shaman"))   # one big spell, or move + a small one

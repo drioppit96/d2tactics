@@ -79,7 +79,7 @@ def _pack(items):
 
 class ItemActions:
     # ------------------------------------------------------------ vendors
-    def open_store(self, npc_id, gamble=False):
+    def open_store(self, npc_id, gamble=False, refresh=False):
         c = self.content
         if c is None:
             return None
@@ -88,20 +88,37 @@ class ItemActions:
         if cache is None:
             cache = p._stores = {}
         key = (npc_id, gamble)
-        if key in cache and cache[key][1] == getattr(p, "_town_visit", 0):
+        if not refresh and key in cache and cache[key][1] == getattr(p, "_town_visit", 0):
             return cache[key][0]
         rng = self.rng
         ilvl = min(p.level + 5, 30)
         pages = {"armo": [], "weap": [], "misc": []}
         if gamble:
-            bases = [b for b in c.bases if b["kind"] in ("weapon", "armor", "misc") and b.get("slot")
-                     and "use" not in b and "gem" not in b and "potion" not in b and b["qlvl"] <= p.level + 2]
-            rng.shuffle(bases)
+            # D2: what Gamble.txt lists, up to your level; rings and amulets always among them;
+            # every item will be rolled at item level (your level -5 .. +4) when you buy it
+            codes = getattr(c, "_gamble_codes", None)
+            if codes is None:
+                try:
+                    from d2.source import read_table
+                    codes = {(r.get("code") or "").strip().lower() for r in read_table(c.src, "Gamble")} - {""}
+                except Exception:
+                    codes = set()
+                c._gamble_codes = codes
+            pool = [b for b in c.bases if (b["code"].lower() in codes if codes else
+                    (b["kind"] in ("weapon", "armor", "misc") and b.get("slot") and "use" not in b
+                     and "gem" not in b and "potion" not in b)) and b["qlvl"] <= max(1, p.level)]
+            jewel = [b for b in pool if b["code"] in ("rin", "amu")]
+            rest = [b for b in pool if b["code"] not in ("rin", "amu")]
+            rng.shuffle(rest)
+            chosen = [b for b in jewel for _ in range(2)] + rest[:24]
             items = []
-            for b in bases[:30]:
-                it = c.make_item(b, ilvl, rng, sockets=0)
+            for b in chosen:
+                gl = rng.randint(max(1, p.level - 5), p.level + 4)
+                it = c.make_item(b, gl, rng, sockets=0)
                 it.gamble = True
                 it.gamble_base = b
+                it.gamble_ilvl = gl
+                it.name = c.strings.get(b.get("namestr") or "", None) or b.get("name", it.name)
                 items.append(it)
             store = Store(npc_id, [("gamble", _pack(items))])
         else:
@@ -143,7 +160,7 @@ class ItemActions:
             return False
         if getattr(it, "gamble", False):
             # D2's gambling odds: mostly magic, 10% rare, now and then a set or unique item
-            ilvl = min(p.level + 5, 40)
+            ilvl = getattr(it, "gamble_ilvl", None) or self.rng.randint(max(1, p.level - 5), p.level + 4)
             r = self.rng.random()
             c = self.content
             q = "unique" if r < 0.005 and c.uniques_for(it.gamble_base, ilvl) else \

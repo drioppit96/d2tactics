@@ -836,6 +836,97 @@ class D2Content:
             code = "mp1" if mlvl < 8 else "mp2"
         return self.make_item(self.base_by_code[code], mlvl, rng) if code in self.base_by_code else None
 
+    # ------------------------------------------------------------ D2 treasure classes
+    _tcs = None
+
+    def tc_rows(self):
+        if self._tcs is None:
+            out = {}
+            try:
+                for r in read_table(self.src, "TreasureClassEx"):
+                    n = (r.get("treasure class") or "").strip()
+                    if n:
+                        out[n.lower()] = r
+            except Exception:
+                pass
+            self._tcs = out
+        return self._tcs
+
+    def roll_tc(self, name, mlvl, rng=random, mf=0, gf=0, boss_q=False, depth=0):
+        """D2's TreasureClassEx: picks (negative = each entry in turn), NoDrop, nested classes, gold
+        with a multiplier, item codes and the weapNN / armoNN auto classes. Bosses' classes carry
+        their better quality ratios (Unique/Set/Rare/Magic)."""
+        if depth > 12 or not name:
+            return []
+        name = name.strip().strip('"')
+        row = self.tc_rows().get(name.lower())
+        if row is None:
+            return self._tc_leaf(name, mlvl, rng, mf, gf, boss_q)
+        boss_q = boss_q or _int(row.get("unique")) >= 800
+        picks = _int(row.get("picks"), 1)
+        nodrop = max(0, _int(row.get("nodrop")))
+        entries = []
+        for i in range(1, 11):
+            it = (row.get("item%d" % i) or "").strip()
+            pr = _int(row.get("prob%d" % i))
+            if it and pr > 0:
+                entries.append((it, pr))
+        out = []
+        if picks < 0:
+            left = -picks
+            for it, pr in entries:
+                for _ in range(pr):
+                    if left <= 0:
+                        break
+                    out += self.roll_tc(it, mlvl, rng, mf, gf, boss_q, depth + 1)
+                    left -= 1
+        else:
+            total = sum(pr for _, pr in entries) + nodrop
+            for _ in range(max(1, picks)):
+                if total <= 0:
+                    break
+                r = rng.randrange(total)
+                if r < nodrop:
+                    continue
+                r -= nodrop
+                for it, pr in entries:
+                    if r < pr:
+                        out += self.roll_tc(it, mlvl, rng, mf, gf, boss_q, depth + 1)
+                        break
+                    r -= pr
+        return out
+
+    def _tc_leaf(self, entry, mlvl, rng, mf, gf, boss_q):
+        parts = [x.strip() for x in entry.split(",")]
+        code, mods = parts[0].lower(), parts[1:]
+        if code == "gld":
+            mul = 256
+            for m in mods:
+                if m.startswith("mul="):
+                    mul = _int(m[4:], 256)
+            g = self.make_gold(mlvl, rng, gf)
+            g.amount = max(1, g.amount * mul // 256)
+            return [g]
+        for pre, kinds in (("weap", ("weapon",)), ("armo", ("armor",)), ("mele", ("weapon",)), ("bow", ("weapon",))):
+            if code.startswith(pre) and code[len(pre):].isdigit():
+                lv = int(code[len(pre):])
+                cands = [b for b in self.bases if b["kind"] in kinds and b["slot"] and lv - 3 < b["qlvl"] <= lv
+                         and not b.get("charm")]
+                if pre == "bow":
+                    cands = [b for b in cands if b["ancestors"] & {"bow", "xbow", "miss"}]
+                elif pre == "mele":
+                    cands = [b for b in cands if not b["ancestors"] & {"bow", "xbow", "miss"}]
+                if not cands:
+                    return []
+                b = rng.choice(cands)
+                return [self.make_item(b, mlvl, rng, self.roll_quality(b, mlvl, rng, mf, boss_q))]
+        b = self.base_by_code.get(code)
+        if b is None:
+            return []
+        q = self.roll_quality(b, mlvl, rng, mf, boss_q) if b.get("slot") and b["kind"] in ("weapon", "armor") else "normal"
+        it = self.make_item(b, mlvl, rng, q)
+        return [it] if it is not None else []
+
     def roll_drop(self, mlvl, is_boss=False, rng=random, mf=0, gf=0):
         """A simplified version of D2's treasure classes: nothing, gold, potions or an item."""
         out = []
@@ -924,9 +1015,13 @@ class D2Content:
             "undead": r.get("lundead") == "1" or r.get("hundead") == "1", "demon": r.get("demon") == "1",
             "size": self.monster_size(r),
         }
+        if d2boss:
+            t["tc"] = r.get("treasureclass1" + sfx) or r.get("treasureclass1") or None
+            t["tc_quest"] = r.get("treasureclass4" + sfx) or r.get("treasureclass4") or None
         from .monskills import skills_of, is_caster
         t["skills"] = skills_of(r)
         t["d2ai"] = ai_name
+        t["stationary"] = _int(r.get("velocity"), 0) == 0 and _int(r.get("run"), 0) == 0   # nests, turrets...
         t["caster"] = is_caster(ai_name, t["skills"])
         if unique:
             t["hp"] = (t["hp"][0] * 4, t["hp"][1] * 4)

@@ -87,6 +87,7 @@ def setup(world, built, grid, rng, info, level_key):
     world.info = info
     world.areas = dict(b.areas)
     world.town_rect = getattr(b, "town_rect", None)
+    world.roads = getattr(b, "roads", None)
     world.exits = {}
     world.warp_groups = []       # clickable entrances: dict(target, tiles, cells)
     world.warp_cell = {}         # entrance cell -> its group
@@ -319,6 +320,8 @@ def _spawn(world, mid, cell, lvl, taken, unique=False, name=None, champion=False
     m.ai = t["ai"]
     m.unique = unique
     m.champion = False
+    m.tc = t.get("tc")                # D2 treasure class (act / quest bosses)
+    m.tc_quest = t.get("tc_quest")
     if name:
         m.name = name
     if champion:
@@ -428,6 +431,12 @@ def _spawn_preset(world, name, cell, owner, taken, info):
             return
         from . import monmods
         monmods.apply(world, m, [_int(su.get("mod%d" % i)) for i in (1, 2, 3) if _int(su.get("mod%d" % i))])
+        import zlib
+        # D2: SuperUniques.txt gives each named unique its colour (uTrans) and its treasure class
+        sfx = getattr(world.content, "sfx", "")
+        ut = _int(su.get("utrans" + sfx) or su.get("utrans"))
+        m.color_shift = ut if ut > 0 else 1 + zlib.crc32(shown.encode()) % 7
+        m.tc = su.get("tc" + sfx) or su.get("tc") or None
         m.boss = {"Corpsefire": "corpsefire", "The Countess": "countess", "The Smith": "smith",
                   "Griswold": "griswold", "Coldworm the Burrower": "coldworm",
                   "Fangskin": "fangskin", "Bloodwitch the Wild": "bloodwitch",
@@ -496,6 +505,7 @@ def _pack(world, centre, mid, lvl, taken, champion=False, unique=False):
             boss = u
         elif boss is not None:
             u.minion_of = boss
+            u.color_shift = getattr(boss, "color_shift", 0)
             monmods.pass_aura(boss, u)
 
 

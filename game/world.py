@@ -502,6 +502,11 @@ class World(SkillCaster, ItemActions):
             self.player.ap = self.player.max_ap
             self.emit("combat_end")
             self.log("The area is quiet again.", GREY)
+            # Blade Sentinels and Wake of Fire traps fade when the fight is over
+            for a in self.allies():
+                if getattr(a, "combat_only", False) and a.alive:
+                    a.alive = False
+                    self.emit("death", a)
 
     # ------------------------------------------------------------ player actions
     def move_cost_ok(self, n):
@@ -578,7 +583,7 @@ class World(SkillCaster, ItemActions):
             was_explore = self.mode == "explore"
             if self.check_awareness() and was_explore:
                 break   # spotted: stop walking, combat begins
-            if self.mode == "explore" and step in self.exits and self.exits[step] and \
+            if step in self.exits and self.exits[step] and \
                     (step not in getattr(self, "warp_cell", {}) or getattr(self, "want_warp", None) == self.exits[step]):
                 from . import quests
                 msg = quests.blocked(self, self.exits[step])
@@ -753,13 +758,20 @@ class World(SkillCaster, ItemActions):
         throw = skill in ("throw", "Double Throw") and getattr(p, "throwing", False)
         shoot = (skill == "attack" and getattr(p, "ranged", False)) or throw
         reach = p.throw_range if throw else p.range
+        melee_reach = getattr(p, "reach", 1) if not shoot else 1
         if shoot and self.udist(p, target) <= reach and self.grid.line_of_sight(p.pos, target.pos):
             pass
+        elif melee_reach > 1 and self.udist(p, target) <= melee_reach and self.grid.line_of_sight(p.pos, target.pos):
+            pass                                    # a spear / polearm / staff hits from 2 cells away
         elif self.udist(p, target) > 1 or not self._adjacent_reachable(p.pos, target.pos):
             path = self.attack_path(p, target)
             if not path:
                 return False
-            if shoot:
+            if melee_reach > 1 and not shoot:
+                shoot_like, reach = True, melee_reach
+            else:
+                shoot_like = shoot
+            if shoot_like:
                 # walk only until the target is in range with a clear shot
                 for i, c in enumerate(path):
                     if chebyshev(c, target.pos) <= reach and self.grid.line_of_sight(c, target.pos):
@@ -1335,6 +1347,8 @@ class World(SkillCaster, ItemActions):
         if it.mod_list is not None and not it.requirements_ok(p):
             self.log("You can't use that yet (requirements).", RED)
             return False
+        if slot is None and it.slot == "weapon" and p.equipment.get("shield") is None and self.can_offhand(it):
+            slot = "shield"                 # the second claw / weapon goes into the off hand
         p.inventory.pop(i)
         spot = it.inv_pos
         it.inv_pos = None
@@ -1372,16 +1386,38 @@ class World(SkillCaster, ItemActions):
         if slot == "weapon" and it.two_handed and p.equipment.get("shield") and not goes_with(p.equipment["shield"], it):
             removed.append(p.equipment["shield"])
             p.equipment["shield"] = None
+        off = p.equipment.get("shield")
+        if slot == "weapon" and off is not None and getattr(off, "slot", None) == "weapon" and not self.can_offhand(off):
+            removed.append(off)             # the off-hand weapon no longer goes with the new one
+            p.equipment["shield"] = None
         if slot == "shield" and weapon is not None and weapon.two_handed and not goes_with(it, weapon):
             removed.append(weapon)
             p.equipment["weapon"] = None
         return removed
+
+    def can_offhand(self, it):
+        """D2: Assassins wear a second claw, Barbarians a second one-handed weapon in the off hand."""
+        p = self.player
+        w = p.equipment.get("weapon")
+        if it is None or getattr(it, "slot", None) != "weapon" or it.two_handed or w is None or w.two_handed:
+            return False
+        anc = lambda x: set(x.base.get("ancestors", ())) if isinstance(getattr(x, "base", None), dict) else set()
+        claw = lambda x: bool(anc(x) & {"h2h", "h2h2"})
+        shooter = lambda x: bool(anc(x) & {"miss", "bow", "xbow"})
+        cls = getattr(p, "cls", "")
+        if cls == "ass":
+            return claw(it) and claw(w)
+        if cls == "bar":
+            return not claw(it) and not claw(w) and not shooter(it) and not shooter(w)
+        return False
 
     def slot_accepts(self, it, slot):
         if it is None or it.kind != "equip":
             return False
         if slot in ("ring1", "ring2"):
             return it.slot == "ring"
+        if slot == "shield" and it.slot == "weapon":
+            return self.can_offhand(it)
         return it.slot == slot
 
     def unequip(self, slot):
@@ -1546,7 +1582,12 @@ class World(SkillCaster, ItemActions):
             self.emit("miss", target)
             self.log("Blocked!", GREY)
             return False
-        dmg = self.rng.randint(*attacker.dmg) if attacker.dmg[1] > 0 else 0
+        hand = attacker.dmg
+        if getattr(attacker, "is_player", False) and getattr(attacker, "dmg_off", None):
+            attacker._offhand = not getattr(attacker, "_offhand", True)     # D2: the hands take turns
+            if attacker._offhand:
+                hand = attacker.dmg_off
+        dmg = self.rng.randint(*hand) if hand[1] > 0 else 0
         dmg = max(1, int(dmg * (100 + mods["dmg"]) / 100.0)) if attacker.dmg[1] > 0 else 0
         weapon_pois = None
         aeff = getattr(attacker, "effects", {})
@@ -1729,7 +1770,18 @@ class World(SkillCaster, ItemActions):
             self.emit("levelup", p.level)
             self.log(f"Level up! You are now level {p.level}. Press C to spend stat points.", YELLOW)
         if self.content:
-            drops = self.content.roll_drop(unit.level, unit.unique, self.rng, mf=p.mf, gf=p.gf)
+            tc = getattr(unit, "tc", None)
+            boss = getattr(unit, "boss", None)
+            if tc and getattr(unit, "tc_quest", None) and boss:
+                # D2: the first kill of a quest boss uses its quest treasure class (better odds)
+                done = p.__dict__.setdefault("boss_kills", [])
+                if boss not in done:
+                    tc = unit.tc_quest
+                    done.append(boss)
+            if tc and hasattr(self.content, "roll_tc"):
+                drops = self.content.roll_tc(tc, unit.level, self.rng, mf=p.mf, gf=p.gf)
+            else:
+                drops = self.content.roll_drop(unit.level, unit.unique, self.rng, mf=p.mf, gf=p.gf)
         else:
             drops = roll_drop(unit.level, unit.unique, self.rng)
         for it in drops:
@@ -1905,6 +1957,8 @@ class World(SkillCaster, ItemActions):
 
     def _melee_step(self, m):
         p = self._monster_target(m)
+        if getattr(m, "stationary", False) and self.udist(m, p) > getattr(m, "reach", 1):
+            return False
         if self.udist(m, p) == 1 and self._adjacent_reachable(m.pos, p.pos):
             if m.ap >= m.attack_cost:
                 m.ap -= m.attack_cost
@@ -1932,8 +1986,8 @@ class World(SkillCaster, ItemActions):
             if getattr(m, "multishot", False) and p.alive:
                 self._resolve_attack(m, p, ranged_kind=kind, quiet_anim=True)   # Multiple Shots
             return True
-        if d <= m.range and los:
-            return False    # in position, out of AP
+        if (d <= m.range and los) or getattr(m, "stationary", False):
+            return False    # in position, out of AP (or can't move at all)
         # approach until in range with line of sight, keep AP for the shot
         path = None if m.radius else \
             self.grid.find_path(m.pos, p.pos, blocked=self.occupied(m), allow_goal_blocked=True)
@@ -2020,6 +2074,9 @@ class World(SkillCaster, ItemActions):
         return True
 
     def _walk(self, m, steps):
+        if getattr(m, "stationary", False) and not getattr(m, "is_player", False):
+            m.ap = 0                       # it can't move
+            return
         walked = []
         for c in steps:
             m.face(*c)

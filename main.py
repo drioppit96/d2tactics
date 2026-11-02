@@ -893,6 +893,48 @@ class Game:
                 return o
         return None
 
+    ESCAPE_KINDS = ("tp", "tp_back", "portal", "arcane_portal", "duriel_portal", "red_portal")
+
+    def _combat_escape(self, pos, cell):
+        """In combat: portals, waypoints and entrances still work, so you can run for it. Too far away,
+        you walk towards them with the AP you have; close enough, you go through."""
+        w = self.world
+        p = w.player
+        obj = self.object_under_mouse(pos) or (w.object_at(cell) if hasattr(w, "object_at") else None)
+        if obj is not None and not obj.get("generic") and obj.get("kind") in self.ESCAPE_KINDS:
+            if chebyshev(p.pos, obj["cell"]) > 2:
+                w.player_move_to(self._near_walkable(obj["cell"]) or obj["cell"])
+            if chebyshev(p.pos, obj["cell"]) <= 2:
+                w.use_object(obj)
+            return True
+        wp = w.waypoint_at(cell) if hasattr(w, "waypoint_at") else None
+        if wp is not None:
+            if chebyshev(p.pos, wp) > 2:
+                w.player_move_to(self._near_walkable(wp) or wp)
+            if chebyshev(p.pos, wp) <= 3:
+                w.use_waypoint(wp)
+            return True
+        grp = self.warp_under_mouse(pos, cell)
+        if grp is not None:
+            if not any(chebyshev(p.pos, c) <= 1 for c in grp["cells"]):
+                goal = min(grp["cells"], key=lambda c: chebyshev(c, p.pos))
+                w.player_move_to(goal)
+            if any(chebyshev(p.pos, c) <= 1 for c in grp["cells"]):
+                w.enter_warp(grp)
+            return True
+        return False
+
+    def _near_walkable(self, cell):
+        w = self.world
+        best = None
+        for dx in (-1, 0, 1, -2, 2):
+            for dy in (-1, 0, 1, -2, 2):
+                c = (cell[0] + dx, cell[1] + dy)
+                if w.grid.in_bounds(*c) and w.grid.walkable(*c) and w.unit_at(c) is None:
+                    if best is None or chebyshev(c, w.player.pos) < chebyshev(best, w.player.pos):
+                        best = c
+        return best
+
     def warp_under_mouse(self, pos, cell):
         """The entrance (cave mouth, stairs) under the mouse: its cells or its picture, like D2's
         LvlWarp select box."""
@@ -1075,6 +1117,9 @@ class Game:
             if action == "store_tab":
                 h.store.tab = arg
                 return
+            if action == "gamble_refresh" and h.store is not None:
+                h.store = w.open_store(h.store.npc, gamble=True, refresh=True)
+                return
             if action == "store_close":
                 h.store = None
                 return
@@ -1171,11 +1216,26 @@ class Game:
                 p = w.player
                 p.waypoints = set(getattr(p, "waypoints", {1})) | {l for lst in WAYPOINTS.values() for l in lst}
                 w.log("Test: every waypoint of Acts 1-5 is now active.", (199, 179, 119))
-            elif action == "skill_right":
-                h.skill_popup = not h.skill_popup
+            elif action in ("skill_right", "skill_left"):
+                side = action[6:]
+                h.skill_popup = False if h.skill_popup == side else side
             elif action == "pick_skill":
-                w.select_right_skill(None if arg == "attack" else arg)
+                side, name = arg if isinstance(arg, tuple) else ("right", arg)
+                if side == "left":
+                    w.player.left_skill = None if name == "attack" else name
+                else:
+                    w.select_right_skill(None if name == "attack" else name)
                 h.skill_popup = False
+            elif action == "reset_skills":
+                p = w.player
+                n = p.skills.reset()
+                p.right_skill = None
+                p.left_skill = None
+                for b in ("Wearwolf", "Wearbear"):
+                    p.buffs.pop(b, None)
+                p.shape = None
+                p.recalc()
+                w.log("Skills reset: %d point%s back to spend." % (n, "" if n == 1 else "s"), (199, 179, 119))
             elif action == "skill_page":
                 h.skill_page = arg
             elif action == "learn":
@@ -1249,6 +1309,18 @@ class Game:
                 return
             m = None                      # your own minions can't be attacked
         p = w.player
+        if button == 1 and m is not None and getattr(m, "ai", "") != "npc" and getattr(p, "left_skill", None) \
+                and not getattr(self, "_left_cast", False) and p.left_skill in getattr(p.skills, "tree", {}):
+            # the skill on your left button: used on a monster exactly like the right-click one
+            saved = p.right_skill
+            p.right_skill = p.left_skill
+            self._left_cast = True
+            try:
+                self.handle_click(pos, 3)
+            finally:
+                self._left_cast = False
+                p.right_skill = saved
+            return
         if w.mode == "explore" and self.can_walk():
             # D2 style: every click is an order you can change at any time
             if m is not None and getattr(m, "ai", "") == "npc":
@@ -1257,6 +1329,9 @@ class Game:
             if m is not None and button == 1:
                 if getattr(p, "ranged", False) and w.udist(p, m) <= p.range and w.grid.line_of_sight(p.pos, m.pos):
                     w.player_attack(m, "attack")          # bows shoot from where you stand
+                    return
+                if getattr(p, "reach", 1) > 1 and w.udist(p, m) <= p.reach and w.grid.line_of_sight(p.pos, m.pos):
+                    w.player_attack(m, "attack")          # spears / polearms / staves reach 2 cells
                     return
                 self.walk_to(m.pos, ("attack", m), adjacent=True)
                 return
@@ -1324,6 +1399,8 @@ class Game:
         if m:
             w.player_attack(m, "attack")
         else:
+            if button == 1 and self._combat_escape(pos, cell):
+                return
             g = w.grid
             if cell == p.pos and cell in w.ground:
                 w.player_pickup(cell)
@@ -1523,7 +1600,7 @@ class Game:
                     if w.mode == "combat":
                         tip = ([f"{len(path)} AP" + ("" if len(path) <= p.ap else f"  (only {p.ap} left)")],
                                [TEXT if len(path) <= p.ap else (230, 120, 90)])
-            grp = self.warp_under_mouse(mouse, cell) if w.mode == "explore" else None
+            grp = self.warp_under_mouse(mouse, cell)
             if grp is not None:
                 self.scene.lit_warp = grp
                 tip = ([self.exit_label(grp["target"])], [(240, 210, 90)])
@@ -1649,9 +1726,12 @@ class Game:
         self.draw_world(cell, highlight, preview)
         self._perf_mark("world", t1)
         t1 = time.perf_counter()
+        self.hud.loot_list = self.loot_on_screen() if getattr(self.hud, "show_loot", False) else None
+        if hasattr(self.hud, "covered_rects"):
+            self.hud.lw = self.screen.get_width() / (self.screen.get_height() / 600.0)
+            self.scene.covered = self.hud.covered_rects(*self.screen.get_size())
         self.scene.draw_overlay(self.screen, self.cam)
         self.hud.world_tip = tip
-        self.hud.loot_list = self.loot_on_screen() if getattr(self.hud, "show_loot", False) else None
         self.hud.world_tip_anchor = self.unit_screen_rect(self._tip_unit) if getattr(self, "_tip_unit", None) else None
         self.hud.draw(self.screen, self.world, self.scene, mouse)
         if tip and not self.hud.hover_lines and not hasattr(self.hud, "automap_mode"):

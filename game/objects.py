@@ -155,6 +155,9 @@ def make(world, oid, cell, owner, data, town=False):
              token=r["token"].strip().upper(), size=data.size(oid), mode="NU", op_t=None)
     o["name"] = data.name(oid, getattr(world.content, "strings", None))
     o["block"] = []
+    # D2 Objects.txt CycleAnim2: does the "opened" state loop (fires, glowing shrines) or hold still
+    o["cycle_on"] = _int(r.get("cycleanim2")) == 1 and _int(r.get("framecnt2")) > 1
+    o["fcnt"] = (_int(r.get("framecnt0")), _int(r.get("framecnt1")), _int(r.get("framecnt2")))
     if kind == "shrine":
         o["shrine"] = _pick_shrine(_int(r.get("parm0")), data, world.rng)
         o["name"] = SHRINE_NAMES.get(o["shrine"], "Shrine")
@@ -232,6 +235,16 @@ def populate(world, built, info, taken, safe):
     for n, cell, owner in getattr(built, "gen_objects", []):
         oid = object_id(act, n)
         if oid is None:
+            continue
+        r = data.rows.get(oid) or {}
+        if "gold placeholder" in (r.get("description - not loaded") or "").lower() and g.in_bounds(*cell) \
+                and world.content is not None:
+            # D2: these markers become piles of gold on the floor (the Countess's treasure room...)
+            c2 = cell if g.walkable(*cell) else _free(g, cell, 2)
+            if c2 is not None:
+                lvl = world.info.monster_level(owner) if getattr(world, "info", None) else 5
+                gold = world.content.make_gold(max(1, lvl) * 2, world.rng)
+                world.ground.setdefault(c2, []).append(gold)
             continue
         kind = data.kind(oid)
         if kind is None or kind == "door":

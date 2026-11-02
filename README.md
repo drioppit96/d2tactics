@@ -133,11 +133,13 @@ Fallout). Each turn you get **Action Points** (the stamina bar shows them).
 | Attack (left click a monster) | the weapon's D2 speed: Very Fast 1, Fast 2, Normal 3, Slow 4, Very Slow 5 AP (IAS makes it faster) |
 | Throw (javelins, throwing knives / axes) | choose "Throw" on the right skill button: same AP as an attack, range 14. Left click stabs / swings in melee, like D2 |
 | Right click | your selected right skill (choose it on the right skill button, or F1-F8) |
+| Left click a monster | your left skill if you picked one on the left skill button, else a normal attack |
 | Drink potion (keys 1-4) | 2 AP |
 | Pick up item | 1 AP (free outside combat) |
 
 **Skills:** one skill point per level, D2's full tree of your class (T). Right click a learned skill in
-the tree (or use the right skill button / F1-F8) to put it on the right mouse button. Skill AP comes
+the tree (or use the right skill button / F1-F8) to put it on the right mouse button; the left skill
+button takes any skill too. RESET SKILLS (bottom of the tree) gives back every point you spent. Skill AP comes
 from the skill's mana cost: spells 1.5 + square root of the mana (Fire Bolt 3, Frost Nova 5,
 Meteor 6, Frozen Orb 7), weapon skills your attack AP + 0.6 x square root of the mana (Bash +1,
 Whirlwind +3); switching auras 1 AP. Your maximum AP grows: 8, +1 at levels 10/20/30/45/60/80,
@@ -179,7 +181,7 @@ automatically by Play D2 Tactics.bat) makes decoding about twice as fast; withou
 runs. F11 shows a performance readout (frame time split into logic / world / interface, sprite
 decoding, background preparation progress).
 
-**Keys:** Space = end turn - V = loot window - I = inventory - C = character - T = skill tree - Q = quest log - O = hireling - Tab = automap
+**Keys:** Space = end turn - X = red outlines on every enemy in view - V = loot window - I = inventory - C = character - T = skill tree - Q = quest log - O = hireling - Tab = automap
 (full / corner / off) - Alt (hold) or L = item names - F = fast animations - F1-F8 = right skill -
 mouse wheel = zoom - F11 = performance readout - Esc = close panels / game menu
 

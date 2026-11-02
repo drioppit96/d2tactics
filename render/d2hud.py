@@ -296,11 +296,48 @@ class D2Hud:
         self._draw_cursor(surf)
 
     # ------------------------------------------------------------ message log
+    def _left_panel_open(self):
+        return bool(self.show_char or self.show_quests or getattr(self, "show_cube", False)
+                    or getattr(self, "show_merc", False) or self.store is not None
+                    or getattr(self, "show_waypoints", False))
+
+    def _loot_rect(self):
+        """Where the 'Items on screen' window sits (logical px), or None."""
+        if getattr(self, "loot_list", None) is None:
+            return None
+        w = 270
+        x0 = 330 if self._left_panel_open() else 8
+        if x0 + w > self.lw - (320 if (self.show_inv or self.show_skills) else 0):
+            x0 = 8
+        h = 34 + max(1, len(self.loot_list[:20])) * 16 + 22
+        return (x0, 104, w, h)
+
+    def _left_edge(self):
+        """The message log starts right of whatever window is open on the left."""
+        x0 = 330 if self._left_panel_open() else 8
+        lr = self._loot_rect()
+        if lr is not None and lr[0] <= x0 + 10:
+            x0 = lr[0] + lr[2] + 8
+        return x0
+
+    def covered_rects(self, W, H):
+        """Screen rects hidden by open windows (world labels there would show through)."""
+        s = H / 600.0
+        lw = W / s
+        out = []
+        if self._left_panel_open():
+            out.append(pygame.Rect(0, 0, int(320 * s), int(500 * s)))
+        if self.show_inv or self.show_skills:
+            out.append(pygame.Rect(int((lw - 320) * s), 0, int(320 * s), int(500 * s)))
+        lr = self._loot_rect()
+        if lr is not None:
+            out.append(pygame.Rect(int(lr[0] * s), int(lr[1] * s), int(lr[2] * s), int(lr[3] * s)))
+        return out
+
     def _draw_log(self, surf, scene):
         lines = [l for l in scene.log if l[2] < 9][-6:]
         y = 6
-        x0 = 330 if (self.show_char or self.show_quests or getattr(self, "show_cube", False)
-                     or getattr(self, "show_merc", False)) else 8
+        x0 = self._left_edge()
         for text, col, age in lines:
             img = self.f16.render(text, col, self.ind)
             sc = self.S(img)
@@ -391,7 +428,7 @@ class D2Hud:
             self.region(px0 + 208, py0 + 75, 16, 20, "speed")
 
         # skills: left = normal attack, right = selected skill
-        self._skill_box(surf, px0 + 153, py0 + 65, None, "left")
+        self._skill_box(surf, px0 + 153, py0 + 65, getattr(p, "left_skill", None), "left")
         self._skill_box(surf, px0 + 510, py0 + 65, p.right_skill, "right")
 
         # belt
@@ -515,11 +552,9 @@ class D2Hud:
         self.region(x, y, 36, 36, "skill_" + side)
         mx, my = self.mouse
         if pygame.Rect(int(x), int(y), 36, 36).collidepoint((int(mx), int(my))):
-            if side == "left":
-                self.hover_lines = [("Attack", WHITE), ("Left click a monster", GREY)]
-            else:
+            if True:
                 if name in (None, "attack"):
-                    self.hover_lines = [("Right click: Attack", WHITE), ("Click here to choose a skill", GREY)]
+                    self.hover_lines = [("%s click: Attack" % side.title(), WHITE), ("Click here to choose a skill", GREY)]
                 else:
                     ap, mana = self.world.skill_cost(name)
                     sk = p.skills.tree.get(name)
@@ -529,13 +564,15 @@ class D2Hud:
                         [("%d AP, %s mana" % (ap, _num(mana)), GREY), ("Click to change skill", GREY)]
 
     def _draw_skill_popup(self, surf, p):
-        """Choose the right-click skill: learned active skills in a row above the button."""
+        """Choose the left / right click skill: learned active skills in rows above that button."""
         px0, py0 = self.panel_origin
+        side = self.skill_popup if self.skill_popup in ("left", "right") else "right"
         options = ["attack"] + (["throw"] if getattr(p, "throwing", False) else []) + [n for n in p.skills.actives()]
+        current = (getattr(p, "left_skill", None) if side == "left" else p.right_skill) or "attack"
         per_row = 8
         for i, name in enumerate(options):
             row, col = divmod(i, per_row)
-            x = px0 + 704 - 40 - col * 40
+            x = (px0 + 704 - 40 - col * 40) if side == "right" else (px0 + 4 + col * 40)
             y = py0 + 20 - row * 40
             bg = pygame.Surface((int(38 * self.s), int(38 * self.s)), pygame.SRCALPHA)
             bg.fill((0, 0, 0, 200))
@@ -546,9 +583,9 @@ class D2Hud:
             else:
                 lab = "ATK" if name == "attack" else "THR" if name == "throw" else "".join(w[0] for w in name.split())[:3].upper()
                 self.text(surf, self.f16, lab, GOLD, x, y + 11, "center", 36)
-            if name == (p.right_skill or "attack"):
+            if name == current:
                 pygame.draw.rect(surf, GOLD, self.R(x - 1, y - 1, 38, 38), 1)
-            self.region(x, y, 36, 36, "pick_skill", name)
+            self.region(x, y, 36, 36, "pick_skill", (side, name))
             mx, my = self.mouse
             if pygame.Rect(int(x), int(y), 36, 36).collidepoint((int(mx), int(my))):
                 sk = p.skills.tree.get(name)
@@ -596,8 +633,8 @@ class D2Hud:
         for label, cur, mx_, y in (("Action Points", ap_now, p.max_ap, 231), ("Life", p.hp, p.max_hp, 255),
                                    ("Mana", p.mana, p.max_mana, 293)):
             t(surf, f10, label, GOLD, 161, y + 2, "center", 69)
-            t(surf, f16, str(cur), WHITE, 231, y + 1, "center", 39)
-            t(surf, f16, str(mx_), WHITE, 271, y + 1, "center", 39)
+            t(surf, f16, str(int(cur)), WHITE, 231, y + 1, "center", 39)       # mana regenerates in fractions
+            t(surf, f16, str(int(mx_)), WHITE, 271, y + 1, "center", 39)
         for i, (label, key) in enumerate((("Fire Resist", "fire"), ("Cold Resist", "cold"),
                                           ("Lightning Resist", "ltng"), ("Poison Resist", "pois"))):
             y = 332 + i * 24
@@ -714,6 +751,18 @@ class D2Hud:
                 self.hover_lines = lines
         self.text(surf, self.f16, "Gold: %d" % p.gold, GOLD, 20, 359)
         self.text(surf, self.f10, "Right click your items to sell", GREY, 20, 392)
+        if st.tabs and st.tabs[0][0] == "gamble":
+            # D2: a new selection of gambling items
+            bx, by = 170, 356
+            hot = pygame.Rect(bx, by, 90, 22).collidepoint((int(mx), int(my)))
+            bg = pygame.Surface((int(90 * self.s), int(22 * self.s)), pygame.SRCALPHA)
+            bg.fill((80, 60, 30, 240) if hot else (40, 30, 20, 230))
+            surf.blit(bg, self.P(bx, by))
+            pygame.draw.rect(surf, GOLD, self.R(bx, by, 90, 22), 1)
+            self.text(surf, self.f10, "REFRESH", GOLD if hot else WHITE, bx, by + 5, "center", 90)
+            self.region(bx, by, 90, 22, "gamble_refresh")
+            if hot:
+                self.hover_lines = [("Refresh", WHITE), ("New items to gamble on", GREY)]
         self._close_button(surf, (271, 383, 32, 32), 0, "store_close")
 
     def _draw_sockets(self, surf, it, x, y, w, h):
@@ -1073,6 +1122,18 @@ class D2Hud:
         t(surf, self.f16, str(book.points), WHITE if book.points else GREY, ox + 252, 62, "center", 50)
         t(surf, self.f10, "Skill Choices", GOLD, ox + 236, 28, "center", 80)
         t(surf, self.f10, "Remaining", GOLD, ox + 236, 42, "center", 80)
+        # unlearn every skill (all points back)
+        rbx, rby = ox + 12, 408
+        hot = pygame.Rect(int(rbx), int(rby), 96, 18).collidepoint((int(self.mouse[0]), int(self.mouse[1])))
+        bg = pygame.Surface((int(96 * self.s), int(18 * self.s)), pygame.SRCALPHA)
+        bg.fill((40, 30, 20, 230) if not hot else (80, 60, 30, 240))
+        surf.blit(bg, self.P(rbx, rby))
+        pygame.draw.rect(surf, GOLD, self.R(rbx, rby, 96, 18), 1)
+        t(surf, self.f10, "RESET SKILLS", GOLD if hot else WHITE, rbx, rby + 3, "center", 96)
+        self.region(rbx, rby, 96, 18, "reset_skills")
+        if hot:
+            self.hover_lines = [("Reset skills", WHITE), ("Every point you spent goes back", GREY),
+                                ("to Skill Choices Remaining", GREY)]
         tab_y = {3: 110, 2: 218, 1: 325}
         for page in (1, 2, 3):
             ty = tab_y[page]
@@ -1173,9 +1234,7 @@ class D2Hud:
         p = world.player
         lh = 16
         w = 270
-        x0 = 330 if (self.show_char or self.show_quests or self.store is not None) else 8
-        if x0 + w > self.lw - (320 if (self.show_inv or self.show_skills) else 0):
-            x0 = 8
+        x0 = self._loot_rect()[0]
         y0 = 104
         h = 34 + max(1, len(rows)) * lh + 22
         bg = pygame.Surface((int(w * self.s), int(h * self.s)), pygame.SRCALPHA)

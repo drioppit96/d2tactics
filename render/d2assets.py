@@ -72,6 +72,26 @@ MODE_MAP = {
 MONSTER_IDS = {"ZM": "zombie1", "FA": "fallen1", "FS": "fallenshaman1", "SI": "quillrat1", "SK": "skeleton1"}
 
 
+def _convert_dir(d, n_from, n_to):
+    """A D2 direction index from an n_from-direction set to an n_to one. D2 numbers its 16 directions
+    as the 8 main ones (same indices) followed by the in-betweens, so 8 -> 16 keeps the index."""
+    if n_from == n_to or n_to <= 1:
+        return d if n_to > 1 else 0
+    if n_from == 8 and n_to == 16:
+        return d
+    if n_from == 16 and n_to == 8:
+        if d < 8:
+            return d
+        pos = _DIR16.index(d)
+        return _DIR16[(pos - 1) % 16]
+    if n_to == 32 and n_from in (8, 16):
+        return _DIR32[2 * _DIR16.index(d)] if d < 16 else d
+    if n_from == 32:
+        pos = _DIR32.index(d) if d in _DIR32 else 0
+        return _convert_dir(_DIR16[(pos // 2) % 16], 16, n_to)
+    return d * n_to // n_from
+
+
 def d2_direction(facing, n_dirs):
     """Grid facing (dx, dy) -> sprite direction index for a COF with 8 or 16 directions."""
     fx, fy = facing
@@ -97,6 +117,7 @@ class UnitSprites:
         self.token = token.upper()
         self.arms = arms            # component -> preferred armtype list
         self.wclass = weapon_class
+        self.remap = None           # 256-byte palette shift (unique monsters' colour), or None
         self.cache = {}             # (mode, dir) -> [(surface, x0, y0)]
         self.cofs = {}
         self.dccs = {}
@@ -162,7 +183,7 @@ class UnitSprites:
             for comp in cof.priority[d][f]:
                 if comp in layers:
                     dcc, L = layers[comp]
-                    dd = d * dcc.n_dirs // cof.n_dirs if dcc.n_dirs != cof.n_dirs else d
+                    dd = _convert_dir(d, cof.n_dirs, dcc.n_dirs)
                     fr = dcc.direction(dd).frames[f % dcc.frames_per_dir]
                     if fr.width and fr.height:
                         parts.append((fr, L))
@@ -175,7 +196,8 @@ class UnitSprites:
             y1 = max(p.ymax for p, _ in parts)
             comp_surf = pygame.Surface((x1 - x0 + 1, y1 - y0 + 1), pygame.SRCALPHA)
             for fr, L in parts:
-                img = self.a.indexed_surface(fr.width, fr.height, fr.pixels)
+                px = fr.pixels if self.remap is None else bytes(fr.pixels).translate(self.remap)
+                img = self.a.indexed_surface(fr.width, fr.height, px)
                 if L.transparent:
                     img.set_alpha(150)
                 comp_surf.blit(img, (fr.xmin - x0, fr.ymin - y0))
@@ -360,7 +382,18 @@ class D2Assets(AssetProvider):
             else:
                 arms["RH"] = [weapon.gfx]
                 hide.discard("RH")
-        if shield and shield.gfx:
+        if shield is not None and getattr(shield, "slot", None) == "weapon" and weapon is not None:
+            # two weapons (D2): HT2 = two claws, 1SS / 1SJ / 1JS / 1JJ = two one-handers (swing / jab)
+            mw = (weapon.wclass or "1hs").upper()
+            ow = (shield.wclass or "1hs").upper()
+            if mw.startswith("HT") and ow.startswith("HT"):
+                wclass = "HT2"
+            else:
+                wclass = "1%s%s" % ("J" if mw == "1HT" else "S", "J" if ow == "1HT" else "S")
+            if shield.gfx:
+                arms["LH"] = [shield.gfx]
+                hide.discard("LH")
+        elif shield and shield.gfx:
             arms["SH"] = [shield.gfx]
             hide.discard("SH")
         return arms, tuple(sorted(hide)), wclass
@@ -425,11 +458,67 @@ class D2Assets(AssetProvider):
             if key not in self.sprites:
                 self.sprites[key] = UnitSprites(self, "chars", getattr(unit, "token", "BA") or "BA", arms, wclass, hide=hide)
             return self.sprites[key]
-        key = (unit.token, unit.unique, getattr(unit, "d2id", None))
+        shift = getattr(unit, "color_shift", 0) or 0
+        key = (unit.token, unit.unique, getattr(unit, "d2id", None), shift)
         if key not in self.sprites:
             mid = getattr(unit, "d2id", None) or MONSTER_IDS.get(unit.token, "")
-            self.sprites[key] = self._monster_sprites(unit.token, mid, unit.unique)
+            sp = self._monster_sprites(unit.token, mid, unit.unique)
+            if shift:
+                sp.remap = self.color_shift(unit.token, mid, shift)
+            self.sprites[key] = sp
         return self.sprites[key]
+
+    def color_shift(self, token, mid, n):
+        """D2 colours unique monsters (and their minions) with one of the monster's palette shifts
+        (monsters/<token>/cof/palshift.dat); without that file, the palette with its hues turned."""
+        key = ("shift", token, n)
+        if key in self.item_cache:
+            return self.item_cache[key]
+        ms = self.monstats.get((mid or "").lower(), {})
+        ms2 = self.monstats2.get((ms.get("monstatsex") or mid or "").lower(), {})
+        table = None
+        if str(ms2.get("nouniqueshift", "")).strip() == "1":
+            self.item_cache[key] = None
+            return None
+        for path in ("data\\global\\monsters\\%s\\cof\\palshift.dat" % token,
+                     "data\\global\\monsters\\%s\\COF\\palshift.dat" % token.lower()):
+            if self.src.has(path):
+                data = self.src.read(path)
+                k = len(data) // 256
+                if k:
+                    i = n % k
+                    table = bytes(data[i * 256:(i + 1) * 256])
+                break
+        if table is None:
+            table = self._hue_table(n)
+        self.item_cache[key] = table
+        return table
+
+    def _hue_table(self, n):
+        key = ("huetab", n)
+        if key in self.item_cache:
+            return self.item_cache[key]
+        import colorsys
+        pal = [tuple(c[:3]) for c in self.palette[:256]]
+        turn = (0.13 + 0.21 * n) % 1.0
+        out = bytearray(range(256))
+        for i in range(1, 256):
+            r, g, b = pal[i]
+            if max(r, g, b) - min(r, g, b) < 12:
+                continue                    # greys stay grey (D2's shifts mostly recolour cloth / skin)
+            h, l, sat = colorsys.rgb_to_hls(r / 255.0, g / 255.0, b / 255.0)
+            nr, ng, nb = colorsys.hls_to_rgb((h + turn) % 1.0, l, min(1.0, sat * 1.25))
+            tr, tg, tb = nr * 255, ng * 255, nb * 255
+            best, bd = i, 1e9
+            for j in range(1, 256):
+                pr, pg, pb = pal[j]
+                d = (pr - tr) ** 2 + (pg - tg) ** 2 + (pb - tb) ** 2
+                if d < bd:
+                    best, bd = j, d
+            out[i] = best
+        table = bytes(out)
+        self.item_cache[key] = table
+        return table
 
     # ---------------------------------------------------------------- items
     def _dc6(self, name):
@@ -572,19 +661,25 @@ class D2Assets(AssetProvider):
         tok = o["token"]
         mode = o.get("mode", "NU")
         fr, idx = None, 0
+        fc = o.get("fcnt") or (0, 0, 0)
+
+        def cut(frames, n):
+            # D2 shows only FrameCnt frames of each mode (the files often hold more)
+            return frames[:n] if frames and n and n < len(frames) else frames
         if mode == "NU":
-            fr = self._obj_frames(tok, "NU")
+            fr = cut(self._obj_frames(tok, "NU"), fc[0])
             if fr and o.get("cycle"):
                 idx = int(clock * 12) % len(fr)
         else:
-            op = self._obj_frames(tok, "OP")
+            op = cut(self._obj_frames(tok, "OP"), fc[1])
             t = clock - o["op_t"] if o.get("op_t") is not None else 1e9
             if op and t * 15 < len(op):
                 fr, idx = op, int(t * 15)
             else:
-                on = self._obj_frames(tok, "ON")
+                on = cut(self._obj_frames(tok, "ON"), fc[2])
                 if on:
-                    fr, idx = on, (int(clock * 12) % len(on) if len(on) > 1 else 0)
+                    # opened: closed -> opening (once) -> open. Only objects D2 loops keep animating.
+                    fr, idx = on, (int(clock * 12) % len(on) if o.get("cycle_on") else len(on) - 1)
                 elif op:
                     fr, idx = op, len(op) - 1
                 else:
@@ -717,9 +812,28 @@ class D2Assets(AssetProvider):
             except Exception:
                 pass
 
-    def missile_explosion(self, name):
+    def missile_explosion(self, name, depth=0):
+        """What D2 shows where a missile ends: its ExplosionMissile, or that of what it turns into on
+        hit (Fire Blast: bomb in air -> bomb on ground -> bomb explosion)."""
         r = self._missile_rows().get((name or "").lower())
-        return (r or {}).get("explosionmissile", "") or None
+        if not r:
+            return None
+        if r.get("explosionmissile"):
+            return r["explosionmissile"]
+        if depth < 3:
+            for col in ("clthitsubmissile1", "hitsubmissile1"):
+                if r.get(col):
+                    e = self.missile_explosion(r[col], depth + 1)
+                    if e:
+                        return e
+        return None
+
+    def missile_flies(self, name):
+        r = self._missile_rows().get((name or "").lower())
+        try:
+            return int((r or {}).get("vel") or 0) > 0
+        except ValueError:
+            return False
 
     def draw_missile(self, surf, name, pos, vec, t, loop=True):
         anim = self.missile_anim(name)

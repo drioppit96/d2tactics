@@ -440,6 +440,14 @@ def build_outdoors(kit, seed=None, content=None):
     tname, town = rng.choice(kit.towns)
     exit_dir = _town_exit_dir(tname)
     pos = plan_slots(exit_dir, rng)
+    if 26 not in pos:
+        # no room north of Tamoe Highland for the Monastery Gate with this camp exit: pick a camp
+        # layout that has it (without the gate there is no Outer Cloister, waypoint or Barracks)
+        for tn, tw in sorted(kit.towns, key=lambda t: t[0]):
+            p2 = plan_slots(_town_exit_dir(tn), rng)
+            if 26 in p2:
+                tname, town, pos = tn, tw, p2
+                break
     mg_from = pos.pop("mg_from", 7)
     xs = [p[0] for p in pos.values()]
     ys = [p[1] for p in pos.values()]
@@ -540,6 +548,29 @@ def build_outdoors(kit, seed=None, content=None):
         tx0, ty0 = sx * ST, sy * ST
         nb = neighbours.get(lid, {})
         taken = set()
+        # areas are kept ~30% smaller than D2's: a second ring of border pieces (forest / cliffs)
+        # inside the first, with the passages to the neighbouring areas left open through it
+        for bx in range(1, SLOT - 1):
+            for by in range(1, SLOT - 1):
+                if not (bx == 1 or by == 1 or bx == SLOT - 2 or by == SLOT - 2):
+                    continue
+                X, Y = tx0 + bx * BLOCK, ty0 + by * BLOCK
+                vert = "n" if by == 1 else ("s" if by == SLOT - 2 else None)
+                hor = "w" if bx == 1 else ("e" if bx == SLOT - 2 else None)
+                taken.add((bx, by))
+                if vert and hor:
+                    put("Act1/Outdoors/%s.ds1" % OutdoorKit.CORNER[(vert, hor)], X, Y, lid)
+                    continue
+                side = vert or hor
+                along = bx if vert else by
+                other = nb.get(side)
+                if other is not None and openings.get((lid, other)) == along:
+                    grass_block(X, Y)              # the way through stays open
+                else:
+                    v = rng.choice(["", "", "b", "c"])
+                    name = "Act1/Outdoors/%s%s.ds1" % (OutdoorKit.EDGE[side], v)
+                    if put(name, X, Y, lid) is None:
+                        put("Act1/Outdoors/%s.ds1" % OutdoorKit.EDGE[side], X, Y, lid)
         for bx in range(SLOT):
             for by in range(SLOT):
                 edge_n, edge_s, edge_w, edge_e = by == 0, by == SLOT - 1, bx == 0, bx == SLOT - 1
@@ -567,7 +598,7 @@ def build_outdoors(kit, seed=None, content=None):
                     name = "Act1/Outdoors/%s%s.ds1" % (OutdoorKit.EDGE[side], v)
                     if put(name, X, Y, lid) is None:
                         put("Act1/Outdoors/%s.ds1" % OutdoorKit.EDGE[side], X, Y, lid)
-        inner = [(bx, by) for bx in range(1, SLOT - 1) for by in range(1, SLOT - 1)]
+        inner = [(bx, by) for bx in range(2, SLOT - 2) for by in range(2, SLOT - 2)]
         rng.shuffle(inner)
         # plain grass under every inner block first: presets a tile short of their block (waypoint
         # pads, camps, cave entrances) otherwise left a one-tile black line next to them
@@ -577,7 +608,7 @@ def build_outdoors(kit, seed=None, content=None):
         def place(name, w=1, h=1, owner=lid):
             for bx, by in inner:
                 cells = [(bx + i, by + j) for i in range(w) for j in range(h)]
-                if all(1 <= c[0] < SLOT - 1 and 1 <= c[1] < SLOT - 1 and c not in taken for c in cells):
+                if all(2 <= c[0] < SLOT - 2 and 2 <= c[1] < SLOT - 2 and c not in taken for c in cells):
                     if put(name, tx0 + bx * BLOCK, ty0 + by * BLOCK, owner) is None:
                         return False
                     taken.update(cells)
@@ -598,7 +629,7 @@ def build_outdoors(kit, seed=None, content=None):
         for sp in specials:
             place(sp)
         fill_names = kit.FILLS["swamp"] + kit.FILLS["common"][:6] if lid == 6 else kit.FILLS["common"]
-        for _ in range(3):
+        for _ in range(2):                 # (smaller areas: two big pieces)
             place(rng.choice(kit.FILLS["swampbig"] if lid == 6 else kit.FILLS["big"]), 2, 2)
         for bx, by in list(inner):
             if (bx, by) in taken:
@@ -644,7 +675,132 @@ def build_outdoors(kit, seed=None, content=None):
     b.tm.drawn = set(b.tm.floor) | set(b.tm.walls) | set(b.tm.floor2)
     grid = make_grid(b.tm)
     _connect(b, grid, pos, links, kit, rng, openings)
+    try:
+        _lay_roads(b, grid, pos, links, openings, ST, gtiles, set(gcodes), random.Random(seed))
+    except Exception:
+        import traceback
+        traceback.print_exc()
     return b, grid, rng
+
+
+ROAD = [1, 2, 6, 7, 8, 9, 10, 11, 12, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34]   # Town/Floor.dt1 main 0: dirt
+ROAD_EDGE = list(range(35, 47))                                                # dirt with tufts of grass
+
+
+def _lay_roads(b, grid, pos, links, openings, ST, tiles, grass_codes, rng):
+    """D2's Act 1 dirt roads: from the camp through every passage between the areas to the cave
+    entrances, the Tower and the waypoints. Laid on plain grass only, two tiles wide."""
+    import heapq
+    tm = b.tm
+    W, H = tm.tw, tm.th
+
+    def open_tile(t):
+        if t not in tm.floor or tm.walls.get(t):
+            return False
+        cx, cy = t[0] * SUB + 2, t[1] * SUB + 2
+        return grid.in_bounds(cx, cy) and grid.walkable(cx, cy)
+    points = []
+    for a, c in links:
+        idx = openings[(a, c)]
+        da = (pos[c][0] - pos[a][0], pos[c][1] - pos[a][1])
+        ax, ay = pos[a][0] * ST, pos[a][1] * ST
+        if da == (1, 0):
+            t = (ax + ST - 1, ay + idx * BLOCK + BLOCK // 2)
+        elif da == (-1, 0):
+            t = (ax, ay + idx * BLOCK + BLOCK // 2)
+        elif da == (0, 1):
+            t = (ax + idx * BLOCK + BLOCK // 2, ay + ST - 1)
+        else:
+            t = (ax + idx * BLOCK + BLOCK // 2, ay)
+        points.append(t)
+    for t, main, owner in b.warps:
+        if owner in (2, 3, 4, 5, 6, 7):
+            points.append(t)
+    for kind, cell, owner, _ in b.objects:
+        if kind == "waypoint" and owner in (2, 3, 4, 5, 6, 7):
+            points.append((cell[0] // SUB, cell[1] // SUB))
+    # snap every point to the nearest open tile
+    snapped = []
+    for p in points:
+        best = None
+        for r in range(0, 6):
+            for dx in range(-r, r + 1):
+                for dy in range(-r, r + 1):
+                    q = (p[0] + dx, p[1] + dy)
+                    if open_tile(q):
+                        best = q
+                        break
+                if best:
+                    break
+            if best:
+                break
+        if best and best not in snapped:
+            snapped.append(best)
+    if len(snapped) < 2:
+        return
+
+    def dijkstra(src):
+        # roads like to follow grass: other floors cost more, so they go round presets
+        dist, prev = {src: 0}, {}
+        heap = [(0, src)]
+        while heap:
+            d, t = heapq.heappop(heap)
+            if d > dist.get(t, 1e9):
+                continue
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                n = (t[0] + dx, t[1] + dy)
+                if not (0 <= n[0] < W and 0 <= n[1] < H) or not open_tile(n):
+                    continue
+                f = tm.floor.get(n)
+                key = (f[1].main, f[1].sub) if f else None
+                nd = d + (1 if key in grass_codes or (key and key[0] == 0) else 4)
+                if nd < dist.get(n, 1e9):
+                    dist[n] = nd
+                    prev[n] = t
+                    heapq.heappush(heap, (nd, n))
+        return dist, prev
+    # a tree through all the points (Prim's on path lengths), each branch the cheapest path
+    tree = {snapped[0]}
+    left = set(snapped[1:])
+    paths = []
+    cache = {}
+    while left:
+        best = None
+        for s in tree:
+            if s not in cache:
+                cache[s] = dijkstra(s)
+            dist, prev = cache[s]
+            for t in left:
+                if t in dist and (best is None or dist[t] < best[0]):
+                    best = (dist[t], s, t)
+        if best is None:
+            break
+        _, s, t = best
+        prev = cache[s][1]
+        path = [t]
+        while path[-1] != s:
+            path.append(prev[path[-1]])
+        paths.append(path)
+        tree.add(t)
+        left.discard(t)
+    road = set()
+    for path in paths:
+        for i, t in enumerate(path):
+            road.add(t)
+            # two tiles wide: the neighbour on one side of the way
+            if i + 1 < len(path):
+                dx, dy = path[i + 1][0] - t[0], path[i + 1][1] - t[1]
+                road.add((t[0] + dy, t[1] + dx))
+    for t in road:
+        f = tm.floor.get(t)
+        if f is None or (f[1].main, f[1].sub) not in grass_codes or tm.walls.get(t) or not open_tile(t):
+            continue
+        edge = sum(1 for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)) if (t[0] + dx, t[1] + dy) not in road)
+        sub = rng.choice(ROAD_EDGE if edge >= 2 else ROAD)
+        nt = tiles.pick(0, 0, sub, rng.randrange(1 << 16))
+        if nt:
+            tm.floor[t] = nt
+    b.roads = road
 
 
 def build_cow(kit, seed=None, content=None):
@@ -837,9 +993,13 @@ def build_maze(kit, level_id, spec, seed=None):
         mk = kit.mazes[spec["kit"]] = MazeKit(kit, spec["kit"])
     rng = random.Random(seed)
     roles = spec.get("roles", [])
-    cols = rows = spec.get("grid", 5 if spec["rooms"] > 9 else 4)
+    n_rooms = spec["rooms"]
+    if spec.get("kit") not in ("arcane",):
+        # dungeons ~30% smaller than D2's: fewer rooms (but room for every special one + a bend)
+        n_rooms = max(len(roles) + 2, int(round(n_rooms * 0.7)))
+    cols = rows = spec.get("grid", 5 if n_rooms > 9 else 4)
     for attempt in range(60):
-        layout = _grow(spec["rooms"], rng, cols, rows)
+        layout = _grow(n_rooms, rng, cols, rows)
         assign = {}
         leaves = [c for c, ex in layout.items() if len(ex) == 1]
         rng.shuffle(leaves)

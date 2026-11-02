@@ -61,6 +61,7 @@ def make_unique(world, m, n_mods=None):
     if name:
         m.base_name = getattr(m, "base_name", m.name)
         m.name = name
+    m.color_shift = rng.randrange(1, 8)      # D2 recolours uniques (their minions share it)
     m.max_hp = m.hp = int(m.max_hp * 4)
     m.level += 3
     m.xp_value *= 5

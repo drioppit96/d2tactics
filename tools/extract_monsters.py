@@ -73,6 +73,7 @@ class MonsterFiles:
         """Every COF of a monster token and the DCCs its layers use. -> {mode: [wclass found]}"""
         found = {}
         base = "data\\global\\monsters\\%s\\" % tok.lower()
+        self.take(base + "cof\\palshift.dat")          # unique monsters' colours (if the token has them)
         for mode in MODES:
             for wc in wclasses:
                 data = self.take(base + "cof\\%s%s%s.cof" % (tok, mode, wc))

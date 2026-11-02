@@ -117,6 +117,19 @@ class Scene:
         return v
 
     # ------------------------------------------------------------ event intake
+    HITS = ("damage", "miss", "death", "heal")
+    PARALLEL = ("move", "attack", "projectile")
+    enemy_phase = False
+
+    def _actor_busy(self, u):
+        v = self.views.get(id(u)) if isinstance(getattr(self, "views", None), dict) else None
+        if v is None:
+            try:
+                v = self.view(u)
+            except Exception:
+                return False
+        return bool(v.path) or v.slide is not None or v.mode in ("A1", "SC")
+
     def pull_events(self):
         if self.world.events:
             self.queue.extend(self.world.events)
@@ -167,7 +180,8 @@ class Scene:
                 return 0
             v.path = list(cells)
             v.mode = "WL"
-            v.speed = (9.5 if explore else 7.0) if unit.is_player else (11.0 if free else 9.0)
+            # (about 12% quicker than before: walking felt slow without the fast-forward key)
+            v.speed = (10.6 if explore else 7.9) if unit.is_player else (12.3 if free else 10.1)
             if free:
                 return 0                      # free walking (you and your followers) doesn't hold anything up
             return None   # wait until the walk finishes
@@ -202,6 +216,14 @@ class Scene:
             wc = cell_to_world(*centre)
             assets = self.assets
             anim = assets.missile_anim(missile) if missile and hasattr(assets, "missile_anim") else None
+            expl = assets.missile_explosion(missile) if missile and hasattr(assets, "missile_explosion") else None
+            if anim is not None and centre != unit.pos and expl and getattr(assets, "missile_flies", lambda m: False)(missile):
+                # a thrown blast (Fire Blast's bomb): it flies to the spot, then D2's explosion plays there
+                src = cell_to_world(*unit.pos)
+                pr = Projectile("spike", src, wc, missile)
+                pr.dur = max(0.18, min(0.5, math.hypot(wc[0] - src[0], wc[1] - src[1]) / 500.0))
+                self.projectiles.append(pr)
+                return pr.dur + 0.1
             if anim is not None and centre == unit.pos and anim.n_dirs > 1:
                 # D2 novas are rings of missiles flying outwards
                 for i in range(16):
@@ -283,8 +305,10 @@ class Scene:
             return 0.2
         if kind == "turn":
             if ev[1] == "monsters":
+                self.enemy_phase = True
                 self.banner = ["Enemy turn", (210, 120, 90), 0.8]
                 return 0.25
+            self.enemy_phase = False
             self.banner = ["Your turn", (230, 210, 140), 0.8]
             return 0
         if kind == "levelup":
@@ -298,6 +322,18 @@ class Scene:
         if kind == "object":
             ev[1]["op_t"] = self.clock          # a chest opens, a barrel breaks, a door swings
             return 0
+        if kind == "flames":
+            # a wave of ground fire rolling outwards cell by cell (Wake of Fire)
+            cells, name = ev[1], ev[2]
+            anim = self.assets.missile_anim(name) if hasattr(self.assets, "missile_anim") else None
+            src = cells[0] if cells else (0, 0)
+            for c in cells:
+                delay = 0.035 * max(abs(c[0] - src[0]), abs(c[1] - src[1]))
+                if anim is not None:
+                    self.effects.append(["missile", name, cell_to_world(*c), -delay, min(1.0, anim.duration() or 0.6)])
+                else:
+                    self.novas.append([cell_to_world(*c), 0, NOVA_COLORS.get("fire", (255, 120, 40)), -delay])
+            return 0.25
         if kind == "explosion":
             name = ev[2] if len(ev) > 2 else "explosivepotionexp"
             anim = self.assets.missile_anim(name) if hasattr(self.assets, "missile_anim") else None
@@ -354,8 +390,29 @@ class Scene:
                     break
             if not self.queue:
                 break
+            head = self.queue[0]
+            if self.enemy_phase and head[0] == "turn" and head[1] != "monsters" and \
+                    any(self._actor_busy(v.unit) for v in self.views.values() if not v.unit.is_player):
+                self.wait = 0.03            # your turn starts once every monster has finished
+                break
+            if self.enemy_phase and head[0] in self.PARALLEL and len(head) > 1 \
+                    and not getattr(head[1], "is_player", False):
+                # enemy turn: every monster moves and strikes at the same time; one only waits for
+                # its own previous action (its attack after its own walk)
+                if self._actor_busy(head[1]):
+                    self.wait = 0.02
+                    break
+                self.queue.pop(0)
+                self._start(head)
+                self.wait = 0.0 if head[0] == "move" else 0.12
+                continue
             ev = self.queue.pop(0)
             w = self._start(ev)
+            if ev[0] in self.HITS:
+                # an area spell: all its hits, misses and deaths land at the same moment
+                while self.queue and self.queue[0][0] in self.HITS + ("log", "drop", "overlay"):
+                    w2 = self._start(self.queue.pop(0))
+                    w = max(w or 0, w2 or 0)
             if ev[0] == "projectile":
                 # a volley (Teeth, Charged Bolt, Multiple Shot, Twister ...) leaves all at once
                 while self.queue and self.queue[0][0] == "projectile" and self.queue[0][1] is ev[1]:
@@ -399,7 +456,7 @@ class Scene:
                 v.facing = (dx, dy) if v.unit.is_player else \
                     ((dx > 0.01) - (dx < -0.01), (dy > 0.01) - (dy < -0.01))
             step = v.speed * dt
-            v.t += dt * 1.6
+            v.t += dt * 1.8
             v.mode = "WL"
             v.stop_t = 0.12
             # carry over what is left of this frame's movement into the next tile (no stop at each tile)
@@ -652,6 +709,8 @@ class Scene:
         # roofs go on top of the walls and of whatever stands under them (D2 draws them last)
         for _, wref, tx, ty in sorted(roofs, key=lambda r: r[0]):
             assets.draw_tile(surf, wref, tx, ty, cam)
+        # burning ground, spell effects and missiles above the terrain, walls and props
+        self._draw_hazards(surf, cam, g, flames=True)
         for p in self.projectiles:
             wx, wy = p.pos()
             sp = cam.to_screen(wx, wy)
@@ -673,6 +732,9 @@ class Scene:
                 if not assets.draw_overlay(surf, name, feet, t):
                     self.effects.remove(e)
         for (wx, wy), r, col, t in self.novas:
+            if t < 0:
+                continue                    # not started yet (a delayed ring in a wave)
+            r = max(r, 0.6)
             k = min(1.0, t / 0.3)
             rw, rh = max(2, int(r * 32 * k * s)), max(1, int(r * 16 * k * s))
             ring = pygame.Surface((rw * 2 + 4, rh * 2 + 4), pygame.SRCALPHA)
@@ -728,8 +790,9 @@ class Scene:
     HAZARD_COLORS = {"fire": (255, 120, 30, 70), "cold": (120, 170, 255, 70), "pois": (90, 220, 60, 70),
                      "ltng": (230, 230, 120, 60)}
 
-    def _draw_hazards(self, surf, cam, g):
-        """Fire Wall, Blaze trails, Meteor fire, Blizzard ...: what keeps burning on the ground."""
+    def _draw_hazards(self, surf, cam, g, flames=False):
+        """Fire Wall, Blaze trails, Meteor fire, Blizzard ...: what keeps burning on the ground.
+        Floor pass: the tinted cells. flames=True (drawn after walls and units): the fire itself."""
         hz = getattr(self.world, "hazards", None)
         if not hz:
             return
@@ -742,7 +805,9 @@ class Scene:
             for (x, y) in cells:
                 if not g.in_bounds(x, y) or not g.visible[y][x]:
                     continue
-                self._diamond(surf, cam, x, y, col)
+                if not flames:
+                    self._diamond(surf, cam, x, y, col)
+                    continue
                 if vis and hasattr(assets, "draw_missile") and (dense or (x + 2 * y) % 3 == 0):
                     sx, sy = cam.cell_to_screen(x, y)
                     # each cell starts its loop at a different point so the flames don't pulse together
@@ -867,7 +932,10 @@ class Scene:
         """Item names on the ground; overlapping labels get stacked upwards like in D2."""
         font = self.fonts["small"]
         placed = []
+        covered = getattr(self, "covered", None) or []
         for it, (x, y) in sorted(labels, key=lambda l: -l[1][1]):
+            if any(c.collidepoint(int(x), int(y - 26)) for c in covered):
+                continue                    # behind an open window
             text = "%d Gold" % it.amount if it.kind == "gold" else getattr(it, "shown_name", it.name)
             img = font.render(text, True, it.color)
             r = pygame.Rect(0, 0, img.get_width() + 8, img.get_height() + 2)

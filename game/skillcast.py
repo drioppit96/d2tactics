@@ -1358,6 +1358,16 @@ class SkillCaster:
         a.turret_env = env
         a.invulnerable = True
         a.range = 8
+        if s.key == "Blade Sentinel":
+            # D2's spinning blade: flies at enemies, cuts everything around it, a few hits then gone
+            a.shots = min(8, 3 + env.lvl // 4)
+            a.range = 6
+            a.combat_only = True
+            a.stationary = False
+        elif s.key.startswith("Wake of"):
+            a.shots = 5
+            a.range = 7
+            a.combat_only = True
         self.log("%s placed." % s.title, YELLOW)
         return True
 
@@ -1454,8 +1464,76 @@ class SkillCaster:
                 best = (d, m)
         return best[1] if best else None
 
+    def _spend_shot(self, a):
+        if a.shots is not None:
+            a.shots -= 1
+            if a.shots <= 0:
+                a.alive = False
+                self.emit("death", a)          # its ending animation
+                return True
+        return False
+
+    def _blade_sentinel(self, a, env):
+        """Spin to the nearest enemy a few cells away and cut everything within 1 cell of where it lands."""
+        foes = [m for m in self.enemies() if self.udist(m, a) <= a.range]
+        if not foes:
+            return
+        # bounce on: the next enemy a few cells away (not the ones it just cut), else back at the last
+        fresh = [m for m in foes if chebyshev(m.pos, a.pos) > 1 + getattr(m, "radius", 0)
+                 and m is not getattr(a, "last_target", None)]
+        foe = min(fresh or foes, key=lambda m: (self.udist(m, a), m.hp))
+        a.last_target = foe
+        occ = self.occupied(a)
+        spots = [(foe.x + dx, foe.y + dy) for dx, dy in DIRS8]
+        spots = [c for c in spots if self.grid.walkable(*c) and c not in occ]
+        if not spots:
+            return
+        dest = min(spots, key=lambda c: chebyshev(c, a.pos))
+        if dest != a.pos:
+            path = _line(a.pos, dest)
+            src = a.pos
+            a.x, a.y = dest
+            self.emit("move", a, path or [dest])
+        pd = env.phys_damage() or (3, 8)
+        cut = [m for m in self.enemies() if chebyshev(m.pos, a.pos) <= 1 + getattr(m, "radius", 0)]
+        self._wake(cut)
+        self.emit("nova", a, a.pos, 1, "phys", None)
+        for m in cut:
+            self.phys_hit(m, pd[0], pd[1], self.player)
+        self._spend_shot(a)
+
+    def _wake_of_fire(self, a, env):
+        """D2's Wake of Fire: a widening wave of flames rolls along the ground towards the enemy."""
+        foes = [m for m in self.enemies() if self.udist(m, a) <= a.range and self.grid.line_of_sight(a.pos, m.pos)]
+        if not foes:
+            return
+        foe = min(foes, key=lambda m: self.udist(m, a))
+        a.face(*foe.pos)
+        self.emit("attack", a, foe.pos, "attack")
+        import math
+        ang = math.atan2(foe.y - a.y, foe.x - a.x)
+        ux, uy = math.cos(ang), math.sin(ang)
+        cells = []
+        for t in range(1, a.range + 1):
+            half = t // 3                                   # the wave widens as it rolls on
+            cx, cy = a.x + ux * t, a.y + uy * t
+            for w in range(-half, half + 1):
+                c = (int(round(cx - uy * w)), int(round(cy + ux * w)))
+                if c not in cells and self.grid.walkable(*c):
+                    cells.append(c)
+        hit = [m for m in self.enemies() if any(c in cells for c in (m.pos,))]
+        self._wake(hit)
+        self.emit("flames", cells, "wake of destruction")
+        for m in hit:
+            self.skill_damage(env, m, 100, show=False)
+        self._spend_shot(a)
+
     def _turret_shoot(self, a):
         env = getattr(a, "turret_env", None)
+        if env is not None and env.s.key == "Blade Sentinel":
+            return self._blade_sentinel(a, env)
+        if env is not None and env.s.key.startswith("Wake of"):
+            return self._wake_of_fire(a, env)
         foes = [m for m in self.enemies() if self.udist(m, a) <= a.range and self.grid.line_of_sight(a.pos, m.pos)]
         if not foes or env is None:
             return
