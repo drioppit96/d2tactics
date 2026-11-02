@@ -366,11 +366,50 @@ def at(cube, x, y):
     return cells(cube).get((x, y))
 
 
+STASH_TABS = 30            # tab 1 is the gem & rune bank, tabs 2-30 are item grids
+STASH_GRID = (12, 16)      # four times D2's 6 x 8 stash
+
+
 def make_stash():
-    """The stash in every town: a 6 x 8 grid (D2 1.14) plus gold."""
+    """The stash in every town: 30 tabs - a bank of stacked gems and runes, then 29 item grids of
+    12 x 16 - plus gold.  `contents` is the grid of the tab being looked at."""
     from .items import Item
     st = Item("Stash", "stash", None, kind="misc")
-    st.contents = []
-    st.grid_size = (6, 8)
+    st.grid_size = STASH_GRID
+    st.pages = [[] for _ in range(STASH_TABS - 1)]
+    st.bank = {}               # base code -> how many
+    st.tab = 1
+    st.contents = st.pages[0]
     st.gold = 0
     return st
+
+
+def stash_tab(st, tab):
+    """Show tab `tab` (0 = gems & runes, wraps around)."""
+    tab %= STASH_TABS
+    st.tab = tab
+    st.contents = st.pages[tab - 1] if tab > 0 else []
+    return tab
+
+
+def bankable(it):
+    """Gems (not jewels) and runes go into the stash's bank as stacks."""
+    g = getattr(it, "gem", None)
+    return g is not None and g[0] in ("gem", "rune") and isinstance(getattr(it, "base", None), dict)
+
+
+def bank_codes(content):
+    """Bank layout: the gems (7 kinds x 5 grades, by kind) then the 33 runes."""
+    from .d2items import GEM_TYPES
+    order = list(GEM_TYPES)            # amethyst, topaz, sapphire, emerald, ruby, diamond, skull
+    gems = [b for b in getattr(content, "bases", []) if b.get("gem") and b["gem"][0] == "gem"]
+    rows = []
+    for grade in range(5):
+        row = []
+        for t in order:
+            b = next((b for b in gems if b.get("type") == t and b["gem"][2] == grade), None)
+            row.append(b["code"] if b else None)
+        rows.append(row)
+    by = getattr(content, "base_by_code", {})
+    runes = ["r%02d" % n for n in range(1, 34) if "r%02d" % n in by]
+    return rows, runes

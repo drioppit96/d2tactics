@@ -17,26 +17,30 @@ VENDORS = {"akara": "akara", "charsi": "charsi", "gheed": "gheed",
            "jamella": "jamella", "halbu": "halbu", "larzuk": "larzuk", "malah": "malah", "drehya": "drehya"}
 NPC_OPTIONS = {
     "akara": ["Talk", "Trade", "Level 99 (test)"],             # TEST ONLY: "Level 99 (test)", remove later
-    "charsi": ["Talk", "Trade", "Recharge", "Socket Item"], "gheed": ["Talk", "Trade", "Gamble"],
+    "charsi": ["Talk", "Trade", "Recharge"], "gheed": ["Talk", "Trade", "Gamble"],
     "kashya": ["Talk", "Hire"], "cain1": ["Talk", "Identify Items"],
     "warriv1": ["Talk", "Go East", "Go East (test)"],          # TEST ONLY: "Go East (test)", remove later
     # Lut Gholein
-    "fara": ["Talk", "Trade", "Recharge", "Socket Item"], "drognan": ["Talk", "Trade"], "lysander": ["Talk", "Trade"],
+    "fara": ["Talk", "Trade", "Recharge"], "drognan": ["Talk", "Trade"], "lysander": ["Talk", "Trade"],
     "elzix": ["Talk", "Trade", "Gamble"], "greiz": ["Talk", "Hire"], "atma": ["Talk"], "jerhyn": ["Talk"],
-    "geglash": ["Talk"], "meshif1": ["Talk", "Sail East", "Sail East (test)"],   # TEST ONLY: "(test)" "tyrael1": ["Talk"], "warriv2": ["Talk", "Go West"], "cain2": ["Talk", "Identify Items"],
+    "geglash": ["Talk"], "meshif1": ["Talk", "Sail East", "Sail East (test)"],   # TEST ONLY: "(test)"
+    "tyrael1": ["Talk"], "warriv2": ["Talk", "Go West"], "cain2": ["Talk", "Identify Items"],
     # Kurast Docks
     "ormus": ["Talk", "Trade"], "alkor": ["Talk", "Trade", "Gamble"], "asheara": ["Talk", "Trade", "Hire"],
-    "hratli": ["Talk", "Trade", "Recharge", "Socket Item"], "cain3": ["Talk", "Identify Items", "To Act 4 (test)"],   # TEST ONLY: "To Act 4 (test)"
+    "hratli": ["Talk", "Trade", "Recharge"], "cain3": ["Talk", "Identify Items", "To Act 4 (test)"],   # TEST ONLY: "To Act 4 (test)"
     "meshif2": ["Talk", "Sail West"], "natalya": ["Talk"],
     # the Pandemonium Fortress
     "tyrael2": ["Talk", "Travel to Harrogath", "Travel to Harrogath (test)"],             # TEST ONLY: "(test)"
-    "jamella": ["Talk", "Trade", "Gamble"], "halbu": ["Talk", "Trade", "Recharge", "Socket Item"], "cain4": ["Talk", "Identify Items"],
+    "jamella": ["Talk", "Trade", "Gamble"], "halbu": ["Talk", "Trade", "Recharge"], "cain4": ["Talk", "Identify Items"],
     # Harrogath
-    "larzuk": ["Talk", "Trade", "Recharge", "Imbue Sockets", "Socket Item"], "malah": ["Talk", "Trade"], "drehya": ["Talk", "Trade", "Gamble"],
+    "larzuk": ["Talk", "Trade", "Recharge", "Imbue Sockets"], "malah": ["Talk", "Trade"], "drehya": ["Talk", "Trade", "Gamble"],
     "qual-kehk": ["Talk", "Hire"], "nihlathak": ["Talk"], "tyrael3": ["Talk"], "cain6": ["Talk", "Identify Items"],
 }
 STORE_W, STORE_H = 10, 10
 TAB_NAMES = {"armo": "Armor", "weap": "Weapons", "misc": "Misc", "gamble": "Gamble"}
+
+# the blacksmiths: their trade screen has the Socket Item button
+SMITHS = ("charsi", "fara", "hratli", "halbu", "larzuk")
 
 
 class Store:
@@ -344,6 +348,48 @@ class ItemActions:
         it.cube_pos = None
         self.held = it
         return True
+
+    def bank_deposit(self, it):
+        """A gem or rune goes onto its stack in the stash's first tab."""
+        from . import cube as cb
+        st = getattr(self.player, "stash", None)
+        if st is None or not cb.bankable(it):
+            return False
+        p = self.player
+        if it is self.held:
+            self.held = None
+        elif it in p.inventory:
+            p.inventory.remove(it)
+            it.inv_pos = None
+        else:
+            return False
+        st.bank[it.code] = st.bank.get(it.code, 0) + 1
+        return True
+
+    def bank_take(self, code, to_inventory=False):
+        """One gem or rune off its stack: onto the cursor, or (right click) into the backpack."""
+        st = getattr(self.player, "stash", None)
+        c = self.content
+        if st is None or c is None or st.bank.get(code, 0) <= 0:
+            return None
+        if not to_inventory and self.held is not None:
+            return None
+        base = c.base_by_code.get(code)
+        if base is None:
+            return None
+        it = c.make_item(base, 1, self.rng)
+        if it is None:
+            return None
+        if to_inventory:
+            if not self.player.inv_add(it):
+                self.log("No room in your backpack.", GREY)
+                return None
+        else:
+            self.held = it
+        st.bank[code] -= 1
+        if st.bank[code] <= 0:
+            del st.bank[code]
+        return it
 
     def stash_gold(self, deposit=True):
         p = self.player

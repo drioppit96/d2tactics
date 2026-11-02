@@ -14,6 +14,16 @@ def _safe(name):
     return re.sub(r"[^A-Za-z0-9_-]", "_", name) or "hero"
 
 
+def _stash_dict(st):
+    if st is None:
+        return dict(gold=0, items=[])
+    pages = getattr(st, "pages", None)
+    if pages is None:
+        pages = [getattr(st, "contents", None) or []]
+    return dict(gold=getattr(st, "gold", 0), bank=dict(getattr(st, "bank", {}) or {}),
+                pages=[[_item_dict(it) for it in page] for page in pages])
+
+
 def _item_dict(it):
     if it is None:
         return None
@@ -143,8 +153,7 @@ def save_character(player, difficulty="normal"):
                    xp=p.merc["xp"], dead=bool(p.merc.get("dead")),
                    items={k: _item_dict(v) for k, v in (p.merc.get("items") or {}).items() if v is not None})
               if getattr(p, "merc", None) else None),
-        stash=dict(gold=getattr(getattr(p, "stash", None), "gold", 0),
-                   items=[_item_dict(it) for it in (getattr(getattr(p, "stash", None), "contents", None) or [])]),
+        stash=_stash_dict(getattr(p, "stash", None)),
     )
     path = os.path.join(SAVE_DIR, _safe(p.name) + ".json")
     tmp = path + ".tmp"
@@ -227,18 +236,25 @@ def build_player(data, content):
         p.merc = dict(kind=md.get("kind", "rogue"), hid=md.get("hid", 0), name=md.get("name", "Hireling"),
                       level=md.get("level", 1), xp=md.get("xp", 0), dead=bool(md.get("dead")),
                       items={k: _item_from(v, content) for k, v in (md.get("items") or {}).items() if v})
-    from .cube import make_stash, cube_add
-    p.stash = make_stash()
+    from .cube import make_stash, cube_add, stash_tab, bankable
+    p.stash = st = make_stash()
     sd = data.get("stash") or {}
-    p.stash.gold = sd.get("gold", 0) or 0
-    for d in sd.get("items", []) or []:
-        it = _item_from(d, content)
-        if it is None:
-            continue
-        if getattr(it, "cube_pos", None) is not None:
-            p.stash.contents.append(it)
-        else:
-            cube_add(p.stash, it)
+    st.gold = sd.get("gold", 0) or 0
+    st.bank = {k: int(v) for k, v in (sd.get("bank") or {}).items() if int(v) > 0}
+    pages = sd.get("pages")
+    if pages is None:
+        pages = [sd.get("items", []) or []]        # an old save: the 6 x 8 stash becomes tab 2
+    for i, page in enumerate(pages[:len(st.pages)]):
+        stash_tab(st, i + 1)
+        for d in page or []:
+            it = _item_from(d, content)
+            if it is None:
+                continue
+            if getattr(it, "cube_pos", None) is not None:
+                st.contents.append(it)
+            elif not cube_add(st, it):
+                p.inventory.append(it)              # re-packed below
+    stash_tab(st, 1)
     # anything without a valid backpack spot gets re-packed
     loose = [it for it in p.inventory if getattr(it, "inv_pos", None) is None]
     for it in loose:

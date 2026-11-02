@@ -461,11 +461,6 @@ class Game:
                 self.travel_act(5)
             else:
                 w.log("Tyrael: Diablo still lives. The way to Harrogath stays closed.", (220, 210, 170))
-        elif opt == "Socket Item":
-            w.cursor_mode = ("socket", npc.npc)
-            h.show_inv = True
-            w.log("Click an item to add one socket (it costs twice the item's price). Esc when done.",
-                  (199, 179, 119))
         elif opt == "Imbue Sockets":
             from game import quests345
             quests345.larzuk_sockets(w)
@@ -1071,6 +1066,15 @@ class Game:
             h.store = None
             h.show_inv = True
 
+    def _is_stash_open(self):
+        h = self.hud
+        return bool(getattr(h, "show_cube", False)) and getattr(getattr(h, "cube_item", None), "code", "") == "stash"
+
+    def _end_socket_mode(self):
+        mode = getattr(self.world, "cursor_mode", None)
+        if mode and mode[0] == "socket":
+            self.world.cursor_mode = None
+
     def open_stash(self):
         p = self.world.player
         if getattr(p, "stash", None) is None:
@@ -1125,8 +1129,16 @@ class Game:
             if action == "gamble_refresh" and h.store is not None:
                 h.store = w.open_store(h.store.npc, gamble=True, refresh=True)
                 return
+            if action == "socket_mode" and h.store is not None:
+                mode = getattr(w, "cursor_mode", None)
+                if mode and mode[0] == "socket":
+                    w.cursor_mode = None
+                elif w.held is None:
+                    w.cursor_mode = ("socket", h.store.npc)
+                return
             if action == "store_close":
                 h.store = None
+                self._end_socket_mode()
                 return
             if action == "store_item":
                 if w.held is not None:
@@ -1156,6 +1168,19 @@ class Game:
                         w.held = back
                 else:
                     w.held = hireling.unequip(w, arg)
+                return
+            elif action == "stash_tab" and self._is_stash_open():
+                from game.cube import stash_tab
+                stash_tab(h.cube_item, getattr(h.cube_item, "tab", 1) + arg)
+                return
+            elif action in ("bank_take", "bank_area") and self._is_stash_open():
+                from game.cube import bankable
+                if w.held is not None:
+                    if bankable(w.held):
+                        w.bank_deposit(w.held)
+                    return
+                if action == "bank_take":
+                    w.bank_take(arg, to_inventory=(button == 3))
                 return
             elif action == "stash_gold":
                 w.stash_gold(deposit=(button == 1))
@@ -1280,7 +1305,9 @@ class Game:
             elif action == "slot":
                 eq = w.player.equipment.get(arg)
                 if getattr(w, "cursor_mode", None) and w.cursor_mode[0] == "socket":
-                    w.socket_item(eq)
+                    if button == 1:
+                        w.socket_item(eq)
+                    w.cursor_mode = None
                 elif getattr(w, "cursor_mode", None) and w.cursor_mode[0] == "identify":
                     w.identify_with(w.cursor_mode[1], eq)
                 elif w.held is not None and getattr(w.held, "gem", None) is not None and eq is not None:
@@ -1298,7 +1325,9 @@ class Game:
                 p = w.player
                 target = p.inv_at(*cell)
                 if getattr(w, "cursor_mode", None) and w.cursor_mode[0] == "socket":
-                    w.socket_item(target)
+                    if button == 1 and target is not None:
+                        w.socket_item(target)
+                    w.cursor_mode = None
                 elif getattr(w, "cursor_mode", None) and w.cursor_mode[0] == "identify":
                     w.identify_with(w.cursor_mode[1], target)
                 elif w.held is not None and getattr(w.held, "gem", None) is not None and target is not None \
@@ -1314,8 +1343,11 @@ class Game:
                     it = target
                     if it is not None:
                         if button == 3:
+                            from game.cube import bankable
                             if getattr(h, "store", None) is not None:
                                 w.sell(it)
+                            elif self._is_stash_open() and bankable(it):
+                                w.bank_deposit(it)          # onto its stack in the stash
                             elif getattr(it, "use", None) == "cube":
                                 self.open_cube(it)
                             elif it.kind == "potion" or getattr(it, "use", None):
@@ -1691,6 +1723,11 @@ class Game:
                 self.menu.click(ev.pos, ev.button)
             elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button in (1, 3):
                 self.handle_click(ev.pos, ev.button)
+            elif ev.type == pygame.MOUSEWHEEL and self.menu is None and self._is_stash_open() \
+                    and self.hud.logical(pygame.mouse.get_pos())[0] < 320:
+                from game.cube import stash_tab
+                st = self.hud.cube_item
+                stash_tab(st, getattr(st, "tab", 1) - (1 if ev.y > 0 else -1))
             elif ev.type == pygame.MOUSEWHEEL and self.menu is None:
                 self.cam.scale = max(1.0, min(3.5, self.cam.scale + ev.y * 0.25))
         if self.state == "create":
@@ -1714,6 +1751,8 @@ class Game:
             self.scene.alt_held = False
         self._hold_walk(mouse, dt)
         self.advance_walk()
+        if getattr(self.hud, "store", None) is None:
+            self._end_socket_mode()             # the socket service ends with the trade screen
         if getattr(self.world, "open_stash", False):
             self.world.open_stash = False
             self.open_stash()

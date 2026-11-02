@@ -878,7 +878,11 @@ class D2Hud:
                 lines.append(("Left click to buy", GREY))
                 self.hover_lines = lines
         self.text(surf, self.f16, "Gold: %d" % p.gold, GOLD, 20, 359)
-        self.text(surf, self.f10, "Right click your items to sell", GREY, 20, 392)
+        self.text(surf, self.f10, "Right click your", GREY, 14, 385)
+        self.text(surf, self.f10, "items to sell", GREY, 14, 400)
+        from game.itemactions import SMITHS
+        if getattr(st, "npc", None) in SMITHS:
+            self._socket_button(surf, world, st)
         if st.tabs and st.tabs[0][0] == "gamble":
             # D2: a new selection of gambling items
             bx, by = 170, 356
@@ -892,6 +896,35 @@ class D2Hud:
             if hot:
                 self.hover_lines = [("Refresh", WHITE), ("New items to gamble on", GREY)]
         self._close_button(surf, (271, 383, 32, 32), 0, "store_close")
+
+    SOCKET_BTN = (167, 383, 32, 32)
+
+    def _socket_button(self, surf, world, st):
+        """The blacksmith's Socket Item button: click it, then click an item (hammer cursor)."""
+        x, y, bw, bh = self.SOCKET_BTN
+        mode = getattr(world, "cursor_mode", None)
+        on = bool(mode and mode[0] == "socket")
+        b = self.frames.get("buysellbtn") or []
+        if len(b) > 1:
+            self.put(surf, b[1 if on else 0], x, y)
+        else:
+            pygame.draw.rect(surf, GOLD, self.R(x, y, bw, bh), 1)
+        hole = (self.frames.get("gemsocket") or [None])[0]
+        if hole is not None:
+            hw, hh = hole.get_size()
+            k = min(1.0, 22.0 / max(hw, hh)) * self.s
+            img = self.S(hole, k)
+            surf.blit(img, (int((x + bw / 2.0 + (1 if on else 0)) * self.s - img.get_width() / 2),
+                            int((y + bh / 2.0 + (1 if on else 0)) * self.s - img.get_height() / 2)))
+        else:
+            pygame.draw.circle(surf, (20, 20, 20), self.P(x + 16, y + 16), int(8 * self.s))
+            pygame.draw.circle(surf, (150, 130, 80), self.P(x + 16, y + 16), int(8 * self.s), 1)
+        self.region(x, y, bw, bh, "socket_mode")
+        mx, my = self.mouse
+        if pygame.Rect(x, y, bw, bh).collidepoint((int(mx), int(my))) and getattr(world, "held", None) is None:
+            self.hover_lines = [("Socket Item", WHITE),
+                                ("Then click an item: one more socket" if not on else "Click again to stop", GREY),
+                                ("Costs twice the item's price", GREY)]
 
     def _draw_sockets(self, surf, it, x, y, w, h):
         """Socket holes (and what's in them) over a hovered item, like D2."""
@@ -1053,78 +1086,233 @@ class D2Hud:
                                                                    hireling.resurrect_cost(merc)), RED, 4, 372, "center", 260)
         self._close_button(surf, self.CUBE_CLOSE, 0, "merc_close")
 
-    STASH_GRID = (73, 82)
+    STASH_GRID = (28, 96)
+    STASH_CELL = 22                 # the 12 x 16 stash uses smaller cells to fit D2's panel width
+    STASH_H = 490                   # the stash panel is taller than D2's 432
+    STASH_CLOSE = (276, 452, 32, 32)
+
+    def _is_stash(self):
+        return getattr(getattr(self, "cube_item", None), "code", "") == "stash"
 
     def _grid_geom(self):
         from game.cube import dims
         box = self.cube_item
-        if getattr(box, "code", "") == "stash":
+        if self._is_stash():
             return self.STASH_GRID, dims(box)
         return self.CUBE_GRID, dims(box)
+
+    def _gcell(self):
+        return self.STASH_CELL if self._is_stash() else CELL
 
     def cube_cell_at(self, pos):
         if not getattr(self, "show_cube", False) or self.cube_item is None:
             return None
+        if self._is_stash() and getattr(self.cube_item, "tab", 1) == 0:
+            return None                       # the gem & rune tab has no grid
         lx, ly = self.logical(pos)
         (gx, gy), (W, H) = self._grid_geom()
-        cx, cy = int((lx - gx) // CELL), int((ly - gy) // CELL)
+        c = self._gcell()
+        cx, cy = int((lx - gx) // c), int((ly - gy) // c)
         if 0 <= cx < W and 0 <= cy < H:
             return cx, cy
         return None
 
     def cube_anchor(self, item):
         (gx, gy), (W, H) = self._grid_geom()
+        c = self._gcell()
         w, h = max(1, item.invw or 1), max(1, item.invh or 1)
         mx, my = self.mouse
-        fx = int(round((mx - gx) / CELL - w / 2.0))
-        fy = int(round((my - gy) / CELL - h / 2.0))
+        fx = int(round((mx - gx) / c - w / 2.0))
+        fy = int(round((my - gy) / c - h / 2.0))
         return max(0, min(W - w, fx)), max(0, min(H - h, fy))
+
+    def _stash_bg(self, surf):
+        """D2's stash art, stretched to the bigger stash: its header, the side borders repeated
+        down the grid, and the bottom edge."""
+        bg = self.frames.get("tradestash")
+        H = self.STASH_H
+        comp = self.__dict__.setdefault("_bg_cache", {}).get(("stash", H))
+        if comp is None:
+            comp = pygame.Surface((320, H), pygame.SRCALPHA)
+            comp.fill((12, 12, 12, 255))
+            if bg and len(bg) >= 4:
+                full = pygame.Surface((320, 432), pygame.SRCALPHA)
+                full.fill((0, 0, 0, 0))
+                for f, (x, y) in zip(bg, [(0, 0), (256, 0), (0, 256), (256, 256)]):
+                    if f is not None:
+                        full.blit(f, (x, y))
+                top, band0, band1, foot = 92, 92, 330, 40
+                comp.blit(full, (0, 0), pygame.Rect(0, 0, 320, top))
+                y = top
+                while y < H - foot:
+                    hgt = min(band1 - band0, H - foot - y)
+                    comp.blit(full, (0, y), pygame.Rect(0, band0, 320, hgt))
+                    y += hgt
+                comp.blit(full, (0, H - foot), pygame.Rect(0, 432 - foot, 320, foot))
+            self._bg_cache[("stash", H)] = comp
+        self.put(surf, comp, 0, 0)
+        self.region(0, 0, 320, H, "panel")
+
+    def _bank_layout(self):
+        """(code, x, y, size) for every gem and rune on the stash's first tab."""
+        lay = self.__dict__.get("_bank_lay")
+        if lay is not None:
+            return lay
+        from game.cube import bank_codes
+        rows, runes = bank_codes(getattr(self.world, "content", None))
+        lay = []
+        gs, rs = 36, 29
+        gx = 28 + (264 - gs * 7) // 2
+        for r, row in enumerate(rows):
+            for c, code in enumerate(row):
+                if code:
+                    lay.append((code, gx + c * gs, 100 + r * gs, gs))
+        rx = 28 + (264 - rs * 9) // 2
+        ry = 100 + 5 * gs + 14
+        for i, code in enumerate(runes):
+            lay.append((code, rx + (i % 9) * rs, ry + (i // 9) * rs, rs))
+        if rows and runes:
+            self._bank_lay = lay
+        return lay
+
+    def _bank_icon(self, code):
+        cache = self.__dict__.setdefault("_bank_items", {})
+        it = cache.get(code)
+        if it is None:
+            c = getattr(self.world, "content", None)
+            base = c.base_by_code.get(code) if c is not None else None
+            if base is None:
+                return None
+            import random as _r
+            it = cache[code] = c.make_item(base, 1, _r.Random(0))
+        return it
+
+    def _draw_bank(self, surf, world, box):
+        p = world.player
+        mx, my = self.mouse
+        held = getattr(world, "held", None)
+        bank = getattr(box, "bank", {}) or {}
+        self.region(28, 96, 264, 352, "bank_area")
+        lay = self._bank_layout()
+        gem_end = max([y + sz for code, x, y, sz in lay if not code.startswith("r")] or [100])
+        self.text(surf, self.f10, "Runes", GOLD, 28, gem_end + 1, "center", 264)
+        for code, x, y, sz in lay:
+            it = self._bank_icon(code)
+            n = bank.get(code, 0)
+            cell = pygame.Surface((int((sz - 2) * self.s), int((sz - 2) * self.s)), pygame.SRCALPHA)
+            cell.fill((10, 10, 40, 150) if n else (0, 0, 0, 120))
+            surf.blit(cell, self.P(x + 1, y + 1))
+            pygame.draw.rect(surf, (90, 80, 55) if n else (45, 40, 30), self.R(x + 1, y + 1, sz - 2, sz - 2), 1)
+            if it is not None:
+                self._icon(surf, it, x + 2, y + 2, sz - 4, sz - 4)
+            if not n:
+                dim = pygame.Surface((int((sz - 4) * self.s), int((sz - 4) * self.s)), pygame.SRCALPHA)
+                dim.fill((0, 0, 0, 165))
+                surf.blit(dim, self.P(x + 2, y + 2))
+            else:
+                img = self.f10.render(str(n), WHITE, self.ind)
+                tw, th = img.get_width(), img.get_height()
+                tag = pygame.Surface((int((tw + 4) * self.s), int((th + 1) * self.s)), pygame.SRCALPHA)
+                tag.fill((0, 0, 0, 200))
+                surf.blit(tag, self.P(x + sz - tw - 6, y + sz - th - 3))
+                self.put(surf, img, x + sz - tw - 4, y + sz - th - 3)
+            self.region(x, y, sz, sz, "bank_take", code)
+            if held is None and pygame.Rect(int(x), int(y), sz, sz).collidepoint((int(mx), int(my))) and it is not None:
+                lines = [(it.name, it.color), ("In stash: %d" % n, WHITE if n else GREY)]
+                if n:
+                    lines += [("Left click: take one", GREY), ("Right click: one to your backpack", GREY)]
+                self.hover_lines = lines
+        if held is not None and pygame.Rect(28, 96, 264, 352).collidepoint((int(mx), int(my))):
+            from game.cube import bankable
+            if bankable(held):
+                self.hover_lines = [("Click to put it on its stack", GREY)]
+
+    def _draw_stash_tabs(self, surf, box):
+        """Cycle the 30 tabs: arrows beside the tab name (or the mouse wheel over the stash)."""
+        from game.cube import STASH_TABS
+        tab = getattr(box, "tab", 1)
+        name = "Gems & Runes" if tab == 0 else "Tab %d" % (tab + 1)
+        self.text(surf, self.f16, name, GOLD, 96, 51, "center", 150)
+        lab = pygame.Surface((int(50 * self.s), int(18 * self.s)), pygame.SRCALPHA)
+        lab.fill((0, 0, 0, 200))
+        surf.blit(lab, self.P(90, 459))
+        self.text(surf, self.f10, "%d / %d" % (tab + 1, STASH_TABS), WHITE, 90, 463, "center", 50)
+        b = self.frames.get("buysellbtn") or []
+        mx, my = self.mouse
+        for (x, d, fi) in ((14, -1, 12), (52, 1, 14)):
+            hot = pygame.Rect(x, 452, 32, 32).collidepoint((int(mx), int(my)))
+            down = hot and hasattr(pygame.mouse, "get_pressed") and pygame.mouse.get_pressed()[0]
+            if len(b) > fi + 1:
+                self.put(surf, b[fi + (1 if down else 0)], x, 452)
+            else:
+                pygame.draw.rect(surf, GOLD, self.R(x, 452, 32, 32), 1)
+                self.text(surf, self.f16, "<" if d < 0 else ">", GOLD, x, 459, "center", 32)
+            self.region(x, 452, 32, 32, "stash_tab", d)
+            if hot:
+                self.hover_lines = [("Previous tab" if d < 0 else "Next tab", WHITE), ("Mouse wheel: cycle tabs", GREY)]
 
     def _draw_cube(self, surf, world):
         from game import cube as cb
         p = world.player
         box = self.cube_item
-        stash = getattr(box, "code", "") == "stash"
+        stash = self._is_stash()
+        mx, my = self.mouse
+        held = getattr(world, "held", None)
         if stash:
-            fr = self.frames.get("tradestash") or self.frames.get("blank") or self.frames["invchar6"]
-            self._panel_bg(surf, 0, fr, 0)
-            self.text(surf, self.f16, "Stash", GOLD, 96, 51, "center", 150)
+            self._stash_bg(surf)
             self.text(surf, self.f10, "Gold in stash: %d" % getattr(box, "gold", 0), WHITE, 96, 25, "center", 150)
             self.region(73, 20, 176, 22, "stash_gold")
-            mx0, my0 = self.mouse
-            if pygame.Rect(73, 20, 176, 22).collidepoint((int(mx0), int(my0))) and getattr(world, "held", None) is None:
+            if pygame.Rect(73, 20, 176, 22).collidepoint((int(mx), int(my))) and held is None:
                 self.hover_lines = [("Left click: put your gold in the stash", WHITE),
                                     ("Right click: take the stash's gold", WHITE)]
+            self._draw_stash_tabs(surf, box)
+            well = pygame.Surface((int(276 * self.s), int(366 * self.s)), pygame.SRCALPHA)
+            well.fill((8, 8, 10, 255))
+            surf.blit(well, self.P(22, 86))
+            pygame.draw.rect(surf, (120, 105, 70), self.R(22, 86, 276, 366), 1)
+            if getattr(box, "tab", 1) == 0:
+                self._draw_bank(surf, world, box)
+                self._close_button(surf, self.STASH_CLOSE, 0, "cube_close")
+                return
         else:
             fr = self.frames.get("supertransmogrifier") or self.frames.get("blank") or self.frames["invchar6"]
             self._panel_bg(surf, 0, fr, 0)
             self.text(surf, self.f16, "Horadric Cube", GOLD, 0, 104, "center", 320)
         (gx, gy), (GW, GH) = self._grid_geom()
-        mx, my = self.mouse
-        held = getattr(world, "held", None)
-        self.region(gx, gy, GW * CELL, GH * CELL, "cube_grid")
+        C = self._gcell()
+        if stash:
+            # the stash's own grid (D2's art only has room for 6 x 8)
+            back = pygame.Surface((int(GW * C * self.s) + 2, int(GH * C * self.s) + 2), pygame.SRCALPHA)
+            back.fill((6, 6, 10, 255))
+            surf.blit(back, self.P(gx - 1, gy - 1))
+            for i in range(GW + 1):
+                pygame.draw.line(surf, (38, 36, 32), self.P(gx + i * C, gy), self.P(gx + i * C, gy + GH * C))
+            for j in range(GH + 1):
+                pygame.draw.line(surf, (38, 36, 32), self.P(gx, gy + j * C), self.P(gx + GW * C, gy + j * C))
+            pygame.draw.rect(surf, (120, 105, 70), self.R(gx - 2, gy - 2, GW * C + 4, GH * C + 4), 1)
+        self.region(gx, gy, GW * C, GH * C, "cube_grid")
         for it in getattr(box, "contents", []) or []:
             if getattr(it, "cube_pos", None) is None:
                 continue
             cx, cy = it.cube_pos
             w, h = max(1, it.invw or 1), max(1, it.invh or 1)
-            x, y = gx + cx * CELL, gy + cy * CELL
-            tint = pygame.Surface((int((w * CELL - 1) * self.s), int((h * CELL - 1) * self.s)), pygame.SRCALPHA)
+            x, y = gx + cx * C, gy + cy * C
+            tint = pygame.Surface((int((w * C - 1) * self.s), int((h * C - 1) * self.s)), pygame.SRCALPHA)
             tint.fill((10, 10, 40, 120))
             surf.blit(tint, self.P(x + 1, y + 1))
-            self._icon(surf, it, x + 1, y + 1, w * CELL - 1, h * CELL - 1)
-            if held is None and pygame.Rect(int(x), int(y), w * CELL, h * CELL).collidepoint((int(mx), int(my))):
+            self._icon(surf, it, x + 1, y + 1, w * C - 1, h * C - 1)
+            if held is None and pygame.Rect(int(x), int(y), w * C, h * C).collidepoint((int(mx), int(my))):
                 self.hover_lines = list(it.describe_lines(p))
         if held is not None and self.cube_cell_at((mx * self.s, my * self.s)) is not None:
             ax, ay = self.cube_anchor(held)
             ok, over = cb.fits(box, held, ax, ay)
             good = ok and len(over) <= 1 and (held.code != "box" or stash)
             w, h = max(1, held.invw or 1), max(1, held.invh or 1)
-            tint = pygame.Surface((int(w * CELL * self.s), int(h * CELL * self.s)), pygame.SRCALPHA)
+            tint = pygame.Surface((int(w * C * self.s), int(h * C * self.s)), pygame.SRCALPHA)
             tint.fill((0, 120, 0, 70) if good else (140, 0, 0, 70))
-            surf.blit(tint, self.P(gx + ax * CELL, gy + ay * CELL))
+            surf.blit(tint, self.P(gx + ax * C, gy + ay * C))
         if stash:
-            self._close_button(surf, self.CUBE_CLOSE, 0, "cube_close")
+            self._close_button(surf, self.STASH_CLOSE, 0, "cube_close")
             return
         bx, by, bw, bh = self.CUBE_BUTTON
         btn = self.frames.get("miniconvert") or []
@@ -1277,6 +1465,9 @@ class D2Hud:
             bs = getattr(self, "cursor_buysell", None)
             if mode and mode[0] == "identify" and bs and len(bs) > 8 and bs[8] is not None:
                 self.put(surf, bs[8], mx, my)       # D2's identify cursor
+                return
+            if mode and mode[0] == "socket" and bs and len(bs) > 1 and bs[1] is not None:
+                self.put(surf, bs[1], mx, my)       # D2's repair hammer
                 return
             self.put(surf, self.cursor[0], mx, my)
 
