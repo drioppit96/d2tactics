@@ -179,14 +179,17 @@ class D2Hud:
         """Scaled copy of a logical-size surface (cached)."""
         k = self.s if k is None else k
         key = (id(img), round(k, 3))
-        out = self.scaled.get(key)
-        if out is None:
+        ent = self.scaled.get(key)
+        # the cache keeps the source image alive (and checks it): an id alone can be reused by a new
+        # surface once the old one is gone - that put old tooltip text on the END TURN button
+        if ent is None or ent[0] is not img:
             w, h = img.get_size()
             out = pygame.transform.smoothscale(img, (max(1, int(round(w * k))), max(1, int(round(h * k)))))
             if len(self.scaled) > 2500:
                 self.scaled.clear()
-            self.scaled[key] = out
-        return out
+            self.scaled[key] = (img, out)
+            return out
+        return ent[1]
 
     def P(self, x, y):
         return int(round(x * self.s)), int(round(y * self.s))
@@ -684,7 +687,8 @@ class D2Hud:
     def _greyed(self, img):
         """A grey copy of an icon (cached)."""
         cache = self.__dict__.setdefault("_grey_cache", {})
-        g = cache.get(id(img))
+        ent = cache.get(id(img))
+        g = ent[1] if ent is not None and ent[0] is img else None
         if g is None:
             try:
                 g = pygame.transform.grayscale(img)
@@ -697,7 +701,7 @@ class D2Hud:
                         if a:
                             v = (r * 30 + gg * 59 + b * 11) // 100
                             g.set_at((xx, yy), (v, v, v, a))
-            cache[id(img)] = g
+            cache[id(img)] = (img, g)
         return g
 
     def _act_tabs(self, surf, acts, current, action, frames_key):
@@ -915,7 +919,6 @@ class D2Hud:
         p = world.player
         info = getattr(world, "info", None)
         bg = self.frames.get("waygatebackground")
-        self._panel_bg(surf, 0, bg or self.frames.get("blank") or self.frames["invchar6"], 0)
         here = world.level_id
         mx, my = self.mouse
         got = getattr(p, "waypoints", {1})
@@ -923,14 +926,14 @@ class D2Hud:
         if getattr(self, "wp_act", None) not in acts:
             cur = act_of(here) if here else 1
             self.wp_act = cur if cur in acts else acts[-1]
-        self._act_tabs(surf, acts, self.wp_act, "wp_tab", "expwaygatetabs")
         bosses = BOSS_WAYPOINTS.get(self.wp_act, [])
-        base = [l for l in WAYPOINTS[self.wp_act] if l not in bosses]
-        page = getattr(self, "wp_page", 0) if bosses else 0
-        rows = bosses if page else base
-        self.text(surf, self.f16, "Boss waypoints" if page else "Choose your destination", GOLD, 0, 36, "center", 320)
+        rows = list(WAYPOINTS[self.wp_act])[:11]
+        extra = max(0, len(rows) - 9)
+        self._waygate_bg(surf, bg, extra)
+        self._act_tabs(surf, acts, self.wp_act, "wp_tab", "expwaygatetabs")
+        self.text(surf, self.f16, "Choose your destination", GOLD, 0, 36, "center", 320)
         icons = self.frames.get("waygateicons")
-        for i, lid in enumerate(rows[:9]):
+        for i, lid in enumerate(rows):
             y = 58 + i * 36
             name = info.name(lid) if info else str(lid)
             on = lid in got
@@ -948,26 +951,46 @@ class D2Hud:
             self.text(surf, self.f16, name, col, 58, y + 10)
             if on and lid != here:
                 self.region(15, y, 290, 34, "waypoint", lid)
-        if bosses:
-            # the second page: this game's boss waypoints
-            bx, by = 14, 394
-            hot = pygame.Rect(bx, by, 150, 22).collidepoint((int(mx), int(my)))
-            box = pygame.Surface((int(150 * self.s), int(22 * self.s)), pygame.SRCALPHA)
-            box.fill((80, 60, 30, 240) if hot else (40, 30, 20, 230))
-            surf.blit(box, self.P(bx, by))
-            pygame.draw.rect(surf, GOLD, self.R(bx, by, 150, 22), 1)
-            self.text(surf, self.f10, "< Waypoints" if page else "Boss waypoints >", GOLD if hot else WHITE,
-                      bx, by + 5, "center", 150)
-            self.region(bx, by, 150, 22, "wp_page", 0 if page else 1)
         # TEST ONLY: remove later
-        bx, by = 170, 394
+        bx, by = 170, 394 + 36 * extra
         hot = pygame.Rect(bx, by, 96, 22).collidepoint((int(mx), int(my)))
         box = pygame.Surface((int(96 * self.s), int(22 * self.s)), pygame.SRCALPHA)
         box.fill((90, 40, 30, 220) if hot else (50, 20, 15, 200))
         surf.blit(box, self.P(bx, by))
         self.text(surf, self.f10, "All (test)", WHITE, bx, by + 5, "center", 96)
         self.region(bx, by, 96, 22, "wp_all")
-        self._close_button(surf, self.WP_CLOSE, 0, "waypoints")
+        x, y, cw, ch = self.WP_CLOSE
+        self._close_button(surf, (x, y + 36 * extra, cw, ch), 0, "waypoints")
+
+    def _waygate_bg(self, surf, bg, extra):
+        """D2's waypoint background, made taller by `extra` slots (36 px each) for this game's boss
+        waypoints: a band of the slot column is repeated, so the slots keep lining up."""
+        if not bg:
+            self._panel_bg(surf, 0, self.frames.get("blank") or self.frames["invchar6"], 0)
+            if extra:
+                box = pygame.Surface((int(320 * self.s), int(36 * extra * self.s)), pygame.SRCALPHA)
+                box.fill((10, 10, 10, 230))
+                surf.blit(box, self.P(0, 432))
+            return
+        key = ("waygate", extra)
+        comp = self.__dict__.setdefault("_bg_cache", {}).get(key)
+        if comp is None:
+            add = 36 * extra
+            comp = pygame.Surface((320, 432 + add), pygame.SRCALPHA)
+            comp.fill((0, 0, 0, 0))
+            for i, (x, y) in enumerate([(0, 0), (256, 0), (0, 256 + add), (256, 256 + add)]):
+                if i < len(bg) and bg[i] is not None:
+                    comp.blit(bg[i], (x, y))
+            if add:
+                band = pygame.Surface((320, add), pygame.SRCALPHA)
+                band.fill((0, 0, 0, 0))
+                for i, x in ((0, 0), (1, 256)):
+                    if i < len(bg) and bg[i] is not None:
+                        band.blit(bg[i], (x, -(256 - add)))
+                comp.blit(band, (0, 256))
+            self._bg_cache[key] = comp
+        self.put(surf, comp, 0, 0)
+        self.region(0, 0, 320, 432 + 36 * extra, "panel")
 
     # ------------------------------------------------------------ the Horadric Cube
     CUBE_GRID = (117, 138)

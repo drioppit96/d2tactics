@@ -86,7 +86,7 @@ def _click_exit(world, cells, target):
 
 
 # boss / farming floors that get an extra waypoint at their entrance: level -> the level you come from
-BOSS_WAYPOINTS = {25: 24, 37: 36, 49: 48, 73: None, 102: 101, 108: 107, 121: None, 124: 123, 131: 130}
+BOSS_WAYPOINTS = {25: 24, 37: 36, 49: 48, 73: None, 102: 101, 108: 107, 121: None, 131: 130}
 
 
 def _boss_waypoints(world, grid, rng):

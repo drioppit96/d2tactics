@@ -549,12 +549,13 @@ class D2Assets(AssetProvider):
             return self.placeholder.draw_item_icon(surf, item, rect)
         img = frames[0][0]
         key = ("fit", id(img), rect.w, rect.h)
-        if key not in self.item_cache:
+        ent = self.item_cache.get(key)
+        if ent is None or ent[0] is not img:          # ids get reused once an image is freed
             w, h = img.get_size()
             k = min(rect.w / float(w), rect.h / float(h), 1.0 if max(w, h) <= 30 else 2.0)
-            self.item_cache[key] = pygame.transform.smoothscale(img, (max(1, int(w * k)), max(1, int(h * k)))) \
-                if abs(k - 1.0) > 0.01 else img
-        fit = self.item_cache[key]
+            ent = self.item_cache[key] = (img, pygame.transform.smoothscale(img, (max(1, int(w * k)), max(1, int(h * k))))
+                                          if abs(k - 1.0) > 0.01 else img)
+        fit = ent[1]
         surf.blit(fit, (rect.centerx - fit.get_width() // 2, rect.centery - fit.get_height() // 2))
 
     def draw_ground_item(self, surf, item, pos, s, b, t=10.0):
@@ -599,14 +600,15 @@ class D2Assets(AssetProvider):
         flash = pose.get("flash", 0)
         if flash > 0.05:
             k = (id(img), int(flash * 4))
-            if k not in self.flash_cache:
+            ent = self.flash_cache.get(k)
+            if ent is None or ent[0] is not img:
                 if len(self.flash_cache) > 64:
                     self.flash_cache.clear()
                 f = img.copy()
                 v = int(140 * (int(flash * 4) / 4))
                 f.fill((v, v, v, 0), special_flags=pygame.BLEND_RGBA_ADD)
-                self.flash_cache[k] = f
-            img = self.flash_cache[k]
+                ent = self.flash_cache[k] = (img, f)
+            img = ent[1]
         tint = pose.get("tint")
         outline = pose.get("outline")
         if tint or outline:
@@ -615,22 +617,23 @@ class D2Assets(AssetProvider):
                 tc.clear()
             if outline:
                 k = ("sil", id(img), outline)
-                sil = tc.get(k)
-                if sil is None:
+                ent = tc.get(k)
+                if ent is None or ent[0] is not img:
                     sil = img.copy()
                     sil.fill((0, 0, 0, 255), special_flags=pygame.BLEND_RGBA_MULT)
                     sil.fill(tuple(outline[:3]) + (0,), special_flags=pygame.BLEND_RGBA_ADD)
-                    tc[k] = sil
+                    ent = tc[k] = (img, sil)
+                sil = ent[1]
                 for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
                     surf.blit(sil, (int(cx + x0 + dx), int(cy + y0 + dy)))
             if tint:
                 k = ("tint", id(img), tint)
-                t_img = tc.get(k)
-                if t_img is None:
+                ent = tc.get(k)
+                if ent is None or ent[0] is not img:
                     t_img = img.copy()
                     t_img.fill(tint, special_flags=pygame.BLEND_RGBA_MULT)
-                    tc[k] = t_img
-                img = t_img
+                    ent = tc[k] = (img, t_img)
+                img = ent[1]
         surf.blit(img, (int(cx + x0), int(cy + y0)))
         return pygame.Rect(int(cx + x0), int(cy + y0), img.get_width(), img.get_height())
 
