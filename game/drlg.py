@@ -275,6 +275,67 @@ def ensure_connected(b, grid, chain, gkit, rng):
     act1._connect(b, grid, None, chain, gkit, rng, {})
 
 
+def link_warps(b, grid, gkit, rng):
+    """Entrances whose preset doesn't reach the area's ground (a cave mouth on the border) get a
+    short trail carved to the nearest walkable ground of the main area."""
+    from collections import deque
+    from .grid import FLOOR
+    W, H, cells = grid.w, grid.h, grid.cells
+
+    def flood(start):
+        seen = {start}
+        q = deque([start])
+        while q:
+            x, y = q.popleft()
+            for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+                if 0 <= nx < W and 0 <= ny < H and (nx, ny) not in seen and cells[ny][nx] == FLOOR:
+                    seen.add((nx, ny))
+                    q.append((nx, ny))
+        return seen
+    main = None
+    for rect in b.areas.values():
+        c = act1._walk_centre(grid, rect, b, None)
+        if c is not None:
+            comp = flood(c)
+            if main is None or len(comp) > len(main):
+                main = comp
+    if not main:
+        return
+    for tile, _m, _o in b.warps:
+        cx, cy = tile[0] * act1.SUB + 2, tile[1] * act1.SUB + 2
+        near = None
+        for r in range(0, 12):
+            for dy in range(-r, r + 1):
+                for dx in range(-r, r + 1):
+                    if grid.walkable(cx + dx, cy + dy):
+                        near = (cx + dx, cy + dy)
+                        break
+                if near:
+                    break
+            if near:
+                break
+        if near is None or near in main:
+            continue
+        comp = flood(near)
+        # the closest pair of cells (sampled) between this pocket and the main area
+        best = None
+        pocket = list(comp)[::7] or [near]
+        for p in pocket:
+            for r in range(1, 120, 2):
+                hit = None
+                for q in ((p[0], p[1] + r), (p[0], p[1] - r), (p[0] + r, p[1]), (p[0] - r, p[1])):
+                    if q in main:
+                        hit = q
+                        break
+                if hit:
+                    if best is None or r < best[0]:
+                        best = (r, p, hit)
+                    break
+        if best:
+            act1._carve(b, grid, best[1], best[2], gkit, rng)
+            main |= flood(best[1])
+
+
 def edge_cells(grid, rect, side, x_range=None, depth=3):
     """Walkable cells along one side of a cell rect (seamless exits to another world)."""
     x0, y0, x1, y1 = rect

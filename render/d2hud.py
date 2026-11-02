@@ -141,6 +141,7 @@ class D2Hud:
         self.show_cube = False
         self.cube_item = None        # the Horadric Cube whose window is open
         self.npc_menu = None         # NPC whose talk / trade menu is open
+        self.tracker_menu = False    # the quest tracker's list of objectives
         self.minimaps = {}
         self.regions = []
         self.hover_lines = None
@@ -277,6 +278,7 @@ class D2Hud:
         if getattr(self, "loot_list", None) is not None:
             self._draw_loot(surf, world)
         self._draw_control_panel(surf, world, scene)
+        self._draw_tracker(surf, world, scene)
         if self.skill_popup:
             self._draw_skill_popup(surf, p)
         if self.npc_menu is not None and self.store is None:
@@ -303,6 +305,151 @@ class D2Hud:
         if held is not None:
             self._draw_held(surf, held)
         self._draw_cursor(surf)
+
+    # ------------------------------------------------------------ quest tracker
+    def _quest_slot(self, qid):
+        """(act, icon number) of a quest in D2's quest log."""
+        from game import quests, quests2, quests345
+        lists = {1: self.QUEST_ORDER[1], 2: [q for q, _ in quests2.ACT2]}
+        for a, lst in quests345.ACTS.items():
+            lists[a] = [q for q, _ in lst]
+        for a, lst in lists.items():
+            if qid in lst:
+                return a, lst.index(qid) + 1
+        return None
+
+    def tracked_objective(self, world):
+        """The objective you track (the quest's next part once one is done), or None."""
+        from game import questguide
+        p = world.player
+        key = getattr(p, "tracked_quest", None)
+        if not key:
+            return None, []
+        objs = questguide.objectives(world)
+        cur = next((o for o in objs if o.key == key), None)
+        if cur is None:
+            cur = next((o for o in objs if o.qid == key.split(":")[0]), None)
+            if cur is not None:
+                p.tracked_quest = cur.key
+        return cur, objs
+
+    def _draw_tracker(self, surf, world, scene):
+        """Bottom left, above the life globe: the tracked quest's icon (click: choose what to track),
+        a compass arrow towards the next step and what that step is."""
+        import math
+        from game import questguide
+        p = world.player
+        px0, py0 = getattr(self, "panel_origin", ((self.lw - 704) / 2.0, 600 - 104))
+        bx, by, bs = px0 + 6, py0 - 54, 46
+        mx, my = self.mouse
+        obj, objs = self.tracked_objective(world)
+        if obj is None and not objs:
+            objs = questguide.objectives(world)
+        hot = pygame.Rect(int(bx), int(by), bs, bs).collidepoint((int(mx), int(my)))
+        # the button: the quest's own icon from the quest log (D2's quest book when nothing is tracked)
+        box = pygame.Surface((int(bs * self.s), int(bs * self.s)), pygame.SRCALPHA)
+        box.fill((20, 16, 10, 225))
+        surf.blit(box, self.P(bx, by))
+        icon = None
+        if obj is not None:
+            slot = self._quest_slot(obj.qid)
+            frames = self._quest_icon(*slot) if slot else None
+            if frames:
+                icon = frames[min(25, len(frames) - 1)]
+        if icon is None:
+            btns = self.frames.get("minipanelbtn") or []
+            icon = btns[12] if len(btns) > 12 else None
+        if icon is not None:
+            iw, ih = icon.get_size()
+            k = min((bs - 6) / float(iw), (bs - 6) / float(ih)) * self.s
+            img = self.S(icon, k)
+            surf.blit(img, (int((bx + bs / 2.0) * self.s - img.get_width() / 2),
+                            int((by + bs / 2.0) * self.s - img.get_height() / 2)))
+        else:
+            self.text(surf, self.f16, "?", GOLD, bx, by + 14, "center", bs)
+        pygame.draw.rect(surf, (230, 200, 120) if hot or self.tracker_menu else (140, 120, 75), self.R(bx, by, bs, bs), 1)
+        self.region(bx, by, bs, bs, "tracker")
+        if hot:
+            self.hover_lines = [("Quest Tracker (J)", WHITE),
+                                ("Click: choose a quest to follow" if objs else "No quest under way", GREY)]
+        # the compass and what to do
+        if obj is not None:
+            name = getattr(getattr(self, "assets", None), "act_info", None)
+            name = name.name if name is not None else (lambda lid: str(lid))
+            cache = self.__dict__.setdefault("_track_cache", {})
+            now = pygame.time.get_ticks() if hasattr(pygame.time, "get_ticks") else 0
+            ck = (obj.key, p.pos, id(world), getattr(world, "level_id", None))
+            if cache.get("k") != ck or now - cache.get("t", 0) > 500:
+                try:
+                    cell, lines = questguide.guide(world, obj, name)
+                except Exception:
+                    cell, lines = None, [obj.label]
+                cache.update(k=ck, t=now, cell=cell, lines=lines)
+            cell, lines = cache["cell"], cache["lines"]
+            cx, cy, r = bx + bs + 26, by + bs / 2.0, 21
+            ring = pygame.Surface((int(2 * r * self.s) + 2, int(2 * r * self.s) + 2), pygame.SRCALPHA)
+            pygame.draw.circle(ring, (20, 16, 10, 220), (ring.get_width() // 2, ring.get_height() // 2), int(r * self.s))
+            surf.blit(ring, (int((cx - r) * self.s), int((cy - r) * self.s)))
+            pygame.draw.circle(surf, (140, 120, 75), self.P(cx, cy), int(r * self.s), 1)
+            if cell is not None and cell != p.pos:
+                from render.iso import cell_to_world
+                ax, ay = cell_to_world(*p.pos)
+                tx, ty = cell_to_world(*cell)
+                ang = math.atan2(ty - ay, tx - ax)
+                ca, sa = math.cos(ang), math.sin(ang)
+                pts = [(16, 0), (-8, 9), (-3, 0), (-8, -9)]
+                poly = [self.P(cx + x * ca - y * sa, cy + x * sa + y * ca) for x, y in pts]
+                pygame.draw.polygon(surf, (240, 200, 90), poly)
+                pygame.draw.polygon(surf, (90, 60, 20), poly, 1)
+                d = max(abs(cell[0] - p.x), abs(cell[1] - p.y))
+                if d <= 3:
+                    lines = list(lines) + ["Right here"]
+            else:
+                self.text(surf, self.f16, "?", GREY, cx - 12, cy - 8, "center", 24)
+            tx0 = cx + r + 8
+            for i, (t, col) in enumerate(zip(lines[:3], [GOLD, WHITE, (150, 220, 150)])):
+                img = (self.f16 if i == 0 else self.f10).render(t, col, self.ind)
+                bg = pygame.Surface((int((img.get_width() + 8) * self.s), int((img.get_height() + 2) * self.s)), pygame.SRCALPHA)
+                bg.fill((0, 0, 0, 150))
+                yy = by + 2 + i * 15
+                surf.blit(bg, self.P(tx0 - 4, yy - 1))
+                self.put(surf, img, tx0, yy)
+            self.region(cx - r, cy - r, 2 * r, 2 * r, "tracker")
+        if self.tracker_menu:
+            self._draw_tracker_menu(surf, world, objs, bx, by)
+
+    def _draw_tracker_menu(self, surf, world, objs, bx, by):
+        p = world.player
+        rows = [(o.key, "%s: %s" % (o.title, o.label)) for o in objs] + [(None, "Stop tracking")]
+        w = max([self.f16.width(t) for _, t in rows] + [120]) + 34
+        h = len(rows) * 20 + 8
+        x, y = bx, by - h - 6
+        bg = pygame.Surface((int(w * self.s), int(h * self.s)), pygame.SRCALPHA)
+        bg.fill((10, 8, 5, 235))
+        surf.blit(bg, self.P(x, y))
+        pygame.draw.rect(surf, (140, 120, 75), self.R(x, y, w, h), 1)
+        mx, my = self.mouse
+        cur = getattr(p, "tracked_quest", None)
+        for i, (key, text) in enumerate(rows):
+            ry = y + 4 + i * 20
+            hot = pygame.Rect(int(x), int(ry), int(w), 20).collidepoint((int(mx), int(my)))
+            if hot:
+                hl = pygame.Surface((int((w - 4) * self.s), int(19 * self.s)), pygame.SRCALPHA)
+                hl.fill((90, 70, 30, 200))
+                surf.blit(hl, self.P(x + 2, ry))
+            col = GOLD if key == cur else (WHITE if key else GREY)
+            if key:
+                slot = self._quest_slot(key.split(":")[0])
+                frames = self._quest_icon(*slot) if slot else None
+                if frames:
+                    f = frames[min(25, len(frames) - 1)]
+                    k = 18.0 / max(f.get_size()) * self.s
+                    img = self.S(f, k)
+                    surf.blit(img, self.P(x + 6, ry + 1))
+            self.text(surf, self.f16, text, col, x + 28, ry + 3)
+            self.region(x, ry, w, 20, "track_pick", key or "")
+        if not objs:
+            self.text(surf, self.f10, "No quest under way", GREY, x + 6, y - 14)
 
     # ------------------------------------------------------------ message log
     def _left_panel_open(self):

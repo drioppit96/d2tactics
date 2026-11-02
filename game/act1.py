@@ -24,7 +24,7 @@ from .grid import Grid, FLOOR, WALL
 
 TILES = "data\\global\\tiles\\"
 BLOCK = 8                    # tiles per outdoor block
-SLOT = 8                     # blocks per outdoor area (64x64 tiles = 320x320 cells)
+SLOT = 10                    # blocks per outdoor area (80x80 tiles = 400x400 cells, Levels.txt)
 
 # MonPreset.txt, act 1 (DS1 type 1 objects)
 MONPRESET_A1 = ["gheed", "cain1", "akara", "chicken", "rogue1", "kashya", "cow", "warriv1", "charsi", "andariel",
@@ -64,22 +64,22 @@ DUNGEONS = {
     15: dict(kit="preset", files=["caves\\caveroom4.ds1"], lvltype="Act 1 - Cave"),
     12: dict(kit="cave", rooms=8, roles=["prev", "down"]),
     16: dict(kit="preset", files=["caves\\caveroom5.ds1"], lvltype="Act 1 - Cave"),
-    18: dict(kit="crypt", rooms=14, roles=["prev", "bonebreak"]),
+    18: dict(kit="crypt", rooms=12, roles=["prev", "bonebreak"]),
     19: dict(kit="crypt", rooms=12, roles=["prev", "consol"]),
     20: dict(kit="preset", files=["outdoors\\tower2.ds1"], lvltype="Act 1 - Wilderness"),
-    21: dict(kit="crypt", rooms=12, roles=["prev", "next"]),
-    22: dict(kit="crypt", rooms=12, roles=["prev", "next"]),
-    23: dict(kit="crypt", rooms=12, roles=["prev", "next"]),
-    24: dict(kit="crypt", rooms=12, roles=["prev", "next"]),
+    21: dict(kit="crypt", rooms=6, roles=["prev", "next"]),
+    22: dict(kit="crypt", rooms=6, roles=["prev", "next"]),
+    23: dict(kit="crypt", rooms=6, roles=["prev", "next"]),
+    24: dict(kit="crypt", rooms=6, roles=["prev", "next"]),
     25: dict(kit="preset", files=["crypt\\cryptcountess1.ds1", "crypt\\cryptcountess2.ds1"], lvltype="Act 1 - Crypt"),
-    28: dict(kit="barracks", rooms=12, roles=["prev", "next", "forge"]),
+    28: dict(kit="barracks", rooms=10, roles=["prev", "next", "forge"]),
     29: dict(kit="jail", rooms=12, roles=["prev", "next", "way", "pitspawn"]),
-    30: dict(kit="jail", rooms=12, roles=["prev", "next"]),
-    31: dict(kit="jail", rooms=12, roles=["prev", "cath"]),
+    30: dict(kit="jail", rooms=14, roles=["prev", "next"]),
+    31: dict(kit="jail", rooms=16, roles=["prev", "cath"]),
     32: dict(kit="cathedral"),
     34: dict(kit="catacombs", rooms=12, roles=["prev", "next"]),
-    35: dict(kit="catacombs", rooms=12, roles=["prev", "next", "way"]),
-    36: dict(kit="catacombs", rooms=12, roles=["prev", "next"]),
+    35: dict(kit="catacombs", rooms=14, roles=["prev", "next", "way"]),
+    36: dict(kit="catacombs", rooms=16, roles=["prev", "next"]),
     37: dict(kit="preset", files=["catacomb\\andy3.ds1"], lvltype="Act 1 - Catacombs"),
     38: dict(kit="preset", files=["tristram\\tri_town4.ds1"], lvltype="Act 1 - Tristram"),
 }
@@ -548,29 +548,6 @@ def build_outdoors(kit, seed=None, content=None):
         tx0, ty0 = sx * ST, sy * ST
         nb = neighbours.get(lid, {})
         taken = set()
-        # areas are kept ~30% smaller than D2's: a second ring of border pieces (forest / cliffs)
-        # inside the first, with the passages to the neighbouring areas left open through it
-        for bx in range(1, SLOT - 1):
-            for by in range(1, SLOT - 1):
-                if not (bx == 1 or by == 1 or bx == SLOT - 2 or by == SLOT - 2):
-                    continue
-                X, Y = tx0 + bx * BLOCK, ty0 + by * BLOCK
-                vert = "n" if by == 1 else ("s" if by == SLOT - 2 else None)
-                hor = "w" if bx == 1 else ("e" if bx == SLOT - 2 else None)
-                taken.add((bx, by))
-                if vert and hor:
-                    put("Act1/Outdoors/%s.ds1" % OutdoorKit.CORNER[(vert, hor)], X, Y, lid)
-                    continue
-                side = vert or hor
-                along = bx if vert else by
-                other = nb.get(side)
-                if other is not None and openings.get((lid, other)) == along:
-                    grass_block(X, Y)              # the way through stays open
-                else:
-                    v = rng.choice(["", "", "b", "c"])
-                    name = "Act1/Outdoors/%s%s.ds1" % (OutdoorKit.EDGE[side], v)
-                    if put(name, X, Y, lid) is None:
-                        put("Act1/Outdoors/%s.ds1" % OutdoorKit.EDGE[side], X, Y, lid)
         for bx in range(SLOT):
             for by in range(SLOT):
                 edge_n, edge_s, edge_w, edge_e = by == 0, by == SLOT - 1, bx == 0, bx == SLOT - 1
@@ -598,7 +575,7 @@ def build_outdoors(kit, seed=None, content=None):
                     name = "Act1/Outdoors/%s%s.ds1" % (OutdoorKit.EDGE[side], v)
                     if put(name, X, Y, lid) is None:
                         put("Act1/Outdoors/%s.ds1" % OutdoorKit.EDGE[side], X, Y, lid)
-        inner = [(bx, by) for bx in range(2, SLOT - 2) for by in range(2, SLOT - 2)]
+        inner = [(bx, by) for bx in range(1, SLOT - 1) for by in range(1, SLOT - 1)]
         rng.shuffle(inner)
         # plain grass under every inner block first: presets a tile short of their block (waypoint
         # pads, camps, cave entrances) otherwise left a one-tile black line next to them
@@ -608,7 +585,7 @@ def build_outdoors(kit, seed=None, content=None):
         def place(name, w=1, h=1, owner=lid):
             for bx, by in inner:
                 cells = [(bx + i, by + j) for i in range(w) for j in range(h)]
-                if all(2 <= c[0] < SLOT - 2 and 2 <= c[1] < SLOT - 2 and c not in taken for c in cells):
+                if all(1 <= c[0] < SLOT - 1 and 1 <= c[1] < SLOT - 1 and c not in taken for c in cells):
                     if put(name, tx0 + bx * BLOCK, ty0 + by * BLOCK, owner) is None:
                         return False
                     taken.update(cells)
@@ -629,7 +606,7 @@ def build_outdoors(kit, seed=None, content=None):
         for sp in specials:
             place(sp)
         fill_names = kit.FILLS["swamp"] + kit.FILLS["common"][:6] if lid == 6 else kit.FILLS["common"]
-        for _ in range(2):                 # (smaller areas: two big pieces)
+        for _ in range(3):
             place(rng.choice(kit.FILLS["swampbig"] if lid == 6 else kit.FILLS["big"]), 2, 2)
         for bx, by in list(inner):
             if (bx, by) in taken:
@@ -680,6 +657,7 @@ def build_outdoors(kit, seed=None, content=None):
     except Exception:
         import traceback
         traceback.print_exc()
+    seal_world(b, grid, gtiles, gcodes, rng, (2, 3, 4))
     return b, grid, rng
 
 
@@ -880,6 +858,90 @@ def build_cow(kit, seed=None, content=None):
     return b, grid, rng
 
 
+def seal_world(b, grid, stiles, scodes, rng, start_areas, margin=14):
+    """No black void beyond the border cliffs / forest: plain ground (not walkable) is laid for
+    `margin` tiles around everything drawn, and any floor that can't be reached from the areas
+    (strips on the far side of border pieces) is closed off, so nothing spawns or walks there."""
+    from collections import deque
+    tm = b.tm
+    if stiles is not None:
+        have = set(tm.floor) | set(tm.floor2)
+        W, H = tm.tw, tm.th
+        need = set()
+        # dilate by rows: cheap enough for ~100k tiles
+        cols = {}
+        for (tx, ty) in have:
+            cols.setdefault(ty, []).append(tx)
+        rowspan = {}
+        for ty, xs in cols.items():
+            rowspan[ty] = (min(xs) - margin, max(xs) + margin)
+        for ty in range(max(0, min(cols) - margin), min(H, max(cols) + margin + 1)):
+            span = None
+            for dy in range(-margin, margin + 1):
+                r = rowspan.get(ty + dy)
+                if r is not None:
+                    span = r if span is None else (min(span[0], r[0]), max(span[1], r[1]))
+            if span is None:
+                continue
+            for tx in range(max(0, span[0]), min(W, span[1] + 1)):
+                if (tx, ty) not in have:
+                    need.add((tx, ty))
+        for t in need:
+            main, sub = rng.choice(scodes)
+            tile = stiles.pick(0, main, sub, rng.randrange(1 << 16))
+            if tile:
+                tm.floor[t] = tile
+                tm.drawn.add(t)
+        b.filler_tiles = need
+    # floor nobody can walk to becomes wall (the new sand included)
+    cells, W, H = grid.cells, grid.w, grid.h
+    start = None
+    for lid in start_areas:
+        r = b.areas.get(lid)
+        if r is None:
+            continue
+        c = _walk_centre(grid, r, b, lid)
+        if c is not None:
+            start = c
+            break
+    if start is None:
+        return
+    seen = bytearray(W * H)
+    stack = [start]
+    while stack:                                   # scanline fill (8-connected)
+        x, y = stack.pop()
+        row = cells[y]
+        base = y * W
+        if seen[base + x] or row[x] != FLOOR:
+            continue
+        xl = x
+        while xl > 0 and row[xl - 1] == FLOOR and not seen[base + xl - 1]:
+            xl -= 1
+        xr = x
+        while xr < W - 1 and row[xr + 1] == FLOOR and not seen[base + xr + 1]:
+            xr += 1
+        seen[base + xl:base + xr + 1] = b"\x01" * (xr - xl + 1)
+        for ny in (y - 1, y + 1):
+            if not 0 <= ny < H:
+                continue
+            nrow = cells[ny]
+            nb = ny * W
+            inside = False
+            for nx in range(max(0, xl - 1), min(W, xr + 2)):
+                if nrow[nx] == FLOOR and not seen[nb + nx]:
+                    if not inside:
+                        stack.append((nx, ny))
+                        inside = True
+                else:
+                    inside = False
+    for y in range(H):
+        row = cells[y]
+        base = y * W
+        for x in range(W):
+            if row[x] == FLOOR and not seen[base + x]:
+                row[x] = WALL
+
+
 def _connect(b, grid, pos, links, kit, rng, openings):
     """Make sure every area can be walked into from the previous one (carve a path if presets
     don't line up exactly - e.g. the camp's exit or the Monastery gate)."""
@@ -956,6 +1018,46 @@ class MazeKit:
             raise FileNotFoundError("%s rooms missing (%d of 15 kinds)" % (name, len(self.rooms)))
         any_room = next(iter(self.rooms.values()))[0]
         self.rw, self.rh = any_room.width - 1, any_room.height - 1
+        # some variants don't join all their own doorways (the Arcane Sanctuary's broken walkways):
+        # keep the ones that do whenever a kind has any
+        for key, lst in list(self.rooms.items()):
+            good = [ds for ds in lst if self.joins(ds, key)]
+            if good:
+                self.rooms[key] = good
+
+    def joins(self, ds, exits):
+        """Can every doorway of this room be reached from the others?"""
+        from collections import deque
+        if len(exits) < 2:
+            return True
+        try:
+            b = Built(ds.width, ds.height)
+            act = self.spec.get("act") or {"act2": 2, "act3": 3, "act4": 4, "expansion": 5}.get(
+                self.spec["folder"].split("\\")[0].lower(), 1)
+            act_tables(b, act, self.kit)
+            stamp(b, ds, self.kit.tiles_for(ds, self.spec["lvltype"]), 0, 0, random.Random(0), 0, keep_edges=False)
+            g = make_grid(b.tm)
+        except Exception:
+            return True
+        rw, rh = self.rw, self.rh
+        strips = {"n": [(x, y) for y in range(0, SUB) for x in range(rw * SUB)],
+                  "s": [(x, y) for y in range((rh - 1) * SUB, rh * SUB) for x in range(rw * SUB)],
+                  "w": [(x, y) for x in range(0, SUB) for y in range(rh * SUB)],
+                  "e": [(x, y) for x in range((rw - 1) * SUB, rw * SUB) for y in range(rh * SUB)]}
+        doors = {d: [c for c in strips[d] if g.walkable(*c)] for d in exits}
+        if any(not v for v in doors.values()):
+            return False
+        start = next(iter(doors.values()))[0]
+        seen = {start}
+        q = deque([start])
+        while q:
+            x, y = q.popleft()
+            for nb in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1), (x + 1, y + 1), (x - 1, y - 1),
+                       (x + 1, y - 1), (x - 1, y + 1)):
+                if nb not in seen and g.walkable(*nb):
+                    seen.add(nb)
+                    q.append(nb)
+        return all(any(c in seen for c in v) for v in doors.values())
 
     def role_room(self, role, exits, rng):
         pat = self.spec["roles"].get(role)
@@ -993,11 +1095,10 @@ def build_maze(kit, level_id, spec, seed=None):
         mk = kit.mazes[spec["kit"]] = MazeKit(kit, spec["kit"])
     rng = random.Random(seed)
     roles = spec.get("roles", [])
-    n_rooms = spec["rooms"]
-    if spec.get("kit") not in ("arcane",):
-        # dungeons ~30% smaller than D2's: fewer rooms (but room for every special one + a bend)
-        n_rooms = max(len(roles) + 2, int(round(n_rooms * 0.7)))
-    cols = rows = spec.get("grid", 5 if n_rooms > 9 else 4)
+    # D2's room count (LvlMaze.txt), but always room for every special room and a bend
+    n_rooms = max(len(roles) + 2, spec["rooms"])
+    import math
+    cols = rows = spec.get("grid", max(4, int(math.ceil(math.sqrt(n_rooms * 2.0)))))
     for attempt in range(60):
         layout = _grow(n_rooms, rng, cols, rows)
         assign = {}

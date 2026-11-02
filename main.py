@@ -1123,6 +1123,14 @@ class Game:
             if action == "npc_opt":
                 self.npc_option(h.npc_menu, arg)
                 return
+            if action == "tracker":
+                h.tracker_menu = not getattr(h, "tracker_menu", False)
+                return
+            if action == "track_pick":
+                w.player.tracked_quest = arg or None
+                h.tracker_menu = False
+                return
+            h.tracker_menu = False
             if action == "store_tab":
                 h.store.tab = arg
                 return
@@ -1512,6 +1520,8 @@ class Game:
             self.toggle_panel("skills")
         elif key == pygame.K_q:
             self.toggle_panel("quests")
+        elif key == pygame.K_j:
+            h.tracker_menu = not getattr(h, "tracker_menu", False)          # quest tracker
         elif key == pygame.K_g:
             self.scene.show_grid = not self.scene.show_grid
         elif key == pygame.K_TAB:

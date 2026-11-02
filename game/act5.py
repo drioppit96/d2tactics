@@ -32,20 +32,20 @@ act1.MAZES.update(MAZES)
 ICE = X + "icecave\\"
 TEMPLE = X + "wildtemple\\"
 DUNGEONS = {
-    113: dict(kit="ice", rooms=12, roles=["prev", "next", "down", "way"], act=5),
+    113: dict(kit="ice", rooms=10, roles=["prev", "next", "down", "way"], act=5),
     114: dict(kit="preset", folder=ICE, files=["riverice%02d.ds1" % i for i in range(1, 9)], lvltype="Act 5 - Ice Caves", act=5),
-    115: dict(kit="ice", rooms=12, roles=["prev", "next", "down", "way"], act=5),
+    115: dict(kit="ice", rooms=10, roles=["prev", "next", "down", "way"], act=5),
     116: dict(kit="preset", folder=ICE, files=["poolroom%02d.ds1" % i for i in range(1, 7)], lvltype="Act 5 - Ice Caves", act=5),
-    118: dict(kit="ice", rooms=12, roles=["prev", "next", "down", "way"], act=5),
+    118: dict(kit="ice", rooms=15, roles=["prev", "next", "down", "way"], act=5),
     119: dict(kit="preset", folder=ICE, files=["poolroom%02da.ds1" % i for i in range(1, 7)], lvltype="Act 5 - Ice Caves", act=5),
     120: dict(kit="preset", folder=X + "mountaintop\\", files=["mtntop.ds1"], lvltype=BAR_LT, act=5),
     121: dict(kit="preset", folder=TEMPLE, files=["tempenter.ds1"], lvltype="Act 5 - Temple", act=5),
     122: dict(kit="temple", act=5),
     123: dict(kit="temple", act=5, waypoint=True),
     124: dict(kit="preset", folder=TEMPLE, files=["nihle.ds1", "nihln.ds1", "nihls.ds1", "nihlw.ds1"], lvltype="Act 5 - Temple", act=5),
-    128: dict(kit="baal", rooms=12, roles=["prev", "next"], act=5),
-    129: dict(kit="baal", rooms=12, roles=["prev", "next", "way"], act=5),
-    130: dict(kit="baal", rooms=12, roles=["prev", "next"], act=5),
+    128: dict(kit="baal", rooms=9, roles=["prev", "next"], act=5),
+    129: dict(kit="baal", rooms=9, roles=["prev", "next", "way"], act=5),
+    130: dict(kit="baal", rooms=9, roles=["prev", "next"], act=5),
     131: dict(kit="preset", folder=X + "baallair\\", files=["wthrone.ds1"], lvltype="Act 5 - Baal", act=5),
     132: dict(kit="preset", folder=X + "baallair\\", files=["wstone01.ds1"], lvltype="Act 5 - Baal", act=5),
 }
@@ -80,7 +80,9 @@ def build_level(kit, level_id, seed=None):
 def build_temple(kit, level_id, spec, seed=None):
     """Nihlathak's halls: four 40x40 rooms around the middle; the way up is always the SE room."""
     rng = random.Random(seed)
-    corners = {(0, 0): "nw", (1, 0): "ne", (0, 1): "sw", (1, 1): "se"}
+    # the names are the sides a room's corridors leave by (like maze rooms): the "nw" room opens
+    # north and west, so it sits bottom right; "se" (with the way up) sits top left
+    corners = {(0, 0): "se", (1, 0): "sw", (0, 1): "ne", (1, 1): "nw"}
     down = rng.choice(["ne", "nw", "sw"])
     way = rng.choice([c for c in ("ne", "nw", "sw") if c != down]) if spec.get("waypoint") else None
     b = Built(81, 81)
@@ -188,5 +190,6 @@ def build_tundra(kit, seed=None, content=None):
     block_area(cv, 117, 0, 0, 8, 5, B, _barricade_spec(117, True, specials))
     _sprinkle(cv, 117, 0, 0, 8, 5, "snow")
     grid = cv.finish()
+    drlg.link_warps(b, grid, cv.ground_kit("snow"), rng)
     drlg.ensure_waypoints(b, grid, 5)
     return b, grid, rng

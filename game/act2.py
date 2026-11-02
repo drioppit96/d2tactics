@@ -20,10 +20,12 @@ import random
 from . import act1
 from .act1 import Built, stamp, make_grid, SUB, DIRS, OPP, MazeKit, build_maze, _canon
 from .acts import apply_act_tables
+from .grid import FLOOR, WALL
 
 BLOCK = 8
 SLOT = 10                         # blocks per desert area (80 tiles, Levels.txt sizex/sizey)
 ST = SLOT * BLOCK
+CANYON_SLOT = 10
 A2 = "act2\\"
 DESERT = "Act 2 - Desert"
 
@@ -59,7 +61,8 @@ MAZES = {
                  roles={"prev": "tomb{x}warpprev{n}", "next": "tomb{d}warpnext{n}", "treasure": "tomb{d}treasure",
                         "cube": "tombcube{d}", "talrasha": "tomb{d}talrasha", "way": "tomb{d}waypoint",
                         "kaa": "tomb{d}kaa", "leather": "tomb{d}leatherarm", "chest": "tomb{d}consol",
-                        "serpent": "serpent1"}),
+                        "serpent": "serpent1"},
+                 role_exits={"serpent": "n"}),                # (its corridor only leaves north)
     "lair": dict(folder="act2\\maggot\\", prefix="mag", lvltype="Act 2 - Lair",
                  roles={"prev": "mag{d}warpprev", "next": "mag{d}warpnext", "queen": "magqueen"},
                  role_exits={"queen": "s"}),
@@ -69,27 +72,27 @@ MAZES = {
 act1.MAZES.update(MAZES)
 
 DUNGEONS = {
-    47: dict(kit="sewer", rooms=10, roles=["prev", "next"], act=2),
-    48: dict(kit="sewer", rooms=11, roles=["prev", "next", "way"], act=2),
-    49: dict(kit="sewer", rooms=10, roles=["prev", "rad"], act=2),
+    47: dict(kit="sewer", rooms=6, roles=["prev", "next"], act=2),
+    48: dict(kit="sewer", rooms=12, roles=["prev", "next", "way"], act=2),
+    49: dict(kit="sewer", rooms=14, roles=["prev", "rad"], act=2),
     50: dict(kit="preset", folder=A2, files=["palace\\harem2.ds1"], lvltype="Act 2 - Harem", act=2),
     51: dict(kit="ring", prefix="palace\\sub", lvltype="Act 2 - Harem", act=2),
     52: dict(kit="ring", prefix="palace\\cel", lvltype="Act 2 - Basement", act=2, waypoint=True),
     53: dict(kit="ring", prefix="palace\\cel", lvltype="Act 2 - Basement", act=2),
     54: dict(kit="ring", prefix="palace\\cel", lvltype="Act 2 - Basement", act=2, arcane=True),
-    55: dict(kit="tomb", rooms=10, roles=["prev", "next"], act=2),
-    59: dict(kit="tomb", rooms=10, roles=["prev", "chest"], act=2),
-    56: dict(kit="tomb", rooms=10, roles=["prev", "next"], act=2),
-    57: dict(kit="tomb", rooms=11, roles=["prev", "next", "way"], act=2),
-    60: dict(kit="tomb", rooms=10, roles=["prev", "cube"], act=2),
-    58: dict(kit="tomb", rooms=10, roles=["prev", "next"], act=2),
-    61: dict(kit="tomb", rooms=10, roles=["prev", "serpent"], act=2),
-    62: dict(kit="lair", rooms=10, roles=["prev", "next"], act=2),
-    63: dict(kit="lair", rooms=10, roles=["prev", "next"], act=2),
+    55: dict(kit="tomb", rooms=4, roles=["prev", "next"], act=2),
+    59: dict(kit="tomb", rooms=4, roles=["prev", "chest"], act=2),
+    56: dict(kit="tomb", rooms=6, roles=["prev", "next"], act=2),
+    57: dict(kit="tomb", rooms=6, roles=["prev", "next", "way"], act=2),
+    60: dict(kit="tomb", rooms=6, roles=["prev", "cube"], act=2),
+    58: dict(kit="tomb", rooms=12, roles=["prev", "next"], act=2),
+    61: dict(kit="tomb", rooms=6, roles=["prev", "serpent"], act=2),
+    62: dict(kit="lair", rooms=18, roles=["prev", "next"], act=2),
+    63: dict(kit="lair", rooms=14, roles=["prev", "next"], act=2),
     64: dict(kit="lair", rooms=10, roles=["prev", "queen"], act=2),
-    65: dict(kit="sewer", rooms=11, roles=["prev", "chest"], act=2),
+    65: dict(kit="sewer", rooms=10, roles=["prev", "chest"], act=2),
     73: dict(kit="preset", folder=A2, files=["tomb\\duriel.ds1"], lvltype="Act 2 - Tomb", act=2),
-    74: dict(kit="arcane", rooms=16, roles=["summoner"], act=2, waypoint_centre=True),
+    74: dict(kit="arcane", rooms=61, roles=["summoner"], act=2, waypoint_centre=True),
 }
 for _lid in range(66, 73):
     DUNGEONS[_lid] = dict(kit="tomb", rooms=11, roles=["prev", "chest"], act=2, tal=True)
@@ -130,7 +133,9 @@ def build_level(kit, level_id, seed=None, real=None):
         spec["roles"] = ["prev", "talrasha"] if level_id == (real or 66) else ["prev", "treasure"]
     if spec["kit"] == "ring":
         return build_ring(kit, level_id, spec, seed)
-    if spec["kit"] in act1.MAZES:
+    if spec["kit"] == "arcane":
+        b, grid, rng = build_arcane(kit, level_id, spec)
+    elif spec["kit"] in act1.MAZES:
         b, grid, rng = build_maze(kit, level_id, spec, seed)
     else:
         b, grid, rng = act1.build_preset(kit, level_id, spec, seed)
@@ -150,13 +155,72 @@ def build_level(kit, level_id, seed=None, real=None):
         _ensure_object(b, grid, "orifice", rooms["talrasha"], level_id)
     if level_id == 74:
         if not any(k == "arcane_portal" for k, _, _, _ in b.objects):
-            portal_in(whole, 54, "arcane_portal")             # back to the Palace Cellar
+            portal_in(rooms.get("way", whole), 54, "arcane_portal")      # back to the Palace Cellar
         for i, (k, c, o, t) in enumerate(b.objects):
             if k == "arcane_portal":
                 b.objects[i] = (k, c, o, 54)
         _ensure_object(b, grid, "journal", rooms.get("summoner"), level_id)
     elif level_id == 73:
         portal_in(whole, real or 66)
+    return b, grid, rng
+
+
+# ---------------------------------------------------------------- the Arcane Sanctuary
+# D2's sanctuary: a hub (the waypoint) and four arms that leave north, east, south and west and
+# turn the same way like a pinwheel, with side spurs - 1 + 4 x 15 = 61 rooms (LvlMaze.txt). Every
+# arm ends in a dead end; the Summoner waits at the end of one of them.
+ARCANE_ARM = [(0, -1), (0, -2), (0, -3), (0, -4), (1, -4), (2, -4), (3, -4), (4, -4), (4, -3), (4, -2)]
+ARCANE_SPURS = [((0, -2), [(-1, -2), (-2, -2)]), ((2, -4), [(2, -5), (2, -6)]), ((4, -3), [(5, -3)])]
+ARCANE_SEED = 74                   # a unique area: the same sanctuary every game
+
+
+def _arcane_layout():
+    rot = lambda c, k: c if k == 0 else rot((-c[1], c[0]), k - 1)
+    rooms = {(0, 0): set()}
+    ends = []
+
+    def link(a, c):
+        d = next(k for k, v in DIRS.items() if v == (c[0] - a[0], c[1] - a[1]))
+        rooms.setdefault(a, set()).add(d)
+        rooms.setdefault(c, set()).add(OPP[d])
+    for k in range(4):
+        path = [(0, 0)] + [rot(c, k) for c in ARCANE_ARM]
+        for a, c in zip(path, path[1:]):
+            link(a, c)
+        ends.append(path[-1])
+        for at, spur in ARCANE_SPURS:
+            chain = [rot(at, k)] + [rot(c, k) for c in spur]
+            for a, c in zip(chain, chain[1:]):
+                link(a, c)
+    return rooms, ends
+
+
+def build_arcane(kit, level_id, spec):
+    from .act1 import MazeKit as _MK
+    mk = kit.mazes.get("arcane")
+    if mk is None:
+        mk = kit.mazes["arcane"] = _MK(kit, "arcane")
+    rng = random.Random(ARCANE_SEED)
+    rooms, ends = _arcane_layout()
+    summoner = rng.choice(ends)
+    mx = min(x for x, _ in rooms)
+    my = min(y for _, y in rooms)
+    b = Built((max(x for x, _ in rooms) - mx + 1) * mk.rw + 1, (max(y for _, y in rooms) - my + 1) * mk.rh + 1)
+    apply_act_tables(b, 2, kit)
+    lt = mk.spec["lvltype"]
+    for (x, y), ex in rooms.items():
+        rx, ry = x - mx, y - my
+        ds = mk.role_room("summoner", ex, rng) if (x, y) == summoner else None
+        if ds is None:
+            ds = rng.choice(mk.rooms[frozenset(ex)])
+        stamp(b, ds, kit.tiles_for(ds, lt), rx * mk.rw, ry * mk.rh, rng, level_id, keep_edges=False)
+        if (x, y) == summoner:
+            b.__dict__.setdefault("role_rooms", {})["summoner"] = (rx * mk.rw, ry * mk.rh, mk.rw, mk.rh)
+        if (x, y) == (0, 0):
+            b.__dict__.setdefault("role_rooms", {})["way"] = (rx * mk.rw, ry * mk.rh, mk.rw, mk.rh)
+    b.areas[level_id] = (0, 0, b.tm.tw * SUB, b.tm.th * SUB)
+    b.tm.drawn = set(b.tm.floor) | set(b.tm.walls) | set(b.tm.floor2)
+    grid = make_grid(b.tm)
     return b, grid, rng
 
 
@@ -214,8 +278,20 @@ def build_ring(kit, level_id, spec, seed=None):
     b = Built(2 * rw + 1, 2 * rh + 1)
     apply_act_tables(b, 2, kit)
     way = rng.choice(list(layout)) if spec.get("waypoint") else None
+    # every corner room has stairs (ne / sw up, nw / se down); the cellars have stairless versions
+    # of nw and se: one way down (none in the last cellar)
+    no_stairs = set()
+    if kit.ds1(A2 + spec["prefix"] + "nw3.ds1") is not None and kit.ds1(A2 + spec["prefix"] + "se3.ds1") is not None:
+        down = [c for c, k in layout.items() if k in ("nw", "se")]
+        if not kit.vis(level_id, 2):
+            no_stairs = set(c for c in down if c != way)
+        else:
+            keep = way if way in down else rng.choice(down)
+            no_stairs = set(c for c in down if c != keep)
     for (rx, ry), combo in layout.items():
         names = [spec["prefix"] + combo + n + ".ds1" for n in ("", "2")]
+        if (rx, ry) in no_stairs:
+            names = [spec["prefix"] + combo + "3.ds1"]
         if (rx, ry) == way:
             names = [spec["prefix"] + combo + "waypoint.ds1"] or names
         cands = [kit.ds1(A2 + n) for n in names]
@@ -229,6 +305,9 @@ def build_ring(kit, level_id, spec, seed=None):
     grid = make_grid(b.tm)
     if spec.get("waypoint"):
         _ensure_waypoint(b, grid, level_id, dict(spec, waypoint_centre=False))
+    if not spec.get("arcane"):
+        # the stairless rooms carry D2's Arcane Sanctuary portal: it only works in the last cellar
+        b.objects = [o for o in b.objects if o[0] != "arcane_portal"]
     if spec.get("arcane") and not any(k == "arcane_portal" for k, _, _, _ in b.objects):
         # the portal to the Arcane Sanctuary waits in the last cellar
         c = _near_walkable(grid, (rw * SUB, rh * SUB), 40)
@@ -306,7 +385,8 @@ def build_desert(kit, seed=None, content=None):
     openings = {}
     for a, c in links:
         if 45 in (a, c):
-            idx = rng.randrange(4, 6)
+            o = (SLOT - 4) // 2
+            idx = rng.randrange(o + 1, o + 3)
         elif 40 in (a, c):
             idx = SLOT // 2
         else:
@@ -371,27 +451,7 @@ def build_desert(kit, seed=None, content=None):
         b.areas[lid] = (bx0 * SUB, by0 * SUB, (bx0 + size * BLOCK) * SUB, (by0 + size * BLOCK) * SUB)
         nb = nbr.get(lid, {})
         taken = set()
-        ring = 1 if size >= 8 else 0          # areas ~30% smaller: a second border ring inside
-        if ring:
-            for bx in range(1, size - 1):
-                for by in range(1, size - 1):
-                    en, es, ew, ee = by == 1, by == size - 2, bx == 1, bx == size - 2
-                    if not (en or es or ew or ee):
-                        continue
-                    taken.add((bx, by))
-                    X, Y = bx0 + bx * BLOCK, by0 + by * BLOCK
-                    vert = "n" if en else ("s" if es else None)
-                    hor = "w" if ew else ("e" if ee else None)
-                    if vert and hor:
-                        put("outdoors\\%s.ds1" % CORNER[(vert, hor)], X, Y, lid)
-                        continue
-                    side = vert or hor
-                    along = (bx + off[0]) if vert else (by + off[1])
-                    other = nb.get(side)
-                    if other is not None and abs(along - openings[(lid, other)]) <= (3 if other == 40 else 1):
-                        sand(X, Y)              # the way through stays open
-                        continue
-                    put("outdoors\\%s.ds1" % EDGE[side], X, Y, lid)
+        ring = 0
         for bx in range(size):
             for by in range(size):
                 en, es, ew, ee = by == 0, by == size - 1, bx == 0, bx == size - 1
@@ -463,6 +523,7 @@ def build_desert(kit, seed=None, content=None):
         if c is not None:
             b.objects.append(("waypoint", c, 40, -1))
     act1._connect(b, grid, pos, links, _SandKit(kit, sds, scodes), rng, openings)
+    act1.seal_world(b, grid, stiles, scodes, rng, (41, 42, 43))
     return b, grid, rng
 
 
@@ -482,10 +543,11 @@ class _SandKit:
 # ---------------------------------------------------------------- Canyon of the Magi
 def build_canyon(kit, seed=None, content=None):
     rng = random.Random(seed)
-    size = SLOT
-    b = Built(ST + 1, ST + 1)
+    size = CANYON_SLOT                # the seven tombs need D2's full 10 x 10
+    CT = size * BLOCK
+    b = Built(CT + 1, CT + 1)
     apply_act_tables(b, 2, kit)
-    b.areas[46] = (0, 0, ST * SUB, ST * SUB)
+    b.areas[46] = (0, 0, CT * SUB, CT * SUB)
     sds, scodes = sand_codes(kit)
     stiles = kit.tiles_for(sds, DESERT) if sds is not None else None
 

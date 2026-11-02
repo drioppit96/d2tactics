@@ -143,6 +143,7 @@ def setup(world, built, grid, rng, info, level_key):
     world.areas = dict(b.areas)
     world.town_rect = getattr(b, "town_rect", None)
     world.roads = getattr(b, "roads", None)
+    world.mg_from = getattr(b, "mg_from", None)
     world.exits = {}
     world.warp_groups = []       # clickable entrances: dict(target, tiles, cells)
     world.warp_cell = {}         # entrance cell -> its group
@@ -670,10 +671,30 @@ def _late_dungeon(level_key):
     return None
 
 
+def unique_level(level_key):
+    """D2's fixed areas (built from one preset, or hand-made like the Arcane Sanctuary): the same
+    layout every game - Tristram, the boss floors, the Arcane Sanctuary, the Canyon, Duriel's Lair..."""
+    if not isinstance(level_key, int):
+        return False
+    if level_key in (32, 39, 46, 74):
+        return True
+    import importlib
+    for mod in ("act1", "act2", "act3", "act4", "act5"):
+        try:
+            spec = getattr(importlib.import_module("game." + mod), "DUNGEONS", {}).get(level_key)
+        except ImportError:
+            spec = None
+        if spec is not None:
+            return spec.get("kit") in ("preset", "cathedral")
+    return False
+
+
 def make_world(kit, info, content, level_key, seed=None, player=None, char_class="bar", char_name=None):
     """level_key: "wild" (the whole outdoor act) or a dungeon level id."""
     from .world import World
     from . import act2
+    if unique_level(level_key):
+        seed = 7919 * level_key + 17          # fixed: unique areas look the same every game
     if level_key == "wild":
         b, grid, rng = build_outdoors(kit, seed, content)
     elif level_key == "desert":
