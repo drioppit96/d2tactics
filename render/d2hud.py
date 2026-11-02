@@ -670,6 +670,26 @@ class D2Hud:
     QUEST_SLOTS = [(45, 84), (126, 84), (207, 84), (45, 165), (126, 165), (207, 165)]   # 68x68 icons, D2's 3 x 2
     QUEST_ORDER = {1: ["den", "blood_raven", "malus", "cain", "tower", "andariel"]}         # D2's quest log order
 
+    def _greyed(self, img):
+        """A grey copy of an icon (cached): D2's quest log greys out finished quests."""
+        cache = self.__dict__.setdefault("_grey_cache", {})
+        g = cache.get(id(img))
+        if g is None:
+            try:
+                g = pygame.transform.grayscale(img)
+            except Exception:
+                g = img.copy()
+                w, h = g.get_size()
+                for yy in range(h):
+                    for xx in range(w):
+                        r, gg, b, a = g.get_at((xx, yy))
+                        if a:
+                            v = (r * 30 + gg * 59 + b * 11) // 100
+                            g.set_at((xx, yy), (v, v, v, a))
+            g.fill((150, 150, 150, 255), special_flags=pygame.BLEND_RGBA_MULT) if hasattr(pygame, "BLEND_RGBA_MULT") else None
+            cache[id(img)] = g
+        return g
+
     def _quest_icon(self, act, n):
         key = (act, n)
         if key not in self._qicons:
@@ -749,6 +769,8 @@ class D2Hud:
                     idx = 25 if status != "none" else 26
                 f = icon[min(idx, len(icon) - 1)]
                 if f is not None:
+                    if status == "done" and idx >= 24:
+                        f = self._greyed(f)                 # finished: the icon goes grey
                     self.put(surf, f, x, y)
             else:
                 box = pygame.Surface((int(68 * self.s), int(68 * self.s)), pygame.SRCALPHA)
