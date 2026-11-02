@@ -249,8 +249,10 @@ def near_walkable(grid, c, radius=40):
 
 def ensure_waypoints(b, grid, act, rooms=None):
     """D2's waypoint in every area of this act's list that doesn't already have one."""
-    from .acts import WAYPOINTS
+    from .acts import WAYPOINTS, BOSS_WAYPOINTS
     for lid in WAYPOINTS.get(act, []):
+        if lid in BOSS_WAYPOINTS.get(act, ()):
+            continue                     # the boss floors' waypoints go to their entrance (actworld)
         if lid not in b.areas or any(k == "waypoint" and o == lid for k, _, o, _ in b.objects):
             continue
         rect = (rooms or {}).get(lid)

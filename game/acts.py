@@ -34,12 +34,17 @@ WAYPOINTS = {
     4: [103, 106, 107],
     5: [109, 111, 112, 113, 115, 117, 118, 123, 129],
 }
+# extra waypoints of this game at the boss floors (farming): the Countess, Andariel; Radament, Duriel;
+# Mephisto; Diablo; Pindleskin, Nihlathak, Baal
+BOSS_WAYPOINTS = {1: [25, 37], 2: [49, 73], 3: [102], 4: [108], 5: [121, 124, 131]}
+for _a, _l in BOSS_WAYPOINTS.items():
+    WAYPOINTS[_a] = WAYPOINTS[_a] + _l
 # Objects.txt tokens of each waypoint (a different look per act / area)
 WAYPOINT_TOKEN = {40: "WM", 42: "WM", 43: "WM", 44: "WM", 46: "WM", 48: "QM", 52: "W7", 57: "WP", 74: "WP",
                   75: "WZ", 76: "WP", 77: "WP", 78: "WP", 79: "WP", 80: "WP", 81: "WP", 83: "QL", 101: "WI",
                   103: "YG", 106: "WV", 107: "WV",
                   109: "YY", 111: "5A", 112: "5A", 113: "5A", 115: "5A", 117: "5A", 118: "5A", 123: "3P",
-                  129: "8Y"}
+                  129: "8Y", 49: "QM", 73: "WP", 102: "WI", 108: "WV", 121: "3P", 124: "3P", 131: "8Y"}
 
 TOWN_NPCS = {
     1: dict(act1.TOWN_NPCS),

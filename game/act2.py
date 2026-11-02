@@ -176,8 +176,9 @@ def _ensure_object(b, grid, kind, rect, level_id):
 
 def _ensure_waypoint(b, grid, level_id, spec):
     """Without obj.txt the DS1 waypoint objects can't be recognised: place one in the waypoint room."""
-    from .acts import WAYPOINTS
-    if level_id not in WAYPOINTS[2] or any(k == "waypoint" for k, _, _, _ in b.objects):
+    from .acts import WAYPOINTS, BOSS_WAYPOINTS
+    if level_id not in WAYPOINTS[2] or level_id in BOSS_WAYPOINTS[2] or \
+            any(k == "waypoint" for k, _, _, _ in b.objects):
         return
     rect = getattr(b, "role_rooms", {}).get("way")
     if rect is None:

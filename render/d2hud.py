@@ -808,18 +808,24 @@ class D2Hud:
             self.text(surf, self.f10, "Act " + "I II III IV V".split()[a - 1], WHITE if on else (150, 140, 120),
                       x, 48, "center", tw - 4)
             self.region(x, 44, tw - 4, 20, "wp_tab", a)
-        for i, lid in enumerate(WAYPOINTS[self.wp_act]):
-            y = 76 + i * 32
+        from game.acts import BOSS_WAYPOINTS
+        rows = WAYPOINTS[self.wp_act]
+        step = min(32, 272 // max(1, len(rows)))
+        bosses = BOSS_WAYPOINTS.get(self.wp_act, [])
+        for i, lid in enumerate(rows):
+            y = 76 + i * step
             name = info.name(lid) if info else str(lid)
             on = lid in got
-            hot = on and pygame.Rect(20, y - 4, 280, 28).collidepoint((int(mx), int(my)))
-            box = pygame.Surface((int(280 * self.s), int(26 * self.s)), pygame.SRCALPHA)
-            box.fill((60, 50, 30, 200) if hot else (0, 0, 0, 120))
-            surf.blit(box, self.P(20, y - 4))
+            hot = on and pygame.Rect(20, y - 3, 280, step - 2).collidepoint((int(mx), int(my)))
+            box = pygame.Surface((int(280 * self.s), int((step - 3) * self.s)), pygame.SRCALPHA)
+            box.fill((60, 50, 30, 200) if hot else ((40, 10, 10, 140) if lid in bosses else (0, 0, 0, 120)))
+            surf.blit(box, self.P(20, y - 3))
             col = (GOLD if lid == here else WHITE) if on else (90, 85, 75)
             self.text(surf, self.f16, name, col, 30, y)
+            if lid in bosses:
+                self.text(surf, self.f10, "boss", (200, 90, 70) if on else (100, 70, 60), 250, y + 3)
             if on and lid != here:
-                self.region(20, y - 4, 280, 28, "waypoint", lid)
+                self.region(20, y - 3, 280, step - 2, "waypoint", lid)
         # TEST ONLY: remove later
         bx, by = 20, 360
         hot = pygame.Rect(bx, by, 190, 22).collidepoint((int(mx), int(my)))

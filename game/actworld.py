@@ -77,6 +77,61 @@ PORTAL_KINDS = ("portal", "arcane_portal", "duriel_portal")
 CODE_NPCS = {"jungle": ["hratli"], "siege": ["larzuk", "tyrael3"]}
 
 
+def _click_exit(world, cells, target):
+    """A doorway into another level (Outer Cloister <-> Barracks): used by clicking it, like D2."""
+    grp = dict(target=target, tiles={(c[0] // SUB, c[1] // SUB) for c in cells}, cells=set(cells), owner=None, main=None)
+    world.warp_groups.append(grp)
+    for c in cells:
+        world.warp_cell[c] = grp
+
+
+# boss / farming floors that get an extra waypoint at their entrance: level -> the level you come from
+BOSS_WAYPOINTS = {25: 24, 37: 36, 49: 48, 73: None, 102: 101, 108: 107, 121: None, 124: 123, 131: 130}
+
+
+def _boss_waypoints(world, grid, rng):
+    """Waypoints at the entrance of the boss floors (the Countess, Andariel, Radament, Duriel,
+    Mephisto, Diablo, Pindleskin, Nihlathak, Baal), so they can be farmed."""
+    for lid, prev in BOSS_WAYPOINTS.items():
+        if lid not in world.areas or lid in world.waypoints.values():
+            continue
+        x0, y0, x1, y1 = world.areas[lid]
+        inside = lambda c: x0 <= c[0] < x1 and y0 <= c[1] < y1
+        start = world.entries.get(prev) if prev is not None else None
+        if start is None or not inside(start):
+            cands = [c for c in world.entries.values() if c is not None and inside(c)]
+            start = cands[0] if cands else None
+        if start is None and prev in world.areas:
+            # same world (River of Flame -> Chaos Sanctuary): the edge of the area nearest the one before
+            px0, py0, px1, py1 = world.areas[prev]
+            pc = ((px0 + px1) // 2, (py0 + py1) // 2)
+            best = None
+            for y in range(y0, y1, 3):
+                for x in range(x0, x1, 3):
+                    if grid.walkable(x, y):
+                        d = abs(x - pc[0]) + abs(y - pc[1])
+                        if best is None or d < best[0]:
+                            best = (d, (x, y))
+            start = best[1] if best else None
+        if start is None:
+            continue
+        taken = set(world.exits) | set(world.waypoints)
+        spot = None
+        for r in range(3, 12):
+            ring = [(start[0] + dx, start[1] + dy) for dx in range(-r, r + 1) for dy in range(-r, r + 1)
+                    if max(abs(dx), abs(dy)) == r]
+            rng.shuffle(ring)
+            for c in ring:
+                if inside(c) and grid.in_bounds(*c) and grid.walkable(*c) and c not in taken and \
+                        all(grid.walkable(c[0] + dx, c[1] + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)):
+                    spot = c
+                    break
+            if spot:
+                break
+        if spot:
+            world.waypoints[spot] = lid
+
+
 def setup(world, built, grid, rng, info, level_key):
     """Fill a World with an Act 1 level."""
     b = built
@@ -136,6 +191,7 @@ def setup(world, built, grid, rng, info, level_key):
         for c in edge:
             world.exits[c] = 27
         if edge:
+            _click_exit(world, edge, 27)
             world.entries[27] = arrival_cell(grid, edge, set(world.exits), rng)
     if level_key == "wild" and getattr(b, "court_rect", None):
         cx, cy, cw, ch = b.court_rect
@@ -145,6 +201,7 @@ def setup(world, built, grid, rng, info, level_key):
         for c in door:
             world.exits[c] = 28
         if door:
+            _click_exit(world, door, 28)
             world.entries[28] = arrival_cell(grid, door, set(world.exits), rng)
     if level_key == 39:
         # the red portal from the camp puts you near a corner of the farm
@@ -165,6 +222,7 @@ def setup(world, built, grid, rng, info, level_key):
             world.entries.setdefault(oid, arrival_cell(grid, [c], set(world.exits), rng, dist=2))
         else:
             world.objects.append(dict(kind=kind, cell=c, level=owner, oid=oid, used=False))
+    _boss_waypoints(world, grid, rng)
     # ---- NPCs
     world.npcs = []
     monsters = []
