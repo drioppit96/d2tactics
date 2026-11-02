@@ -40,12 +40,17 @@ def main():
             pass
     zp = os.path.join(ROOT, "d2ui.zip")
     n = 0
+    written = set()
     with zipfile.ZipFile(zp, "w", zipfile.ZIP_DEFLATED) as z:
         for name in sorted(names, key=str.lower):
+            arc = "d2ui/files/" + name.replace("\\", "/").lower()
+            if arc in written:
+                continue                    # the same file listed twice (different letter case)
             try:
                 if not src.has(name):
                     continue
-                z.writestr("d2ui/files/" + name.replace("\\", "/").lower(), src.read(name))
+                z.writestr(arc, src.read(name))
+                written.add(arc)
                 n += 1
             except Exception:
                 pass
