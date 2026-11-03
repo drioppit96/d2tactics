@@ -1,5 +1,7 @@
-"""D2 Tactics map editor - the Kurast Armory: D2 tiles, walls, pillars, rooms, objects, monsters, the
-game's decoration sprites and the armory's altars and smith spot. It opens the armory and only the armory.
+"""D2 Tactics map editor - for the game's own hand-made maps (assets/maps: the Kurast Armory, and the
+ones added later): D2 tiles, walls, pillars, rooms, objects, monsters, the game's decoration sprites and
+markers (the armory's altars and smith spot). Open lists those maps; nothing else is edited here.
+Save writes your copy to maps/<name>.json, which the game then uses instead of its own.
 
 Start it with "Map Editor.bat" (it reads your Diablo II files like the game does).
 Maps are saved as JSON in the maps folder (see game/custommap.py for the format). A map whose
@@ -86,7 +88,8 @@ class Editor:
         self.wx, self.wy = 0.0, 0.0
         self.undo = []
         self.prompt = None            # (question, text, callback)
-        self.picker = None            # list of files for Ctrl+O
+        self.picker = None            # list of the game's maps for Ctrl+O
+        self.map_key = None           # which of them is open (saved as maps/<map_key>.json)
         self.msg = "Welcome! Pick a tileset with Ctrl+[ and Ctrl+], then paint. Ctrl+S saves."
         self.dirty_drag = False
         self.drag = None              # "paint" / "erase" / "pan"
@@ -316,7 +319,7 @@ class Editor:
         return re.sub(r"[^A-Za-z0-9_\-]+", "_", self.doc.get("name") or "area").strip("_") or "area"
 
     def save(self):
-        path = custommap.save(self.doc, "kurast_armory" if self.doc.get("armory") else self.filename())
+        path = custommap.save(self.doc, self.map_key or self.filename())
         self.msg = "Saved %s" % path
         return path
 
@@ -377,7 +380,7 @@ class Editor:
                 for r, fn in self._picker_rects():
                     if r.collidepoint(e.pos):
                         self.picker = None
-                        self.open(fn)
+                        open_game_map(self, fn)
                         break
             return None
         if e.type == pygame.KEYDOWN:
@@ -414,7 +417,7 @@ class Editor:
             return None
         if k == pygame.K_TAB:
             self.set_tab((self.tab + 1) % len(TABS))
-        elif k in (pygame.K_PAGEUP, pygame.K_PAGEDOWN) and not self.doc.get("armory"):
+        elif k in (pygame.K_PAGEUP, pygame.K_PAGEDOWN) and not self.map_key:
             self.cycle_act(1 if k == pygame.K_PAGEDOWN else -1)
         elif k in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN):
             step = 160 / self.zoomf()
@@ -435,16 +438,16 @@ class Editor:
 
     def do(self, act):
         """A toolbar button (or its Ctrl shortcut)."""
-        if self.doc.get("armory") and act in ("new", "open", "rename", "level", "random", "ts-", "ts+", "act-", "act+",
-                                              "w-", "w+", "h-", "h+"):
-            return
+        if self.map_key and act in ("new", "rename", "level", "random", "ts-", "ts+", "act-", "act+",
+                                    "w-", "w+", "h-", "h+"):
+            return                  # (a game map keeps its size, tileset and place in the game)
         if act == "save":
             self.save()
         elif act == "open":
-            self.picker = custommap.list_maps()
+            self.picker = custommap.game_maps()
             if not self.picker:
                 self.picker = None
-                self.msg = "No saved maps yet (the maps folder is empty)."
+                self.msg = "The game has no hand-made maps (assets/maps is empty)."
         elif act == "new":
             self.snapshot()
             self.doc = new_doc(self.doc["lvltype"], self.doc["width"], self.doc["height"])
@@ -509,8 +512,8 @@ class Editor:
                 ("Grid: %s" % ("on" if self.grid_on else "off"), "grid", self.grid_on),
                 ("Floor layer %d" % (2 if self.layer2 else 1), "layer", self.layer2),
                 ("Monsters: %s" % KINDS[self.kind], "kind", self.kind > 0)]
-        if d.get("armory"):                     # the Kurast Armory: only this map, its size and set fixed
-            row1 = [r for r in row1 if r[1] not in ("new", "open", "rename", "level", "random")]
+        if self.map_key:                        # a game map: its size, tileset and place are fixed
+            row1 = [r for r in row1 if r[1] not in ("new", "rename", "level", "random")]
         for label, act, on in row1:
             w = self.font.size(label)[0] + 18
             out.append((pygame.Rect(x, y, w, 24), label, act, on))
@@ -519,7 +522,7 @@ class Editor:
         groups = [("Act %d" % self.act(), "act"), (d.get("lvltype", ""), "ts"),
                   ("Width %d" % d["width"], "w"), ("Height %d" % d["height"], "h"),
                   ("Zoom %d%%" % int(self.zoomf() * 100), "z")]
-        if d.get("armory"):
+        if self.map_key:
             groups = [g for g in groups if g[1] == "z"]
         for label, key in groups:
             out.append((pygame.Rect(x, y, 24, 24), "<" if key in ("act", "ts") else "-", key + "-", False))
@@ -871,7 +874,7 @@ class Editor:
             box = pygame.Rect(self.W // 2 - 220, 80, 440, 60 + 26 * len(self.picker))
             pygame.draw.rect(surf, PANEL, box)
             pygame.draw.rect(surf, GOLD, box, 1)
-            self.text(surf, "Open a map (Esc closes)", (box.x + 12, box.y + 10), GOLD, self.big)
+            self.text(surf, "Open one of the game's maps (Esc closes)", (box.x + 12, box.y + 10), GOLD, self.big)
             for r, fn in self._picker_rects():
                 hot = r.collidepoint(self.mouse)
                 pygame.draw.rect(surf, SEL if hot else (40, 34, 26), r)
@@ -887,18 +890,23 @@ class Editor:
             self.text(surf, "Enter: OK   Esc: cancel", (box.x + 14, box.y + 76), GREY, self.small)
 
 
-def armory_path():
-    """Your edited armory (maps/kurast_armory.json), else the game's own (assets/maps)."""
-    mine = os.path.join(custommap.MAPS, "kurast_armory.json")
-    return mine if os.path.exists(mine) else os.path.join(ROOT, "assets", "maps", "kurast_armory.json")
+def map_title(name):
+    return name.replace("_", " ").title()
+
+
+def open_game_map(ed, name):
+    """Opens one of the game's maps (your edited copy if you saved one). Save writes maps/<name>.json,
+    which the game then builds that place from."""
+    path = custommap.game_map_path(name)
+    ed.open(path)
+    ed.map_key = name
+    mine = path.startswith(custommap.MAPS)
+    ed.msg = "%s (%s). Save writes maps/%s.json - the game uses it." % (
+        map_title(name), "your copy" if mine else "the game's own", name)
 
 
 def open_armory(ed):
-    """The editor works on the Kurast Armory only: it opens it straight away. Save writes your copy
-    to maps/kurast_armory.json, which the game then builds the armory from."""
-    ed.open(armory_path())
-    ed.doc["armory"] = True
-    ed.msg = "Kurast Armory. Save writes maps/kurast_armory.json - the game builds the armory from it."
+    open_game_map(ed, "kurast_armory")
 
 
 def main():
@@ -924,7 +932,9 @@ def main():
         print("Could not read the level files.")
         return 1
     ed = Editor(assets, screen.get_size())
-    open_armory(ed)
+    maps = custommap.game_maps()
+    if maps:
+        open_game_map(ed, "kurast_armory" if "kurast_armory" in maps else maps[0])
     clock = pygame.time.Clock()
     while True:
         for e in pygame.event.get():

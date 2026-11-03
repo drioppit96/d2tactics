@@ -1,7 +1,10 @@
 """Cuts the hand-made decoration sprite sheets (assets/decor_src/sheet*.png) into the game's sprites
 (assets/decor/<name>.png + their ground points in anchors.json):
 
-    python tools/import_sprites.py
+    python tools/import_sprites.py [Diablo II folder]
+
+With the Diablo II folder (or the extracted samples) the colours are graded and snapped to Act 3's
+palette, so the sprites sit in with the game's own tiles and objects.
 
 sheet1: 4 x 3 on a black ground, a label above each.  sheet2: 4 x 3 on a white/grey checkerboard.
 The background is keyed out, each piece cropped and scaled to the game's size (a man is ~90 px).
@@ -88,7 +91,32 @@ def boxes_of(alpha, rows, cols, skip_top=0, row_ranges=None):
     return boxes
 
 
-def save(im, alpha, box, name, scale, anchors):
+def to_palette(piece, pal):
+    """D2's look: a little less saturated and darker (the game's art is low key, lit by torches),
+    then every pixel snapped to the act's 256 colours. The alpha is kept as it is."""
+    if not pal:
+        return piece
+    import numpy as np
+    a = piece.split()[3]
+    rgb = np.asarray(piece.convert("RGB"), dtype=np.float32)
+    grey = rgb.mean(axis=2, keepdims=True)
+    red = (rgb[..., :1] > rgb[..., 1:2] * 1.6) & (rgb[..., :1] > 60)   # blood and cloth keep their red
+    rgb = grey + (rgb - grey) * np.where(red, 1.0, 0.72)  # desaturate
+    rgb = rgb * 0.82 + np.array([4.0, 2.0, 0.0])         # darker, a touch warm (torch light)
+    rgb = 255.0 * (np.clip(rgb, 0, 255) / 255.0) ** 1.12  # deeper shadows
+    img = Image.fromarray(np.clip(rgb, 0, 255).astype("uint8"), "RGB")
+    flat = []
+    for c in pal[1:256]:                                 # 0 is D2's transparent black
+        flat += list(c[:3])
+    flat += flat[:3] * (256 - len(flat) // 3)
+    pimg = Image.new("P", (1, 1))
+    pimg.putpalette(flat)
+    out = img.quantize(palette=pimg, dither=Image.Dither.NONE).convert("RGBA")
+    out.putalpha(a)
+    return out
+
+
+def save(im, alpha, box, name, scale, anchors, pal=None):
     x0, y0, x1, y1 = box
     piece = im.crop(box).convert("RGBA")
     piece.putalpha(alpha.crop(box))
@@ -97,13 +125,24 @@ def save(im, alpha, box, name, scale, anchors):
     a = piece.split()[3].point(lambda v: 255 if v > 120 else 0)
     piece.putalpha(a)
     bb = a.getbbox() or (0, 0, w, h)
-    piece = piece.crop(bb)
+    piece = to_palette(piece.crop(bb), pal)
     piece.save(os.path.join(OUT, name + ".png"))
     # the ground point: under the middle, a little up from the lowest pixel (the footprint's centre)
     anchors[name] = [piece.width // 2, max(0, piece.height - min(28, int(piece.height * 0.16)))]
 
 
-def main():
+def load_pal(d2_path):
+    if not d2_path:
+        return None
+    import sys
+    sys.path.insert(0, ROOT)
+    from d2.source import open_source
+    from d2.palette import load_palette
+    return load_palette(open_source(d2_path).read("data\\global\\palette\\act3\\pal.dat"))
+
+
+def main(d2_path=""):
+    pal = load_pal(d2_path)
     os.makedirs(OUT, exist_ok=True)
     path = os.path.join(OUT, "anchors.json")
     anchors = json.load(open(path)) if os.path.exists(path) else {}
@@ -116,11 +155,12 @@ def main():
         alpha = clean(keyer(im))
         for name, box in zip(names, boxes_of(alpha, 3, 4, row_ranges=rr)):
             if box:
-                save(im, alpha, box, name, scale, anchors)
+                save(im, alpha, box, name, scale, anchors, pal)
                 print("cut", name)
     with open(path, "w") as fh:
         json.dump(anchors, fh, indent=1)
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    main(sys.argv[1] if len(sys.argv) > 1 else "")

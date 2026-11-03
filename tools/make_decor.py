@@ -908,7 +908,7 @@ def main(path):
     # the hand-made sprite sheets (assets/decor_src) replace these drawings where they exist
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import import_sprites
-    import_sprites.main()
+    import_sprites.main(path)
 
 
 if __name__ == "__main__":

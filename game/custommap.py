@@ -28,7 +28,32 @@ from .act1 import Built, stamp, make_grid, SUB
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MAPS = os.path.join(ROOT, "maps")
+GAME_MAPS = os.path.join(ROOT, "assets", "maps")     # the hand-made maps the game is built with
 _cache = {}
+
+
+def game_maps():
+    """The game's own hand-made maps (assets/maps/<name>.json) - the ones the map editor edits."""
+    if not os.path.isdir(GAME_MAPS):
+        return []
+    return sorted(f[:-5] for f in os.listdir(GAME_MAPS) if f.lower().endswith(".json"))
+
+
+def game_map_path(name):
+    """Your edited copy (maps/<name>.json) if there is one, else the game's own."""
+    mine = os.path.join(MAPS, name + ".json")
+    return mine if os.path.exists(mine) else os.path.join(GAME_MAPS, name + ".json")
+
+
+def game_map(name):
+    """One of the game's hand-made maps as data (your edited copy first), or None."""
+    for path in (os.path.join(MAPS, name + ".json"), os.path.join(GAME_MAPS, name + ".json")):
+        if os.path.exists(path):
+            try:
+                return load(path)
+            except Exception:
+                continue
+    return None
 
 
 def list_maps():

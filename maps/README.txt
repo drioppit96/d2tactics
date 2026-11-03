@@ -1,8 +1,10 @@
-The map editor ("Map Editor.bat") opens the Kurast Armory - and only the armory.
+The map editor ("Map Editor.bat") edits the game's own hand-made maps - the Kurast Armory now, and the
+ones added later. "Open" lists them; nothing else is edited in it.
 
 - Paint floors and walls (Kurast fieldstone, plaster, pillars...), stamp rooms, place D2 objects
-  (torches, braziers, chests, racks...), monsters, the game's sprites (Sprite tab) and the armory's
-  markers (Marker tab: the four altars and the smith's spot).
-- Save writes kurast_armory.json here; the game builds the armory from it the next time you enter
-  Kurast. Delete that file to go back to the armory the game comes with.
-- Keep the gate where it is (the west wall, facing the Bazaar's road), so it still joins the Bazaar.
+  (torches, braziers, chests, racks...), monsters, the game's sprites (Sprite tab) and markers
+  (Marker tab - for the armory: the four altars and the smith's spot).
+- Save writes <map name>.json here (kurast_armory.json for the armory); the game uses it the next
+  time you go there. Delete that file to go back to the map the game comes with.
+- A map's size, tileset and place in the game stay fixed. For the armory keep the gate where it is
+  (the west side, facing the Bazaar), so it still joins the Bazaar.
