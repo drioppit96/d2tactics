@@ -1085,6 +1085,15 @@ class Game:
             h.store = None
             h.show_inv = True
 
+    def ctrl_held(self):
+        """Ctrl down? (asked of pygame, and tracked from the key events as a fallback)"""
+        try:
+            if pygame.key.get_mods() & pygame.KMOD_CTRL:
+                return True
+        except Exception:
+            pass
+        return bool(getattr(self, "_ctrl_down", False))
+
     def open_goblin(self):
         """The Loot Goblin: a shop with nothing for sale that buys your loot, anywhere."""
         from game import qol
@@ -1390,7 +1399,7 @@ class Game:
                         if button == 3:
                             from game.cube import bankable
                             from game import qol
-                            ctrl = bool(pygame.key.get_mods() & pygame.KMOD_CTRL) if hasattr(pygame.key, "get_mods") else False
+                            ctrl = self.ctrl_held()
                             if getattr(h, "store", None) is not None and ctrl:
                                 w.sell(it)                   # Ctrl + right click sells
                             elif qol.is_goblin(it):
@@ -1401,8 +1410,7 @@ class Game:
                                 self.open_cube(it)
                             elif it.kind == "potion" or getattr(it, "use", None):
                                 w.use_item(it) if hasattr(w, "use_item") else w.use_inventory_potion(it)
-                            elif getattr(it, "gem", None) is None:
-                                w.equip(it)
+                            # (D2: right click doesn't equip - drag the item onto its slot)
                         else:
                             if it is getattr(h, "cube_item", None):
                                 h.show_cube = False
@@ -1774,7 +1782,11 @@ class Game:
             elif ev.type == pygame.VIDEORESIZE:
                 self.cam.resize(ev.w, ev.h)
             elif ev.type == pygame.KEYDOWN:
+                if ev.key in (pygame.K_LCTRL, pygame.K_RCTRL):
+                    self._ctrl_down = True
                 self.handle_key(ev.key)
+            elif ev.type == pygame.KEYUP and ev.key in (pygame.K_LCTRL, pygame.K_RCTRL):
+                self._ctrl_down = False
             elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button in (1, 3) and self.menu is not None:
                 self.menu.click(ev.pos, ev.button)
             elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button in (1, 3):

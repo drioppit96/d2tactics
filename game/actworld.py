@@ -529,6 +529,8 @@ def _spawn_preset(world, name, cell, owner, taken, info):
         m = _spawn(world, mid, cell2, lvl + 3, taken, unique=True, name=shown)
         if m is None:
             return
+        if mid.lower().startswith("maggotqueen"):
+            _maggot_brood(world, m, lvl, taken)
         from . import monmods
         monmods.apply(world, m, [_int(su.get("mod%d" % i)) for i in (1, 2, 3) if _int(su.get("mod%d" % i))])
         import zlib
@@ -550,6 +552,21 @@ def _spawn_preset(world, name, cell, owner, taken, info):
             mm = _spawn(world, mid, c, lvl + 1, taken, champion=False)
             if mm is not None:
                 monmods.pass_aura(m, mm)
+
+
+def _maggot_brood(world, queen, lvl, taken):
+    """D2: the queen's chamber is full of her brood - egg sacs that hatch larvae, and sand maggots."""
+    rng = world.rng
+    eggs = "maggotegg1" if queen.d2id.endswith("1") else "maggotegg%s" % queen.d2id[-1]
+    adults = (world.content.monstats.get(queen.d2id, {}).get("spawn") or "sandmaggot1").lower() \
+        if world.content is not None else "sandmaggot1"
+    for mid, n in ((eggs, rng.randint(6, 9)), (adults, rng.randint(5, 8))):
+        for c in _scatter(world, queen.pos, n, taken, radius=9, gap=2):
+            if max(abs(c[0] - queen.x), abs(c[1] - queen.y)) <= 2 + getattr(queen, "radius", 0):
+                continue
+            u = _spawn(world, mid, c, lvl, taken)
+            if u is not None:
+                u.minion_of = queen
 
 
 def _scatter(world, centre, n, taken, radius=6, gap=2):

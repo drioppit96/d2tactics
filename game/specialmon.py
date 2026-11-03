@@ -145,7 +145,8 @@ def _nest(world, m):
 def tag_roster_monster(world, m):
     """Monsters from the area rosters that need special handling (vile mothers, maggot queens...)."""
     mid = (getattr(m, "d2id", "") or "").lower()
-    if mid.startswith(("crownest", "minionspawner", "demonspawner", "evilhole", "evilhut", "suckernest")):
+    if mid.startswith(("crownest", "minionspawner", "demonspawner", "evilhole", "evilhut", "suckernest",
+                       "maggotegg")):
         _nest(world, m)                 # nests hatch their brood and never move
         return
     if mid.startswith(MOBILE_SPAWNERS):
@@ -153,6 +154,8 @@ def tag_roster_monster(world, m):
         child = (c.monstats.get(mid, {}).get("spawn") or "").lower() if c is not None else ""
         if child:
             _mark(m, "spawner", child=child, children=[])
+        if mid.startswith("maggotqueen"):
+            m.stationary = True             # D2: a sand maggot queen stays put and lays her brood
     elif mid.startswith("regurgitator"):
         _mark(m, "regurgitator")
 
