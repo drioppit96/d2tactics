@@ -224,7 +224,11 @@ def _side_spec(lid):
 
 def build_kurast(kit, seed=None, content=None):
     SW = SIDE_W * 8
-    W, H = 80 + 2 * SW, 64 + 16 + 64 * 3
+    dock = kit.ds1(A3 + "docktown\\docktown3.ds1")
+    if dock is None:
+        raise FileNotFoundError("Kurast Docks layout (act3\\docktown\\docktown3.ds1) not found")
+    dw, dh = dock.width - 1, dock.height - 1
+    W, H = 80 + 2 * SW, 64 + 16 + 64 * 3 + dh
     X = SW                                 # the main column (Travincal ... Lower Kurast) starts here
     cv = Canvas(kit, W, H, 3, seed)
     rng, b = cv.rng, cv.b
@@ -250,6 +254,14 @@ def build_kurast(kit, seed=None, content=None):
             if "waypoint" in names[0] and k in placed:
                 bx, by = placed[k]
                 b.objects.append(("waypoint", ((X + bx * 8 + 4) * SUB, (y0 + by * 8 + 4) * SUB), lid, -1))
+    # the Kurast Docks right below Lower Kurast: walk out of town and you are in the city
+    # (this game skips the jungle); the docks' road north lines up with Lower Kurast's south gate
+    yd = 80 + 64 * 3
+    xd = X + 40 - 29
+    cv.put(A3 + "docktown\\docktown3.ds1", xd, yd, 75, "Act 3 - Town")
+    b.town_rect = (xd * SUB, yd * SUB, (xd + dw) * SUB, (yd + dh) * SUB)
+    b.stormtree_spot = ((xd + 29) * SUB, (yd - 13) * SUB)      # just inside Lower Kurast's south gate
+    b.areas[75] = b.town_rect
     # the side areas
     for lid, sa in SIDE_AREAS.items():
         if sa.get("own_world"):
@@ -258,12 +270,10 @@ def build_kurast(kit, seed=None, content=None):
         x0 = X + 80 if sa["side"] == "e" else 0
         block_area(cv, lid, x0, y0, SIDE_W, 8, 8, _side_spec(lid))
     grid = cv.finish()
-    drlg.ensure_connected(b, grid, [(79, 80), (80, 81), (81, 82), (82, 83), (80, 77)],
+    drlg.ensure_connected(b, grid, [(75, 79), (79, 80), (80, 81), (81, 82), (82, 83), (80, 77)],
                           cv.ground_kit("slums"), rng)
     drlg.ensure_waypoints(b, grid, 3)
-    # Lower Kurast's south gate: back to the Kurast Docks (another world)
-    cells = drlg.edge_cells(grid, b.areas[79], "s", x_range=((X + 24) * SUB, (X + 56) * SUB))
-    b.edge_exits = [(cells, 75)]
+    b.edge_exits = []
     # Lower Kurast's east gate: into the Kurast Armory (its own map)
     x0, y0, x1, y1 = b.areas[79]
     gate = drlg.edge_cells(grid, (x0, y0 + 24 * SUB, x1, y0 + 40 * SUB), "e")
@@ -286,6 +296,12 @@ def spawn_side_bosses(world, taken, info):
     from . import actworld, monmods
     import zlib
     rng = world.rng
+    spot = getattr(world, "stormtree_spot", None)
+    if spot and not any("stormtree" in (m.name or "").lower() for m in world.monsters):
+        # out of the docks, the first thing you meet in Lower Kurast is Stormtree
+        c = drlg.near_walkable(world.grid, spot, 30)
+        if c is not None:
+            actworld._spawn_preset(world, "Stormtree", c, 79, taken, info)
     for lid, mid, name, tag, mods, (minion, n) in SIDE_BOSSES:
         rect = world.areas.get(lid)
         if rect is None or world.content is None or mid not in world.content.monstats:

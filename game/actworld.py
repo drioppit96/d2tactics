@@ -91,7 +91,7 @@ class ActInfo:
 
 
 PORTAL_KINDS = ("portal", "arcane_portal", "duriel_portal")
-CODE_NPCS = {"jungle": ["hratli"], "siege": ["larzuk", "tyrael3"]}
+CODE_NPCS = {"jungle": ["hratli"], "kurast": ["hratli"], "siege": ["larzuk", "tyrael3"]}
 
 
 _LVLWARP = {}
@@ -376,6 +376,7 @@ def setup(world, built, grid, rng, info, level_key):
         custommap.spawn_monsters(world, b, taken, info)
     world.custom_start = getattr(b, "custom_start", None)
     world.armory_boss = getattr(b, "armory_boss", None)
+    world.stormtree_spot = getattr(b, "stormtree_spot", None)
     if level_key in ("kurast", 76):
         from .act3 import spawn_side_bosses
         spawn_side_bosses(world, taken, info)
@@ -764,7 +765,7 @@ def _populate(world, lid, rect, taken, safe, info):
 
 # ---------------------------------------------------------------- building whole worlds
 # the outdoor worlds of Acts 3-5: key -> (module, builder)
-LATE_WORLDS = {"jungle": ("act3", "build_jungle"), "kurast": ("act3", "build_kurast"), 76: ("act3", "build_armory"),
+LATE_WORLDS = {"jungle": ("act3", "build_kurast"), "kurast": ("act3", "build_kurast"), 76: ("act3", "build_armory"),
                "mesa": ("act4", "build_mesa"), "lava": ("act4", "build_lava"),
                "siege": ("act5", "build_siege"), 117: ("act5", "build_tundra")}
 
