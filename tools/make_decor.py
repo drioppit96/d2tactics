@@ -67,14 +67,90 @@ class Spr:
         X, Y = self.p(x, y, z)
         self.d.ellipse((X - r * S, Y - r * S * flat, X + r * S, Y + r * S * flat), fill=col)
 
-    def box(self, x, y, w, d, h, col, z=0.0, top=None):
-        """A box from (x, y) spanning w along x and d along y, h pixels tall (lit from the left)."""
+    def _mat(self, col):
+        def near(a, b_):
+            return sum(abs(int(u) - int(v)) for u, v in zip(a[:3], b_)) < 70
+        if near(col, STONE) and abs(int(col[0]) - int(col[2])) < 25:
+            return "stone"
+        if near(col, WOOD) or near(col, DWOOD) or near(col, STRAW):
+            return "wood"
+        if near(col, IRON) or near(col, STEEL):
+            return "iron"
+        return None
+
+    def _face_lines(self, corner, ax, ay, along, up, length, height, col, mat, k):
+        """Texture one face: corner + along * t (0..length cells) + up * z (0..height px)."""
+        rnd = self.rnd
+        P = lambda t, zz: (corner[0] + along[0] * t, corner[1] + along[1] * t, corner[2] + zz)
+        if mat == "wood":
+            step = 4.5
+            zz = step
+            while zz < height - 1:                                     # plank seams
+                self.line([P(0, zz), P(length, zz)], sh(col, k * 0.5), 0.45)
+                zz += step
+            for _ in range(int(length * height / 5) + 2):              # grain
+                t0, z0 = rnd.uniform(0, length), rnd.uniform(0.5, height - 0.5)
+                self.line([P(t0, z0), P(min(length, t0 + rnd.uniform(0.2, 0.7)), z0)],
+                          sh(col, k * rnd.choice((0.7, 1.18))), 0.3)
+            for t in (0.12, length - 0.12):                            # nails
+                for zz in (1.5, height - 1.5):
+                    X, Y = self.p(*P(t, zz))
+                    self.d.ellipse((X - 0.5 * S, Y - 0.5 * S, X + 0.5 * S, Y + 0.5 * S), fill=sh(IRON, 0.5))
+        elif mat == "stone":
+            zz, row = 0.0, 0
+            while zz < height:
+                h_ = rnd.uniform(4.5, 6.5)
+                self.line([P(0, min(height, zz + h_)), P(length, min(height, zz + h_))], sh(col, k * 0.45), 0.5)
+                t = (row % 2) * 0.45
+                while t < length:
+                    self.line([P(t, zz), P(t, min(height, zz + h_))], sh(col, k * 0.45), 0.5)
+                    t += rnd.uniform(0.8, 1.1)
+                zz += h_
+                row += 1
+            for _ in range(int(length * height / 6)):                  # chips and pits
+                X, Y = self.p(*P(rnd.uniform(0, length), rnd.uniform(0, height)))
+                r = rnd.uniform(0.3, 0.9) * S
+                self.d.ellipse((X - r, Y - r * 0.6, X + r, Y + r * 0.6), fill=sh(col, k * rnd.choice((0.55, 1.25))))
+        elif mat == "iron":
+            for _ in range(int(length * 6) + 2):                       # scratches
+                t0, z0 = rnd.uniform(0, length), rnd.uniform(0, height)
+                self.line([P(t0, z0), P(min(length, t0 + rnd.uniform(0.1, 0.4)), z0 + rnd.uniform(-1, 1))],
+                          sh(col, k * 1.3), 0.3)
+            for t in (0.15, length - 0.15):                            # rivets
+                X, Y = self.p(*P(t, height * 0.5))
+                self.d.ellipse((X - 0.6 * S, Y - 0.6 * S, X + 0.6 * S, Y + 0.6 * S), fill=sh(col, k * 1.4))
+
+    def box(self, x, y, w, d, h, col, z=0.0, top=None, mat="auto"):
+        """A box from (x, y) spanning w along x and d along y, h pixels tall (lit from the left),
+        textured by its material (wood planks and grain, stone courses, scratched iron) and with a
+        worn, lighter top edge."""
         a = [(x, y + d, z), (x + w, y + d, z), (x + w, y + d, z + h), (x, y + d, z + h)]
         b = [(x + w, y, z), (x + w, y + d, z), (x + w, y + d, z + h), (x + w, y, z + h)]
         t = [(x, y, z + h), (x + w, y, z + h), (x + w, y + d, z + h), (x, y + d, z + h)]
         self.poly(a, sh(col, 0.78))
         self.poly(b, sh(col, 0.52))
         self.poly(t, sh(top or col, 1.0))
+        m = self._mat(col) if mat == "auto" else mat
+        if m:
+            self._face_lines((x, y + d, z), 0, 0, (1, 0), None, w, h, col, m, 0.78)
+            self._face_lines((x + w, y, z), 0, 0, (0, 1), None, d, h, col, m, 0.52)
+        if m == "wood":                                               # top boards
+            yy = y + 0.33
+            while yy < y + d - 0.05:
+                self.line([(x, yy, z + h), (x + w, yy, z + h)], sh(top or col, 0.62), 0.45)
+                yy += 0.33
+        elif m == "stone":                                            # flagstones, cracked
+            yy = y
+            while yy < y + d:
+                self.line([(x, yy, z + h), (x + w, yy, z + h)], sh(top or col, 0.6), 0.45)
+                xx = x + self.rnd.uniform(0.2, 0.7)
+                while xx < x + w:
+                    self.line([(xx, yy, z + h), (xx, min(y + d, yy + 0.7), z + h)], sh(top or col, 0.6), 0.45)
+                    xx += self.rnd.uniform(0.6, 1.0)
+                yy += 0.7
+        # worn edges catch the light
+        self.line([(x, y + d, z + h), (x + w, y + d, z + h)], sh(top or col, 1.3), 0.5)
+        self.line([(x, y, z + h), (x, y + d, z + h)], sh(top or col, 1.2), 0.4)
         return t
 
     def planks(self, x, y, w, d, h, col, z=0.0, n=3):
@@ -148,15 +224,57 @@ class Spr:
         self.glows.append((self.p(x, y, z), r, col))
 
     def finish(self, pal, name, noise=0.16):
-        W, H = int(self.w * G), int(self.h * G)
-        img = self.img.resize((W, H), Image.LANCZOS)
-        px = img.load()
+        """Grimdark pass, then D2's palette: the sprite is aged (grime, rust, soot, wood grain),
+        darkened towards the ground (ambient occlusion), desaturated into Kurast's murk, given a
+        hard rim light from the upper left and a dark outline, and snapped to the palette."""
         rnd = self.rnd
+        big = self.img
+        BW, BH = big.size
+        # grime and rot at full resolution: dark blotches, soot streaks running down, rust spots
+        grime = Image.new("RGBA", (BW, BH), (0, 0, 0, 0))
+        gd = ImageDraw.Draw(grime)
+        for _ in range(int(BW * BH / 2600)):
+            x, y = rnd.uniform(0, BW), rnd.uniform(0, BH)
+            r = rnd.uniform(3, 10) * S / 2
+            gd.ellipse((x - r, y - r * 0.7, x + r, y + r * 0.7), fill=(16, 12, 8, rnd.randint(30, 80)))
+        for _ in range(int(BW / 6)):
+            x, y = rnd.uniform(0, BW), rnd.uniform(0, BH * 0.8)
+            gd.line([(x, y), (x + rnd.uniform(-2, 2) * S, y + rnd.uniform(6, 22) * S)],
+                    fill=(14, 10, 6, rnd.randint(40, 90)), width=max(1, int(rnd.uniform(0.5, 1.5) * S)))
+        from PIL import ImageFilter
+        grime = grime.filter(ImageFilter.GaussianBlur(2.2 * S))
+        mask = big.split()[3]
+        grime.putalpha(Image.composite(grime.split()[3], Image.new("L", (BW, BH), 0), mask))
+        big = Image.alpha_composite(big, grime)
+        px = big.load()
+        oy = self.oy
+        for yy in range(0, BH):
+            # occlusion: the lowest pixels (near the ground) darkest, the tops catch the light
+            k_ao = 0.7 + 0.3 * min(1.0, max(0.0, (oy - yy) / float(28 * S)))
+            for xx in range(0, BW):
+                r, g, b, a = px[xx, yy]
+                if a < 30:
+                    continue
+                lum = (r * 30 + g * 59 + b * 11) / 100.0
+                sat = max(r, g, b) - min(r, g, b)
+                if sat < 22 and 60 < lum < 200 and rnd.random() < 0.035:      # rust on grey metal and stone
+                    r, g, b = r * 0.9 + 30, g * 0.65 + 8, b * 0.45
+                # desaturate into the murk, push the shadows down, keep fire and gold alive
+                hot = r > 200 and g > 90 and b < 120
+                keep = 0.85 if hot else 0.55
+                r, g, b = (lum + (r - lum) * keep, lum + (g - lum) * keep, lum + (b - lum) * keep)
+                c = 1.0 if hot else k_ao
+                r, g, b = (255 * ((v * c) / 255.0) ** 1.1 for v in (r, g, b))
+                r, g, b = r * 0.97, g * 0.98, b * 0.9           # a cold, sickly cast
+                px[xx, yy] = (int(min(255, r)), int(min(255, g)), int(min(255, b)), a)
+        W, H = int(self.w * G), int(self.h * G)
+        img = big.resize((W, H), Image.LANCZOS)
+        px = img.load()
         for yy in range(H):
             for xx in range(W):
                 r, g, b, a = px[xx, yy]
                 if a > 30:
-                    n = rnd.uniform(1 - noise, 1 + noise * 0.6) * 0.88
+                    n = rnd.uniform(1 - noise, 1 + noise * 0.6) * 0.95
                     px[xx, yy] = (min(255, int(r * n)), min(255, int(g * n)), min(255, int(b * n)), a)
         if self.glows:
             gl = Image.new("RGBA", (W, H), (0, 0, 0, 0))
@@ -166,13 +284,30 @@ class Spr:
                 for k in range(int(r), 0, -2):
                     gd.ellipse((X - k, Y - k * 0.7, X + k, Y + k * 0.7), fill=col + (7,))
             img = Image.alpha_composite(img, gl)
+        alpha = img.split()[3].point(lambda v: 255 if v > 110 else 0)
+        # rim light from the upper left and a dark outline (D2's sprites read by their edges)
+        A = alpha.load()
+        px = img.load()
+        out = img.copy()
+        po = out.load()
+        for yy in range(H):
+            for xx in range(W):
+                if not A[xx, yy]:
+                    continue
+                r, g, b, a = px[xx, yy]
+                edge = any(not (0 <= xx + dx < W and 0 <= yy + dy < H and A[xx + dx, yy + dy])
+                           for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)))
+                lit = not (0 <= xx - 1 < W and 0 <= yy - 1 < H and A[xx - 1, yy - 1])
+                if edge and not lit:
+                    r, g, b = r * 0.45, g * 0.42, b * 0.4
+                po[xx, yy] = (int(r), int(g), int(b), a)
+        img = out
         flat = []
         for c in pal[:256]:
             flat += list(c[:3])
         pimg = Image.new("P", (1, 1))
         pimg.putpalette(flat)
-        rgb = img.convert("RGB").quantize(palette=pimg, dither=Image.Dither.NONE).convert("RGB")
-        alpha = img.split()[3].point(lambda v: 255 if v > 110 else 0)
+        rgb = img.convert("RGB").quantize(palette=pimg, dither=Image.Dither.FLOYDSTEINBERG).convert("RGB")
         rgb.putalpha(alpha)
         os.makedirs(OUT, exist_ok=True)
         rgb.save(os.path.join(OUT, name + ".png"))
@@ -205,14 +340,22 @@ def anvil(pal):
 
 
 def forge(pal):
-    s = Spr(150, 150, seed=3)
+    s = Spr(150, 170, base=154, seed=3)
     s.grit(300, 4.2, 2.0, [DIRT, (30, 26, 22), (90, 40, 20)])
     s.box(-2.2, -1.6, 4.4, 3.2, 34, STONE)                     # furnace
     for i in range(6):                                         # stone courses
         z = 5 + i * 5.5
         s.line([(-2.2, 1.6, z), (2.2, 1.6, z)], sh(STONE, 0.45), 0.6)
         s.line([(2.2, -1.6, z), (2.2, 1.6, z)], sh(STONE, 0.35), 0.6)
+    for _ in range(90):                                        # soot and ash on the hearth top
+        s.disc(s.rnd.uniform(-2.0, 2.0), s.rnd.uniform(-1.4, 1.4), 34, s.rnd.uniform(0.4, 1.0),
+               sh((52, 48, 44), s.rnd.uniform(0.7, 1.2)), 0.5)
     s.box(-0.8, -0.6, 1.6, 1.2, 46, sh(STONE, 0.9)[:3], z=34)  # chimney
+    s.poly([(-0.55, -0.4, 80.2), (0.55, -0.4, 80.2), (0.55, 0.4, 80.2), (-0.55, 0.4, 80.2)], (10, 8, 6, 255))   # flue
+    for k in range(5):                                         # smoke
+        X, Y = s.p(0.1 * k, -0.1 * k, 84 + k * 7)
+        r = (3 + k * 1.6) * S
+        s.d.ellipse((X - r, Y - r * 0.8, X + r, Y + r * 0.8), fill=(46, 44, 42, 150 - k * 22))
     # the glowing mouth
     s.poly([(-1.0, 1.61, 6), (1.0, 1.61, 6), (1.0, 1.61, 17), (0.0, 1.61, 21), (-1.0, 1.61, 17)], (40, 12, 4, 255))
     s.poly([(-0.8, 1.62, 6), (0.8, 1.62, 6), (0.8, 1.62, 12), (-0.8, 1.62, 12)], (255, 110, 20, 255))
@@ -259,8 +402,8 @@ def weaponrack(pal):
 def armorstand(pal):
     s = Spr(90, 120, seed=5)
     s.grit(80, 2.0, 1.0, [DIRT])
-    s.box(-1.0, -1.0, 2.0, 2.0, 3, DWOOD)
-    s.pole(0, 0, 50, DWOOD, 2.0)
+    s.box(-0.7, -0.7, 1.4, 1.4, 4, STONE)                      # a chipped stone plinth
+    s.pole(0, 0, 50, DWOOD, 2.0, z=4)
     s.line([(-1.4, 0, 40), (1.4, 0, 40)], sh(DWOOD, 0.9), 1.8)   # shoulders
     # breastplate with a red Zakarum tabard
     X, Y = s.p(0, 0, 40)
@@ -283,7 +426,7 @@ def armorstand(pal):
 
 
 def crates(pal):
-    s = Spr(140, 120, seed=6)
+    s = Spr(140, 130, base=104, seed=6)
     s.grit(200, 3.6, 1.8, [DIRT, DWOOD, STRAW])
     s.planks(-2.4, -1.2, 2.2, 2.0, 22, WOOD)
     s.planks(0.0, -1.0, 1.8, 1.8, 18, sh(WOOD, 0.9)[:3])
