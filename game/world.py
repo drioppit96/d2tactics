@@ -651,6 +651,8 @@ class World(SkillCaster, ItemActions):
             items.remove(it)
             self.emit("pickup", cell, it)
             self.log(f"Picked up {getattr(it, 'shown_name', it.name)}.", it.color)
+            from . import quests
+            quests.on_pickup(self, it)
         if not items:
             del self.ground[cell]
         return True
@@ -697,6 +699,8 @@ class World(SkillCaster, ItemActions):
         if not items:
             del self.ground[cell]
         self.emit("pickup", cell, it)
+        from . import quests
+        quests.on_pickup(self, it)
         self.log("Picked up %s." % ("%d gold" % it.amount if it.kind == "gold" else getattr(it, "shown_name", it.name)),
                  it.color)
         return True

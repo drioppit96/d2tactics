@@ -147,7 +147,9 @@ def talk(world, npc):
             _start(world, "malus")
             lines = ["Charsi: When we fled the Monastery I left my Horadric Malus in the Barracks.",
                      "Charsi: Bring it back and I'll make something special for you."]
-        elif q["malus"] == "cleared":
+        elif q["malus"] in ("active", "cleared") and _has(world, "hdm"):
+            from .quests2 import take_item
+            take_item(world, "hdm")
             q["malus"] = "done"
             _reward_item(world, "weapon", "Charsi")
             lines = ["Charsi: My Malus! Here - I made this for you."]
@@ -351,11 +353,17 @@ def on_object(world, obj):
         obj["used"] = True
         return True
     elif k == "malus":
-        if q["malus"] in ("none", "active"):
-            q["malus"] = "cleared"
-            obj["used"] = True
-            world.log("You take the Horadric Malus. Return it to Charsi.", QUEST_COLOR)
-            return True
+        # D2: the Malus lies on its stand in the Barracks' forge; clicking it knocks it to the floor
+        if obj.get("used"):
+            return False
+        obj["used"] = True
+        if q["malus"] == "none":
+            _start(world, "malus")
+        if q["malus"] in ("none", "active") and not _has(world, "hdm"):
+            from .quests2 import give_item
+            give_item(world, "hdm", near=obj["cell"])
+            world.log("The Horadric Malus falls from its stand.", QUEST_COLOR)
+        return True
     elif k in ("portal", "arcane_portal", "duriel_portal"):
         msg = blocked(world, obj.get("target"))
         if msg:
@@ -422,6 +430,16 @@ def _countess_gold(world, unit):
         g = c.make_gold(unit.level * 8, world.rng)
         world.ground.setdefault(cell, []).append(g)
         world.emit("drop", cell, g)
+
+
+def on_pickup(world, it):
+    """Picking up a quest item moves its quest on."""
+    q = world.player.quests
+    if getattr(it, "code", "") == "hdm" and q.get("malus") in ("none", "active"):
+        if q.get("malus") == "none":
+            _start(world, "malus")
+        q["malus"] = "cleared"
+        world.log("You have the Horadric Malus. Return it to Charsi.", QUEST_COLOR)
 
 
 def journal(player, act=1):

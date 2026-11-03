@@ -859,6 +859,10 @@ class Game:
         step = self.walk_queue[0]
         if chebyshev(step, w.player.pos) != 1 or step in w.occupied(w.player):
             if not self.walk_to(self.walk_goal, self.walk_action, getattr(self, "walk_adjacent", False)):
+                act = self.walk_action
+                if act and act[0] == "warp" and any(chebyshev(w.player.pos, c) <= 2 for c in act[1]["cells"]):
+                    self.walk_queue, self.walk_action = [], None
+                    w.enter_warp(act[1])           # close enough: go through (a blocked last step)
                 return
             if not self.walk_queue:
                 return
@@ -918,6 +922,7 @@ class Game:
         if grp is not None:
             if not any(chebyshev(p.pos, c) <= 1 for c in grp["cells"]):
                 goal = min(grp["cells"], key=lambda c: chebyshev(c, p.pos))
+                w.want_warp = grp["target"]
                 w.player_move_to(goal)
             if any(chebyshev(p.pos, c) <= 1 for c in grp["cells"]):
                 w.enter_warp(grp)
@@ -940,11 +945,9 @@ class Game:
         a cave mouth or doorway by LvlWarp's select box; a doorway without either by its cells."""
         w = self.world
         groups = getattr(w, "warp_groups", None)
-        if not groups or cell is None:
+        if not groups:
             return None
         g = w.grid
-        if not (g.in_bounds(*cell) and g.explored[cell[1]][cell[0]]):
-            return None
         W, H = self.screen.get_size()
         wx = (pos[0] - W / 2) / self.cam.scale + self.cam.wx
         wy = (pos[1] - H / 2) / self.cam.scale + self.cam.wy
@@ -952,6 +955,9 @@ class Game:
         wtiles = getattr(tm, "warp_tiles", None) or {}
         assets = self.assets
         for grp in groups:
+            # (the picture can hang over the edge of the map: test it, but only once you've seen the entrance)
+            if not any(g.explored[c[1]][c[0]] for c in list(grp["cells"])[:40] if g.in_bounds(*c)):
+                continue
             drawn = [(t, ref) for t in grp["tiles"] for ref, _lit in wtiles.get(t, ())]
             if drawn and hasattr(assets, "tile_surface"):
                 for (tx, ty), ref in drawn:
@@ -962,10 +968,16 @@ class Game:
                     ix = int(wx - ((tx - ty) * 80 - 80 + x0))
                     iy = int(wy - ((tx + ty) * 40 - 8 + y0 - assets._roof_lift(ref)))
                     if 0 <= ix < img.get_width() and 0 <= iy < img.get_height():
-                        try:
-                            if img.get_at((ix, iy))[3] > 0:
-                                return grp
-                        except Exception:
+                        # anywhere on the stairs picture (its opaque bounds), not just solid pixels
+                        cache = self.__dict__.setdefault("_bounds", {})
+                        r = cache.get(id(img))
+                        if r is None or r[0] is not img:
+                            try:
+                                bb = img.get_bounding_rect()
+                            except Exception:
+                                bb = pygame.Rect(0, 0, img.get_width(), img.get_height())
+                            r = cache[id(img)] = (img, bb)
+                        if r[1].collidepoint((ix, iy)):
                             return grp
                 continue
             box = grp.get("box")
@@ -973,7 +985,7 @@ class Game:
                 if box[0] <= wx <= box[2] and box[1] <= wy <= box[3]:
                     return grp
                 continue
-            if cell in grp["cells"]:
+            if cell is not None and cell in grp["cells"]:
                 return grp
         return None
 
@@ -1491,6 +1503,7 @@ class Game:
                     if p.pos in grp["cells"] or any(chebyshev(p.pos, c) <= 1 for c in grp["cells"]):
                         w.enter_warp(grp)
                     else:
+                        w.want_warp = grp["target"]           # stepping onto the entrance goes through
                         for goal in sorted(grp["cells"], key=lambda c: chebyshev(c, p.pos))[:8]:
                             if self.walk_to(goal, ("warp", grp)):
                                 break

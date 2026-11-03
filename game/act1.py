@@ -86,6 +86,7 @@ DUNGEONS = {
 # which world each level lives in
 WORLD_OF = {i: "wild" for i in OUTDOOR_IDS}
 WORLD_OF.update({i: i for i in DUNGEONS})
+WORLD_OF[28] = "wild"            # the Barracks lie beside the Outer Cloister, on the same map
 WORLD_OF[33] = 32
 WORLD_OF[39] = 39
 
@@ -407,6 +408,67 @@ def _town_exit_dir(name):
     return {"townn1": "n", "towne1": "e", "towns1": "s", "townw1": "w"}[name]
 
 
+def _attach_barracks(b, kit, court, cx, cy, side, seed):
+    """Build the Barracks (level 28) and lay it right against the Outer Cloister room on `side`,
+    their doorways lined up: one map, you walk from the cloister into the Barracks (D2)."""
+    spec = dict(DUNGEONS[28])
+    spec["role_exits"] = {"prev": side}
+    bb, _g, _r = build_maze(kit, 28, spec, None if seed is None else hash((seed, "barracks")) & 0xffffffff)
+    prev = getattr(bb, "role_rooms", {}).get("prev")
+    if prev is None:
+        return False
+    px, py, pw, ph = prev
+    cw, ch = court.width - 1, court.height - 1
+    cfl = {(x, y) for y in range(court.height) for x in range(court.width)
+           if not court.floors[0][y * court.width + x].empty}
+
+    def mid(vals):
+        vals = sorted(vals)
+        return (vals[0] + vals[-1]) / 2.0 if vals else None
+    F = bb.tm.floor
+    if side == "n":
+        c_mid = mid([x for x, y in cfl if y == 0])
+        b_mid = mid([x - px for (x, y) in F if y == py + ph - 1 and px <= x < px + pw])
+        ox = int(round(cx + (c_mid or cw / 2.0) - (px + (b_mid if b_mid is not None else pw / 2.0))))
+        oy = cy - (py + ph)
+    elif side == "w":
+        c_mid = mid([y for x, y in cfl if x == 0])
+        b_mid = mid([y - py for (x, y) in F if x == px + pw - 1 and py <= y < py + ph])
+        oy = int(round(cy + (c_mid or ch / 2.0) - (py + (b_mid if b_mid is not None else ph / 2.0))))
+        ox = cx - (px + pw)
+    else:
+        c_mid = mid([y for x, y in cfl if x == cw - 1])
+        b_mid = mid([y - py for (x, y) in F if x == px and py <= y < py + ph])
+        oy = int(round(cy + (c_mid or ch / 2.0) - (py + (b_mid if b_mid is not None else ph / 2.0))))
+        ox = cx + cw - px
+    tm = b.tm
+    if ox < 0 or oy < 0 or ox + bb.tm.tw > tm.tw or oy + bb.tm.th > tm.th:
+        return False
+    for (x, y), t in bb.tm.floor.items():
+        if (x + ox, y + oy) not in tm.floor:
+            tm.floor[(x + ox, y + oy)] = t
+    for (x, y), t in bb.tm.floor2.items():
+        tm.floor2.setdefault((x + ox, y + oy), t)
+    for (x, y), lst in bb.tm.walls.items():
+        if (x + ox, y + oy) not in tm.walls:
+            tm.walls[(x + ox, y + oy)] = lst
+    wt = getattr(bb.tm, "warp_tiles", None) or {}
+    if wt:
+        if getattr(tm, "warp_tiles", None) is None:
+            tm.warp_tiles = {}
+        for (x, y), v in wt.items():
+            tm.warp_tiles[(x + ox, y + oy)] = v
+    for (x, y), main, owner in bb.warps:
+        b.warps.append(((x + ox, y + oy), main, owner))
+    for name, (x, y), owner in bb.presets:
+        b.presets.append((name, (x + ox * SUB, y + oy * SUB), owner))
+    for kind, (x, y), owner, oid in bb.objects:
+        b.objects.append((kind, (x + ox * SUB, y + oy * SUB), owner, oid))
+    b.areas[28] = (ox * SUB, oy * SUB, (ox + bb.tm.tw) * SUB, (oy + bb.tm.th) * SUB)
+    b.barracks_rect = (ox, oy, bb.tm.tw, bb.tm.th)
+    return True
+
+
 def plan_slots(exit_dir, rng):
     """Positions of the areas on a grid of 64x64-tile slots (a self-avoiding snake like D2's act 1)."""
     d = DIRS[exit_dir]
@@ -454,6 +516,22 @@ def build_outdoors(kit, seed=None, content=None):
     mnx, mny = min(xs), min(ys)
     pos = {k: (v[0] - mnx, v[1] - mny) for k, v in pos.items()}
     cols, rows = max(p[0] for p in pos.values()) + 1, max(p[1] for p in pos.values()) + 1
+    # D2: the Barracks lie right beside the Outer Cloister (one map, no entrance): pick the side of
+    # the Monastery's slot that is free - north, west or east - and make room for it there
+    barracks_side = None
+    if 26 in pos:
+        gx, gy = pos[26]
+        used = set(pos.values())
+        free = [(sd, (gx + dx, gy + dy)) for sd, (dx, dy) in (("n", (0, -1)), ("w", (-1, 0)), ("e", (1, 0)))
+                if (gx + dx, gy + dy) not in used]
+        inside = [f for f in free if 0 <= f[1][0] < cols and 0 <= f[1][1] < rows]
+        pick = rng.choice(inside) if inside else (free[0] if free else None)
+        if pick is not None:
+            barracks_side, (nx, ny) = pick
+            if nx < 0 or ny < 0:
+                pos = {k: (v[0] + (1 if nx < 0 else 0), v[1] + (1 if ny < 0 else 0)) for k, v in pos.items()}
+            cols += 1 if not 0 <= nx < cols else 0
+            rows += 1 if not 0 <= ny < rows else 0
     ST = SLOT * BLOCK                                   # tiles per slot side
     b = Built(cols * ST + 1, rows * ST + 1)
     b.slot_of = {v: k for k, v in pos.items()}
@@ -627,6 +705,8 @@ def build_outdoors(kit, seed=None, content=None):
         for nm in ("act1\\court\\courtn.ds1", "act1\\court\\courtw.ds1", "act1\\court\\courte.ds1"):
             if kit.ds1(nm) is not None and (court is None or rng.random() < 0.4):
                 court, court_side = kit.ds1(nm), nm[-5]          # the room on that side leads to the Barracks
+        if barracks_side and kit.ds1("act1\\court\\court%s.ds1" % barracks_side) is not None:
+            court, court_side = kit.ds1("act1\\court\\court%s.ds1" % barracks_side), barracks_side
         if facade is not None:
             fw, fh = facade.width - 1, facade.height - 1
             fy = ty0 + ST - fh
@@ -639,13 +719,21 @@ def build_outdoors(kit, seed=None, content=None):
                 b.areas[27] = (tx0 * SUB, ty0 * SUB, (tx0 + ST) * SUB, fy * SUB)
                 b.court_rect = (cx, cy, cw, ch)
                 b.court_side = court_side
+                if barracks_side == court_side:
+                    try:
+                        _attach_barracks(b, kit, court, cx, cy, court_side, seed)
+                    except Exception:
+                        import traceback
+                        traceback.print_exc()
         b.mg_from = mg_from
     # any one-tile gap left between two pieces gets grass
     F = b.tm.floor
+    br = getattr(b, "barracks_rect", None)
+    in_barracks = (lambda t: br[0] <= t[0] < br[0] + br[2] and br[1] <= t[1] < br[1] + br[3]) if br else (lambda t: False)
     for (x, y) in list(F):
         for dx, dy in ((1, 0), (0, 1)):
             gap, far = (x + dx, y + dy), (x + 2 * dx, y + 2 * dy)
-            if gap not in F and far in F and gap not in b.tm.floor2:
+            if gap not in F and far in F and gap not in b.tm.floor2 and not in_barracks(gap):
                 main, sub = rng.choice(gcodes)
                 t = gtiles.pick(0, main, sub, rng.randrange(1 << 16))
                 if t:
@@ -653,12 +741,14 @@ def build_outdoors(kit, seed=None, content=None):
     b.tm.drawn = set(b.tm.floor) | set(b.tm.walls) | set(b.tm.floor2)
     grid = make_grid(b.tm)
     _connect(b, grid, pos, links, kit, rng, openings)
+    if getattr(b, "barracks_rect", None):
+        _connect(b, grid, pos, [(27, 28)], kit, rng, openings)      # (only if the doorways missed)
     try:
         _lay_roads(b, grid, pos, links, openings, ST, gtiles, set(gcodes), random.Random(seed))
     except Exception:
         import traceback
         traceback.print_exc()
-    seal_world(b, grid, gtiles, gcodes, rng, (2, 3, 4))
+    seal_world(b, grid, gtiles, gcodes, rng, (2, 3, 4), skip=getattr(b, "barracks_rect", None))
     return b, grid, rng
 
 
@@ -859,7 +949,7 @@ def build_cow(kit, seed=None, content=None):
     return b, grid, rng
 
 
-def seal_world(b, grid, stiles, scodes, rng, start_areas, margin=14):
+def seal_world(b, grid, stiles, scodes, rng, start_areas, margin=14, skip=None):
     """No black void beyond the border cliffs / forest: plain ground (not walkable) is laid for
     `margin` tiles around everything drawn, and any floor that can't be reached from the areas
     (strips on the far side of border pieces) is closed off, so nothing spawns or walks there."""
@@ -887,6 +977,9 @@ def seal_world(b, grid, stiles, scodes, rng, start_areas, margin=14):
             for tx in range(max(0, span[0]), min(W, span[1] + 1)):
                 if (tx, ty) not in have:
                     need.add((tx, ty))
+        if skip:
+            sx0, sy0, sw, sh = skip
+            need = {t for t in need if not (sx0 - 1 <= t[0] <= sx0 + sw and sy0 - 1 <= t[1] <= sy0 + sh)}
         for t in need:
             main, sub = rng.choice(scodes)
             tile = stiles.pick(0, main, sub, rng.randrange(1 << 16))
@@ -1100,7 +1193,7 @@ def build_maze(kit, level_id, spec, seed=None):
     n_rooms = max(len(roles) + 2, spec["rooms"])
     import math
     cols = rows = spec.get("grid", max(4, int(math.ceil(math.sqrt(n_rooms * 2.0)))))
-    for attempt in range(60):
+    for attempt in range(200 if spec.get("role_exits") else 60):
         layout = _grow(n_rooms, rng, cols, rows)
         assign = {}
         leaves = [c for c, ex in layout.items() if len(ex) == 1]
@@ -1112,6 +1205,15 @@ def build_maze(kit, level_id, spec, seed=None):
                 cand = [c for c, ex in layout.items() if c not in assign and mk.role_room(role, ex, rng) is not None]
             else:
                 cand = [c for c in leaves if c not in assign and mk.role_room(role, layout[c], rng) is not None]
+            # (a room that must join something outside the maze: its one doorway faces `need`, and
+            # nothing of the maze lies beyond it on the other side)
+            need = (spec.get("role_exits") or {}).get(role)
+            if need:
+                xs = [c[0] for c in layout]
+                ys = [c[1] for c in layout]
+                edge = {"n": lambda c: c[1] == max(ys), "s": lambda c: c[1] == min(ys),
+                        "w": lambda c: c[0] == max(xs), "e": lambda c: c[0] == min(xs)}[need]
+                cand = [c for c in cand if _canon(layout[c]) == need and edge(c)]
             if not cand:
                 ok = False
                 break

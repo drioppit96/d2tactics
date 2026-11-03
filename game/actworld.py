@@ -223,7 +223,7 @@ def setup(world, built, grid, rng, info, level_key):
             world.exits[c] = 27                 # walk out the way you came (no click, like D2)
         if edge:
             world.entries[27] = arrival_cell(grid, edge, set(world.exits), rng)
-    if level_key == "wild" and getattr(b, "court_rect", None):
+    if level_key == "wild" and getattr(b, "court_rect", None) and not getattr(b, "barracks_rect", None):
         # D2: one of the Outer Cloister's three rooms (north / west / east, by the court preset)
         # opens into the Barracks - you just walk through, no click
         cx, cy, cw, ch = b.court_rect
