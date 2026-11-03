@@ -2,6 +2,9 @@
 map editor opens and the game loads (your edits are saved to maps/kurast_armory.json instead):
 
     python tools/export_armory.py <path to your Diablo II folder or extracted files>
+
+NOTE: the armory in assets/maps is now hand-edited in the map editor - running this replaces those
+edits with the procedural layout from game/act3.py.
 """
 import json
 import os
