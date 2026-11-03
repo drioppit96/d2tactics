@@ -275,6 +275,14 @@ def build_kurast(kit, seed=None, content=None):
         block_area(cv, lid, x0, y0, SIDE_W, 8, 8, _side_spec(lid))
     grid = cv.finish()
     armory_after_grid(b, grid, ax, ay)
+    # D2's waypoints: Lower Kurast's just inside its south gate, Upper Kurast's just in from the
+    # Bazaar, Travincal's right at its entrance from the Causeway (the Bazaar's is its own preset)
+    for lid, spot in ((79, ((X + 46) * SUB, (rows[79] + 52) * SUB)), (81, ((X + 46) * SUB, (rows[81] + 56) * SUB)),
+                      (83, ((X + 40) * SUB, 58 * SUB))):
+        if not any(k == "waypoint" and o == lid for k, _, o, _ in b.objects):
+            c = drlg.near_walkable(grid, spot, 60)
+            if c is not None and (b.areas[lid][0] <= c[0] < b.areas[lid][2]) and (b.areas[lid][1] <= c[1] < b.areas[lid][3]):
+                b.objects.append(("waypoint", c, lid, -1))
     drlg.ensure_connected(b, grid, [(75, 79), (79, 80), (80, 81), (81, 82), (82, 83), (80, 77), (80, 76)],
                           cv.ground_kit("burbs"), rng)
     drlg.ensure_waypoints(b, grid, 3)

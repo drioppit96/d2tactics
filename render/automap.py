@@ -164,7 +164,7 @@ class Automap:
             look = lid
             sa = info._side(lid) if info is not None and hasattr(info, "_side") else None
             if lid == 76:
-                name = "3 Kurast"            # (the Kurast Armory is built from Travincal's tiles)
+                name = ""                    # (the Kurast Armory: hand-laid walls, drawn as outlines)
             else:
                 if sa:
                     look = sa["like"]
