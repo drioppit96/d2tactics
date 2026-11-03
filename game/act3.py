@@ -440,8 +440,10 @@ ARMORY_PLANTERS = [(4, 22, 5, 4), (17, 22, 5, 4), (51, 22, 5, 4), (63, 22, 5, 4)
                    (14, 47, 4, 4), (59, 51, 4, 3), (2, 44, 4, 3), (33, 15, 3, 3), (40, 15, 3, 3)]
 ARMORY_FLOOR_DECALS = [(49, 7), (49, 4), (49, 12), (49, 0), (49, 10)]
 # how many cells around its spot each sprite blocks (0: you walk over it)
-DECOR_BLOCK = {"anvil": 3, "forge": 7, "weaponrack": 4, "armorstand": 2, "crates": 6, "arrows": 3, "dummy": 1,
-               "banner": 1, "cart": 6, "bones": 4, "debris": 0, "blood": 0}
+DECOR_BLOCK = {"anvil": 2, "forge": 5, "weaponrack": 3, "armorstand": 1, "crates": 4, "arrows": 2, "dummy": 1,
+               "banner": 1, "cart": 4, "bones": 2, "debris": 0, "blood": 0, "statue": 2, "bunks": 4, "table": 4,
+               "kegs": 3, "grindstone": 2, "target": 1, "shieldrack": 3, "chest": 2, "cauldron": 2, "gibbet": 1,
+               "spikes": 2, "sacks": 3}
 
 
 def _wall_tiles(lines, n_ok):

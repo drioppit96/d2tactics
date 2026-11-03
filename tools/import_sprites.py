@@ -19,7 +19,7 @@ SHEET1 = ["anvil", "armorstand", "arrows", "banner", "blood", "bones", "cart", "
           "debris", "dummy", "forge", "weaponrack"]
 SHEET2 = ["statue", "bunks", "table", "kegs", "grindstone", "target", "shieldrack", "chest",
           "cauldron", "gibbet", "spikes", "sacks"]
-SCALE1, SCALE2 = 0.74, 0.6
+SCALE1, SCALE2 = 0.5, 0.4
 
 
 def key_dark(im):
