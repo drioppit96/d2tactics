@@ -497,6 +497,13 @@ class Game:
         """Through your Town Portal: you arrive next to its twin in the town of this act."""
         town, wild = self.town_world(self.current_act())
         base = wild._default_start()
+        # D2's spot for town portals: by the campfire in the Rogue Encampment, by the waypoint elsewhere
+        fire = [o["cell"] for o in wild.objects if o.get("token") == "RB" and wild.area_at(o["cell"]) == town]
+        wps = [c for c, l in getattr(wild, "waypoints", {}).items() if l == town]
+        if town == 1 and fire:
+            base = (fire[0][0] + 3, fire[0][1] + 3)
+        elif wps:
+            base = (wps[0][0] + 4, wps[0][1] + 4)
         cell = wild._free_cell_near((base[0] + 2, base[1] - 2), 4)
         wild.objects = [o for o in wild.objects if o["kind"] != "tp_back"]
         wild.objects.append(dict(kind="tp_back", cell=cell, level=town, oid=0, used=False, target=None))

@@ -195,8 +195,9 @@ def _kurast_spec(lid):
     if k != "slums":
         specials += [([K + "%ssewer0.ds1" % k], 1, 1, None), ([K + "%ssewer1.ds1" % k], 1, 1, None),
                      ([K + "%stemple2.ds1" % k], 2, 2, None), ([K + "%stemple3.ds1" % k], 2, 2, None)]
-    if k == "burbs":
-        specials.append(([K + "burbs08x08_waypoint.ds1"], 1, 1, None))
+    # D2's Kurast waypoint block (the raised waypoint platform): Lower and Upper Kurast's just inside
+    # the gate you come in by (from the docks / from the Bazaar), the Bazaar's anywhere
+    specials.append(([K + "burbs08x08_waypoint.ds1"], 1, 1, (4, 6) if k in ("slums", "metro") else None))
     fills = [([K + "%s16x16_%d.ds1" % (k, i) for i in range(5)], 2, 2),
              ([K + "%s16x08_%d.ds1" % (k, i) for i in range(5)], 2, 1),
              ([K + "%s08x16_%d.ds1" % (k, i) for i in range(5)], 1, 2),
@@ -215,7 +216,7 @@ SIDE_W = 5                     # blocks (8 tiles) wide
 def _side_spec(lid):
     sa = SIDE_AREAS[lid]
     spec = _kurast_spec(sa["like"])
-    spec = dict(spec, specials=[], fill_chance=0.85)
+    spec = dict(spec, specials=[([K + "burbs08x08_waypoint.ds1"], 1, 1, (2, 3))], fill_chance=0.85)
     inner = "w" if sa["side"] == "e" else "e"
     spec["openings"] = {inner: (3, 1)}
     spec["border"] = {k: v for k, v in spec["border"].items() if k != inner and not (isinstance(k, tuple) and inner in k)}
@@ -250,10 +251,7 @@ def build_kurast(kit, seed=None, content=None):
             # the Bazaar opens west into the Scriptorium and, at its north-east, onto the armory road
             spec = dict(spec, openings={"w": (3, 1), "e": (1, 1)})
         placed = block_area(cv, lid, X, y0, 10, 8, 8, spec)
-        for k, (names, w, h, where) in enumerate(spec["specials"]):
-            if "waypoint" in names[0] and k in placed:
-                bx, by = placed[k]
-                b.objects.append(("waypoint", ((X + bx * 8 + 4) * SUB, (y0 + by * 8 + 4) * SUB), lid, -1))
+        # (the waypoint block carries D2's waypoint object itself)
     # the Kurast Docks right below Lower Kurast: walk out of town and you are in the city
     # (this game skips the jungle); the docks' road north lines up with Lower Kurast's south gate
     yd = 80 + 64 * 3
@@ -275,14 +273,6 @@ def build_kurast(kit, seed=None, content=None):
         block_area(cv, lid, x0, y0, SIDE_W, 8, 8, _side_spec(lid))
     grid = cv.finish()
     armory_after_grid(b, grid, ax, ay)
-    # D2's waypoints: Lower Kurast's just inside its south gate, Upper Kurast's just in from the
-    # Bazaar, Travincal's right at its entrance from the Causeway (the Bazaar's is its own preset)
-    for lid, spot in ((79, ((X + 46) * SUB, (rows[79] + 52) * SUB)), (81, ((X + 46) * SUB, (rows[81] + 56) * SUB)),
-                      (83, ((X + 40) * SUB, 58 * SUB))):
-        if not any(k == "waypoint" and o == lid for k, _, o, _ in b.objects):
-            c = drlg.near_walkable(grid, spot, 60)
-            if c is not None and (b.areas[lid][0] <= c[0] < b.areas[lid][2]) and (b.areas[lid][1] <= c[1] < b.areas[lid][3]):
-                b.objects.append(("waypoint", c, lid, -1))
     drlg.ensure_connected(b, grid, [(75, 79), (79, 80), (80, 81), (81, 82), (82, 83), (80, 77), (80, 76)],
                           cv.ground_kit("burbs"), rng)
     drlg.ensure_waypoints(b, grid, 3)
@@ -504,6 +494,11 @@ def stamp_armory(kit, b, ax, ay):
             if ref:
                 tm.floor[(ax + x, ay + y)] = ref
             tm.walls.pop((ax + x, ay + y), None)
+    # the waypoint, on D2's Kurast waypoint platform, just inside the gate
+    wpds = kit.ds1(K + "burbs08x08_waypoint.ds1")
+    if wpds is not None:
+        stamp(b, wpds, kit.tiles_for(wpds, KURAST_LT), ax + off + 33, ay + off + 4, random.Random(76), 76,
+              keep_edges=False)
     for name, sx, sy, w, h, (bx, by) in ARMORY_BUILDINGS:
         ds = kit.ds1(A3 + "travincal\\%s.ds1" % name)
         if ds is None:

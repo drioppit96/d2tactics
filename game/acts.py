@@ -31,7 +31,7 @@ OUTDOOR_IDS = set(act1.OUTDOOR_IDS) | set(ACT2_OUTDOOR) | {46} | set(ACT3_JUNGLE
 WAYPOINTS = {
     1: list(act1.WAYPOINT_LEVELS),
     2: [40, 48, 42, 57, 43, 44, 52, 74, 46],     # D2's waypoint lists, in order
-    3: [75, 79, 80, 81, 83, 101],
+    3: [75, 79, 80, 77, 76, 81, 83, 101],
     4: [103, 106, 107],
     5: [109, 111, 112, 113, 115, 117, 118, 123, 129],
 }
