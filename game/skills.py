@@ -538,9 +538,9 @@ class SkillBook:
         return SkillEnv(self, self.tree[name], lvl)
 
     # ------------------------------------------------------------ costs
-    def mana_cost(self, name):
+    def mana_cost(self, name, at_level=None):
         s = self.tree[name]
-        lv = max(1, self.level(name))
+        lv = at_level or max(1, self.level(name))
         if s.data is None:
             if name == "Double Swing":
                 return max(2, 8 - (lv - 1) // 4)
@@ -553,7 +553,8 @@ class SkillBook:
         return round(m, 1) if m != int(m) else int(m)
 
     def ap_cost(self, name, weapon_ap):
-        """AP for a skill, worked out from its mana cost (at your current skill level).
+        """AP for a skill, worked out from its mana cost at skill level 1 - so a skill costs the
+        same AP from level 1 to 20 even when its mana cost goes up.
 
         Spells and other non-weapon skills: 1.5 + sqrt(mana), rounded, 2..10 AP
         (Fire Bolt 3, Frost Nova 5, Meteor 6, Frozen Orb 7, Revive 8).
@@ -564,7 +565,10 @@ class SkillBook:
         k = s.kind
         if k == "aura":
             return 1
-        mana = max(0.0, float(self.mana_cost(name) or 0))
+        try:
+            mana = max(0.0, float(self.mana_cost(name, at_level=1) or 0))
+        except Exception:
+            mana = max(0.0, float(self.mana_cost(name) or 0))
         weapon_skill = k in ("attack", "melee", "charge") or (k == "missile" and s.weapon) or \
             name in ("Double Swing", "Frenzy", "Leap Attack", "Whirlwind", "Double Throw")
         if weapon_skill:

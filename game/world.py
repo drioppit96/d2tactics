@@ -1802,7 +1802,10 @@ class World(SkillCaster, ItemActions):
         if getattr(unit, "mods", None):
             from . import monmods
             monmods.on_death(self, unit)
-        gained = p.gain_xp(unit.xp_value * (100 + max(0, getattr(p, "xp_pct", 0))) // 100)
+        from .units import kill_xp
+        mlvl = getattr(unit, "level", None) or getattr(unit, "mlvl", None) or p.level
+        base = kill_xp(unit.xp_value, p.level, mlvl)
+        gained = p.gain_xp(base * (100 + max(0, getattr(p, "xp_pct", 0))) // 100)
         from . import hireling
         hireling.gain_xp(self, unit.xp_value)
         if getattr(p, "life_kill", 0) and p.alive:

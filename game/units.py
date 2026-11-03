@@ -438,7 +438,7 @@ class Player(Unit):
     @staticmethod
     def xp_threshold(level):
         """Total XP needed to leave `level` (D2's real table for the first levels)."""
-        table = [0, 500, 1500, 3750, 7875, 14175, 22680, 32886, 44396, 57715, 72144]
+        table = XP_TABLE
         if level < len(table):
             return table[level]
         return table[-1] + (level - len(table) + 1) * 20000
@@ -460,6 +460,47 @@ class Player(Unit):
             self.hp = self.max_hp
             self.mana = self.max_mana
         return gained
+
+
+# D2's experience table (experience.txt): total XP to leave each level, and ExpRatio (in 1024ths)
+XP_TABLE = [0, 500, 1500, 3750, 7875, 14175, 22680, 32886, 44396, 57715, 72144]
+XP_RATIO = {}
+
+
+def load_experience(rows):
+    global XP_TABLE, XP_RATIO
+    table, ratio = {}, {}
+    for r in rows or []:
+        lv = str(r.get("level", "")).strip()
+        if not lv.isdigit():
+            continue
+        try:
+            table[int(lv)] = int(r.get("amazon") or r.get("barbarian") or 0)
+            ratio[int(lv)] = int(r.get("expratio") or 1024)
+        except ValueError:
+            continue
+    if len(table) >= 99:
+        XP_TABLE = [table.get(i, 0) for i in range(max(table) + 1)]
+        XP_RATIO = ratio
+
+
+def kill_xp(base, clvl, mlvl):
+    """D2's experience from a kill: fewer points for monsters well below your level (and above
+    it), and the ExpRatio of high character levels."""
+    exp = float(base)
+    if clvl < 25:
+        diff = clvl - mlvl
+        if diff > 5:
+            exp *= {6: 0.81, 7: 0.62, 8: 0.43, 9: 0.24}.get(diff, 0.05)
+        elif mlvl - clvl > 5:
+            exp *= clvl / float(mlvl)
+    else:
+        if mlvl < clvl:
+            exp *= mlvl / float(clvl)
+        elif mlvl > clvl:
+            exp *= clvl / float(mlvl)
+    exp = exp * XP_RATIO.get(clvl, 1024) / 1024.0
+    return max(1, int(exp))
 
 
 # Monster templates. xp values are scaled up from D2 so levelling happens in a short dungeon.

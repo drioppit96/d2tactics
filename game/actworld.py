@@ -220,19 +220,30 @@ def setup(world, built, grid, rng, info, level_key):
             rx, ry, rw, rh = room
             edge = [c for c in edge if rx * SUB - 2 <= c[0] <= (rx + rw) * SUB + 2 and ry * SUB - 2 <= c[1] <= (ry + rh) * SUB + 2]
         for c in edge:
-            world.exits[c] = 27
+            world.exits[c] = 27                 # walk out the way you came (no click, like D2)
         if edge:
-            _click_exit(world, edge, 27)
             world.entries[27] = arrival_cell(grid, edge, set(world.exits), rng)
     if level_key == "wild" and getattr(b, "court_rect", None):
+        # D2: one of the Outer Cloister's three rooms (north / west / east, by the court preset)
+        # opens into the Barracks - you just walk through, no click
         cx, cy, cw, ch = b.court_rect
         x0, y0, x1, y1 = cx * SUB, cy * SUB, (cx + cw) * SUB, (cy + ch) * SUB
-        door = [(x, y) for x in range(x0, x1) for y in (y0, y0 + 1) if grid.walkable(x, y)]
-        door += [(x, y) for y in range(y0, y1 - 20) for x in (x0, x0 + 1, x1 - 2, x1 - 1) if grid.walkable(x, y)]
+        cells = [(x, y) for y in range(y0, y1) for x in range(x0, x1) if grid.walkable(x, y)]
+        side = getattr(b, "court_side", "n") or "n"
+        door = []
+        if cells:
+            if side == "w":
+                lim = min(x for x, _ in cells)
+                door = [c for c in cells if c[0] <= lim + 1]
+            elif side == "e":
+                lim = max(x for x, _ in cells)
+                door = [c for c in cells if c[0] >= lim - 1]
+            else:
+                lim = min(y for _, y in cells)
+                door = [c for c in cells if c[1] <= lim + 1]
         for c in door:
             world.exits[c] = 28
         if door:
-            _click_exit(world, door, 28)
             world.entries[28] = arrival_cell(grid, door, set(world.exits), rng)
     if level_key == 39:
         # the red portal from the camp puts you near a corner of the farm

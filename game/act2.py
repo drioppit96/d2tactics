@@ -45,7 +45,7 @@ FILLS = {
 SPECIALS = {
     41: [("outdoors\\tombent%d.ds1", (1, 2, 3, 4), 1)],               # Stony Tomb
     42: [("outdoors\\tombent%d.ds1", (1, 2, 3, 4), 1)],               # Halls of the Dead
-    43: [("maggot\\%s.ds1", ("hole1", "tight"), 1)],                  # Maggot Lair
+    43: [("maggot\\hole1.ds1", None, 1)],                           # Maggot Lair: D2's hole in the sand
     44: [("outdoors\\ruinsewr.ds1", None, 1), ("outdoors\\ruindarkelder.ds1", None, 2)],
     45: [("outdoors\\viper1.ds1", None, 2)],                          # Claw Viper Temple
 }

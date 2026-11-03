@@ -74,6 +74,11 @@ QUEST_USE = {"box": "cube", "ass": "book_skill", "tr1": "horadric_scroll", "xyz"
 class D2Content:
     def __init__(self, src, difficulty="normal"):
         self.src = src
+        try:
+            from .units import load_experience
+            load_experience(read_table(src, "experience"))
+        except Exception:
+            pass
         from . import props
         props.SRC = src
         sfx = {"normal": "", "nightmare": "(n)", "hell": "(h)"}.get(difficulty, "")

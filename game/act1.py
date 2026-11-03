@@ -623,10 +623,10 @@ def build_outdoors(kit, seed=None, content=None):
         sx, sy = pos[26]
         tx0, ty0 = sx * ST, sy * ST
         facade = kit.ds1("act1\\monastry\\facade1.ds1")
-        court = None
+        court, court_side = None, None
         for nm in ("act1\\court\\courtn.ds1", "act1\\court\\courtw.ds1", "act1\\court\\courte.ds1"):
-            if kit.ds1(nm) is not None:
-                court = kit.ds1(nm) if court is None or rng.random() < 0.4 else court
+            if kit.ds1(nm) is not None and (court is None or rng.random() < 0.4):
+                court, court_side = kit.ds1(nm), nm[-5]          # the room on that side leads to the Barracks
         if facade is not None:
             fw, fh = facade.width - 1, facade.height - 1
             fy = ty0 + ST - fh
@@ -638,6 +638,7 @@ def build_outdoors(kit, seed=None, content=None):
                 stamp(b, court, kit.tiles_for(court, "Act 1 - Courtyard"), cx, cy, rng, 27)
                 b.areas[27] = (tx0 * SUB, ty0 * SUB, (tx0 + ST) * SUB, fy * SUB)
                 b.court_rect = (cx, cy, cw, ch)
+                b.court_side = court_side
         b.mg_from = mg_from
     # any one-tile gap left between two pieces gets grass
     F = b.tm.floor
