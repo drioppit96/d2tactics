@@ -538,10 +538,29 @@ class Scene:
             # a cave mouth (no stairs tile) has the walls around its marker brightened
             grp = getattr(self, "lit_warp", None)
             lit_pos, glow = set(), set()
+            self._glow_clip = None
             if grp is not None:
                 lit_pos = set(grp["tiles"])
-                if not any(lt for p_ in lit_pos for _, lt in wtiles.get(p_, ())):
-                    glow = {(a + dx, b + dy) for a, b in lit_pos for dx in range(-2, 3) for dy in range(-2, 3)}
+                if not any(lt for p_ in lit_pos for _, lt in wtiles.get(p_, ())) and grp.get("box"):
+                    # a cave mouth / doorway without a lit tile: only what is inside its select box lights up
+                    bx0, by0, bx1, by1 = grp["box"]
+                    # the wall pieces whose picture reaches into the box (the cave mouth / door itself)
+                    for a, b in lit_pos:
+                        for dx in range(-7, 8):
+                            for dy in range(-7, 8):
+                                t_ = (a + dx, b + dy)
+                                for wref in tm.walls.get(t_, ()):
+                                    ts_ = assets.tile_surface(wref) if hasattr(assets, "tile_surface") else None
+                                    if not ts_:
+                                        continue
+                                    im_, ox_, oy_ = ts_
+                                    wx0 = (t_[0] - t_[1]) * 80 - 80 + ox_
+                                    wy0 = (t_[0] + t_[1]) * 40 - 8 + oy_ - assets._roof_lift(wref)
+                                    if wx0 < bx1 and wx0 + im_.get_width() > bx0 and wy0 < by1 and wy0 + im_.get_height() > by0:
+                                        glow.add(t_)
+                    sx0, sy0 = cam.to_screen(bx0, by0)
+                    sx1, sy1 = cam.to_screen(bx1, by1)
+                    self._glow_clip = pygame.Rect(int(sx0), int(sy0), int(sx1 - sx0) + 1, int(sy1 - sy0) + 1)
             for ty in range(ty0, ty1 + 1):
                 for tx in range(tx0, tx1 + 1):
                     if (tx, ty) not in tm.drawn:
@@ -646,10 +665,13 @@ class Scene:
                     r = assets.tile_rect(ref, tx, ty, cam)
                     if r is not None and r.colliderect(prect):
                         alpha = 105
-                if glow_:
+                assets.draw_tile(surf, ref, tx, ty, cam, alpha=alpha)
+                clip = getattr(self, "_glow_clip", None)
+                if glow_ and clip is not None:
+                    old_clip = surf.get_clip()
+                    surf.set_clip(clip.clip(old_clip) if old_clip else clip)
                     assets.draw_tile(surf, ref, tx, ty, cam, alpha=alpha, lit=True)
-                else:
-                    assets.draw_tile(surf, ref, tx, ty, cam, alpha=alpha)
+                    surf.set_clip(old_clip)
             elif kind == "wall":
                 x, y = obj
                 b = self.brightness(x, y, light) or 0.22

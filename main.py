@@ -936,8 +936,8 @@ class Game:
         return best
 
     def warp_under_mouse(self, pos, cell):
-        """The entrance (cave mouth, stairs) under the mouse: its cells or its picture, like D2's
-        LvlWarp select box."""
+        """The entrance under the mouse - only its picture, like D2: stairs by their own graphic,
+        a cave mouth or doorway by LvlWarp's select box; a doorway without either by its cells."""
         w = self.world
         groups = getattr(w, "warp_groups", None)
         if not groups or cell is None:
@@ -945,17 +945,36 @@ class Game:
         g = w.grid
         if not (g.in_bounds(*cell) and g.explored[cell[1]][cell[0]]):
             return None
-        for grp in groups:
-            if any(abs(cell[0] - c[0]) <= 1 and abs(cell[1] - c[1]) <= 1 for c in grp["cells"]):
-                return grp
         W, H = self.screen.get_size()
         wx = (pos[0] - W / 2) / self.cam.scale + self.cam.wx
         wy = (pos[1] - H / 2) / self.cam.scale + self.cam.wy
+        tm = getattr(w, "tilemap", None)
+        wtiles = getattr(tm, "warp_tiles", None) or {}
+        assets = self.assets
         for grp in groups:
-            for tx, ty in grp["tiles"]:
-                cx, cy = (tx - ty) * 80, (tx + ty) * 40
-                if cx - 80 <= wx <= cx + 80 and cy - 120 <= wy <= cy + 50:
+            drawn = [(t, ref) for t in grp["tiles"] for ref, _lit in wtiles.get(t, ())]
+            if drawn and hasattr(assets, "tile_surface"):
+                for (tx, ty), ref in drawn:
+                    ts = assets.tile_surface(ref)
+                    if not ts:
+                        continue
+                    img, x0, y0 = ts
+                    ix = int(wx - ((tx - ty) * 80 - 80 + x0))
+                    iy = int(wy - ((tx + ty) * 40 - 8 + y0 - assets._roof_lift(ref)))
+                    if 0 <= ix < img.get_width() and 0 <= iy < img.get_height():
+                        try:
+                            if img.get_at((ix, iy))[3] > 0:
+                                return grp
+                        except Exception:
+                            return grp
+                continue
+            box = grp.get("box")
+            if box is not None:
+                if box[0] <= wx <= box[2] and box[1] <= wy <= box[3]:
                     return grp
+                continue
+            if cell in grp["cells"]:
+                return grp
         return None
 
     def exit_label(self, target):
@@ -1680,6 +1699,7 @@ class Game:
             if grp is not None:
                 self.scene.lit_warp = grp
                 tip = ([self.exit_label(grp["target"])], [(240, 210, 90)])
+                preview = None                     # only the entrance lights up, not the floor
             elif cell in w.exits and w.exits[cell]:
                 tip = ([self.exit_label(w.exits[cell])], [(240, 210, 90)])
             obj = self.object_under_mouse(mouse) or (w.object_at(cell) if hasattr(w, "object_at") else None)
@@ -1703,6 +1723,8 @@ class Game:
             if items and g.explored[cell[1]][cell[0]]:
                 lines = items[0].describe_lines(p)
                 tip = ([t for t, _ in lines], [c for _, c in lines])
+        if getattr(self.scene, "lit_warp", None) is not None:
+            return None, highlight, preview, tip
         return cell, highlight, preview, tip
 
     # ------------------------------------------------------------ main loop

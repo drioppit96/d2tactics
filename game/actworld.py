@@ -77,6 +77,35 @@ PORTAL_KINDS = ("portal", "arcane_portal", "duriel_portal")
 CODE_NPCS = {"jungle": ["hratli"], "siege": ["larzuk", "tyrael3"]}
 
 
+_LVLWARP = {}
+
+
+def warp_select_box(kit, owner, main, tiles):
+    """D2's select box of an entrance (LvlWarp.txt SelectX/Y/DX/DY, pixels from the warp tile's top
+    corner) in world pixels: only the cave mouth / stairs / door can be clicked and lights up."""
+    try:
+        rows = _LVLWARP.get(id(kit))
+        if rows is None:
+            from d2.source import read_table
+            rows = _LVLWARP[id(kit)] = {r["id"]: r for r in read_table(kit.src, "LvlWarp") if r.get("id")}
+        wid = (kit.levels.get(owner) or {}).get("warp%d" % main)
+        r = rows.get(str(wid)) if wid not in (None, "", "-1") else None
+        if r is None:
+            return None
+        sx, sy, dx, dy = (int(r[k]) for k in ("selectx", "selecty", "selectdx", "selectdy"))
+        ox, oy = int(r.get("offsetx") or 0), int(r.get("offsety") or 0)
+    except Exception:
+        return None
+    if dx <= 0 or dy <= 0:
+        return None
+    boxes = []
+    for tx, ty in tiles:
+        # (the box is measured from the warp tile's wall origin, half a floor tile above its top corner)
+        ax, ay = (tx - ty) * 80 + (ox - oy) * 16, (tx + ty) * 40 - 40 + (ox + oy) * 8
+        boxes.append((ax + sx, ay + sy, ax + sx + dx, ay + sy + dy))
+    return (min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes))
+
+
 def _click_exit(world, cells, target):
     """A doorway into another level (Outer Cloister <-> Barracks): used by clicking it, like D2."""
     grp = dict(target=target, tiles={(c[0] // SUB, c[1] // SUB) for c in cells}, cells=set(cells), owner=None, main=None)
@@ -168,7 +197,8 @@ def setup(world, built, grid, rng, info, level_key):
         for c in cells:
             world.exits[c] = target
         # D2: an entrance is used by clicking it, not by walking over it
-        grp = dict(target=target, tiles=set(tiles), cells=set(cells), owner=owner, main=main)
+        grp = dict(target=target, tiles=set(tiles), cells=set(cells), owner=owner, main=main,
+                   box=warp_select_box(kit, owner, main, tiles))
         world.warp_groups.append(grp)
         for c in cells:
             world.warp_cell[c] = grp
