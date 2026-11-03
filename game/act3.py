@@ -481,6 +481,27 @@ DECOR_BLOCK = {"anvil": 2, "forge": 4, "weaponrack": 3, "armorstand": 1, "crates
                "spikes": 2, "sacks": 2}
 
 
+_BLOCKS = None
+
+
+def decor_block(name):
+    """How many cells around its spot a sprite blocks: the list above, else what the sprite importer
+    worked out from its size (assets/decor/blocks.json)."""
+    global _BLOCKS
+    if name in DECOR_BLOCK:
+        return DECOR_BLOCK[name]
+    if _BLOCKS is None:
+        import json
+        import os
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "decor", "blocks.json")
+        try:
+            with open(path) as f:
+                _BLOCKS = json.load(f)
+        except Exception:
+            _BLOCKS = {}
+    return int(_BLOCKS.get(name, 0))
+
+
 def _wall_tiles(lines, n_ok, main):
     """Grid-point wall lines -> D2 wall tiles (orientation, main, sub), the way D2 lays them: along a
     tile's north (2) and west (1) edges, with north (3), east-end (5), west-end (6) and south (7)
@@ -589,7 +610,7 @@ def _armory_after_grid_json(b, grid):
 def _block_decor(b, grid):
     from .grid import WALL
     for name, (cx, cy) in getattr(b, "decor", []):
-        r = DECOR_BLOCK.get(name, 0)
+        r = decor_block(name)
         if r <= 0:
             continue
         for y in range(cy - r // 2 - 1, cy + (r + 1) // 2):
@@ -740,7 +761,7 @@ def armory_after_grid(b, grid, ax, ay):
                 if grid.in_bounds(xx, yy):
                     grid.cells[yy][xx] = WALL
     for name, (cx, cy) in getattr(b, "decor", []):
-        r = DECOR_BLOCK.get(name, 0)
+        r = decor_block(name)
         if r <= 0:
             continue
         for y in range(cy - r // 2 - 1, cy + (r + 1) // 2):

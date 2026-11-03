@@ -94,5 +94,633 @@
  "sacks": [
   58,
   63
+ ],
+ "cathedral": [
+  296,
+  484
+ ],
+ "demon_shrine": [
+  237,
+  451
+ ],
+ "fortress": [
+  217,
+  460
+ ],
+ "blood_spire_shrine": [
+  197,
+  482
+ ],
+ "banner_gate": [
+  227,
+  447
+ ],
+ "watchtower": [
+  122,
+  429
+ ],
+ "ruined_arch": [
+  189,
+  315
+ ],
+ "altar_pyramid": [
+  244,
+  322
+ ],
+ "ritual_dais": [
+  275,
+  339
+ ],
+ "arch_colonnade": [
+  188,
+  342
+ ],
+ "lava_cave": [
+  194,
+  287
+ ],
+ "floor_slab": [
+  97,
+  51
+ ],
+ "floor_cobble": [
+  103,
+  55
+ ],
+ "rug_small": [
+  55,
+  34
+ ],
+ "floor_cracked": [
+  79,
+  44
+ ],
+ "floor_cross": [
+  51,
+  29
+ ],
+ "floor_broken": [
+  66,
+  34
+ ],
+ "skull_heap": [
+  59,
+  25
+ ],
+ "post_short": [
+  21,
+  73
+ ],
+ "post": [
+  18,
+  94
+ ],
+ "pillar_small": [
+  21,
+  96
+ ],
+ "pillar_round": [
+  22,
+  115
+ ],
+ "pillar_tall": [
+  30,
+  141
+ ],
+ "spire_small": [
+  15,
+  90
+ ],
+ "spire": [
+  16,
+  95
+ ],
+ "urn_stone": [
+  27,
+  78
+ ],
+ "gallows_double": [
+  52,
+  141
+ ],
+ "floor_dark": [
+  87,
+  47
+ ],
+ "bone_heap": [
+  74,
+  41
+ ],
+ "rug_large": [
+  95,
+  53
+ ],
+ "floor_mosaic": [
+  79,
+  44
+ ],
+ "floor_sigil": [
+  96,
+  51
+ ],
+ "bone_scatter": [
+  57,
+  24
+ ],
+ "floor_grate": [
+  87,
+  47
+ ],
+ "gore_pile": [
+  55,
+  31
+ ],
+ "floor_rune": [
+  67,
+  36
+ ],
+ "goblet_brazier": [
+  29,
+  77
+ ],
+ "brazier_bronze": [
+  33,
+  89
+ ],
+ "banner_grey": [
+  14,
+  85
+ ],
+ "banner_red2": [
+  28,
+  111
+ ],
+ "banner_red3": [
+  24,
+  113
+ ],
+ "banner_tattered": [
+  22,
+  112
+ ],
+ "iron_fence_gate": [
+  180,
+  103
+ ],
+ "iron_fence_short": [
+  46,
+  121
+ ],
+ "shrine_gate": [
+  71,
+  151
+ ],
+ "iron_fence": [
+  73,
+  135
+ ],
+ "iron_fence_ruin": [
+  41,
+  119
+ ],
+ "fence_wall_ruin": [
+  93,
+  114
+ ],
+ "ruin_arch_wall": [
+  87,
+  93
+ ],
+ "rubble_wall": [
+  67,
+  49
+ ],
+ "wall_ruin": [
+  50,
+  98
+ ],
+ "hooded_statue_small": [
+  33,
+  94
+ ],
+ "stone_block": [
+  36,
+  67
+ ],
+ "candelabra_great": [
+  47,
+  178
+ ],
+ "pillar_square": [
+  30,
+  136
+ ],
+ "pillar_hollow": [
+  23,
+  108
+ ],
+ "pillar_carved": [
+  22,
+  138
+ ],
+ "zealot_statue": [
+  52,
+  161
+ ],
+ "hooded_statue": [
+  32,
+  124
+ ],
+ "gargoyle": [
+  45,
+  106
+ ],
+ "obelisk": [
+  39,
+  120
+ ],
+ "obelisk_small": [
+  13,
+  67
+ ],
+ "cross_monument": [
+  36,
+  120
+ ],
+ "banner_red": [
+  26,
+  156
+ ],
+ "banner_rag": [
+  26,
+  145
+ ],
+ "banner_bone": [
+  25,
+  133
+ ],
+ "lantern_post": [
+  46,
+  128
+ ],
+ "stake": [
+  17,
+  167
+ ],
+ "skeleton_cage": [
+  29,
+  139
+ ],
+ "brazier": [
+  24,
+  91
+ ],
+ "brazier_tall": [
+  25,
+  97
+ ],
+ "cauldron_tripod": [
+  28,
+  88
+ ],
+ "brazier_wide": [
+  30,
+  97
+ ],
+ "brazier_goblet": [
+  21,
+  101
+ ],
+ "brazier_bowl": [
+  25,
+  100
+ ],
+ "brazier_tower": [
+  21,
+  111
+ ],
+ "cauldron_big": [
+  30,
+  55
+ ],
+ "torch_stand": [
+  13,
+  79
+ ],
+ "candles": [
+  17,
+  30
+ ],
+ "candelabra": [
+  22,
+  78
+ ],
+ "vase_small": [
+  15,
+  39
+ ],
+ "vase": [
+  19,
+  46
+ ],
+ "amphora": [
+  21,
+  61
+ ],
+ "reliquary": [
+  36,
+  109
+ ],
+ "stone_chest": [
+  44,
+  61
+ ],
+ "candle_arch": [
+  58,
+  122
+ ],
+ "feast_table": [
+  76,
+  64
+ ],
+ "bench_table": [
+  49,
+  46
+ ],
+ "throne": [
+  30,
+  100
+ ],
+ "lectern": [
+  29,
+  84
+ ],
+ "bookcase": [
+  38,
+  109
+ ],
+ "wardrobe": [
+  27,
+  97
+ ],
+ "barrels_stack": [
+  20,
+  72
+ ],
+ "chests_stack": [
+  38,
+  70
+ ],
+ "trunk": [
+  41,
+  52
+ ],
+ "open_crate": [
+  37,
+  59
+ ],
+ "stool": [
+  18,
+  48
+ ],
+ "round_table": [
+  23,
+  42
+ ],
+ "beds": [
+  75,
+  60
+ ],
+ "cabinet": [
+  24,
+  92
+ ],
+ "crate": [
+  31,
+  42
+ ],
+ "barrel": [
+  18,
+  41
+ ],
+ "bucket": [
+  17,
+  36
+ ],
+ "low_bench": [
+  23,
+  26
+ ],
+ "jug": [
+  14,
+  29
+ ],
+ "pots": [
+  19,
+  43
+ ],
+ "bone_cart": [
+  63,
+  59
+ ],
+ "firewood": [
+  51,
+  24
+ ],
+ "bone_spread": [
+  50,
+  26
+ ],
+ "skull": [
+  12,
+  10
+ ],
+ "sarcophagus": [
+  57,
+  48
+ ],
+ "stone_pile": [
+  44,
+  34
+ ],
+ "pedestal": [
+  23,
+  71
+ ],
+ "urn": [
+  21,
+  54
+ ],
+ "washbasin": [
+  29,
+  58
+ ],
+ "font": [
+  23,
+  64
+ ],
+ "tile_slab": [
+  35,
+  22
+ ],
+ "tile_worn": [
+  32,
+  20
+ ],
+ "tile_dark": [
+  33,
+  20
+ ],
+ "dirt_patch": [
+  43,
+  24
+ ],
+ "gravel_patch": [
+  39,
+  23
+ ],
+ "blood_tile": [
+  36,
+  20
+ ],
+ "rug_red": [
+  54,
+  32
+ ],
+ "rug_torn": [
+  48,
+  32
+ ],
+ "web_patch": [
+  41,
+  24
+ ],
+ "rock_pile": [
+  37,
+  25
+ ],
+ "grate_large": [
+  44,
+  27
+ ],
+ "grate": [
+  38,
+  23
+ ],
+ "chalice_font": [
+  30,
+  102
+ ],
+ "rack_frame": [
+  29,
+  90
+ ],
+ "torture_ladder": [
+  26,
+  83
+ ],
+ "hanging_cage": [
+  27,
+  90
+ ],
+ "pillory": [
+  24,
+  91
+ ],
+ "iron_chair": [
+  32,
+  92
+ ],
+ "breaking_wheel": [
+  33,
+  78
+ ],
+ "spear_rack": [
+  26,
+  87
+ ],
+ "chopping_block": [
+  29,
+  61
+ ],
+ "bloody_table": [
+  41,
+  43
+ ],
+ "meat_rack": [
+  24,
+  64
+ ],
+ "hanged_skeleton": [
+  33,
+  77
+ ],
+ "hook_gallows": [
+  53,
+  66
+ ],
+ "spike_tripod": [
+  29,
+  73
+ ],
+ "bone": [
+  37,
+  20
+ ],
+ "skull_small": [
+  14,
+  9
+ ],
+ "skeleton": [
+  36,
+  18
+ ],
+ "skeletons": [
+  45,
+  21
+ ],
+ "skulls_small": [
+  19,
+  13
+ ],
+ "skull_heap2": [
+  38,
+  21
+ ],
+ "candle": [
+  13,
+  44
+ ],
+ "skulls": [
+  22,
+  14
+ ],
+ "dead_tree": [
+  30,
+  66
+ ],
+ "brambles": [
+  30,
+  29
+ ],
+ "stone_arch": [
+  46,
+  39
+ ],
+ "ruin_chunk": [
+  30,
+  41
+ ],
+ "well": [
+  35,
+  53
+ ],
+ "pot": [
+  18,
+  32
+ ],
+ "rubble": [
+  36,
+  25
  ]
 }

@@ -178,6 +178,9 @@ def compose(kit, data, level_id=0, seed=None, with_grid=True):
     tm.drawn = set(tm.floor) | set(tm.walls) | set(tm.floor2)
     grid = make_grid(tm) if with_grid else None
     lay_things(b, data, 0, 0, owner)
+    if grid is not None:
+        from .act3 import _block_decor
+        _block_decor(b, grid)
     b.custom_monsters = [((int(m[0]), int(m[1])), m[2], (m[3] if len(m) > 3 else "normal"))
                          for m in data.get("monsters", [])]
     st = data.get("start")
