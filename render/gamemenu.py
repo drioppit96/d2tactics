@@ -76,7 +76,13 @@ class GameMenu:
     def items(self):
         o = self.game.opts
         if self.page == "main":
-            return [("OPTIONS", "options"), ("SAVE AND EXIT GAME", "save_exit"), ("RETURN TO GAME", "close")]
+            return [("OPTIONS", "options"), ("QUALITY OF LIFE", "qol"), ("SAVE AND EXIT GAME", "save_exit"),
+                    ("RETURN TO GAME", "close")]
+        if self.page == "qol":
+            from game import qol
+            p = self.game.world.player
+            return [("%s: %s" % (label, "ON" if qol.get(p, key) else "OFF"), "qol_" + key)
+                    for key, label in qol.OPTIONS] + [("PREVIOUS MENU", "back")]
         onoff = lambda k: "ON" if o[k] else "OFF"
         return [("LIGHT RADIUS: %d%%" % o["light_radius"], "light"),
                 ("HIGHLIGHT MONSTER: " + onoff("highlight_monster"), "hl_mon"),
@@ -91,6 +97,12 @@ class GameMenu:
         o = g.opts
         if action == "options":
             self.page, self.sel = "options", 0
+        elif action == "qol":
+            self.page, self.sel = "qol", 0
+        elif action.startswith("qol_"):
+            from game import qol
+            msg = qol.toggle(g.world, action[4:])
+            g.world.log(msg + " (this character)", (199, 179, 119))
         elif action == "back":
             self.page, self.sel = "main", 0
         elif action == "close":
@@ -122,7 +134,7 @@ class GameMenu:
     def key(self, key):
         items = self.items()
         if key == pygame.K_ESCAPE:
-            if self.page == "options":
+            if self.page in ("options", "qol"):
                 self.page, self.sel = "main", 0
             else:
                 self.game.menu = None

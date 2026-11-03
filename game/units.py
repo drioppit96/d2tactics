@@ -102,7 +102,12 @@ class Player(Unit):
         self.ap = self.max_ap
 
     # ------------------------------------------------------------ D2 backpack: 10 x 4 cells
-    INV_W, INV_H = 10, 4
+    INV_W = 10
+
+    @property
+    def INV_H(self):
+        """4 rows - 8 (two pages of 4) with the Bigger Inventory option."""
+        return 8 if (getattr(self, "qol", None) or {}).get("big_inv") else 4
 
     def _size(self, it):
         return max(1, getattr(it, "invw", 1) or 1), max(1, getattr(it, "invh", 1) or 1)
@@ -124,6 +129,8 @@ class Player(Unit):
         w, h = self._size(it)
         if x0 < 0 or y0 < 0 or x0 + w > self.INV_W or y0 + h > self.INV_H:
             return False, []
+        if y0 < 4 < y0 + h:
+            return False, []                  # an item can't lie across the two backpack pages
         taken = self.inv_cells(ignore)
         over = []
         for y in range(y0, y0 + h):

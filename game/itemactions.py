@@ -93,6 +93,8 @@ class ItemActions:
             cache = p._stores = {}
         key = (npc_id, gamble)
         if not refresh and key in cache and cache[key][1] == getattr(p, "_town_visit", 0):
+            from .qol import stock
+            stock(cache[key][0], p)
             return cache[key][0]
         rng = self.rng
         ilvl = min(p.level + 5, 30)
@@ -148,6 +150,8 @@ class ItemActions:
             tabs = [(pg, _pack(pages[pg])) for pg in ("armo", "weap", "misc") if pages[pg]]
             store = Store(npc_id, tabs)
         cache[key] = (store, getattr(p, "_town_visit", 0))
+        from .qol import stock
+        stock(store, p)
         return store
 
     def socket_cost(self, it):
@@ -192,6 +196,9 @@ class ItemActions:
         return True
 
     def price_of(self, it, store=None):
+        from .qol import is_goblin, GOBLIN_PRICE
+        if is_goblin(it):
+            return GOBLIN_PRICE
         if getattr(it, "gamble", False):
             b = it.gamble_base
             return min(50000, 150 + 60 * self.player.level + 2 * max(10, b.get("cost", 50)))
@@ -218,16 +225,19 @@ class ItemActions:
             p.gold -= cost
             self.log("Gambled: %s." % new.name, new.color)
             return True
-        if it.use and not it.base.get("tome"):
+        if it.use in ("tp", "id") and not (it.base or {}).get("tome"):
             # a scroll goes into a matching tome if you have one (D2)
             from .items import TOME_MAX
-            tome = next((t for t in p.inventory if t.use == it.use and t.base.get("tome") and t.quantity < TOME_MAX), None)
+            tome = next((t for t in p.inventory if t.use == it.use and (t.base or {}).get("tome") and t.quantity < TOME_MAX), None)
             if tome is not None:
                 p.gold -= cost
                 tome.quantity += 1
                 self.log("%s: %d scrolls." % (tome.name, tome.quantity), GREY)
                 return True
-        if getattr(it, "infinite", False):
+        from .qol import is_goblin, make_goblin, ensure_pet
+        if is_goblin(it):
+            new = make_goblin()
+        elif getattr(it, "infinite", False):
             new = self.content.make_item(it.base, it.base.get("qlvl", 1) or 1, self.rng, sockets=0)
         else:
             new = it
@@ -242,15 +252,22 @@ class ItemActions:
                 if it in lst:
                     lst.remove(it)
         self.log("Bought %s for %d gold." % (new.name, cost), new.color)
+        if is_goblin(new):
+            ensure_pet(self)
         return True
 
     def sell(self, it):
         p = self.player
-        if it not in p.inventory:
+        held = it is self.held
+        if it not in p.inventory and not held:
             return False
-        if it.kind == "quest":
-            self.log("You can't sell quest items.", GREY)
+        from .qol import is_goblin
+        if it.kind == "quest" or is_goblin(it):
+            self.log("You can't sell %s." % ("quest items" if it.kind == "quest" else "the Loot Goblin"), GREY)
             return False
+        if held:
+            self.held = None
+            p.inventory.append(it)
         value = d2items.sell_price(it)
         p.inventory.remove(it)
         it.inv_pos = None
@@ -426,7 +443,7 @@ class ItemActions:
 
     def _consume(self, it):
         p = self.player
-        if it.base.get("tome"):
+        if (it.base or {}).get("tome"):
             if it.quantity <= 0:
                 self.log("The tome is empty. Buy scrolls from Akara.", GREY)
                 return False

@@ -1085,6 +1085,19 @@ class Game:
             h.store = None
             h.show_inv = True
 
+    def open_goblin(self):
+        """The Loot Goblin: a shop with nothing for sale that buys your loot, anywhere."""
+        from game import qol
+        h = self.hud
+        h.store = qol.goblin_store()
+        h.show_inv = True
+        h.show_char = h.show_quests = h.show_skills = False
+        h.show_waypoints = False
+        h.show_cube = False
+        qol.ensure_pet(self.world)
+        self.world.log("The Loot Goblin grins: \"Got anything shiny?\" (drag items here, or Ctrl + right click)",
+                       (199, 179, 119))
+
     def _is_stash_open(self):
         h = self.hud
         return bool(getattr(h, "show_cube", False)) and getattr(getattr(h, "cube_item", None), "code", "") == "stash"
@@ -1167,15 +1180,17 @@ class Game:
                 h.store = None
                 self._end_socket_mode()
                 return
+            if action in ("store_item", "store_grid") and w.held is not None:
+                w.sell(w.held)                       # an item dragged onto the shop is sold
+                return
             if action == "store_item":
-                if w.held is not None:
-                    return
-                if button == 1:
+                if button in (1, 3):                 # D2: right click buys (left click too)
                     w.buy(h.store, arg)
                 return
             if action == "store_grid":
-                if w.held is not None and w.held in ():
-                    pass
+                return
+            if action == "inv_page":
+                h.inv_page = arg
                 return
             if action == "end_turn" and self.can_act():
                 w.end_player_turn()
@@ -1371,8 +1386,12 @@ class Game:
                     if it is not None:
                         if button == 3:
                             from game.cube import bankable
-                            if getattr(h, "store", None) is not None:
-                                w.sell(it)
+                            from game import qol
+                            ctrl = bool(pygame.key.get_mods() & pygame.KMOD_CTRL) if hasattr(pygame.key, "get_mods") else False
+                            if getattr(h, "store", None) is not None and ctrl:
+                                w.sell(it)                   # Ctrl + right click sells
+                            elif qol.is_goblin(it):
+                                self.open_goblin()
                             elif self._is_stash_open() and bankable(it):
                                 w.bank_deposit(it)          # onto its stack in the stash
                             elif getattr(it, "use", None) == "cube":
@@ -1785,6 +1804,9 @@ class Game:
         self.advance_walk()
         if getattr(self.hud, "store", None) is None:
             self._end_socket_mode()             # the socket service ends with the trade screen
+        if getattr(self.world, "player", None) is not None:
+            from game import qol
+            qol.ensure_pet(self.world)          # the golden Fallen of the Loot Goblin option
         if getattr(self.world, "open_stash", False):
             self.world.open_stash = False
             self.open_stash()

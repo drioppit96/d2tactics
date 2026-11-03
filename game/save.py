@@ -143,6 +143,7 @@ def save_character(player, difficulty="normal"):
         skills=dict(p.skills.levels), skill_points=p.skills.points, right_skill=p.right_skill, left_skill=getattr(p, "left_skill", None),
         boss_kills=list(getattr(p, "boss_kills", []) or []),
         tracked_quest=getattr(p, "tracked_quest", None),
+        qol=dict(getattr(p, "qol", None) or {}),
         quests=dict(getattr(p, "quests", {})), waypoints=sorted(getattr(p, "waypoints", {1})),
         visited=sorted(getattr(p, "visited", {1})), cain=bool(getattr(p, "cain_rescued", False)),
         hireling=bool(getattr(p, "has_hireling", False)),
@@ -225,6 +226,7 @@ def build_player(data, content):
     p.left_skill = data.get("left_skill")
     p.boss_kills = list(data.get("boss_kills") or [])
     p.tracked_quest = data.get("tracked_quest")
+    p.qol = dict(data.get("qol") or {})
     p.map_explored = dict(data.get("map_explored") or {})      # the automap ("same maps every game")
     p.cairn_order = data.get("cairn_order")
     p.quest_stats = dict(data.get("quest_stats", {}) or {})

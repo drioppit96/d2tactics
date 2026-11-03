@@ -244,8 +244,16 @@ class D2Hud:
         ox = self.lw - 320
         cx, cy = int((lx - ox - GRID_X) // CELL), int((ly - GRID_Y) // CELL)
         if 0 <= cx < 10 and 0 <= cy < 4:
-            return cx, cy
+            return cx, cy + 4 * self._inv_page()
         return None
+
+    def _inv_page(self):
+        """Which backpack page is shown (the second only with the Bigger Inventory option)."""
+        w = getattr(self, "world", None)
+        p = getattr(w, "player", None)
+        if p is None or p.INV_H <= 4:
+            self.inv_page = 0
+        return getattr(self, "inv_page", 0)
 
     # ------------------------------------------------------------ drawing
     def draw(self, surf, world, scene, mouse):
@@ -1526,11 +1534,15 @@ class D2Hud:
                 elif hot and held is not None and getattr(held, "gem", None) and getattr(it, "sockets", 0):
                     self._draw_sockets(surf, it, ox + x, y, w, h)
             self.region(ox + x, y, w, h, "slot", slot)
-        # backpack grid
+        # backpack grid (one page of 4 rows; two pages with the Bigger Inventory option)
+        page = self._inv_page()
         for it in p.inventory:
             if getattr(it, "inv_pos", None) is None:
                 continue
             cx, cy = it.inv_pos
+            if not page * 4 <= cy < page * 4 + 4:
+                continue
+            cy -= page * 4
             w, h = p._size(it)
             x, y = ox + GRID_X + cx * CELL, GRID_Y + cy * CELL
             if it.mod_list is not None and not it.requirements_ok(p):
@@ -1552,7 +1564,9 @@ class D2Hud:
                     lines = lines + [("", WHITE), ("Equipped: " + cur.shown_name, cur.color)]
                 if self.store is not None:
                     from game.d2items import sell_price
-                    lines.append(("Sell value: %d (right click)" % sell_price(it), GOLD))
+                    from game.qol import is_goblin
+                    if not is_goblin(it) and it.kind != "quest":
+                        lines.append(("Sell value: %d (Ctrl + right click, or drag it to the shop)" % sell_price(it), GOLD))
                 self.hover_lines = lines + self._socket_cost_lines(it)
         if held is not None:
             cell = self.grid_cell_at((mx * self.s, my * self.s))
@@ -1563,8 +1577,10 @@ class D2Hud:
                 good = ok and len(over) <= 1
                 tint = pygame.Surface((int((hw * CELL) * self.s), int((hh * CELL) * self.s)), pygame.SRCALPHA)
                 tint.fill((0, 120, 0, 70) if good else (140, 0, 0, 70))
-                surf.blit(tint, self.P(ox + GRID_X + gx * CELL, GRID_Y + gy * CELL))
+                surf.blit(tint, self.P(ox + GRID_X + gx * CELL, GRID_Y + (gy - page * 4) * CELL))
         self.region(ox + GRID_X, GRID_Y, 10 * CELL, 4 * CELL, "grid")
+        if p.INV_H > 4:
+            self._inv_page_tabs(surf, ox, page)
         self.text(surf, self.f16, str(p.gold), WHITE, ox + GOLD_BOX[0] + 4, GOLD_BOX[1] + 2)
         self._close_button(surf, INV_CLOSE, ox, "inv")
 
@@ -1578,7 +1594,24 @@ class D2Hud:
         fy = (my - GRID_Y) / CELL - h / 2.0
         gx = int(round(fx))
         gy = int(round(fy))
-        return max(0, min(10 - w, gx)), max(0, min(4 - h, gy))
+        page = self._inv_page()
+        return max(0, min(10 - w, gx)), max(0, min(4 - h, gy)) + 4 * page
+
+    def _inv_page_tabs(self, surf, ox, page):
+        """Bigger Inventory: the two backpack pages (I / II) beside the gold box."""
+        b = self.frames.get("buysellbtn") or []
+        mx, my = self.mouse
+        for i in (0, 1):
+            x, y = ox + 228 + i * 36, 385
+            on = i == page
+            if len(b) > 1:
+                self.put(surf, b[1 if on else 0], x, y)
+            else:
+                pygame.draw.rect(surf, GOLD, self.R(x, y, 32, 32), 1)
+            self.text(surf, self.f16, "I" * (i + 1), GOLD if on else WHITE, x, y + 9, "center", 32)
+            self.region(x, y, 32, 32, "inv_page", i)
+            if pygame.Rect(int(x), int(y), 32, 32).collidepoint((int(mx), int(my))):
+                self.hover_lines = [("Backpack page %s" % ("I" * (i + 1)), WHITE)]
 
     def _draw_held(self, surf, it):
         p = self.world.player

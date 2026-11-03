@@ -1416,7 +1416,7 @@ class SkillCaster:
                     a.alive = False
                     self.emit("death", a)
                     continue
-            if a.ai == "wall" or getattr(a, "decoy", False):
+            if a.ai in ("wall", "pet") or getattr(a, "decoy", False):
                 continue
             if a.ai == "turret":
                 self._turret_shoot(a)

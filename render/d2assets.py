@@ -474,6 +474,9 @@ class D2Assets(AssetProvider):
         key = ("shift", token, n)
         if key in self.item_cache:
             return self.item_cache[key]
+        if n == "gold":
+            self.item_cache[key] = self._gold_table()
+            return self.item_cache[key]
         ms = self.monstats.get((mid or "").lower(), {})
         ms2 = self.monstats2.get((ms.get("monstatsex") or mid or "").lower(), {})
         table = None
@@ -491,6 +494,29 @@ class D2Assets(AssetProvider):
                 break
         if table is None:
             table = self._hue_table(n)
+        self.item_cache[key] = table
+        return table
+
+    def _gold_table(self):
+        """Every colour turned to gold by its brightness (the Loot Goblin's golden Fallen)."""
+        key = ("goldtab",)
+        if key in self.item_cache:
+            return self.item_cache[key]
+        pal = [tuple(c[:3]) for c in self.palette[:256]]
+        out = bytearray(range(256))
+        for i in range(1, 256):
+            r, g, b = pal[i]
+            l = (r * 30 + g * 59 + b * 11) / 100.0
+            k = min(1.6, 0.35 + l / 110.0)
+            tr, tg, tb = min(255, 255 * k * l / 160.0 + 20), min(255, 200 * k * l / 160.0 + 10), min(255, 60 * k * l / 160.0)
+            best, bd = i, 1e9
+            for j in range(1, 256):
+                pr, pg, pb = pal[j]
+                d = (pr - tr) ** 2 + (pg - tg) ** 2 + (pb - tb) ** 2
+                if d < bd:
+                    best, bd = j, d
+            out[i] = best
+        table = bytes(out)
         self.item_cache[key] = table
         return table
 
