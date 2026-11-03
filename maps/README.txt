@@ -1,11 +1,8 @@
-Maps made with the map editor ("Map Editor.bat") are saved here as .json files.
+The map editor ("Map Editor.bat") opens the Kurast Armory - and only the armory.
 
-- To show me a design, attach its .json file in the chat.
-- To play it: in the editor click "Replaces level" and type the id of a level it should replace
-  (a level you enter through an entrance - a cave, a tomb, a sewer...). The next time you
-  enter that level in the game, you walk into your map instead.
-  Put a Start marker (where you arrive) and an Exit marker (Marker tab) so you can leave.
-- The "Random monsters" button turns the level's usual random monsters on or off; monsters you place are always there.
-
-Some level ids: 8 Den of Evil, 21 Tower Cellar Level 1, 47 Sewers Level 1 (Act 2),
-92 Sewers Level 1 (Act 3), 93 Sewers Level 2 (Act 3).
+- Paint floors and walls (Kurast fieldstone, plaster, pillars...), stamp rooms, place D2 objects
+  (torches, braziers, chests, racks...), monsters, the game's sprites (Sprite tab) and the armory's
+  markers (Marker tab: the four altars and the smith's spot).
+- Save writes kurast_armory.json here; the game builds the armory from it the next time you enter
+  Kurast. Delete that file to go back to the armory the game comes with.
+- Keep the gate where it is (the west wall, facing the Bazaar's road), so it still joins the Bazaar.

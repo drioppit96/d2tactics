@@ -544,7 +544,90 @@ def _acell(ax, ay, x, y):
     return (int(round((ax + 1 + x) * SUB + 2)), int(round((ay + 1 + y) * SUB + 2)))
 
 
-def stamp_armory(kit, b, ax, ay):
+ARMORY_MAP_NAME = "kurast_armory.json"
+
+
+def armory_map():
+    """The armory as a map-editor map: your edited copy (maps/kurast_armory.json) if there is one,
+    otherwise the one that comes with the game (assets/maps). None: build it from the code below."""
+    import json
+    import os
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    from . import custommap
+    for path in (os.path.join(custommap.MAPS, ARMORY_MAP_NAME), os.path.join(root, "assets", "maps", ARMORY_MAP_NAME)):
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                continue
+    return None
+
+
+def stamp_armory(kit, b, ax, ay, procedural=False):
+    """The Kurast Armory into the Kurast world: from its map-editor map when there is one."""
+    data = None if procedural else armory_map()
+    if data is not None:
+        from . import custommap
+        ox, oy = ax - ARMORY_ROAD, ay
+        custommap.lay_tiles(kit, b, data, ox, oy, 76)
+        custommap.lay_things(b, data, ox, oy, 76)
+        b.armory_json = (data, ox, oy)
+        b.areas[76] = ((ox + 1) * SUB, (oy + 1) * SUB, (ax + 1 + ARMORY) * SUB, (ay + 1 + ARMORY) * SUB)
+        b.armory_at = (ax, ay)
+        return
+    _stamp_armory_code(kit, b, ax, ay)
+
+
+def _armory_after_grid_json(b, grid):
+    """Blocking for a map-editor armory: its fieldstone and plaster walls all along their edges, the
+    pillars, the sprites; the altars and the smith's spot from its markers."""
+    from .grid import WALL
+    data, ox, oy = b.armory_json
+
+    def block(x0, y0, x1, y1):
+        for y in range(y0, y1):
+            for x in range(x0, x1):
+                if grid.in_bounds(x, y):
+                    grid.cells[y][x] = WALL
+    for t in data.get("tiles", []):
+        if t[2] != "w":
+            continue
+        o, main = int(t[3]), int(t[4])
+        X, Y = (int(t[0]) + ox) * SUB, (int(t[1]) + oy) * SUB
+        if o == 12:
+            block(X - 1, Y - 1, X + 2, Y + 2)
+            continue
+        if main not in (FIELDSTONE, PLASTER):
+            continue
+        block(X - 1, Y - 1, X + 1, Y + 1)
+        if o in (2, 3, 6):
+            block(X, Y - 1, X + SUB + 1, Y + 1)
+        if o in (1, 3, 5):
+            block(X - 1, Y, X + 1, Y + SUB + 1)
+    _block_decor(b, grid)
+    altars = [c for w, c in getattr(b, "markers", []) if w == "altar"]
+    for c in altars:
+        c2 = drlg.near_walkable(grid, c, 12)
+        if c2:
+            b.objects.append(("armory_altar", c2, 76, -1))
+    smith = [c for w, c in getattr(b, "markers", []) if w == "smith"]
+    b.armory_boss = drlg.near_walkable(grid, smith[0], 12) if smith else None
+
+
+def _block_decor(b, grid):
+    from .grid import WALL
+    for name, (cx, cy) in getattr(b, "decor", []):
+        r = DECOR_BLOCK.get(name, 0)
+        if r <= 0:
+            continue
+        for y in range(cy - r // 2 - 1, cy + (r + 1) // 2):
+            for x in range(cx - r + 1, cx + r):
+                if grid.in_bounds(x, y) and abs(x - cx) / float(r) + abs(y - cy) / float(max(1, r * 0.8)) <= 1.2:
+                    grid.cells[y][x] = WALL
+
+
+def _stamp_armory_code(kit, b, ax, ay):
     """The Kurast Armory into a Built at tile (ax, ay), its gate road reaching west to the Bazaar:
     paving, the waypoint block, Travincal's buildings, solid and plastered walls, rooms filled with
     sprites and D2 objects, the altars and the smith's spot."""
@@ -663,6 +746,8 @@ def armory_after_grid(b, grid, ax, ay):
     """Once the grid exists: the walls block all along, the sprites block what they cover, and the
     altars and the smith's spot are found on walkable ground."""
     from .grid import WALL
+    if getattr(b, "armory_json", None):
+        return _armory_after_grid_json(b, grid)
     off = 1
     for (x0, y0), (x1, y1) in ARMORY_WALLS + ARMORY_INNER:
         if y0 == y1:

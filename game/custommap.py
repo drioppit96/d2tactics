@@ -12,6 +12,8 @@ A map is a JSON file in the maps folder:
                 [tx, ty, "x"]],                                      # erase everything on that tile
    "objects":  [[cx, cy, objects_txt_id], [cx, cy, "waypoint"], ...],  # cells (sub-tiles)
    "monsters": [[cx, cy, "monstats id or super unique name", "normal|champion|unique|pack|super"], ...],
+   "decor":    [[cx, cy, "sprite name (assets/decor)"], ...],
+   "markers":  [[cx, cy, "altar" | "smith"], ...],                  # (the Kurast Armory's quest spots)
    "start":    [cx, cy],
    "exits":    [[cx, cy, level_id], ...]}
 
@@ -82,25 +84,21 @@ def _rnd(x, y, k=0):
     return (x * 73856093 ^ y * 19349663 ^ k * 83492791) & 0xFFFF
 
 
-def compose(kit, data, level_id=0, seed=None, with_grid=True):
-    """The map as a Built (tiles, objects, monsters, exits) - used by the editor and the game."""
-    from .acts import apply_act_tables
-    tw, th = int(data.get("width", 32)), int(data.get("height", 32))
-    b = Built(tw + 1, th + 1)
-    act = int(data.get("act", 1) or 1)
-    apply_act_tables(b, act, kit)
-    rng = random.Random(seed if seed is not None else 12345)
+def lay_tiles(kit, b, data, ox, oy, owner):
+    """The map's rooms and tiles into a Built, its tile (0, 0) at tile (ox, oy). Several wall entries
+    of one orientation on a tile all stay (layered walls); a later paint replaces the room's."""
     lt = data.get("lvltype", "")
-    owner = level_id or 0
     for tx, ty, path in data.get("rooms", []):
         ds = kit.ds1(path)
         if ds is not None:
-            stamp(b, ds, kit.tiles_for(ds, lt), int(tx), int(ty), random.Random(_rnd(tx, ty)), owner, keep_edges=False)
+            stamp(b, ds, kit.tiles_for(ds, lt), int(tx) + ox, int(ty) + oy, random.Random(_rnd(tx, ty)), owner,
+                  keep_edges=False)
     ts = tileset(kit, lt)
     tm = b.tm
+    mine = set()
     for t in data.get("tiles", []):
         tx, ty, layer = int(t[0]), int(t[1]), t[2]
-        pos = (tx, ty)
+        pos = (tx + ox, ty + oy)
         if layer == "x":
             tm.floor.pop(pos, None)
             tm.floor2.pop(pos, None)
@@ -112,21 +110,49 @@ def compose(kit, data, level_id=0, seed=None, with_grid=True):
                 (tm.floor if layer == "f" else tm.floor2)[pos] = ref
         elif layer == "w":
             o, main, sub = int(t[3]), int(t[4]), int(t[5])
-            lst = [r for r in tm.walls.get(pos, []) if getattr(r[1], "orientation", -1) != o]
+            keep = (pos, o) in mine
+            lst = [r for r in tm.walls.get(pos, []) if keep or getattr(r[1], "orientation", -1) not in (o, 4 if o == 3 else -9)]
             for oo in ([o, 4] if o == 3 else [o]):
                 ref = ts.pick(oo, main, sub, _rnd(tx, ty, oo))
                 if ref:
                     lst.append(ref)
             tm.walls[pos] = lst
-    b.areas[owner] = (0, 0, tw * SUB, th * SUB)
-    tm.drawn = set(tm.floor) | set(tm.walls) | set(tm.floor2)
-    grid = make_grid(tm) if with_grid else None
+            mine.add((pos, o))
+
+
+def lay_things(b, data, ox, oy, owner):
+    """The map's objects, sprites and markers (cells shifted by the tile offset)."""
+    dx, dy = ox * SUB, oy * SUB
     for o in data.get("objects", []):
-        cx, cy, what = int(o[0]), int(o[1]), o[2]
+        cx, cy, what = int(o[0]) + dx, int(o[1]) + dy, o[2]
         if what in ("waypoint", "portal"):
             b.objects.append((what, (cx, cy), owner, -1))
         else:
             b.gen_objects.append((("id", int(what)), (cx, cy), owner))
+    decor = b.__dict__.setdefault("decor", [])
+    for cx, cy, name in data.get("decor", []):
+        decor.append((name, (int(cx) + dx, int(cy) + dy)))
+    b.__dict__.setdefault("markers", [])
+    for cx, cy, what in data.get("markers", []):
+        b.markers.append((what, (int(cx) + dx, int(cy) + dy)))
+
+
+def compose(kit, data, level_id=0, seed=None, with_grid=True):
+    """The map as a Built (tiles, objects, monsters, exits) - used by the editor and the game."""
+    from .acts import apply_act_tables
+    tw, th = int(data.get("width", 32)), int(data.get("height", 32))
+    b = Built(tw + 1, th + 1)
+    act = int(data.get("act", 1) or 1)
+    apply_act_tables(b, act, kit)
+    rng = random.Random(seed if seed is not None else 12345)
+    lt = data.get("lvltype", "")
+    owner = level_id or 0
+    lay_tiles(kit, b, data, 0, 0, owner)
+    tm = b.tm
+    b.areas[owner] = (0, 0, tw * SUB, th * SUB)
+    tm.drawn = set(tm.floor) | set(tm.walls) | set(tm.floor2)
+    grid = make_grid(tm) if with_grid else None
+    lay_things(b, data, 0, 0, owner)
     b.custom_monsters = [((int(m[0]), int(m[1])), m[2], (m[3] if len(m) > 3 else "normal"))
                          for m in data.get("monsters", [])]
     st = data.get("start")

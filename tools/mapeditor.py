@@ -1,4 +1,5 @@
-"""D2 Tactics map editor: put D2's own tiles, rooms, objects and monsters together into an area.
+"""D2 Tactics map editor - the Kurast Armory: D2 tiles, walls, pillars, rooms, objects, monsters, the
+game's decoration sprites and the armory's altars and smith spot. It opens the armory and only the armory.
 
 Start it with "Map Editor.bat" (it reads your Diablo II files like the game does).
 Maps are saved as JSON in the maps folder (see game/custommap.py for the format). A map whose
@@ -34,7 +35,8 @@ from game import custommap  # noqa: E402
 PANEL_W = 290
 TOP_H = 92                     # info line + two rows of buttons
 BOT_H = 24
-TABS = ["Floor", "Wall", "Room", "Object", "Monster", "Marker"]
+TABS = ["Floor", "Wall", "Room", "Object", "Monster", "Marker", "Sprite"]
+DECOR_DIR = os.path.join(ROOT, "assets", "decor")
 BG = (14, 12, 10)
 PANEL = (28, 24, 20)
 LINE = (90, 78, 52)
@@ -152,9 +154,15 @@ class Editor:
                 if strings is not None:
                     nm = strings.get(nm, nm)
                 out.append(("* %s (super unique)" % nm, ("super", k)))
+        elif self.tab == 6:
+            names = sorted(f[:-4] for f in os.listdir(DECOR_DIR) if f.endswith(".png")) if os.path.isdir(DECOR_DIR) else []
+            out = [(n, ("sprite", n)) for n in names]
         else:
             out = [("Start (where you arrive)", "start"), ("Exit to a level...", "exit"),
                    ("Erase a tile completely (even a room's)", "x")]
+            if self.doc.get("armory"):
+                out = [("Altar (light all to call the smith)", "altar"), ("The smith's spot", "smith"),
+                       ("Erase a tile completely (even a room's)", "x")]
         if s:
             out = [e for e in out if s in e[0].lower()]
         self._lists[key] = out
@@ -238,6 +246,15 @@ class Editor:
             kind = "super" if v[0] == "super" else KINDS[self.kind]
             self.doc["monsters"] = [m for m in self.doc["monsters"] if (m[0], m[1]) != cell] + [[cell[0], cell[1], what, kind]]
             return "obj"
+        if self.tab == 6 and first:
+            self.doc.setdefault("decor", []).append([cell[0], cell[1], v[1]])
+            return "obj"
+        if self.tab == 5 and v in ("altar", "smith") and first:
+            mk = self.doc.setdefault("markers", [])
+            if v == "smith":
+                mk[:] = [m for m in mk if m[2] != "smith"]
+            mk.append([cell[0], cell[1], v])
+            return "obj"
         if self.tab == 5:
             if v == "x" and inside:
                 self._set_tile([tx, ty, "x"])
@@ -265,6 +282,11 @@ class Editor:
             n = len(d["tiles"])
             d["tiles"] = [t for t in d["tiles"] if not (t[0] == tx and t[1] == ty and t[2] in lay)]
             if self.tab == 5:
+                mk = d.get("markers", [])
+                n3 = len(mk)
+                d["markers"] = [m for m in mk if max(abs(m[0] - cell[0]), abs(m[1] - cell[1])) > 2]
+                if n3 != len(d["markers"]):
+                    return "obj"
                 n2 = len(d["exits"])
                 d["exits"] = [e for e in d["exits"] if max(abs(e[0] - cell[0]), abs(e[1] - cell[1])) > 2]
                 if d["start"] and max(abs(d["start"][0] - cell[0]), abs(d["start"][1] - cell[1])) <= 2:
@@ -281,8 +303,9 @@ class Editor:
                     d["rooms"].pop(i)
                     return "room"
             return False
-        if self.tab in (3, 4) and first:
-            key = "objects" if self.tab == 3 else "monsters"
+        if self.tab in (3, 4, 6) and first:
+            key = {3: "objects", 4: "monsters", 6: "decor"}[self.tab]
+            d.setdefault(key, [])
             n = len(d[key])
             d[key] = [o for o in d[key] if max(abs(o[0] - cell[0]), abs(o[1] - cell[1])) > 1]
             return "obj" if n != len(d[key]) else False
@@ -293,7 +316,7 @@ class Editor:
         return re.sub(r"[^A-Za-z0-9_\-]+", "_", self.doc.get("name") or "area").strip("_") or "area"
 
     def save(self):
-        path = custommap.save(self.doc, self.filename())
+        path = custommap.save(self.doc, "kurast_armory" if self.doc.get("armory") else self.filename())
         self.msg = "Saved %s" % path
         return path
 
@@ -391,7 +414,7 @@ class Editor:
             return None
         if k == pygame.K_TAB:
             self.set_tab((self.tab + 1) % len(TABS))
-        elif k in (pygame.K_PAGEUP, pygame.K_PAGEDOWN):
+        elif k in (pygame.K_PAGEUP, pygame.K_PAGEDOWN) and not self.doc.get("armory"):
             self.cycle_act(1 if k == pygame.K_PAGEDOWN else -1)
         elif k in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN):
             step = 160 / self.zoomf()
@@ -412,6 +435,9 @@ class Editor:
 
     def do(self, act):
         """A toolbar button (or its Ctrl shortcut)."""
+        if self.doc.get("armory") and act in ("new", "open", "rename", "level", "random", "ts-", "ts+", "act-", "act+",
+                                              "w-", "w+", "h-", "h+"):
+            return
         if act == "save":
             self.save()
         elif act == "open":
@@ -483,6 +509,8 @@ class Editor:
                 ("Grid: %s" % ("on" if self.grid_on else "off"), "grid", self.grid_on),
                 ("Floor layer %d" % (2 if self.layer2 else 1), "layer", self.layer2),
                 ("Monsters: %s" % KINDS[self.kind], "kind", self.kind > 0)]
+        if d.get("armory"):                     # the Kurast Armory: only this map, its size and set fixed
+            row1 = [r for r in row1 if r[1] not in ("new", "open", "rename", "level", "random")]
         for label, act, on in row1:
             w = self.font.size(label)[0] + 18
             out.append((pygame.Rect(x, y, w, 24), label, act, on))
@@ -491,6 +519,8 @@ class Editor:
         groups = [("Act %d" % self.act(), "act"), (d.get("lvltype", ""), "ts"),
                   ("Width %d" % d["width"], "w"), ("Height %d" % d["height"], "h"),
                   ("Zoom %d%%" % int(self.zoomf() * 100), "z")]
+        if d.get("armory"):
+            groups = [g for g in groups if g[1] == "z"]
         for label, key in groups:
             out.append((pygame.Rect(x, y, 24, 24), "<" if key in ("act", "ts") else "-", key + "-", False))
             x += 28
@@ -594,12 +624,12 @@ class Editor:
         return out
 
     def _entry_geom(self):
-        tiles = self.tab in (0, 1)
+        tiles = self.tab in (0, 1, 6)
         return (2, 128, 78) if tiles else (1, PANEL_W - 12, 20)
 
     def _entry_rects(self):
         cols, ew, eh = self._entry_geom()
-        y0 = 86
+        y0 = 112
         out = []
         ents = self.entries()
         maxrows = (self.H - y0 - 80) // (eh + 4)
@@ -615,7 +645,9 @@ class Editor:
             return self.thumbs[key]
         img = None
         try:
-            if self.tab in (0, 1):
+            if self.tab == 6:
+                img = pygame.image.load(os.path.join(DECOR_DIR, value[1] + ".png")).convert_alpha()
+            elif self.tab in (0, 1):
                 ref = self.tileset().pick(value[0], value[1], value[2], 0)
                 ts = self.a.tile_surface(ref) if ref else None
                 if ts:
@@ -636,8 +668,8 @@ class Editor:
             pygame.draw.rect(surf, SEL if i == self.tab else (40, 34, 26), r)
             pygame.draw.rect(surf, LINE, r, 1)
             self.text(surf, TABS[i], (r.x + 8, r.y + 3), GOLD if i == self.tab else GREY)
-        pygame.draw.rect(surf, (10, 9, 8), (4, 58, PANEL_W - 10, 22))
-        self.text(surf, "search: " + (self.search or "(type to filter)"), (8, 61), WHITE if self.search else GREY)
+        pygame.draw.rect(surf, (10, 9, 8), (4, 84, PANEL_W - 10, 22))
+        self.text(surf, "search: " + (self.search or "(type to filter)"), (8, 87), WHITE if self.search else GREY)
         ents = self.entries()
         cols, ew, eh = self._entry_geom()
         sel = self.selected()
@@ -647,7 +679,7 @@ class Editor:
             pygame.draw.rect(surf, SEL if on else (36, 31, 25), r)
             if on:
                 pygame.draw.rect(surf, GOLD, r, 1)
-            if self.tab in (0, 1):
+            if self.tab in (0, 1, 6):
                 img = self._thumb(value, ew - 4, eh - 16)
                 if img is not None:
                     surf.blit(img, (r.x + (ew - img.get_width()) // 2, r.y + 2))
@@ -737,6 +769,9 @@ class Editor:
         pygame.draw.lines(off, GOLD, True, [(int(x), int(y)) for x, y in corners], 2)
         if self.doc.get("start"):
             self._marker(off, cam, tuple(self.doc["start"]), (60, 220, 90), "START")
+        for mx_, my_, what in self.doc.get("markers", []):
+            self._marker(off, cam, (mx_, my_), (80, 170, 255) if what == "altar" else (230, 50, 50),
+                         "ALTAR" if what == "altar" else "SMITH")
         for e in self.doc.get("exits", []):
             self._marker(off, cam, (e[0], e[1]), (170, 90, 230), "EXIT -> %s" % e[2])
         # cursor
@@ -852,6 +887,20 @@ class Editor:
             self.text(surf, "Enter: OK   Esc: cancel", (box.x + 14, box.y + 76), GREY, self.small)
 
 
+def armory_path():
+    """Your edited armory (maps/kurast_armory.json), else the game's own (assets/maps)."""
+    mine = os.path.join(custommap.MAPS, "kurast_armory.json")
+    return mine if os.path.exists(mine) else os.path.join(ROOT, "assets", "maps", "kurast_armory.json")
+
+
+def open_armory(ed):
+    """The editor works on the Kurast Armory only: it opens it straight away. Save writes your copy
+    to maps/kurast_armory.json, which the game then builds the armory from."""
+    ed.open(armory_path())
+    ed.doc["armory"] = True
+    ed.msg = "Kurast Armory. Save writes maps/kurast_armory.json - the game builds the armory from it."
+
+
 def main():
     from main import load_settings
     cfg = load_settings()
@@ -875,6 +924,7 @@ def main():
         print("Could not read the level files.")
         return 1
     ed = Editor(assets, screen.get_size())
+    open_armory(ed)
     clock = pygame.time.Clock()
     while True:
         for e in pygame.event.get():
