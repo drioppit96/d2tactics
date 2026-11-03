@@ -1859,12 +1859,13 @@ class D2Hud:
         am = self.minimaps.get(id(world))
         if am is None:
             from .automap import Automap
-            am = self.minimaps[id(world)] = Automap(world)
+            am = self.minimaps[id(world)] = Automap(world, self.assets)
         W, H = surf.get_size()
+        k = max(1.0, round(self.s * 2) / 2.0)          # D2's automap scale, grown with the window
         if self.automap_mode == 1:
-            am.draw_full(surf, (W / 2, H / 2 - 50 * self.s))
+            am.draw_full(surf, (W / 2, H / 2 - 50 * self.s), k)
         else:
-            am.draw_mini(surf, pygame.Rect(int(W - 240 * self.s), int(20 * self.s), int(230 * self.s), int(150 * self.s)))
+            am.draw_mini(surf, pygame.Rect(int(W - 240 * self.s), int(20 * self.s), int(230 * self.s), int(150 * self.s)), k)
         diff = getattr(getattr(self.assets, "content", None), "sfx", "")
         dname = {"": "Normal", "(n)": "Nightmare", "(h)": "Hell"}.get(diff, "Normal")
         self.text(surf, self.f16, world.level_name, GOLD, self.lw - 210, 6, "right", 200)
