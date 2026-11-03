@@ -473,9 +473,24 @@ class World(SkillCaster, ItemActions):
         return not self.game_over and self.turn == "player"
 
     # ------------------------------------------------------------ awareness / combat state
+    def toggle_invisible(self):
+        """TEST ONLY (key 9): monsters don't notice you; whoever was fighting you forgets you."""
+        p = self.player
+        p.invisible = not getattr(p, "invisible", False)
+        if p.invisible:
+            for m in self.monsters:
+                if not m.ally and m.ai != "npc":
+                    m.aware = False
+            self.check_combat_end()
+            self.log("Invisible (test): monsters ignore you. Press 9 again to be seen.", (150, 150, 255))
+        else:
+            self.log("Visible again.", (150, 150, 255))
+
     def check_awareness(self):
         newly = []
         p = self.player
+        if getattr(p, "invisible", False):
+            return newly
         from . import bosses
         bosses.on_player_move(self)
         for m in self.living_monsters():

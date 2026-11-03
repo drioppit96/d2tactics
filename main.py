@@ -1588,6 +1588,8 @@ class Game:
             w.end_player_turn()
         elif key in (pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4) and self.can_act():
             w.use_potion(key - pygame.K_1)
+        elif key == pygame.K_9:
+            w.toggle_invisible()            # TEST ONLY: monsters ignore you
         elif key == pygame.K_i:
             self.toggle_panel("inv")
         elif key == pygame.K_c:
