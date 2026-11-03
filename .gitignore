@@ -37,3 +37,4 @@ numpy_skip.txt
 errors.log
 d2act*_part*.zip
 d2tables.zip
+maps/*.json

@@ -244,7 +244,7 @@ def populate(world, built, info, taken, safe):
     for o in world.objects:
         used_cells.add(o["cell"])
     for n, cell, owner in getattr(built, "gen_objects", []):
-        oid = object_id(act, n)
+        oid = n[1] if isinstance(n, tuple) else object_id(act, n)     # ("id", n): a map editor object
         countess = act == 1 and n == 38 and owner == 25       # the Countess's treasure chest
         if countess:
             oid = 6                                           # (drawn as D2's large chest)

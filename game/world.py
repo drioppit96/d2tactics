@@ -232,6 +232,9 @@ class World(SkillCaster, ItemActions):
     def _default_start(self):
         """Where a new game starts: next to Warriv in the camp; in dungeons at the way in."""
         from .acts import TOWN_START_NPC
+        cs = getattr(self, "custom_start", None)
+        if cs and self.grid.walkable(*cs):
+            return cs
         starts = set(TOWN_START_NPC.values())
         warriv = [n.pos for n in self.npcs if getattr(n, "npc", "") in starts]
         if warriv:

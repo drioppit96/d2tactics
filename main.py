@@ -320,7 +320,7 @@ class Game:
         self.restore_map(key, w)
         if arrive is not None and (not w.grid.walkable(*arrive) or arrive in w.occupied()):
             arrive = w._free_cell_near(arrive, 5)
-        spot = arrive or w.entries.get(src_level) or w.entries.get(target)
+        spot = arrive or w.entries.get(src_level) or w.entries.get(target) or getattr(w, "custom_start", None)
         if spot is None:
             spot = w._default_start()
         followers = [a for a in old.allies() if a.ai not in ("turret", "wall")]

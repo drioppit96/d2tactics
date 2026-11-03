@@ -368,9 +368,13 @@ def setup(world, built, grid, rng, info, level_key):
     gobjects.populate(world, b, info, taken, safe)
     world._obj_time = _t.time() - _t0
     for lid, rect in world.areas.items():
-        if lid in TOWN_IDS or lid in (20, 73):
+        if lid in TOWN_IDS or lid in (20, 73) or not getattr(b, "random_monsters", True):
             continue
         _populate(world, lid, rect, taken, safe, info)
+    if getattr(b, "custom_monsters", None):
+        from . import custommap
+        custommap.spawn_monsters(world, b, taken, info)
+    world.custom_start = getattr(b, "custom_start", None)
     if level_key == "kurast":
         from .act3 import spawn_side_bosses
         spawn_side_bosses(world, taken, info)
@@ -803,7 +807,11 @@ def make_world(kit, info, content, level_key, seed=None, player=None, char_class
     act2.KIT = kit
     if unique_level(level_key):
         seed = 7919 * level_key + 17          # fixed: unique areas look the same every game
-    if level_key == "wild":
+    from . import custommap
+    custom = custommap.for_level(level_key)
+    if custom is not None:
+        b, grid, rng = custommap.compose(kit, custom, level_key, seed)   # a map from the map editor
+    elif level_key == "wild":
         b, grid, rng = build_outdoors(kit, seed, content)
     elif level_key == "desert":
         b, grid, rng = act2.build_desert(kit, seed, content)
