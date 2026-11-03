@@ -43,6 +43,7 @@ def export(kit):
             objects.append([c[0], c[1], "waypoint"])
     markers = [list(act3._acell(R, 0, *a)) + ["altar"] for a in act3.ARMORY_ALTARS]
     markers.append(list(act3._acell(R, 0, *act3.ARMORY_BOSS)) + ["smith"])
+    markers.append(list(act3._acell(R, 0, *act3.ARMORY_SPIDER)) + ["spider"])
     return {"version": 1, "name": "Kurast Armory", "act": 3, "lvltype": "Act 3 - Kurast", "width": W, "height": H,
             "level": 0, "armory": True, "random_monsters": True, "rooms": [], "tiles": tiles, "objects": objects,
             "monsters": [], "decor": [[c[0], c[1], n] for n, c in b.decor], "markers": markers,

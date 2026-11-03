@@ -480,6 +480,9 @@ class D2Assets(AssetProvider):
         if n == "paleblue":
             self.item_cache[key] = self._tint_table((150, 200, 255), 25)
             return self.item_cache[key]
+        if n == "dark":                      # soot-dark hide (the Kurast Armory's giants)
+            self.item_cache[key] = self._tint_table((92, 80, 74), 0)
+            return self.item_cache[key]
         ms = self.monstats.get((mid or "").lower(), {})
         ms2 = self.monstats2.get((ms.get("monstatsex") or mid or "").lower(), {})
         table = None

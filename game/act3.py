@@ -208,7 +208,7 @@ def _kurast_spec(lid):
 # this game's two extra areas (level ids of the skipped jungle, renamed): built like the area they
 # join - the Kurast Armory off Lower Kurast's east side, the Kurast Scriptorium off the Bazaar's west
 SIDE_AREAS = {76: dict(name="Kurast Armory", like=80, side="e", own_world=True,
-                       extra=["fetish5", "fetishshaman5", "arach4"]),
+                       roster=["zealot1", "blunderbore1"]),      # Zakarumites and the harem's dark giants
               77: dict(name="Kurast Scriptorium", like=80, side="w", extra=["cantor2", "zealot3", "mummy5"])}
 SIDE_W = 5                     # blocks (8 tiles) wide
 
@@ -301,6 +301,10 @@ def spawn_side_bosses(world, taken, info):
         c = drlg.near_walkable(world.grid, spot, 30)
         if c is not None:
             actworld._spawn_preset(world, "Stormtree", c, 79, taken, info)
+    for m in world.monsters:                 # the armory's giants are soot-dark, like the harem's
+        if getattr(m, "d2id", None) == "blunderbore1" and not getattr(m, "color_shift", 0) \
+                and world.area_at((m.x, m.y)) == 76:
+            m.color_shift = "dark"
     for lid, mid, name, tag, mods, (minion, n) in SIDE_BOSSES:
         rect = world.areas.get(lid)
         if rect is None or world.content is None or mid not in world.content.monstats:
@@ -309,7 +313,12 @@ def spawn_side_bosses(world, taken, info):
             continue
         x0, y0, x1, y1 = rect
         cell = None
-        for _ in range(200):
+        nest = getattr(world, "armory_spider", None) if tag == "silkmother" else None
+        if nest is not None:                 # the Silkmother waits in her nest by the armory's gate
+            cell = actworld._free_near(world.grid, nest, 8)
+            if cell in taken or not world.grid.walkable(*cell):
+                cell = None
+        for _ in range(0 if cell else 200):
             c = (rng.randrange(x0 + 30, x1 - 30), rng.randrange(y0 + 30, y1 - 30))
             if world.grid.walkable(*c) and c not in taken and actworld._reachable(world, c):
                 cell = c
@@ -381,6 +390,7 @@ ARMORY_INNER = [((0, 8), (8, 8)),                                            # b
                 ((34, 15), (36, 15)), ((41, 15), (43, 15))]                  # the forge court's inner gate
 ARMORY_ALTARS = [(2.5, 2.5), (40.5, 2.5), (2.5, 40.5), (40.5, 40.5)]
 ARMORY_BOSS = (38.5, 28.5)
+ARMORY_SPIDER = (-6.8, 27.0)    # the spider queen's nest, by the guardhouse in the forecourt
 # Travincal buildings: (preset, source x, y, w, h, where in the blueprint)
 ARMORY_BUILDINGS = [("travnw", 10, 12, 7, 7, (20, 5)),           # the weapon vault (a Travincal hall)
                     ("travs", 12, 3, 7, 7, (35, 19)),            # the council dais: the smith's forge court
@@ -605,6 +615,9 @@ def _armory_after_grid_json(b, grid):
             b.objects.append(("armory_altar", c2, 76, -1))
     smith = [c for w, c in getattr(b, "markers", []) if w == "smith"]
     b.armory_boss = drlg.near_walkable(grid, smith[0], 12) if smith else None
+    spider = [c for w, c in getattr(b, "markers", []) if w == "spider"]
+    c = spider[0] if spider else _acell(ox + ARMORY_ROAD, oy, *ARMORY_SPIDER)
+    b.armory_spider = drlg.near_walkable(grid, c, 12)
 
 
 def _block_decor(b, grid):
@@ -773,6 +786,7 @@ def armory_after_grid(b, grid, ax, ay):
         if c:
             b.objects.append(("armory_altar", c, 76, -1))
     b.armory_boss = drlg.near_walkable(grid, _acell(ax, ay, *ARMORY_BOSS), 12)
+    b.armory_spider = drlg.near_walkable(grid, _acell(ax, ay, *ARMORY_SPIDER), 12)
 
 
 SMITH_NAME = "Kalvhar the Pale Anvil"

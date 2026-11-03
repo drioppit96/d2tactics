@@ -268,6 +268,7 @@ class Editor:
                    ("Erase a tile completely (even a room's)", "x")]
             if self.doc.get("armory"):
                 out = [("Altar (light all to call the smith)", "altar"), ("The smith's spot", "smith"),
+                       ("The spider queen's nest (Silkmother)", "spider"),
                        ("Erase a tile completely (even a room's)", "x")]
         if s:
             out = [e for e in out if s in e[0].lower()]
@@ -358,10 +359,10 @@ class Editor:
         if self.tab == 6 and first:
             self.doc.setdefault("decor", []).append([cell[0], cell[1], v[1]])
             return "obj"
-        if self.tab == 5 and v in ("altar", "smith") and first:
+        if self.tab == 5 and v in ("altar", "smith", "spider") and first:
             mk = self.doc.setdefault("markers", [])
-            if v == "smith":
-                mk[:] = [m for m in mk if m[2] != "smith"]
+            if v in ("smith", "spider"):
+                mk[:] = [m for m in mk if m[2] != v]
             mk.append([cell[0], cell[1], v])
             return "obj"
         if self.tab == 5:
@@ -949,8 +950,9 @@ class Editor:
         if self.doc.get("start"):
             self._marker(off, cam, tuple(self.doc["start"]), (60, 220, 90), "START")
         for mx_, my_, what in self.doc.get("markers", []):
-            self._marker(off, cam, (mx_, my_), (80, 170, 255) if what == "altar" else (230, 50, 50),
-                         "ALTAR" if what == "altar" else "SMITH")
+            col, lab = {"altar": ((80, 170, 255), "ALTAR"), "smith": ((230, 50, 50), "SMITH"),
+                        "spider": ((200, 90, 230), "SPIDER QUEEN")}.get(what, ((200, 200, 200), what.upper()))
+            self._marker(off, cam, (mx_, my_), col, lab)
         for e in self.doc.get("exits", []):
             self._marker(off, cam, (e[0], e[1]), (170, 90, 230), "EXIT -> %s" % e[2])
         # cursor

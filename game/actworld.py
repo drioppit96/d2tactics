@@ -74,6 +74,8 @@ class ActInfo:
 
     def roster(self, lid):
         sa = self._side(lid)
+        if sa and sa.get("roster"):
+            return [m for m in sa["roster"] if self.content is not None and m in self.content.monstats]
         if sa:
             base = self.roster(sa["like"])
             return base + [m for m in sa["extra"] if self.content is not None and m in self.content.monstats
@@ -376,6 +378,7 @@ def setup(world, built, grid, rng, info, level_key):
         custommap.spawn_monsters(world, b, taken, info)
     world.custom_start = getattr(b, "custom_start", None)
     world.armory_boss = getattr(b, "armory_boss", None)
+    world.armory_spider = getattr(b, "armory_spider", None)
     world.stormtree_spot = getattr(b, "stormtree_spot", None)
     world.decor = list(getattr(b, "decor", []) or [])
     if level_key == "kurast":
