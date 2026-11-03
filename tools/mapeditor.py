@@ -712,6 +712,8 @@ class Editor:
                 draws.append((m[0] + m[1], 2, "mon", m))
             for k, c, own, oid in b.objects:
                 draws.append((c[0] + c[1], 1, "qobj", (k, c)))
+            for name, c in getattr(b, "decor", ()) or ():
+                draws.append((c[0] + c[1], 1, "decor", (name, c)))
             draws.sort(key=lambda d: (d[0], d[1]))
             for _, _, kind, obj in draws:
                 if kind == "tile":
@@ -722,6 +724,9 @@ class Editor:
                     k, c = obj
                     if hasattr(a, "draw_object"):
                         a.draw_object(off, k, -1, cam.cell_to_screen(*c), 1.0, 0.0, False)
+                elif kind == "decor":
+                    if hasattr(a, "draw_decor"):
+                        a.draw_decor(off, obj[0], cam.cell_to_screen(*obj[1]))
                 elif kind == "mon":
                     self._marker(off, cam, (obj[0], obj[1]), (220, 60, 50), "%s%s" % (obj[2], "" if obj[3] == "normal" else " [%s]" % obj[3]))
             for _, w, tx, ty in sorted(roofs, key=lambda r: r[0]):

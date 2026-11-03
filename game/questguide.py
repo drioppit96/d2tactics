@@ -15,7 +15,7 @@ from .acts import TOWNS, act_of
 # areas that join without an entrance (one outdoor world)
 OUTDOOR_LINKS = [(1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7), (3, 17), (26, 27), (27, 28), (32, 33),
                  (40, 41), (41, 42), (42, 43), (43, 44), (44, 45),
-                 (75, 79), (79, 76), (80, 77), (79, 80), (80, 81), (81, 82), (82, 83),
+                 (75, 79), (80, 76), (80, 77), (79, 80), (80, 81), (81, 82), (82, 83),
                  (103, 104), (104, 105), (105, 106), (107, 108),
                  (109, 110), (110, 111), (111, 112)]
 # portals: the cairn stones, the palace cellar, the Summoner's journal, Mephisto's red portal,

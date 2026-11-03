@@ -747,6 +747,27 @@ class D2Assets(AssetProvider):
         surf.blit(img, (int(pos[0] + x0), int(pos[1] + y0)))
         return pygame.Rect(int(pos[0] + x0), int(pos[1] + y0), img.get_width(), img.get_height())
 
+    def draw_decor(self, surf, name, pos):
+        """This game's own decoration sprites (assets/decor, drawn by tools/make_decor.py)."""
+        cache = self.__dict__.setdefault("_decor", {})
+        if name not in cache:
+            import json
+            import os
+            root = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "decor")
+            img, anchor = None, (0, 0)
+            try:
+                if "_anchors" not in cache:
+                    with open(os.path.join(root, "anchors.json")) as f:
+                        cache["_anchors"] = json.load(f)
+                img = pygame.image.load(os.path.join(root, name + ".png")).convert_alpha()
+                anchor = tuple(cache["_anchors"].get(name, (img.get_width() // 2, img.get_height() - 16)))
+            except Exception:
+                img = None
+            cache[name] = (img, anchor)
+        img, (ax, ay) = cache[name]
+        if img is not None:
+            surf.blit(img, (int(pos[0] - ax), int(pos[1] - ay)))
+
     def _obj_row(self, tok):
         """(frame counts, fps) per mode of the Objects.txt row that uses this token."""
         rows = self.__dict__.get("_objrows_by_tok")

@@ -703,6 +703,9 @@ class Scene:
                     drawables.append((x + y, 1.5, "gobject", o))
                 else:
                     drawables.append((x + y, 1.5, "object", (o["kind"], o.get("oid", 0), o["cell"], o.get("used"))))
+        for name, c in getattr(world, "decor", ()) or ():
+            if x0 - 6 <= c[0] <= x1 + 6 and y0 - 6 <= c[1] <= y1 + 6:
+                drawables.append((c[0] + c[1], 1.4, "decor", (name, c)))
         for c, lid in getattr(world, "waypoints", {}).items():
             if x0 - 4 <= c[0] <= x1 + 4 and y0 - 4 <= c[1] <= y1 + 4:
                 drawables.append((c[0] + c[1] - 0.5, 0.2, "object", ("waypoint", lid, c, False)))
@@ -750,6 +753,9 @@ class Scene:
                 okind, oid, cell, used = obj
                 if hasattr(assets, "draw_object"):
                     assets.draw_object(surf, okind, oid, cam.cell_to_screen(*cell), s, self.clock, used)
+            elif kind == "decor":
+                if hasattr(assets, "draw_decor"):
+                    assets.draw_decor(surf, obj[0], cam.cell_to_screen(*obj[1]))
             elif kind == "gobject":
                 if hasattr(assets, "draw_gen_object"):
                     r = assets.draw_gen_object(surf, obj, cam.cell_to_screen(*obj["cell"]), s, self.clock)

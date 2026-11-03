@@ -377,7 +377,8 @@ def setup(world, built, grid, rng, info, level_key):
     world.custom_start = getattr(b, "custom_start", None)
     world.armory_boss = getattr(b, "armory_boss", None)
     world.stormtree_spot = getattr(b, "stormtree_spot", None)
-    if level_key in ("kurast", 76):
+    world.decor = list(getattr(b, "decor", []) or [])
+    if level_key == "kurast":
         from .act3 import spawn_side_bosses
         spawn_side_bosses(world, taken, info)
     if level_key == 73:
@@ -765,7 +766,7 @@ def _populate(world, lid, rect, taken, safe, info):
 
 # ---------------------------------------------------------------- building whole worlds
 # the outdoor worlds of Acts 3-5: key -> (module, builder)
-LATE_WORLDS = {"jungle": ("act3", "build_kurast"), "kurast": ("act3", "build_kurast"), 76: ("act3", "build_armory"),
+LATE_WORLDS = {"jungle": ("act3", "build_kurast"), "kurast": ("act3", "build_kurast"),
                "mesa": ("act4", "build_mesa"), "lava": ("act4", "build_lava"),
                "siege": ("act5", "build_siege"), 117: ("act5", "build_tundra")}
 
