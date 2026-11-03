@@ -120,6 +120,17 @@ def lay_tiles(kit, b, data, ox, oy, owner):
     of one orientation on a tile all stay (layered walls); a later paint replaces the room's."""
     lt = data.get("lvltype", "")
     links = data.get("links") or {}
+    # an open world's plain ground: [preset it comes from, [[tx, ty, main, sub], ...]]
+    for src, cells in data.get("ground", []):
+        gds = kit.ds1(src)
+        if gds is None:
+            continue
+        gts = kit.tiles_for(gds, lt)
+        for tx, ty, main, sub in cells:
+            ref = gts.pick(0, int(main), int(sub), _rnd(tx, ty))
+            if ref:
+                b.tm.floor[(int(tx) + ox, int(ty) + oy)] = ref
+    keep = bool(data.get("keep_edges", False))
     for room in data.get("rooms", []):
         tx, ty, path = room[0], room[1], room[2]
         ds = kit.ds1(path)
@@ -127,7 +138,7 @@ def lay_tiles(kit, b, data, ox, oy, owner):
             n0 = len(b.warps)
             no, ng = len(b.objects), len(b.gen_objects)
             stamp(b, ds, kit.tiles_for(ds, lt), int(tx) + ox, int(ty) + oy, random.Random(_rnd(tx, ty)), owner,
-                  keep_edges=False)
+                  keep_edges=keep)
             if not data.get("room_objects", True):        # (the generator's "rooms' own objects: off")
                 del b.gen_objects[ng:]
                 b.objects[no:] = [o for o in b.objects[no:] if o[0] in ("waypoint", "portal")]

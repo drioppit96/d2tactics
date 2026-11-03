@@ -9,7 +9,7 @@ ones added later. "Open" lists them; nothing else is edited in it.
 - A map's size, tileset and place in the game stay fixed. For the armory keep the gate where it is
   (the west side, facing the Bazaar), so it still joins the Bazaar.
 
-Random dungeons: "Map Generator.bat" makes them (theme, rooms, loops, monsters, packs, champions,
-uniques, a boss, shrines, wells, chests, barrels, bodies, racks, bookshelves, lights, waypoint).
-Save writes <name>.json here; set "Replaces level" and the game plays it in place of that level
-(its stairs lead where that level's stairs lead). The map editor opens these too.
+Random maps: "Map Generator.bat" makes dungeons (D2's maze rooms: theme, rooms, loops) and open worlds
+(D2's outdoor areas: theme, width, height, landmarks), with monsters, packs, champions, uniques, a boss,
+shrines, wells, chests, barrels, bodies, racks, bookshelves, lights and a waypoint. Every part is
+reachable. Save writes <name>.json here and the map editor opens it; they are not in the game.

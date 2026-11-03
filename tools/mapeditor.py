@@ -1079,8 +1079,9 @@ def open_game_map(ed, name):
     ed.open(path)
     ed.map_key = name
     mine = path.startswith(custommap.MAPS)
-    ed.msg = "%s (%s). Save writes maps/%s.json - the game uses it." % (
-        map_title(name), "your copy" if mine else "the game's own", name)
+    in_game = os.path.exists(os.path.join(custommap.GAME_MAPS, name + ".json")) or int(ed.doc.get("level") or 0)
+    ed.msg = "%s (%s). Save writes maps/%s.json%s" % (
+        map_title(name), "your copy" if mine else "the game's own", name, " - the game uses it." if in_game else ".")
 
 
 def open_armory(ed):

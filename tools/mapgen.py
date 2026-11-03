@@ -5,8 +5,9 @@ or any you pick), packs / champions / uniques / a super unique boss, and how man
 chests, breakables, bodies, racks, bookshelves and lights. Generate shows the map from above; every
 room is checked to be reachable (a layout that fails is thrown away and made again).
 
-Save writes maps/<name>.json: the map editor opens it ("Open"), and the game plays it in place of the
-level chosen under "Replaces level" (its stairs lead where that level's stairs lead).
+Map type switches between dungeons (D2's maze rooms) and open worlds (D2's outdoor areas built block by
+block from their border and landmark presets). Save writes maps/<name>.json; the map editor opens it
+("Open"). The maps are not put into the game.
 """
 import os
 import random
@@ -30,12 +31,19 @@ GREY = (150, 150, 150)
 SEL = (70, 58, 30)
 RED = (220, 60, 50)
 PANEL_W = 430
-ROW_H = 26
+ROW_H = 25
 
-# (key, label, kind, min, max, step) - kind: num / theme / pick / toggle / text / level / boss / seed
-ROWS = [("name", "Name", "text"), ("theme", "Theme", "theme"), ("rooms", "Rooms", "num", 2, 60, 1),
+# (key, label, kind, min, max, step) - kind: num / theme / pick / toggle / text / boss / seed / kind
+# rows only for dungeons / only for open worlds
+DUNGEON_ONLY = {"rooms", "loops", "theme_rooms", "packs"}
+OPEN_ONLY = {"width", "height", "fill", "open_packs"}
+ROWS = [("name", "Name", "text"), ("kind", "Map type", "kind"), ("theme", "Theme", "theme"),
+        ("rooms", "Rooms", "num", 2, 60, 1),
         ("loops", "Extra links (loops)", "num", 0, 30, 1), ("theme_rooms", "Special rooms %", "num", 0, 100, 10),
+        ("width", "Width (8-tile blocks)", "num", 4, 30, 1), ("height", "Height (8-tile blocks)", "num", 4, 30, 1),
+        ("fill", "Landmarks / props %", "num", 0, 100, 10),
         ("monsters", "Enemy types", "pick"), ("packs", "Packs per room", "num", 0, 8, 1),
+        ("open_packs", "Monster packs", "num", 0, 200, 5),
         ("champions", "Champion packs", "num", 0, 30, 1), ("uniques", "Unique packs", "num", 0, 30, 1),
         ("boss", "Boss (super unique)", "boss"), ("monster_level", "Monster level", "num", 0, 99, 1),
         ("shrines", "Shrines", "num", 0, 30, 1), ("wells", "Wells", "num", 0, 20, 1),
@@ -43,8 +51,7 @@ ROWS = [("name", "Name", "text"), ("theme", "Theme", "theme"), ("rooms", "Rooms"
         ("bodies", "Bodies to search", "num", 0, 40, 1), ("racks", "Weapon / armor racks", "num", 0, 20, 1),
         ("bookshelves", "Bookshelves", "num", 0, 20, 1), ("lights", "Torches and braziers", "num", 0, 60, 1),
         ("waypoint", "Waypoint at the start", "toggle"),
-        ("room_objects", "Rooms' own D2 objects", "toggle"), ("level", "Replaces level", "level"),
-        ("seed", "Seed", "seed")]
+        ("room_objects", "Presets' own D2 objects", "toggle"), ("seed", "Seed", "seed")]
 
 
 class Generator:
@@ -110,7 +117,11 @@ class Generator:
     def value_text(self, key):
         v = self.opts.get(key)
         if key == "theme":
+            if self.opts.get("kind") == "open":
+                return randmap.OPEN_NAMES.get(self.opts["open_theme"], self.opts["open_theme"])
             return randmap.THEME_NAMES.get(v, v)
+        if key == "kind":
+            return "Open world" if v == "open" else "Dungeon"
         if key == "monsters":
             if not v:
                 return "the theme's own"
@@ -141,8 +152,12 @@ class Generator:
             self.data["name"] = self.opts["name"]
             self.build_preview()
             d = self.data
-            self.msg = "%d rooms, %d x %d tiles, %d monster groups, %d objects - every room reachable." % (
-                len(d["rooms"]), d["width"], d["height"], len(d["monsters"]), len(d["objects"]))
+            if d.get("ground") is not None and "reachable" in d:
+                self.msg = "Open world %d x %d tiles, %d presets, %d monster groups, %d objects - %d%% of the ground reachable (the rest is walled-in pockets, left empty)." % (
+                    d["width"], d["height"], len(d["rooms"]), len(d["monsters"]), len(d["objects"]), d["reachable"])
+            else:
+                self.msg = "%d rooms, %d x %d tiles, %d monster groups, %d objects - every room reachable." % (
+                    len(d["rooms"]), d["width"], d["height"], len(d["monsters"]), len(d["objects"]))
         except Exception as e:
             self.msg = "Could not generate: %s" % e
 
@@ -163,6 +178,7 @@ class Generator:
     def save(self):
         if not self.data:
             return
+        self.data["name"] = self.opts["name"]
         name = custommap.save(self.data, self.opts["name"])
         self.msg = "Saved %s - open it in the Map Editor (Open)." % name
 
@@ -183,10 +199,17 @@ class Generator:
             lo, hi, step = row[3], row[4], row[5]
             self.opts[key] = max(lo, min(hi, int(self.opts.get(key) or 0) + d * step))
         elif kind == "theme":
-            keys = [k for k, _n, _a in randmap.THEMES]
-            i = keys.index(self.opts["theme"]) if self.opts["theme"] in keys else 0
-            self.opts["theme"] = keys[(i + d) % len(keys)]
+            opn = self.opts.get("kind") == "open"
+            key = "open_theme" if opn else "theme"
+            keys = [k for k, _n, _a in (randmap.OPEN_THEMES if opn else randmap.THEMES)]
+            i = keys.index(self.opts[key]) if self.opts[key] in keys else 0
+            self.opts[key] = keys[(i + d) % len(keys)]
             self.opts["monsters"] = []
+        elif kind == "kind":
+            self.opts["kind"] = "dungeon" if self.opts.get("kind") == "open" else "open"
+            self.opts["monsters"] = []
+            if self.opts["name"] in ("random_dungeon", "random_world"):
+                self.opts["name"] = "random_world" if self.opts["kind"] == "open" else "random_dungeon"
         elif kind == "toggle":
             self.opts[key] = not self.opts.get(key)
         elif kind == "seed":
@@ -217,19 +240,23 @@ class Generator:
                                items=self.level_items(), multi=False, key=key, search="", scroll=0)
 
     # ------------------------------------------------------------------ layout
+    def rows(self):
+        skip = DUNGEON_ONLY if self.opts.get("kind") == "open" else OPEN_ONLY
+        return [r for r in ROWS if r[0] not in skip]
+
     def row_rects(self):
         out = []
         y = 52
-        for row in ROWS:
+        for row in self.rows():
             out.append((row, pygame.Rect(10, y, PANEL_W - 20, ROW_H - 3)))
             y += ROW_H
         return out
 
     def buttons(self):
-        y = 52 + ROW_H * len(ROWS) + 12
+        y = 52 + ROW_H * len(self.rows()) + 12
         out = []
         x = 10
-        for label, act in (("Generate (new seed)", "gen"), ("Again (same seed)", "again"), ("Save", "save"),
+        for label, act in (("Generate", "gen"), ("Same seed", "again"), ("Save", "save"),
                            ("Open in Map Editor", "edit")):
             w = self.font.size(label)[0] + 18
             if x + w > PANEL_W - 6:
@@ -355,7 +382,7 @@ class Generator:
                     lab = "x" if sym == "-" else "..."
                 elif row[2] in ("theme",):
                     lab = "<" if sym == "-" else ">"
-                elif row[2] in ("toggle", "seed", "text"):
+                elif row[2] in ("toggle", "seed", "text", "kind"):
                     lab = "" if sym == "-" else "*"
                 self.text(surf, lab, (br.x + (br.w - self.font.size(lab)[0]) // 2, br.y + 2), GOLD)
         for r, label, act in self.buttons():

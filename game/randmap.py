@@ -32,12 +32,25 @@ THEME_LEVELS = {"cave": (9, 10, 11, 12, 13, 14, 15), "crypt": (16, 17, 18, 19), 
                 "baal": (128, 129, 130)}
 THEME_ACT = {k: a for k, _n, a in THEMES}
 
+# open worlds: D2's outdoor areas, built from their border and fill presets block by block
+OPEN_THEMES = [("wild", "Act 1 - Wilderness", 1), ("desert", "Act 2 - Desert", 2), ("jungle", "Act 3 - Jungle", 3),
+               ("slums", "Act 3 - Kurast Slums", 3), ("burbs", "Act 3 - Kurast Bazaar", 3),
+               ("metro", "Act 3 - Upper Kurast", 3), ("steppes", "Act 4 - Outer Steppes", 4),
+               ("plains", "Act 4 - Plains of Despair", 4), ("damned", "Act 4 - City of the Damned", 4),
+               ("highlands", "Act 5 - Rigid Highlands", 5), ("plateau", "Act 5 - Arreat Plateau", 5)]
+OPEN_NAMES = {k: n for k, n, _a in OPEN_THEMES}
+OPEN_ACT = {k: a for k, _n, a in OPEN_THEMES}
+OPEN_LEVELS = {"wild": (2, 3, 4, 5, 6, 7), "desert": (41, 42, 43, 44), "jungle": (76, 77, 78), "slums": (79,),
+               "burbs": (80,), "metro": (81,), "steppes": (104,), "plains": (105,), "damned": (106,),
+               "highlands": (111,), "plateau": (112,)}
+
 # what can be scattered: option name -> object kinds (game/objects.py OPERATE_KIND)
 OBJECT_OPTIONS = [("shrines", ("shrine",)), ("wells", ("well",)), ("chests", ("chest", "casket")),
                   ("breakables", ("barrel", "urn", "xbarrel")), ("bodies", ("corpse",)),
                   ("racks", ("armor_rack", "weapon_rack")), ("bookshelves", ("bookshelf",))]
 
-DEFAULTS = dict(name="random_dungeon", theme="catacombs", rooms=12, loops=2, theme_rooms=20,
+DEFAULTS = dict(kind="dungeon", name="random_dungeon", theme="catacombs", open_theme="wild", width=10, height=10,
+                fill=60, open_packs=30, rooms=12, loops=2, theme_rooms=20,
                 monsters=[], packs=2, champions=2, uniques=1, boss="", monster_level=0,
                 shrines=3, wells=1, chests=4, breakables=6, bodies=3, racks=1, bookshelves=0, lights=6,
                 waypoint=False, room_objects=True, level=0, seed=None)
@@ -145,10 +158,10 @@ def level_links(kit, level):
     return out
 
 
-def theme_monsters(kit, content, theme):
+def theme_monsters(kit, content, theme, table=None):
     """The monsters D2 puts in the theme's own levels."""
     out = []
-    for lid in THEME_LEVELS.get(theme, ()):
+    for lid in (table or THEME_LEVELS).get(theme, ()):
         r = kit.levels.get(lid) or {}
         for i in range(1, 11):
             m = (r.get("mon%d" % i) or "").lower()
@@ -157,10 +170,10 @@ def theme_monsters(kit, content, theme):
     return out
 
 
-def theme_level(kit, theme):
+def theme_level(kit, theme, table=None):
     """The theme's monster level (normal difficulty): its deepest D2 level's."""
     best = 1
-    for lid in THEME_LEVELS.get(theme, ()):
+    for lid in (table or THEME_LEVELS).get(theme, ()):
         r = kit.levels.get(lid) or {}
         best = max(best, _ints(r, "monlvl1ex") or _ints(r, "monlvl1"))
     return best
@@ -238,7 +251,15 @@ def _near_walkable(grid, c, r=10):
 
 
 def generate(kit, content, objdata, opts, log=None):
-    """A random dungeon as a custom map (dict). opts: see DEFAULTS."""
+    """A random map as a custom map (dict): a dungeon, or an open world (opts["kind"] == "open")."""
+    o = dict(DEFAULTS)
+    o.update(opts or {})
+    if o.get("kind") == "open":
+        return _generate_open(kit, content, objdata, o, log)
+    return _generate_dungeon(kit, content, objdata, o, log)
+
+
+def _generate_dungeon(kit, content, objdata, opts, log=None):
     from . import custommap
     o = dict(DEFAULTS)
     o.update(opts or {})
@@ -330,6 +351,14 @@ def generate(kit, content, objdata, opts, log=None):
                 q.append(nb)
     order = sorted(lay, key=lambda c: dist.get(c, 0))
     far = order[-1]
+    _fill(data, o, rng, grid, start, start_room, cells_of, order, far, warp_cells, kit, content, objdata, theme, act)
+    data["boss_room"] = list(far)
+    data["room_size"] = [k.rw, k.rh]
+    return data
+
+
+def _fill(data, o, rng, grid, start, start_room, cells_of, order, far, warp_cells, kit, content, objdata, theme, act):
+    """Monsters and objects on reachable ground, spread over the rooms (or open-world blocks)."""
     used = []
 
     def clear(c, r):
@@ -372,14 +401,20 @@ def generate(kit, content, objdata, opts, log=None):
             if c:
                 data["objects"].append([c[0], c[1], rng.choice(ids)])
     # monsters
-    mons = [m for m in (o["monsters"] or theme_monsters(kit, content, theme))
+    mons = [m for m in (o["monsters"] or theme_monsters(kit, content, theme, OPEN_LEVELS if theme in OPEN_LEVELS else None))
             if content is None or m in content.monstats]
     if mons:
-        for room in others:
-            for _ in range(int(o["packs"])):
-                c = pick(room, False, 10)
+        if o.get("kind") == "open":            # an open world: a number of packs over the whole map
+            for room in spread(int(o.get("open_packs", 30))):
+                c = pick(room, False, 12)
                 if c:
                     data["monsters"].append([c[0], c[1], rng.choice(mons), "pack"])
+        else:
+            for room in others:
+                for _ in range(int(o["packs"])):
+                    c = pick(room, False, 10)
+                    if c:
+                        data["monsters"].append([c[0], c[1], rng.choice(mons), "pack"])
         for count, kind in ((int(o["champions"]), "champion"), (int(o["uniques"]), "unique")):
             for room in spread(count):
                 c = pick(room, False, 10)
@@ -389,6 +424,203 @@ def generate(kit, content, objdata, opts, log=None):
         c = pick(far, False, 6)
         if c:
             data["monsters"].append([c[0], c[1], o["boss"], "super"])
+
+
+# ---------------------------------------------------------------- open worlds
+class _RecCanvas:
+    """A drlg Canvas that also writes down what it lays: presets (-> "rooms") and plain ground."""
+
+    def __init__(self, kit, tw, th, act, seed):
+        from .drlg import Canvas
+        self.cv = Canvas(kit, tw, th, act, seed)
+        self.puts = []
+        self.ground_refs = {}            # pos -> (ref, preset path, main, sub)
+        self.ground_src = {}
+
+    def __getattr__(self, k):
+        return getattr(self.cv, k)
+
+    def put(self, name, tx, ty, owner, lvltype):
+        ds = self.cv.put(name, tx, ty, owner, lvltype)
+        if ds is not None:
+            self.puts.append([tx, ty, name])
+        return ds
+
+    def set_ground(self, key, preset, lvltype, codes=None):
+        self.cv.set_ground(key, preset, lvltype)
+        if codes is not None:
+            ds, _c, tiles, lt = self.cv.grounds[key]
+            self.cv.grounds[key] = (ds, codes, tiles, lt)
+        self.ground_src[key] = preset
+
+    def ground(self, key, tx0, ty0, w, h):
+        ds, codes, tiles, _lt = self.cv.grounds[key]
+        if tiles is None:
+            return
+        rng = self.cv.rng
+        for y in range(h):
+            for x in range(w):
+                main, sub = rng.choice(codes)
+                t = tiles.pick(0, main, sub, rng.randrange(1 << 16))
+                if t:
+                    self.cv.b.tm.floor[(tx0 + x, ty0 + y)] = t
+                    self.ground_refs[(tx0 + x, ty0 + y)] = (t, self.ground_src[key], main, sub)
+
+
+def _block_names(kit, names):
+    return [n for n in names if kit.ds1(n) is not None]
+
+
+def _fills_by_size(kit, names, B):
+    """Fill presets grouped by how many blocks they cover."""
+    out = {}
+    for n in _block_names(kit, names):
+        ds = kit.ds1(n)
+        w, h = max(1, (ds.width - 1) // B), max(1, (ds.height - 1) // B)
+        out.setdefault((w, h), []).append(n)
+    return [(lst, w, h) for (w, h), lst in sorted(out.items(), key=lambda kv: -kv[0][0] * kv[0][1])]
+
+
+def _open_spec(kit, cv, theme, fill):
+    """(spec for drlg.block_area, block size, lvltype) of an open-world theme; sets the canvas' ground."""
+    from . import act1, act2, act3, act4, act5
+    f = max(0.0, min(1.0, fill / 100.0))
+    if theme == "wild":
+        lt = "Act 1 - Wilderness"
+        ds, codes = kit.grass()
+        cv.set_ground("grass", "Act1/Outdoors/Bord1.ds1", lt, codes)
+        E, C = act1.OutdoorKit.EDGE, act1.OutdoorKit.CORNER
+        var = lambda b: _block_names(kit, ["Act1/Outdoors/%s%s.ds1" % (b, v) for v in ("", "b", "c")])
+        border = {s: var(E[s]) for s in E}
+        border.update({k: var(v) for k, v in C.items()})
+        fills = _fills_by_size(kit, act1.OutdoorKit.FILLS["big"] + act1.OutdoorKit.FILLS["common"] +
+                               act1.OutdoorKit.FILLS["swamp"], 8)
+        return dict(lvltype=lt, ground="grass", border=border, fills=fills, fill_chance=f), 8, lt
+    if theme == "desert":
+        lt = act2.DESERT
+        ds, codes = act2.sand_codes(kit)
+        cv.set_ground("sand", act2.A2 + "outdoors\\desert1.ds1", lt, codes)
+        border = {s: [act2.A2 + "outdoors\\%s.ds1" % n] for s, n in act2.EDGE.items()}
+        border.update({k: [act2.A2 + "outdoors\\%s.ds1" % n] for k, n in act2.CORNER.items()})
+        names = [act2.A2 + n for k in ("oasisbig", "ruinsbig", "oasis", "ruins", "common") for n in act2.FILLS[k]]
+        return dict(lvltype=lt, ground="sand", border=border, fills=_fills_by_size(kit, names, 8), fill_chance=f), 8, lt
+    if theme in ("slums", "burbs", "metro"):
+        lid = {"slums": 79, "burbs": 80, "metro": 81}[theme]
+        spec = act3._kurast_spec(lid)
+        cv.set_ground(theme, act3.K + "%s08x08_0.ds1" % theme, act3.KURAST_LT)
+        # (no gates, sewers or waypoint blocks: they lead nowhere here; the temples stay)
+        spec = dict(spec, specials=[s for s in spec["specials"] if s[3] is None and "waypoint" not in s[0][0]
+                                    and "sewer" not in s[0][0]], fill_chance=f)
+        return spec, 8, act3.KURAST_LT
+    if theme in ("steppes", "plains", "damned"):
+        lid = {"steppes": 104, "plains": 105, "damned": 106}[theme]
+        cv.set_ground("mesa", act4.M + "outer08x08_0.ds1", act4.MESA_LT)
+        spec = act4._mesa_spec(lid, {})
+        spec = dict(spec, specials=[], fill_chance=f)
+        return spec, act4.B, act4.MESA_LT
+    if theme in ("highlands", "plateau"):
+        snow = theme == "plateau"
+        act5._KIT[:] = [kit]
+        cv.set_ground("dirt", act5.S + "newbarrAA1.ds1", act5.BAR_LT)
+        cv.set_ground("snow", act5.S + "snowbarrAA1.ds1", act5.BAR_LT)
+        spec = act5._barricade_spec(111 if not snow else 112, snow, [])
+        spec = dict(spec, fill_chance=f)
+        return spec, act5.B, act5.BAR_LT
+    raise ValueError(theme)
+
+
+def _build_jungle(kit, cv, cols, rows, loops, rng, fill):
+    """The jungle: D2's river pieces (32 x 32 tiles) joined as a tree, clearings among them."""
+    from . import act3
+    from .drlg import tree_layout, pick_existing
+    lay = tree_layout(cols, rows, rng, extra=loops)
+    for (cx, cy), ex in lay.items():
+        combo = _canon(ex)
+        name = None
+        if combo in act3.CLEAR_COMBOS and rng.random() * 100 < fill:
+            name = pick_existing(kit, [act3.J + "%s%s%s.ds1" % (p, combo, v) for p in ("clear", "cave")
+                                       for v in ("", "1", "2", "3")], rng)
+        name = name or act3._riv(kit, combo, rng)
+        if name:
+            cv.put(name, cx * act3.P, cy * act3.P, 0, act3.JUNGLE_LT)
+    return act3.JUNGLE_LT
+
+
+def _generate_open(kit, content, objdata, o, log=None):
+    """An open world: one outdoor area of width x height blocks, ringed by the theme's borders."""
+    from . import custommap
+    from .drlg import block_area
+    _load_acts()
+    seed = o["seed"] if o["seed"] is not None else random.randrange(1 << 30)
+    rng = random.Random(seed)
+    theme = o.get("open_theme", "wild")
+    act = OPEN_ACT.get(theme, 1)
+    bw, bh = max(4, int(o["width"])), max(4, int(o["height"]))
+    best = None
+    for attempt in range(8):
+        aseed = rng.randrange(1 << 30)
+        if theme == "jungle":
+            from . import act3
+            cols, rows = max(2, bw // 4), max(2, bh // 4)
+            cv = _RecCanvas(kit, cols * act3.P, rows * act3.P, act, aseed)
+            lt = _build_jungle(kit, cv, cols, rows, int(o.get("loops", 1)), random.Random(aseed), int(o.get("fill", 60)))
+            tw, th, B = cols * act3.P, rows * act3.P, act3.P // 4
+        else:
+            probe = _RecCanvas(kit, 8, 8, act, aseed)
+            spec, B, lt = _open_spec(kit, probe, theme, int(o.get("fill", 60)))
+            if B > 8:                            # (width and height count 8-tile blocks)
+                bw, bh = max(4, bw * 8 // B), max(4, bh * 8 // B)
+            tw, th = bw * B, bh * B
+            cv = _RecCanvas(kit, tw, th, act, aseed)
+            spec, B, lt = _open_spec(kit, cv, theme, int(o.get("fill", 60)))
+            block_area(cv, 0, 0, 0, bw, bh, B, spec)
+            if theme in ("highlands", "plateau"):
+                from . import act5
+                act5._sprinkle(cv, 0, 0, 0, bw, bh, "snow" if theme == "plateau" else "dirt")
+        b = cv.b
+        tm = b.tm
+        # the plain ground the presets left showing: one compact list (preset it comes from + codes)
+        ground = {}
+        for pos, (ref, src, main, sub) in cv.ground_refs.items():
+            if tm.floor.get(pos) is ref:
+                ground.setdefault(src, []).append([pos[0], pos[1], main, sub])
+        data = {"version": 1, "name": o["name"], "act": act, "lvltype": lt, "width": tw, "height": th,
+                "level": 0, "random_monsters": False, "random_objects": False, "keep_edges": True,
+                "ground": [[src, cells] for src, cells in ground.items()], "rooms": cv.puts, "tiles": [],
+                "objects": [], "monsters": [], "decor": [], "markers": [], "start": None, "exits": [],
+                "room_objects": bool(o.get("room_objects", True)),
+                "monster_level": int(o["monster_level"] or 0) or theme_level(kit, theme, OPEN_LEVELS),
+                "generated": dict(o, seed=seed)}
+        b2, grid, _r = custommap.compose(kit, data, 0, seed)
+        # (the ring of border pieces is scenery: cliffs, forest, walls - the map is what lies inside it)
+        m = B * SUB if theme != "jungle" else 0
+        inside = lambda c: m <= c[0] < grid.w - m - SUB and m <= c[1] < grid.h - m - SUB
+        walk = [(x, y) for y in range(grid.h) for x in range(grid.w) if grid.walkable(x, y) and inside((x, y))]
+        if not walk:
+            continue
+        cx, cy = grid.w // 2, grid.h // 2
+        start = _near_walkable(grid, (cx, cy), 60)
+        seen = {c for c in _flood(grid, start) if inside(c)} if start else set()
+        frac = len(seen) / float(len(walk))
+        if best is None or frac > best[0]:
+            best = (frac, data, grid, start, seen, b2, B)
+        if frac >= 0.9:
+            break
+        if log:
+            log("open world %d: %d%% of the ground reachable - building again" % (attempt, int(frac * 100)))
+    frac, data, grid, start, seen, b, B = best
+    # the pockets nobody can walk into (behind cliffs, inside walls) get nothing
+    cell_b = B * SUB
+    cells_of = {}
+    for c in seen:
+        cells_of.setdefault((c[0] // cell_b, c[1] // cell_b), []).append(c)
+    start_room = (start[0] // cell_b, start[1] // cell_b)
+    order = sorted(cells_of, key=lambda c: abs(c[0] - start_room[0]) + abs(c[1] - start_room[1]))
+    order = [c for c in order if len(cells_of[c]) >= 30] or order
+    far = order[-1]
+    data["start"] = list(start)
+    data["reachable"] = int(frac * 100)
+    _fill(data, o, rng, grid, start, start_room, cells_of, order, far, set(), kit, content, objdata, theme, act)
     data["boss_room"] = list(far)
-    data["room_size"] = [k.rw, k.rh]
+    data["room_size"] = [B, B]
     return data
