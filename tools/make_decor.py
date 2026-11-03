@@ -905,6 +905,10 @@ def main(path):
     import json
     with open(os.path.join(OUT, "anchors.json"), "w") as fh:
         json.dump(ANCHORS, fh, indent=1)
+    # the hand-made sprite sheets (assets/decor_src) replace these drawings where they exist
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import import_sprites
+    import_sprites.main()
 
 
 if __name__ == "__main__":
