@@ -428,8 +428,9 @@ def on_object(world, obj):
             from . import act2
             if act2.CURRENT_REAL:
                 info = getattr(world, "info", None)
-                name = info.name(act2.CURRENT_REAL) if info else "the tomb"
-                world.log("The symbol marks %s." % name, QUEST_COLOR)
+                where = act2.tomb_hint(act2.CURRENT_REAL, getattr(info, "kit", None))
+                world.log("The symbol marks the tomb %s (see the Quest Log: Q)." % (where or "in the canyon"),
+                          QUEST_COLOR)
             return True
         _ensure_portal(world, obj["cell"], 46, "portal")
         return True

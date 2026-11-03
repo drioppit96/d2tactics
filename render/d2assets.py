@@ -695,10 +695,11 @@ class D2Assets(AssetProvider):
         def cut(frames, n):
             # D2 shows only FrameCnt frames of each mode (the files often hold more)
             return frames[:n] if frames and n and n < len(frames) else frames
+        fps = o.get("fps") or (12.0, 15.0, 12.0)
         if mode == "NU":
             fr = cut(self._obj_frames(tok, "NU"), fc[0])
             if fr and o.get("cycle"):
-                idx = int(clock * 12) % len(fr)
+                idx = int(clock * fps[0]) % len(fr)
         else:
             op = cut(self._obj_frames(tok, "OP"), fc[1])
             t = clock - o["op_t"] if o.get("op_t") is not None else 1e9
@@ -708,7 +709,7 @@ class D2Assets(AssetProvider):
                 on = cut(self._obj_frames(tok, "ON"), fc[2])
                 if on:
                     # opened: closed -> opening (once) -> open. Only objects D2 loops keep animating.
-                    fr, idx = on, (int(clock * 12) % len(on) if o.get("cycle_on") else len(on) - 1)
+                    fr, idx = on, (int(clock * fps[2]) % len(on) if o.get("cycle_on") else len(on) - 1)
                 elif op:
                     fr, idx = op, len(op) - 1
                 else:
@@ -718,6 +719,26 @@ class D2Assets(AssetProvider):
         img, x0, y0 = fr[idx % len(fr)]
         surf.blit(img, (int(pos[0] + x0), int(pos[1] + y0)))
         return pygame.Rect(int(pos[0] + x0), int(pos[1] + y0), img.get_width(), img.get_height())
+
+    def _obj_row(self, tok):
+        """(frame counts, fps) per mode of the Objects.txt row that uses this token."""
+        rows = self.__dict__.get("_objrows_by_tok")
+        if rows is None:
+            rows = self._objrows_by_tok = {}
+            try:
+                for r in read_table(self.src, "Objects"):
+                    t = (r.get("token") or "").strip().upper()
+                    if t and t not in rows:
+                        def iv(k):
+                            try:
+                                return int(r.get(k) or 0)
+                            except ValueError:
+                                return 0
+                        rows[t] = (tuple(iv("framecnt%d" % i) for i in range(3)),
+                                   tuple(max(4.0, 25.0 * (iv("framedelta%d" % i) or 128) / 256.0) for i in range(3)))
+            except Exception:
+                pass
+        return rows.get(tok.upper())
 
     def draw_object(self, surf, kind, oid, pos, s, clock=0.0, used=False):
         """Quest objects and waypoints with D2's object graphics (placeholder marker if missing)."""
@@ -730,20 +751,32 @@ class D2Assets(AssetProvider):
             toks = [toks[oid - 7]]
         mode = "ON" if used and kind in self.USED_ON else "NU"
         for tok in toks:
+            row = self._obj_row(tok)
+            m_ = mode
+            if row is not None and mode == "NU" and row[0][0] == 0 and row[0][2] > 0:
+                m_ = "ON"           # portals: D2 keeps them in their (looping) "on" animation
             key = ("obj", tok)
             sp = self.sprites.get(key)
             if sp is None:
                 sp = self.sprites[key] = UnitSprites(self, "objects", tok, {}, "HTH")
             frames = None
-            for m in ((mode, "NU") if mode != "NU" else ("NU",)):
+            for m in ((m_, "NU") if m_ != "NU" else ("NU",)):
                 try:
                     frames = sp.frames(m, (0, 1))
                 except Exception:
                     frames = None
+                frames = [f for f in frames if f[0] is not None] if frames else None
                 if frames:
                     break
             if frames:
-                img, x0, y0 = frames[int(clock * 12) % len(frames)]
+                fps = 12.0
+                if row is not None:
+                    mi = {"NU": 0, "OP": 1, "ON": 2}.get(m, 0)
+                    n = row[0][mi]
+                    if n and n < len(frames):
+                        frames = frames[:n]
+                    fps = row[1][mi]
+                img, x0, y0 = frames[int(clock * fps) % len(frames)]
                 if img is not None:
                     surf.blit(img, (int(pos[0] + x0), int(pos[1] + y0)))
                     return

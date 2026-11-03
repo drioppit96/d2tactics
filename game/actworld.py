@@ -772,6 +772,7 @@ def make_world(kit, info, content, level_key, seed=None, player=None, char_class
     """level_key: "wild" (the whole outdoor act) or a dungeon level id."""
     from .world import World
     from . import act2
+    act2.KIT = kit
     if unique_level(level_key):
         seed = 7919 * level_key + 17          # fixed: unique areas look the same every game
     if level_key == "wild":

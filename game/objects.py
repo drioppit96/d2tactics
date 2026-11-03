@@ -158,6 +158,8 @@ def make(world, oid, cell, owner, data, town=False):
     # D2 Objects.txt CycleAnim2: does the "opened" state loop (fires, glowing shrines) or hold still
     o["cycle_on"] = _int(r.get("cycleanim2")) == 1 and _int(r.get("framecnt2")) > 1
     o["fcnt"] = (_int(r.get("framecnt0")), _int(r.get("framecnt1")), _int(r.get("framecnt2")))
+    # D2 plays FrameDelta/256 frames per 25 fps game frame
+    o["fps"] = tuple(max(4.0, 25.0 * (_int(r.get("framedelta%d" % i)) or 128) / 256.0) for i in range(3))
     if kind == "shrine":
         o["shrine"] = _pick_shrine(_int(r.get("parm0")), data, world.rng)
         o["name"] = SHRINE_NAMES.get(o["shrine"], "Shrine")
@@ -177,8 +179,7 @@ def make(world, oid, cell, owner, data, town=False):
     elif kind in ("weapon_rack", "armor_rack"):
         o["name"] = "Weapon Rack" if kind == "weapon_rack" else "Armor Stand"
     elif kind == "decor":
-        frames0 = _int(r.get("framecnt0"))
-        o["cycle"] = frames0 > 1
+        _idle_anim(o, r)
     if kind != "decor":
         cells = footprint(cell, o["size"])
         if kind == "door":
@@ -186,6 +187,16 @@ def make(world, oid, cell, owner, data, town=False):
         elif _int(r.get("hascollision0")) and _ring_ok(world.grid, cells):
             o["block"] = cells
     return o
+
+
+def _idle_anim(o, r):
+    """How scenery idles: its neutral loop, or - fires, torches, braziers, smoke with no real
+    neutral picture - burning in its looping "on" animation, the way D2 spawns them."""
+    f0, f2 = o["fcnt"][0], o["fcnt"][2]
+    o["cycle"] = f0 > 1
+    if f0 <= 1 and f2 > 1 and _int(r.get("cycleanim2")) == 1:
+        o["mode"] = "ON"
+        o["cycle_on"] = True
 
 
 def _pick_shrine(parm, data, rng):
@@ -270,6 +281,8 @@ def populate(world, built, info, taken, safe):
             o["kind"], o["name"], o["sparkly"], o["countess"] = "chest", "The Countess's Chest", True, True
         if owner in TOWN_IDS and o["kind"] not in ("stash", "decor"):
             o["kind"], o["block"] = "decor", []          # nothing to open or break in town
+            if o.get("mode") == "NU":
+                _idle_anim(o, data.rows[oid])
         if any(c in taken or c in world.exits for c in o["block"]):
             o["block"] = [] if o["kind"] != "door" else [c for c in o["block"] if c not in world.exits]
         world.objects.append(o)

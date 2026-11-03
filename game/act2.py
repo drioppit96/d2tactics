@@ -117,6 +117,8 @@ MazeKit.role_room = _role_room
 
 
 CURRENT_REAL = None        # set when a hero enters the game (background builders use it too)
+KIT = None                 # the level kit (make_world keeps it here for tomb_hint)
+_TOMB_HINTS = {}
 
 
 def real_tomb(seed_text):
@@ -211,8 +213,11 @@ def build_arcane(kit, level_id, spec):
     for (x, y), ex in rooms.items():
         rx, ry = x - mx, y - my
         ds = mk.role_room("summoner", ex, rng) if (x, y) == summoner else None
+        if (x, y) == (0, 0):
+            ds = kit.ds1(A2 + "arcane\\sanctnsew4.ds1")   # the hub: the waypoint platform + the portal
         if ds is None:
-            ds = rng.choice(mk.rooms[frozenset(ex)])
+            cands = [d for d in mk.rooms[frozenset(ex)] if d.name != "sanctnsew4.ds1"]
+            ds = rng.choice(cands or mk.rooms[frozenset(ex)])
         stamp(b, ds, kit.tiles_for(ds, lt), rx * mk.rw, ry * mk.rh, rng, level_id, keep_edges=False)
         if (x, y) == summoner:
             b.__dict__.setdefault("role_rooms", {})["summoner"] = (rx * mk.rw, ry * mk.rh, mk.rw, mk.rh)
@@ -602,9 +607,13 @@ def build_canyon(kit, seed=None, content=None):
     spot = next(((bx, by) for bx, by in inner if (bx, by) not in taken), None)
     if spot is not None:
         taken.add(spot)
-        sand(spot[0] * BLOCK, spot[1] * BLOCK)
-        b.objects.append(("waypoint", ((spot[0] * BLOCK + 4) * SUB, (spot[1] * BLOCK + 4) * SUB), 46, -1))
-        b.objects.append(("portal", ((spot[0] * BLOCK + 4) * SUB + 8, (spot[1] * BLOCK + 4) * SUB + 4), 46, 74))
+        # D2's waypoint block (Act 2 - Desert Valley Warp): the raised waypoint between four pits
+        if put("outdoors\\kingwarp.ds1", spot[0] * BLOCK, spot[1] * BLOCK) is None:
+            sand(spot[0] * BLOCK, spot[1] * BLOCK)
+        if not any(k == "waypoint" for k, _, _, _ in b.objects):
+            b.objects.append(("waypoint", ((spot[0] * BLOCK + 4) * SUB, (spot[1] * BLOCK + 4) * SUB), 46, -1))
+        # the Summoner's portal back to the Arcane Sanctuary, below the waypoint's steps
+        b.canyon_portal = ((spot[0] * BLOCK + 4) * SUB, (spot[1] * BLOCK + 7) * SUB)
     for bx, by in list(inner):
         if (bx, by) not in taken and rng.random() < 0.25:
             if put(rng.choice(FILLS["common"]), bx * BLOCK, by * BLOCK) is not None:
@@ -614,4 +623,44 @@ def build_canyon(kit, seed=None, content=None):
             sand(bx * BLOCK, by * BLOCK)
     b.tm.drawn = set(b.tm.floor) | set(b.tm.walls) | set(b.tm.floor2)
     grid = make_grid(b.tm)
+    cp = getattr(b, "canyon_portal", None)
+    if cp is not None:
+        c = _near_walkable(grid, cp, 20)
+        if c is not None:
+            b.objects.append(("portal", c, 46, 74))
     return b, grid, rng
+
+
+def tomb_hint(lid, kit=None):
+    """Where tomb `lid` lies in the (fixed) Canyon of the Magi, seen from its waypoint:
+    "north-east of the waypoint". The journal's symbol, in words."""
+    if lid in _TOMB_HINTS:
+        return _TOMB_HINTS[lid]
+    kit = kit or KIT
+    if kit is None:
+        return None
+    try:
+        b, grid, rng = build_canyon(kit, 7919 * 46 + 17)
+    except Exception:
+        return None
+    wp = next((c for k, c, _, _ in b.objects if k == "waypoint"), None)
+    if wp is None:
+        return None
+    cells = {}
+    for (tx, ty), main, owner in b.warps:
+        t = kit.vis(46, main)
+        if t:
+            cells.setdefault(t, []).append((tx * SUB + 2, ty * SUB + 2))
+    import math
+    names = ["east", "south-east", "south", "south-west", "west", "north-west", "north", "north-east"]
+    for t, cs in cells.items():
+        x = sum(c[0] for c in cs) / len(cs) - wp[0]
+        y = sum(c[1] for c in cs) / len(cs) - wp[1]
+        sx, sy = x - y, (x + y) / 2.0          # on screen (isometric)
+        if math.hypot(sx, sy) < 15:
+            _TOMB_HINTS[t] = "right by the waypoint"
+            continue
+        a = math.degrees(math.atan2(sy, sx)) % 360
+        d = names[int((a + 22.5) // 45) % 8]
+        _TOMB_HINTS[t] = ("just %s of the waypoint" if math.hypot(x, y) < 100 else "far to the %s of the waypoint") % d
+    return _TOMB_HINTS.get(lid)

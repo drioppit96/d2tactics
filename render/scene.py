@@ -597,6 +597,14 @@ class Scene:
                     sx0, sy0 = cam.to_screen(bx0, by0)
                     sx1, sy1 = cam.to_screen(bx1, by1)
                     self._glow_clip = pygame.Rect(int(sx0), int(sy0), int(sx1 - sx0) + 1, int(sy1 - sy0) + 1)
+            # D2's "lower walls" (orientations 16-19: the arches and pillars hanging under the Arcane
+            # Sanctuary's walkways, cliff faces...) go under every floor, so a platform in front hides them
+            for ty in range(ty0, ty1 + 1):
+                for tx in range(tx0, tx1 + 1):
+                    if (tx, ty) in tm.drawn:
+                        for wref in tm.walls.get((tx, ty), ()):
+                            if getattr(wref[1], "orientation", 0) >= 16:
+                                assets.draw_tile(surf, wref, tx, ty, cam)
             for ty in range(ty0, ty1 + 1):
                 for tx in range(tx0, tx1 + 1):
                     if (tx, ty) not in tm.drawn:
@@ -608,6 +616,8 @@ class Scene:
                     if ref2:
                         assets.draw_tile(surf, ref2, tx, ty, cam)
                     for wref in tm.walls.get((tx, ty), ()):
+                        if getattr(wref[1], "orientation", 0) >= 16:
+                            continue      # (drawn under the floors above)
                         if getattr(wref[1], "orientation", 0) == 15:
                             if not (inside and abs(tx - ptx) <= 8 and abs(ty - pty) <= 8):
                                 roofs.append((tx + ty, wref, tx, ty))   # D2 takes the roof off the house you are in

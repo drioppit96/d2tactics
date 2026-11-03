@@ -996,6 +996,13 @@ class Game:
     def exit_label(self, target):
         names = {"den": "To the Den of Evil", "town": "To the Rogue Encampment"}
         info = getattr(self.assets, "act_info", None)
+        if info and isinstance(target, int) and 66 <= target <= 72:
+            # after Horazon's Journal the true tomb's entrance carries its symbol
+            from game import act2 as _a2
+            w = getattr(self, "world", None)
+            if target == _a2.CURRENT_REAL and w is not None and \
+                    (getattr(w.player, "quests", {}) or {}).get("summoner") == "done":
+                return "To " + info.name(target) + " (the true tomb)"
         return ("To " + info.name(target)) if info and isinstance(target, int) else names.get(target, "Exit")
 
     def _skill_area(self, cell):

@@ -456,5 +456,20 @@ def journal(player, act=1):
         text = texts.get(qid, {}).get(st, "")
         if st == "none":
             text = "Not started."
+        if act == 2 and qid == "tombs" and st == "active" and player.quests.get("summoner") == "done":
+            text = (text or "") + " " + _true_tomb_text()
         out.append((title, "active" if st not in ("none", "done", "cleared") else st, text or ""))
     return out
+
+
+def _true_tomb_text():
+    """What Horazon's Journal showed: which of the seven is the true tomb."""
+    from . import act2
+    real = act2.CURRENT_REAL
+    if not real:
+        return ""
+    where = act2.tomb_hint(real)
+    n = real - 65
+    txt = "Horazon's Journal showed the true tomb: the entrance %s in the Canyon of the Magi" % (
+        where or "marked with its symbol")
+    return txt + ". Its entrance now reads \"(the true tomb)\"."
