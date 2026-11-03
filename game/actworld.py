@@ -375,7 +375,8 @@ def setup(world, built, grid, rng, info, level_key):
         from . import custommap
         custommap.spawn_monsters(world, b, taken, info)
     world.custom_start = getattr(b, "custom_start", None)
-    if level_key == "kurast":
+    world.armory_boss = getattr(b, "armory_boss", None)
+    if level_key in ("kurast", 76):
         from .act3 import spawn_side_bosses
         spawn_side_bosses(world, taken, info)
     if level_key == 73:
@@ -763,7 +764,7 @@ def _populate(world, lid, rect, taken, safe, info):
 
 # ---------------------------------------------------------------- building whole worlds
 # the outdoor worlds of Acts 3-5: key -> (module, builder)
-LATE_WORLDS = {"jungle": ("act3", "build_jungle"), "kurast": ("act3", "build_kurast"),
+LATE_WORLDS = {"jungle": ("act3", "build_jungle"), "kurast": ("act3", "build_kurast"), 76: ("act3", "build_armory"),
                "mesa": ("act4", "build_mesa"), "lava": ("act4", "build_lava"),
                "siege": ("act5", "build_siege"), 117: ("act5", "build_tundra")}
 

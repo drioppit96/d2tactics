@@ -154,7 +154,11 @@ def objectives(world):
         add("bird", "Show the bird to Alkor", *_npc("alkor"))
     s = st("gidbinn")
     if s == "active":
-        add("gidbinn", "Kill Hexrattle the Stitched", 76, ("boss", "hexrattle"))
+        if getattr(p, "armory_lit", False):
+            from .act3 import SMITH_NAME
+            add("gidbinn", "Kill " + SMITH_NAME, 76, ("boss", "armory_smith"))
+        else:
+            add("gidbinn", "Light the four altars (Kurast Armory)", 76, ("object", "armory_altar"))
     elif s == "cleared":
         add("gidbinn", "Bring the Gidbinn to Ormus", *_npc("ormus"))
     s = st("khalim")

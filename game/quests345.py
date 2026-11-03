@@ -31,8 +31,8 @@ JOURNAL = {
              "bird": "Meshif gave you a Golden Bird for the figurine. Alkor wants to see it.",
              "potion": "Alkor brewed you a Potion of Life from the bird's ashes. Drink it.",
              "done": "Completed. The Potion of Life gave you +20 Life."},
-    "gidbinn": {"active": "Ormus says the Gidbinn, a sacred blade, was taken by Hexrattle the Stitched, a doll "
-                           "that haunts the Kurast Armory (east of Lower Kurast).",
+    "gidbinn": {"active": "Ormus says the Gidbinn, a sacred blade, is held by the smith of the Kurast Armory "
+                           "(east of Lower Kurast). Light the four altars in the armory's corners to call him out.",
                 "cleared": "You have the Gidbinn. Bring it to Ormus.",
                 "done": "Completed. Ormus gave you a ring."},
     "khalim": {"active": "Remake Khalim's Will: his Eye (Silkmother Vashra, Kurast Armory), Brain (Scribe Ophizek, "
@@ -154,8 +154,8 @@ def talk(world, npc):
     elif who == "ormus":
         if q["gidbinn"] == "none":
             _start(world, "gidbinn")
-            lines = ["Ormus: The Gidbinn - a sacred blade - was stolen by a stitched doll, Hexrattle. It hides in "
-                     "the Kurast Armory, east of Lower Kurast. Ormus needs the blade."]
+            lines = ["Ormus: The Gidbinn - a sacred blade - is held by the pale smith of the Kurast Armory, east "
+                     "of Lower Kurast. Light the four altars in its corners and he will come out. Ormus needs the blade."]
         elif has_item(p, "g33", world):
             take_item(world, "g33")
             _done(world, "gidbinn", "A ring for you.")
@@ -308,6 +308,8 @@ def blocked(world, target):
 
 def on_enter(world, lid):
     q = world.player.quests
+    if lid == 76 and any(o["kind"] == "armory_altar" and not o["used"] for o in world.objects):
+        world.player.armory_lit = False          # (a fresh armory: its altars are dark again)
     if lid in (79, 76) and q["bird"] == "none":
         _start(world, "bird")
     if lid == 83:
@@ -387,6 +389,19 @@ def on_object(world, obj):
             world.log("You found %s!" % name, QUEST_COLOR)
         else:
             world.log("The chest is empty.", GREY)
+        return True
+    if k == "armory_altar":
+        if obj["used"]:
+            return False
+        obj["used"] = True
+        world.emit("nova", p, obj["cell"], 1, "fire")
+        left = [o for o in world.objects if o["kind"] == "armory_altar" and not o["used"]]
+        if left:
+            world.log("The altar flares up. %d more to light." % len(left), QUEST_COLOR)
+        else:
+            from .act3 import summon_smith, SMITH_NAME
+            if summon_smith(world) is not None:
+                world.log("All four altars burn! %s strides out of the forge court." % SMITH_NAME, QUEST_COLOR)
         return True
     if k == "gidbinn":
         if obj["used"]:
@@ -497,7 +512,7 @@ def on_killed(world, unit):
         give_item(world, "j34", near=unit.pos)
         world.log("%s dropped a Jade Figurine. Show it to Meshif." % unit.name, QUEST_COLOR)
     # this game's Kurast Armory / Scriptorium: the named uniques carry the quest items
-    drops = {"hexrattle": ("g33", "gidbinn", "the Gidbinn"), "silkmother": ("qey", "khalim", "Khalim's Eye"),
+    drops = {"armory_smith": ("g33", "gidbinn", "the Gidbinn"), "silkmother": ("qey", "khalim", "Khalim's Eye"),
              "scribe": ("qbr", "khalim", "Khalim's Brain")}
     if boss in drops:
         code, qid, what = drops[boss]

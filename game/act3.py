@@ -206,7 +206,8 @@ def _kurast_spec(lid):
 
 # this game's two extra areas (level ids of the skipped jungle, renamed): built like the area they
 # join - the Kurast Armory off Lower Kurast's east side, the Kurast Scriptorium off the Bazaar's west
-SIDE_AREAS = {76: dict(name="Kurast Armory", like=79, side="e", extra=["fetish5", "fetishshaman5", "arach4"]),
+SIDE_AREAS = {76: dict(name="Kurast Armory", like=79, side="e", own_world=True,
+                       extra=["fetish5", "fetishshaman5", "arach4"]),
               77: dict(name="Kurast Scriptorium", like=80, side="w", extra=["cantor2", "zealot3", "mummy5"])}
 SIDE_W = 5                     # blocks (8 tiles) wide
 
@@ -251,23 +252,29 @@ def build_kurast(kit, seed=None, content=None):
                 b.objects.append(("waypoint", ((X + bx * 8 + 4) * SUB, (y0 + by * 8 + 4) * SUB), lid, -1))
     # the side areas
     for lid, sa in SIDE_AREAS.items():
+        if sa.get("own_world"):
+            continue
         y0 = rows[sa["like"]]
         x0 = X + 80 if sa["side"] == "e" else 0
         block_area(cv, lid, x0, y0, SIDE_W, 8, 8, _side_spec(lid))
     grid = cv.finish()
-    drlg.ensure_connected(b, grid, [(79, 80), (80, 81), (81, 82), (82, 83), (79, 76), (80, 77)],
+    drlg.ensure_connected(b, grid, [(79, 80), (80, 81), (81, 82), (82, 83), (80, 77)],
                           cv.ground_kit("slums"), rng)
     drlg.ensure_waypoints(b, grid, 3)
     # Lower Kurast's south gate: back to the Kurast Docks (another world)
     cells = drlg.edge_cells(grid, b.areas[79], "s", x_range=((X + 24) * SUB, (X + 56) * SUB))
     b.edge_exits = [(cells, 75)]
+    # Lower Kurast's east gate: into the Kurast Armory (its own map)
+    x0, y0, x1, y1 = b.areas[79]
+    gate = drlg.edge_cells(grid, (x0, y0 + 24 * SUB, x1, y0 + 40 * SUB), "e")
+    if gate:
+        b.edge_exits.append((gate, 76))
     return b, grid, rng
 
 
 # this game's named uniques of the two extra areas, who carry quest items
 SIDE_BOSSES = [
     # (area, monster, name, boss tag, mods, minions)
-    (76, "fetish5", "Hexrattle the Stitched", "hexrattle", ("FAST", "FIRE"), ("fetish5", 5)),
     (76, "arach4", "Silkmother Vashra", "silkmother", ("STRONG", "CURSE"), ("arach4", 3)),
     (77, "cantor2", "Scribe Ophizek the Hollow", "scribe", ("MANAHIT", "TELEPORT"), ("zealot3", 4)),
 ]
@@ -305,3 +312,181 @@ def spawn_side_bosses(world, taken, info):
             mm = actworld._spawn(world, minion, c, lvl + 1, taken)
             if mm is not None:
                 monmods.pass_aura(m, mm)
+
+
+# ---------------------------------------------------------------- the Kurast Armory
+class _Sub:
+    """A rectangle cut out of a DS1 (a Travincal building), stamped like a whole preset."""
+
+    def __init__(self, ds, sx, sy, w, h):
+        self.width, self.height = w + 1, h + 1
+        self.files = ds.files
+        W = ds.width
+        pick = lambda layer: [layer[(sy + y) * W + sx + x] if sx + x < ds.width and sy + y < ds.height else None
+                              for y in range(self.height) for x in range(self.width)]
+        from d2.ds1 import Cell
+        empty = Cell(0)
+        self.floors = [[c or empty for c in pick(L)] for L in ds.floors]
+        self.walls = [[c or empty for c in pick(L)] for L in ds.walls]
+        self.objects = [(t, o, x - sx * 5, y - sy * 5) for t, o, x, y in ds.objects
+                        if t == 2 and sx * 5 <= x < (sx + w) * 5 and sy * 5 <= y < (sy + h) * 5]
+
+
+ARMORY = 72                    # blueprint size in tiles (the map is one tile bigger all round)
+# the designer's blueprint: crenellated walls between grid points (x0, y0) - (x1, y1)
+ARMORY_WALLS = [((0, 0), (28, 0)), ((47, 0), (72, 0)), ((0, 0), (0, 72)), ((72, 0), (72, 72)), ((0, 72), (72, 72)),
+                ((28, 0), (28, 14)), ((47, 0), (47, 14)),
+                ((0, 20), (28, 20)), ((47, 20), (72, 20)),
+                ((12, 29), (30, 29)), ((45, 29), (65, 29)),
+                ((12, 29), (12, 55)), ((12, 55), (22, 55)), ((22, 55), (22, 72)),
+                ((65, 29), (65, 51)), ((52, 51), (65, 51)), ((52, 51), (52, 72))]
+ARMORY_ALTARS = [(5, 5), (66, 5), (6, 67), (66, 67)]
+ARMORY_BOSS = (37, 64)
+ARMORY_ENTRY = (37, 1)
+# Travincal buildings: (preset, source x, y, w, h, where in the blueprint)
+ARMORY_BUILDINGS = [("travn", 7, 14, 21, 12, (28, 33)),          # the great hall in the keep
+                    ("travs", 10, 2, 12, 9, (31, 58)),           # the council dais: the smith's forge court
+                    ("travs", 0, 13, 9, 8, (9, 58)),             # small temples in the bottom rooms
+                    ("travs", 21, 15, 10, 8, (55, 58)),
+                    ("travn", 15, 26, 8, 6, (10, 6)),            # sunken gardens in the top rooms
+                    ("travn", 15, 26, 8, 6, (55, 6)),
+                    ]
+
+
+def _wall_tiles(lines, off, n):
+    """Grid-point wall lines -> D2 wall tiles (orientation, main, sub) on each tile, the way D2's own
+    Travincal walls are laid: walls run along a tile's north (2) and west (1) edges, with north (3),
+    east-end (5), west-end (6) and south (7) corner pieces."""
+    pts = {}
+    def link(a, b_, d1, d2):
+        pts.setdefault(a, set()).add(d1)
+        pts.setdefault(b_, set()).add(d2)
+    for (x0, y0), (x1, y1) in lines:
+        if y0 == y1:
+            for x in range(min(x0, x1), max(x0, x1)):
+                link((x, y0), (x + 1, y0), "E", "W")
+        else:
+            for y in range(min(y0, y1), max(y0, y1)):
+                link((x0, y), (x0, y + 1), "S", "N")
+    out = {}
+    for (x, y), ds in pts.items():
+        X, Y = x + off, y + off
+        if not (0 <= X < n and 0 <= Y < n):
+            continue
+        t = []
+        if "E" in ds and "S" in ds:
+            t = [(3, 32, 0)]
+        elif "E" in ds and "N" in ds and "W" not in ds:
+            t = [(6, 32, 0)]
+        elif "E" in ds:
+            t = [(2, 32, 4 + x % 4)]
+        elif "S" in ds and "W" in ds and "N" not in ds:
+            t = [(5, 32, 0)]
+        elif "S" in ds:
+            t = [(1, 32, y % 4)]
+        elif "N" in ds and "W" in ds:
+            t = [(7, 32, 0)]
+        if t:
+            out[(X, Y)] = t
+    return out
+
+
+def build_armory(kit, seed=None, content=None):
+    """The Kurast Armory: a walled Travincal-style compound (the designer's blueprint). Four altars
+    in its corners; lighting all of them calls out the smith in the forge court."""
+    from .act1 import Built, stamp, make_grid
+    from .acts import apply_act_tables
+    from . import custommap
+    rng = random.Random(7919 * 76 + 17)
+    n = ARMORY + 2
+    off = 1
+    b = Built(n, n)
+    apply_act_tables(b, 3, kit)
+    ts = custommap.tileset(kit, KURAST_LT)
+    tm = b.tm
+    R = lambda *k: custommap._rnd(*k)
+    # Travincal's paving everywhere
+    for y in range(off, off + ARMORY):
+        for x in range(off, off + ARMORY):
+            key = (20, 0)
+            ref = ts.pick(0, key[0], key[1], R(x, y))
+            if ref:
+                tm.floor[(x, y)] = ref
+    # the buildings (whole chunks of Travincal)
+    for name, sx, sy, w, h, (bx, by) in ARMORY_BUILDINGS:
+        ds = kit.ds1(A3 + "travincal\\%s.ds1" % name)
+        if ds is None:
+            continue
+        sub = _Sub(ds, sx, sy, w, h)
+        stamp(b, sub, kit.tiles_for(ds, KURAST_LT), bx + off, by + off, random.Random(R(bx, by)), 76, keep_edges=False)
+    # the crenellated walls
+    for pos, keys in _wall_tiles(ARMORY_WALLS, off, n).items():
+        lst = []
+        for o, m, s_ in keys:
+            for oo in ([o, 4] if o == 3 else [o]):
+                ref = ts.pick(oo, m, s_, R(pos[0], pos[1], oo))
+                if ref:
+                    lst.append(ref)
+        if lst:
+            tm.walls[pos] = lst
+    b.warps = []                   # (the building chunks' own stairs lead nowhere here)
+    b.areas[76] = (0, 0, n * SUB, n * SUB)
+    tm.drawn = set(tm.floor) | set(tm.walls) | set(tm.floor2)
+    grid = make_grid(tm)
+    # the crenellated walls block the way all along (their pieces alone leave gaps)
+    from .grid import WALL
+    for (x0, y0), (x1, y1) in ARMORY_WALLS:
+        if y0 == y1:
+            Y = (y0 + off) * SUB
+            for X in range((min(x0, x1) + off) * SUB, (max(x0, x1) + off) * SUB + 1):
+                for yy in (Y - 1, Y):
+                    if grid.in_bounds(X, yy):
+                        grid.cells[yy][X] = WALL
+        else:
+            X = (x0 + off) * SUB
+            for Y in range((min(y0, y1) + off) * SUB, (max(y0, y1) + off) * SUB + 1):
+                for xx in (X - 1, X):
+                    if grid.in_bounds(xx, Y):
+                        grid.cells[Y][xx] = WALL
+    C = lambda t: ((t[0] + off) * SUB + 2, (t[1] + off) * SUB + 2)
+    for a in ARMORY_ALTARS:
+        c = drlg.near_walkable(grid, C(a), 12)
+        if c:
+            b.objects.append(("armory_altar", c, 76, -1))
+    b.armory_boss = drlg.near_walkable(grid, C(ARMORY_BOSS), 12)
+    # braziers along the middle band and the keep's gate
+    for t in [(16, 23), (24, 23), (51, 23), (59, 23), (29, 27), (46, 27), (6, 30), (68, 30), (6, 48), (68, 48)]:
+        b.gen_objects.append((("id", 102), C(t), 76))
+    # the gate in the north wall: back to Lower Kurast
+    cells = [((x + off) * SUB + dx, off * SUB + dy) for x in range(29, 47) for dx in range(SUB) for dy in range(0, 3)]
+    b.edge_exits = [([c for c in cells if grid.walkable(*c)], 79)]
+    b.custom_start = drlg.near_walkable(grid, C(ARMORY_ENTRY), 10)
+    return b, grid, rng
+
+
+SMITH_NAME = "Kalvhar the Pale Anvil"
+
+
+def summon_smith(world):
+    """All four altars burn: the armory's smith steps out in the forge court."""
+    from . import actworld, monmods
+    if any(getattr(m, "boss", None) == "armory_smith" for m in world.monsters):
+        return None
+    spot = getattr(world, "armory_boss", None) or world.player.pos
+    taken = {m.pos for m in world.monsters if m.alive}
+    lvl = world.info.monster_level(76) if getattr(world, "info", None) else 30
+    cell = actworld._free_near(world.grid, spot, 8)
+    m = actworld._spawn(world, "smith", cell, lvl + 4, taken, unique=True, name=SMITH_NAME)
+    if m is None:
+        return None
+    m.boss = "armory_smith"
+    world.player.armory_lit = True
+    monmods.apply(world, m, [monmods.STRONG, monmods.COLD])
+    m.color_shift = "paleblue"
+    m.aware = True
+    for c in actworld._scatter(world, m.pos, 4, taken):
+        g = actworld._spawn(world, "zealot3", c, lvl + 1, taken)
+        if g is not None:
+            g.aware = True
+    world.emit("place", m, m.pos)
+    return m

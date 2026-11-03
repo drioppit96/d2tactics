@@ -477,6 +477,9 @@ class D2Assets(AssetProvider):
         if n == "gold":
             self.item_cache[key] = self._gold_table()
             return self.item_cache[key]
+        if n == "paleblue":
+            self.item_cache[key] = self._tint_table((150, 200, 255), 25)
+            return self.item_cache[key]
         ms = self.monstats.get((mid or "").lower(), {})
         ms2 = self.monstats2.get((ms.get("monstatsex") or mid or "").lower(), {})
         table = None
@@ -494,6 +497,29 @@ class D2Assets(AssetProvider):
                 break
         if table is None:
             table = self._hue_table(n)
+        self.item_cache[key] = table
+        return table
+
+    def _tint_table(self, rgb, lift=0):
+        """Every colour turned to one hue by its brightness (a pale blue frost giant smith...)."""
+        key = ("tinttab", rgb, lift)
+        if key in self.item_cache:
+            return self.item_cache[key]
+        pal = [tuple(c[:3]) for c in self.palette[:256]]
+        out = bytearray(range(256))
+        for i in range(1, 256):
+            r, g, b = pal[i]
+            l = (r * 30 + g * 59 + b * 11) / 100.0
+            k = min(1.5, 0.45 + l / 120.0)
+            tr, tg, tb = (min(255, c * k * l / 150.0 + lift) for c in rgb)
+            best, bd = i, 1e9
+            for j in range(1, 256):
+                pr, pg, pb = pal[j]
+                d = (pr - tr) ** 2 + (pg - tg) ** 2 + (pb - tb) ** 2
+                if d < bd:
+                    best, bd = j, d
+            out[i] = best
+        table = bytes(out)
         self.item_cache[key] = table
         return table
 
@@ -669,9 +695,10 @@ class D2Assets(AssetProvider):
                      "cube_chest": ["XK"], "staff_chest": ["XK"], "scroll_chest": ["XK"], "viper_altar": ["ZA"],
                      "journal": ["TT"], "wirt": ["BP"],
                      "eye_chest": ["XK"], "brain_chest": ["XK"], "heart_chest": ["XK"], "gidbinn": ["GA"],
-                     "lamtome": ["AB"], "orb": ["55"], "hellforge": ["UX"], "prison": ["GI"], "anya": ["2N"]}
+                     "lamtome": ["AB"], "orb": ["55"], "armory_altar": ["GA"], "hellforge": ["UX"], "prison": ["GI"], "anya": ["2N"]}
     USED_ON = ("waypoint", "cage", "inifuss", "cube_chest", "staff_chest", "scroll_chest", "viper_altar",
                "orifice", "journal", "eye_chest", "brain_chest", "heart_chest", "gidbinn", "lamtome", "orb",
+               "armory_altar",
                "hellforge", "prison")
 
     def _obj_frames(self, tok, mode):

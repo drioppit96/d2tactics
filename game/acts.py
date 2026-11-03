@@ -14,7 +14,7 @@ ACT2_OUTDOOR = (40, 41, 42, 43, 44, 45)
 # Act 3: the docks (this game skips the jungle); Kurast + the Causeway + Travincal, with this game's
 # Kurast Armory (76) and Kurast Scriptorium (77) beside Lower Kurast and the Bazaar
 ACT3_JUNGLE = (75,)
-ACT3_KURAST = (79, 80, 81, 82, 83, 76, 77)
+ACT3_KURAST = (79, 80, 81, 82, 83, 77)
 # Act 4: the Fortress + the mesa; the River of Flame + the Chaos Sanctum
 ACT4_MESA = (103, 104, 105, 106)
 ACT4_LAVA = (107, 108)
@@ -26,7 +26,7 @@ for _k, _ids in (("desert", ACT2_OUTDOOR), ("jungle", ACT3_JUNGLE), ("kurast", A
     for _i in _ids:
         GROUPS[_i] = _k
 OUTDOOR_IDS = set(act1.OUTDOOR_IDS) | set(ACT2_OUTDOOR) | {46} | set(ACT3_JUNGLE) | set(ACT3_KURAST) | \
-    set(ACT4_MESA) | set(ACT4_LAVA) | set(ACT5_SIEGE) | {117, 120}
+    set(ACT4_MESA) | set(ACT4_LAVA) | set(ACT5_SIEGE) | {117, 120, 76}
 
 WAYPOINTS = {
     1: list(act1.WAYPOINT_LEVELS),
