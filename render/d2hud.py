@@ -1374,7 +1374,8 @@ class D2Hud:
                 self.put(surf, img, x + sz - tw - 4, y + sz - th - 3)
             self.region(x, y, sz, sz, "bank_take", code)
             if held is None and pygame.Rect(int(x), int(y), sz, sz).collidepoint((int(mx), int(my))) and it is not None:
-                lines = [(it.name, it.color), ("In stash: %d" % n, WHITE if n else GREY)]
+                lines = list(it.describe_lines(p))
+                lines.insert(1, ("In stash: %d" % n, WHITE if n else GREY))
                 if n:
                     lines += [("Left click: take one", GREY), ("Right click: one to your backpack", GREY)]
                 self.hover_lines = lines
