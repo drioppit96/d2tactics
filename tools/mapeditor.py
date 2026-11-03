@@ -9,6 +9,7 @@ e.g. a cave or a tomb).
                  type to search, Backspace / Esc clears the search, mouse wheel scrolls
   Map            left click / drag: place     right click / drag: remove     middle drag or arrows: pan
                  mouse wheel: zoom
+  Toolbar buttons (top) do everything below; the Ctrl shortcuts still work:
   Ctrl+S save    Ctrl+O open    Ctrl+N new map    Ctrl+Z undo    Ctrl+G grid on/off
   Ctrl+R rename  Ctrl+L level it replaces    Ctrl+M random monsters on/off
   Ctrl+F floor layer 1 / 2 (layer 2 lies on top: roads, rugs, decals)
@@ -31,7 +32,7 @@ from render.iso import cell_to_world, Camera  # noqa: E402
 from game import custommap  # noqa: E402
 
 PANEL_W = 290
-TOP_H = 30
+TOP_H = 92                     # info line + two rows of buttons
 BOT_H = 24
 TABS = ["Floor", "Wall", "Room", "Object", "Monster", "Marker"]
 BG = (14, 12, 10)
@@ -381,52 +382,12 @@ class Editor:
         ctrl = bool(e.mod & pygame.KMOD_CTRL)
         k = e.key
         if ctrl:
-            if k == pygame.K_s:
-                self.save()
-            elif k == pygame.K_o:
-                self.picker = custommap.list_maps()
-                if not self.picker:
-                    self.picker = None
-                    self.msg = "No saved maps yet (the maps folder is empty)."
-            elif k == pygame.K_n:
-                self.snapshot()
-                self.doc = new_doc(self.doc["lvltype"], self.doc["width"], self.doc["height"])
-                self.recompose()
-                self.centre()
-            elif k == pygame.K_z and self.undo:
-                self.doc = json.loads(self.undo.pop())
-                self.recompose()
-            elif k == pygame.K_g:
-                self.grid_on = not self.grid_on
-            elif k == pygame.K_f:
-                self.layer2 = not self.layer2
-                self.msg = "Painting floor layer %d." % (2 if self.layer2 else 1)
-            elif k == pygame.K_k:
-                self.kind = (self.kind + 1) % len(KINDS)
-                self.msg = "Monsters are placed as: %s." % KINDS[self.kind]
-            elif k == pygame.K_m:
-                self.doc["random_monsters"] = not self.doc.get("random_monsters", True)
-                self.msg = "Random monsters: %s." % ("on" if self.doc["random_monsters"] else "off")
-            elif k == pygame.K_r:
-                def done(text):
-                    if text.strip():
-                        self.doc["name"] = text.strip()
-                self.prompt = ("Map name:", self.doc.get("name", ""), done)
-            elif k == pygame.K_l:
-                def done(text):
-                    t = text.strip()
-                    self.doc["level"] = int(t) if t.isdigit() else 0
-                    self.msg = "This map replaces level %s." % (self.doc["level"] or "nothing")
-                self.prompt = ("Level id this map replaces in the game (0 = none):", str(self.doc.get("level", 0)), done)
-            elif k in (pygame.K_LEFTBRACKET, pygame.K_RIGHTBRACKET):
-                self.cycle_tileset(1 if k == pygame.K_RIGHTBRACKET else -1)
-            elif k in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN):
-                self.snapshot()
-                dw = {pygame.K_LEFT: (-4, 0), pygame.K_RIGHT: (4, 0), pygame.K_UP: (0, -4), pygame.K_DOWN: (0, 4)}[k]
-                self.doc["width"] = max(8, min(256, self.doc["width"] + dw[0]))
-                self.doc["height"] = max(8, min(256, self.doc["height"] + dw[1]))
-                self.recompose()
-                self.msg = "Map size %d x %d tiles." % (self.doc["width"], self.doc["height"])
+            act = {pygame.K_s: "save", pygame.K_o: "open", pygame.K_n: "new", pygame.K_z: "undo",
+                   pygame.K_g: "grid", pygame.K_f: "layer", pygame.K_k: "kind", pygame.K_m: "random",
+                   pygame.K_r: "rename", pygame.K_l: "level", pygame.K_LEFTBRACKET: "ts-", pygame.K_RIGHTBRACKET: "ts+",
+                   pygame.K_LEFT: "w-", pygame.K_RIGHT: "w+", pygame.K_UP: "h-", pygame.K_DOWN: "h+"}.get(k)
+            if act:
+                self.do(act)
             return None
         if k == pygame.K_TAB:
             self.set_tab((self.tab + 1) % len(TABS))
@@ -448,6 +409,99 @@ class Editor:
             self.search += e.unicode
             self.scroll = 0
         return None
+
+    def do(self, act):
+        """A toolbar button (or its Ctrl shortcut)."""
+        if act == "save":
+            self.save()
+        elif act == "open":
+            self.picker = custommap.list_maps()
+            if not self.picker:
+                self.picker = None
+                self.msg = "No saved maps yet (the maps folder is empty)."
+        elif act == "new":
+            self.snapshot()
+            self.doc = new_doc(self.doc["lvltype"], self.doc["width"], self.doc["height"])
+            self.recompose()
+            self.centre()
+            self.msg = "New map (Undo brings the old one back)."
+        elif act == "undo":
+            if self.undo:
+                self.doc = json.loads(self.undo.pop())
+                self.recompose()
+                self.msg = "Undone."
+            else:
+                self.msg = "Nothing to undo."
+        elif act == "grid":
+            self.grid_on = not self.grid_on
+        elif act == "layer":
+            self.layer2 = not self.layer2
+            self.msg = "Painting floor layer %d." % (2 if self.layer2 else 1)
+        elif act == "kind":
+            self.kind = (self.kind + 1) % len(KINDS)
+            self.msg = "Monsters are placed as: %s." % KINDS[self.kind]
+        elif act == "random":
+            self.doc["random_monsters"] = not self.doc.get("random_monsters", True)
+            self.msg = "Random monsters: %s." % ("on" if self.doc["random_monsters"] else "off")
+        elif act == "rename":
+            def done(text):
+                if text.strip():
+                    self.doc["name"] = text.strip()
+            self.prompt = ("Map name:", self.doc.get("name", ""), done)
+        elif act == "level":
+            def done(text):
+                t = text.strip()
+                self.doc["level"] = int(t) if t.isdigit() else 0
+                self.msg = "This map replaces level %s." % (self.doc["level"] or "nothing")
+            self.prompt = ("Level id this map replaces in the game (0 = none):", str(self.doc.get("level", 0)), done)
+        elif act in ("ts-", "ts+"):
+            self.cycle_tileset(1 if act == "ts+" else -1)
+        elif act in ("act-", "act+"):
+            self.cycle_act(1 if act == "act+" else -1)
+        elif act in ("w-", "w+", "h-", "h+"):
+            self.snapshot()
+            d = 4 if act.endswith("+") else -4
+            key = "width" if act[0] == "w" else "height"
+            self.doc[key] = max(8, min(256, self.doc[key] + d))
+            self.recompose()
+            self.centre()
+            self.msg = "Map size %d x %d tiles." % (self.doc["width"], self.doc["height"])
+        elif act in ("z-", "z+"):
+            self.zoom = max(0, min(len(ZOOMS) - 1, self.zoom + (1 if act == "z-" else -1)))
+        elif act == "centre":
+            self.centre()
+
+    def _buttons(self):
+        """[(rect, label, action, on)] of the two toolbar rows."""
+        d = self.doc
+        out = []
+        x, y = PANEL_W + 8, 32
+        row1 = [("New", "new", False), ("Open", "open", False), ("Save", "save", False), ("Undo", "undo", False),
+                ("Rename", "rename", False), ("Replaces level: %s" % (d.get("level") or "-"), "level", bool(d.get("level"))),
+                ("Random monsters: %s" % ("on" if d.get("random_monsters", True) else "off"), "random",
+                 d.get("random_monsters", True)),
+                ("Grid: %s" % ("on" if self.grid_on else "off"), "grid", self.grid_on),
+                ("Floor layer %d" % (2 if self.layer2 else 1), "layer", self.layer2),
+                ("Monsters: %s" % KINDS[self.kind], "kind", self.kind > 0)]
+        for label, act, on in row1:
+            w = self.font.size(label)[0] + 18
+            out.append((pygame.Rect(x, y, w, 24), label, act, on))
+            x += w + 6
+        x, y = PANEL_W + 8, 62
+        groups = [("Act %d" % self.act(), "act"), (d.get("lvltype", ""), "ts"),
+                  ("Width %d" % d["width"], "w"), ("Height %d" % d["height"], "h"),
+                  ("Zoom %d%%" % int(self.zoomf() * 100), "z")]
+        for label, key in groups:
+            out.append((pygame.Rect(x, y, 24, 24), "<" if key in ("act", "ts") else "-", key + "-", False))
+            x += 28
+            w = max(60, self.font.size(label)[0] + 12)
+            out.append((pygame.Rect(x, y, w, 24), label, None, False))
+            x += w + 4
+            out.append((pygame.Rect(x, y, 24, 24), ">" if key in ("act", "ts") else "+", key + "+", False))
+            x += 38
+        w = self.font.size("Centre view")[0] + 18
+        out.append((pygame.Rect(x, y, w, 24), "Centre view", "centre", False))
+        return out
 
     def set_tab(self, t):
         self.tab = t
@@ -474,6 +528,13 @@ class Editor:
             self.msg = "Act %d - tileset %s" % (a, first)
 
     def click(self, e):
+        if e.pos[0] >= PANEL_W and e.pos[1] < TOP_H:
+            if e.button == 1:
+                for r, label, act, on in self._buttons():
+                    if act and r.collidepoint(e.pos):
+                        self.do(act)
+                        return
+            return
         if e.pos[0] < PANEL_W:
             if e.button == 1:
                 for r, t in self._tab_rects():
@@ -594,7 +655,8 @@ class Editor:
             else:
                 self.text(surf, label[:44], (r.x + 4, r.y + 3), GOLD if on else WHITE, self.small)
         self.text(surf, "%d entries - wheel scrolls" % len(ents), (8, self.H - 70), GREY, self.small)
-        info = {4: "Ctrl+K: placed as %s" % KINDS[self.kind], 0: "Ctrl+F: floor layer %d" % (2 if self.layer2 else 1)}
+        info = {4: "placed as: %s (Monsters button)" % KINDS[self.kind],
+                0: "painting floor layer %d (Floor layer button)" % (2 if self.layer2 else 1)}
         if self.tab in info:
             self.text(surf, info[self.tab], (8, self.H - 52), GOLD, self.small)
 
@@ -750,9 +812,16 @@ class Editor:
         # top bar
         pygame.draw.rect(surf, PANEL, (PANEL_W, 0, self.W - PANEL_W, TOP_H))
         d = self.doc
-        self.text(surf, "%s   |   %s   |   %d x %d tiles   |   replaces level: %s   |   random monsters: %s   |   zoom %d%%" % (
-            d.get("name"), d.get("lvltype"), d["width"], d["height"], d.get("level") or "-",
-            "on" if d.get("random_monsters", True) else "off", int(self.zoomf() * 100)), (PANEL_W + 10, 7), GOLD)
+        self.text(surf, "Map: %s" % d.get("name"), (PANEL_W + 10, 7), GOLD, self.big)
+        pygame.draw.line(surf, LINE, (PANEL_W, TOP_H - 1), (self.W, TOP_H - 1))
+        for r, label, act, on in self._buttons():
+            if act is None:
+                self.text(surf, label, (r.x + 6, r.y + 4), WHITE)
+                continue
+            hot = r.collidepoint(self.mouse)
+            pygame.draw.rect(surf, (88, 72, 36) if hot else (SEL if on else (44, 38, 30)), r)
+            pygame.draw.rect(surf, GOLD if hot else LINE, r, 1)
+            self.text(surf, label, (r.x + (r.w - self.font.size(label)[0]) // 2, r.y + 4), GOLD if on or hot else WHITE)
         # status
         pygame.draw.rect(surf, PANEL, (PANEL_W, self.H - BOT_H, self.W - PANEL_W, BOT_H))
         cell = self.screen_to_cell(self.mouse) if self.view_rect().collidepoint(self.mouse) else None
