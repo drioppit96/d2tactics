@@ -428,9 +428,7 @@ def on_object(world, obj):
             from . import act2
             if act2.CURRENT_REAL:
                 info = getattr(world, "info", None)
-                where = act2.tomb_hint(act2.CURRENT_REAL, getattr(info, "kit", None))
-                world.log("The symbol marks the tomb %s (see the Quest Log: Q)." % (where or "in the canyon"),
-                          QUEST_COLOR)
+                world.log("Find the tomb entrance marked with the same symbol (Quest Log: Q).", QUEST_COLOR)
             return True
         _ensure_portal(world, obj["cell"], 46, "portal")
         return True

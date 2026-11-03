@@ -15,7 +15,7 @@ from .acts import TOWNS, act_of
 # areas that join without an entrance (one outdoor world)
 OUTDOOR_LINKS = [(1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 7), (3, 17), (26, 27), (27, 28), (32, 33),
                  (40, 41), (41, 42), (42, 43), (43, 44), (44, 45),
-                 (75, 76), (76, 77), (77, 78), (78, 79), (79, 80), (80, 81), (81, 82), (82, 83),
+                 (75, 79), (79, 76), (80, 77), (79, 80), (80, 81), (81, 82), (82, 83),
                  (103, 104), (104, 105), (105, 106), (107, 108),
                  (109, 110), (110, 111), (111, 112)]
 # portals: the cairn stones, the palace cellar, the Summoner's journal, Mephisto's red portal,
@@ -147,23 +147,23 @@ def objectives(world):
     # ---- Act 3
     s = st("bird")
     if s == "active":
-        add("bird", "A unique monster in the jungle", 76, ("unique",))
+        add("bird", "A unique monster in Lower Kurast", 79, ("unique",))
     elif s == "jade":
         add("bird", "Show the figurine to Meshif", *_npc("meshif2"))
     elif s == "bird":
         add("bird", "Show the bird to Alkor", *_npc("alkor"))
     s = st("gidbinn")
     if s == "active":
-        add("gidbinn", "Find the Gidbinn", 78, ("object", "gidbinn"))
+        add("gidbinn", "Kill Hexrattle the Stitched", 76, ("boss", "hexrattle"))
     elif s == "cleared":
         add("gidbinn", "Bring the Gidbinn to Ormus", *_npc("ormus"))
     s = st("khalim")
     if s == "active":
         if not have("qf2"):
             if not have("qey"):
-                add("khalim", "Khalim's Eye", 85, ("object", "eye_chest"), "eye")
+                add("khalim", "Khalim's Eye (Silkmother Vashra)", 76, ("boss", "silkmother"), "eye")
             if not have("qbr"):
-                add("khalim", "Khalim's Brain", 91, ("object", "brain_chest"), "brain")
+                add("khalim", "Khalim's Brain (Scribe Ophizek)", 77, ("boss", "scribe"), "brain")
             if not have("qhr"):
                 add("khalim", "Khalim's Heart", 93, ("object", "heart_chest"), "heart")
             if not have("qf1"):

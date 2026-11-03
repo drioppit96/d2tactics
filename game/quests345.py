@@ -25,16 +25,19 @@ ACTS = {
 }
 TITLES = {q: t for lst in ACTS.values() for q, t in lst}
 JOURNAL = {
-    "bird": {"active": "Somewhere in the jungle a unique monster carries a Jade Figurine. Show it to Meshif.",
+    "bird": {"active": "Somewhere in Lower Kurast or the Kurast Armory a unique monster carries a Jade Figurine. "
+                       "Show it to Meshif.",
              "jade": "You have the Jade Figurine. Show it to Meshif.",
              "bird": "Meshif gave you a Golden Bird for the figurine. Alkor wants to see it.",
              "potion": "Alkor brewed you a Potion of Life from the bird's ashes. Drink it.",
              "done": "Completed. The Potion of Life gave you +20 Life."},
-    "gidbinn": {"active": "Ormus says the Gidbinn, a sacred blade, lies on an altar in the Flayer Jungle.",
+    "gidbinn": {"active": "Ormus says the Gidbinn, a sacred blade, was taken by Hexrattle the Stitched, a doll "
+                           "that haunts the Kurast Armory (east of Lower Kurast).",
                 "cleared": "You have the Gidbinn. Bring it to Ormus.",
                 "done": "Completed. Ormus gave you a ring."},
-    "khalim": {"active": "Remake Khalim's Will: his Eye (Spider Cavern), Brain (Flayer Dungeon 3), Heart (Sewers "
-                         "Level 2) and Flail (the High Council in Travincal). Join them in the Horadric Cube.",
+    "khalim": {"active": "Remake Khalim's Will: his Eye (Silkmother Vashra, Kurast Armory), Brain (Scribe Ophizek, "
+                         "Kurast Scriptorium beside the Bazaar), Heart (Sewers Level 2) and Flail (the High Council "
+                         "in Travincal). Join them in the Horadric Cube.",
                "cleared": "Khalim's Will is whole. Smash the Compelling Orb in Travincal with it.",
                "orb": "The Compelling Orb is broken - the way into the Durance of Hate is open.",
                "done": "Completed."},
@@ -151,7 +154,8 @@ def talk(world, npc):
     elif who == "ormus":
         if q["gidbinn"] == "none":
             _start(world, "gidbinn")
-            lines = ["Ormus: The Gidbinn - a sacred blade - lies on an altar in the Flayer Jungle. Ormus needs it."]
+            lines = ["Ormus: The Gidbinn - a sacred blade - was stolen by a stitched doll, Hexrattle. It hides in "
+                     "the Kurast Armory, east of Lower Kurast. Ormus needs the blade."]
         elif has_item(p, "g33", world):
             take_item(world, "g33")
             _done(world, "gidbinn", "A ring for you.")
@@ -169,7 +173,8 @@ def talk(world, npc):
             _done(world, "council")
             lines = ["Deckard Cain: The council is dead. Now the Durance of Hate - and Mephisto."]
         elif q["khalim"] == "active":
-            parts = [("qey", "the Eye (Spider Cavern)"), ("qbr", "the Brain (Flayer Dungeon)"),
+            parts = [("qey", "the Eye (Silkmother Vashra, Kurast Armory)"),
+                     ("qbr", "the Brain (Scribe Ophizek, Kurast Scriptorium)"),
                      ("qhr", "the Heart (Kurast Sewers)"), ("qf1", "the Flail (the High Council)")]
             missing = [n for c, n in parts if not has_item(p, c, world)]
             lines = ["Deckard Cain: You still need %s." % ", ".join(missing)] if missing else \
@@ -303,7 +308,7 @@ def blocked(world, target):
 
 def on_enter(world, lid):
     q = world.player.quests
-    if lid in (76, 77, 78) and q["bird"] == "none":
+    if lid in (79, 76) and q["bird"] == "none":
         _start(world, "bird")
     if lid == 83:
         _start(world, "council")
@@ -485,12 +490,27 @@ def on_killed(world, unit):
     q = p.quests
     boss = getattr(unit, "boss", None)
     lid = world.area_at(unit.pos) or world.level_id
-    if boss and q["bird"] in ("none", "active") and lid in (76, 77, 78) and not has_item(p, "j34", world) \
+    if boss and q["bird"] in ("none", "active") and lid in (79, 76, 77) and not has_item(p, "j34", world) \
             and not has_item(p, "g34", world) and not has_item(p, "xyz", world):
         _start(world, "bird")
         q["bird"] = "jade"
         give_item(world, "j34", near=unit.pos)
         world.log("%s dropped a Jade Figurine. Show it to Meshif." % unit.name, QUEST_COLOR)
+    # this game's Kurast Armory / Scriptorium: the named uniques carry the quest items
+    drops = {"hexrattle": ("g33", "gidbinn", "the Gidbinn"), "silkmother": ("qey", "khalim", "Khalim's Eye"),
+             "scribe": ("qbr", "khalim", "Khalim's Brain")}
+    if boss in drops:
+        code, qid, what = drops[boss]
+        if qid == "gidbinn":
+            if q["gidbinn"] in ("none", "active") and not has_item(p, "g33", world):
+                _start(world, "gidbinn")
+                q["gidbinn"] = "cleared"
+                give_item(world, code, near=unit.pos)
+                world.log("%s dropped the Gidbinn! Bring it to Ormus." % unit.name, QUEST_COLOR)
+        elif q["khalim"] in ("none", "active") and not has_item(p, code, world) and not has_item(p, "qf2", world):
+            _start(world, "khalim")
+            give_item(world, code, near=unit.pos)
+            world.log("%s dropped %s!" % (unit.name, what), QUEST_COLOR)
     if boss == "council":
         if q["khalim"] in ("none", "active") and not has_item(p, "qf1", world) and not has_item(p, "qf2", world):
             give_item(world, "qf1", near=unit.pos)

@@ -961,6 +961,12 @@ class D2Hud:
                     line = trial
             if line:
                 self.text(surf, self.f16, line, WHITE, 18, y)
+            if act == 2 and status != "done" and "Horazon's Journal showed this symbol" in (text or ""):
+                from game import act2 as _a2
+                from . import tombsymbols
+                if _a2.CURRENT_REAL:
+                    sx, sy = self.P(160, y + 42)
+                    tombsymbols.draw(surf, tombsymbols.symbol_of(_a2.CURRENT_REAL), sx, sy, 22 * self.s, glow=True)
         # Play Quest Dialogue (D2 replays what the quest giver said): here the quest's text goes to the log
         ql = self.frames.get("questlast")
         if entries and entries[sel][1] != "none":

@@ -547,6 +547,28 @@ class Scene:
         d = math.hypot(x - v.rx, y - v.ry)
         return max(0.3, min(1.0, 1.15 - (d / light) ** 1.6 * 0.85))
 
+    def _draw_tomb_symbols(self, surf, cam, g):
+        """Canyon of the Magi: each of the seven tomb entrances is marked with its Horadric symbol."""
+        world = self.world
+        if getattr(world, "level_id", None) != 46:
+            return
+        spots = getattr(world, "_tomb_spots", None)
+        if spots is None:
+            acc = {}
+            for c, t in getattr(world, "exits", {}).items():
+                if isinstance(t, int) and 66 <= t <= 72:
+                    acc.setdefault(t, []).append(c)
+            spots = world._tomb_spots = {t: (sum(c[0] for c in cs) / float(len(cs)), sum(c[1] for c in cs) / float(len(cs)),
+                                             min(cs, key=lambda c: c[0] + c[1]))
+                                         for t, cs in acc.items()}
+        from . import tombsymbols
+        for t, (mx, my, back) in spots.items():
+            if not g.explored[int(my)][int(mx)]:
+                continue
+            sx, sy = cam.cell_to_screen(mx, my)
+            if -60 < sx < surf.get_width() + 60 and -60 < sy < surf.get_height() + 200:
+                tombsymbols.draw(surf, tombsymbols.symbol_of(t), sx, sy - 120 * cam.scale, 19 * cam.scale, glow=True)
+
     def draw(self, surf, cam, hover_cell=None, highlight=None, path_preview=None):
         """World pass. Drawn at 1:1 into an offscreen buffer that main.py scales to the window."""
         world, g, assets = self.world, self.world.grid, self.assets
@@ -774,6 +796,7 @@ class Scene:
                     wy = (r.y - cam.sh / 2) / s + cam.wy
                     self.unit_hits.append((pygame.Rect(int(wx), int(wy), int(r.w / s), int(r.h / s)), u))
 
+        self._draw_tomb_symbols(surf, cam, g)
         # roofs go on top of the walls and of whatever stands under them (D2 draws them last)
         for _, wref, tx, ty in sorted(roofs, key=lambda r: r[0]):
             assets.draw_tile(surf, wref, tx, ty, cam)

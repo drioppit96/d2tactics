@@ -154,48 +154,26 @@ def jungle_area(cv, lid, x0, y0, links, clearings):
 
 
 def build_jungle(kit, seed=None, content=None):
-    W, H = 4 * P, 32 + 6 * P + 6 * P + 32 + 48
-    cv = Canvas(kit, W, H, 3, seed)
-    rng, b = cv.rng, cv.b
-    cv.set_ground("jungle", J + "rivn.ds1", JUNGLE_LT)
-    y_tail, y_flay = 0, 32
-    y_spid = y_flay + 6 * P
-    y_head = y_spid + 6 * P
-    y_dock = y_head + 32
-    # Kurast Docks
+    """The Kurast Docks alone: this game skips the jungle (Spider Forest, Great Marsh, Flayer Jungle) -
+    the docks' north road leads straight into Lower Kurast."""
     dock = kit.ds1(A3 + "docktown\\docktown3.ds1")
     if dock is None:
         raise FileNotFoundError("Kurast Docks layout (act3\\docktown\\docktown3.ds1) not found")
-    cv.put(A3 + "docktown\\docktown3.ds1", 0, y_dock, 75, "Act 3 - Town")
     dw, dh = dock.width - 1, dock.height - 1
-    b.town_rect = (0, y_dock * SUB, dw * SUB, (y_dock + dh) * SUB)
-    b.areas[75] = b.town_rect
-    # the jungle's head (out of the docks) and tail (towards Kurast)
+    road = 32                                          # D2's jungle head piece: the road out of the docks
+    cv = Canvas(kit, dw, dh + road, 3, seed)
+    rng, b = cv.rng, cv.b
+    cv.set_ground("jungle", J + "rivn.ds1", JUNGLE_LT)
     head = pick_existing(kit, [J + "transl.ds1", J + "transu.ds1"], rng)
-    tail = pick_existing(kit, [J + "travl.ds1", J + "travu.ds1"], rng)
     if head:
-        cv.put(head, 0, y_head, 76, JUNGLE_LT)
-    if tail:
-        cv.put(tail, 0, y_tail, 78, JUNGLE_LT)
-    jungle_area(cv, 76, 0, y_spid, {"n": 0, "s": 0}, [("spid", ""), ("spid", "2"), ("spid", "3")])
-    jungle_area(cv, 78, 0, y_flay, {"n": 0, "s": 0}, [("pyg", ""), ("pyg", "2"), ("pyg", "3")])
-    # the Great Marsh beside them, half along the Spider Forest, half along the Flayer Jungle
-    jungle_area(cv, 77, 2 * P, y_flay + 3 * P, {}, [("bog", ""), ("bog", "2"), ("bog", "3")])
-    x0, y0, x1, y1 = b.areas[76]
-    b.areas[76] = (x0, y0, x1, (y_head + 32) * SUB)           # the head belongs to the Spider Forest
-    x0, y0, x1, y1 = b.areas[78]
-    b.areas[78] = (x0, 0, x1, y1)                            # ... the tail to the Flayer Jungle
+        cv.put(head, 0, 0, 75, JUNGLE_LT)
+    cv.put(A3 + "docktown\\docktown3.ds1", 0, road, 75, "Act 3 - Town")
+    b.town_rect = (0, road * SUB, dw * SUB, (road + dh) * SUB)
+    b.areas[75] = (0, 0, dw * SUB, (road + dh) * SUB)
     grid = cv.finish()
-    gk = cv.ground_kit("jungle")
-    drlg.ensure_connected(b, grid, [(75, 76), (76, 78), (76, 77), (77, 78)], gk, rng)
     drlg.ensure_waypoints(b, grid, 3)
-    # the Gidbinn's altar somewhere in the Flayer Jungle
-    x0, y0, x1, y1 = b.areas[78]
-    c = drlg.near_walkable(grid, (rng.randrange(x0 + 40, x1 - 40), rng.randrange(y0 + 200, y1 - 200)), 80)
-    if c:
-        b.objects.append(("gidbinn", c, 78, -1))
-    # the far edge of the tail: on to Lower Kurast (another world)
-    cells = drlg.edge_cells(grid, (0, 0, 2 * P * SUB, 32 * SUB), "n")
+    # the road's far (north) edge: on to Lower Kurast (another world)
+    cells = drlg.edge_cells(grid, (0, 0, dw * SUB, (road + dh) * SUB), "n")
     b.edge_exits = [(cells, 79)]
     return b, grid, rng
 
@@ -226,8 +204,27 @@ def _kurast_spec(lid):
     return dict(lvltype=KURAST_LT, ground=k, border=border, specials=specials, fills=fills, fill_chance=0.8)
 
 
+# this game's two extra areas (level ids of the skipped jungle, renamed): built like the area they
+# join - the Kurast Armory off Lower Kurast's east side, the Kurast Scriptorium off the Bazaar's west
+SIDE_AREAS = {76: dict(name="Kurast Armory", like=79, side="e", extra=["fetish5", "fetishshaman5", "arach4"]),
+              77: dict(name="Kurast Scriptorium", like=80, side="w", extra=["cantor2", "zealot3", "mummy5"])}
+SIDE_W = 5                     # blocks (8 tiles) wide
+
+
+def _side_spec(lid):
+    sa = SIDE_AREAS[lid]
+    spec = _kurast_spec(sa["like"])
+    spec = dict(spec, specials=[], fill_chance=0.85)
+    inner = "w" if sa["side"] == "e" else "e"
+    spec["openings"] = {inner: (3, 1)}
+    spec["border"] = {k: v for k, v in spec["border"].items() if k != inner and not (isinstance(k, tuple) and inner in k)}
+    return spec
+
+
 def build_kurast(kit, seed=None, content=None):
-    W, H = 80, 64 + 16 + 64 * 3
+    SW = SIDE_W * 8
+    W, H = 80 + 2 * SW, 64 + 16 + 64 * 3
+    X = SW                                 # the main column (Travincal ... Lower Kurast) starts here
     cv = Canvas(kit, W, H, 3, seed)
     rng, b = cv.rng, cv.b
     for lid, k in KINDS.items():
@@ -235,23 +232,76 @@ def build_kurast(kit, seed=None, content=None):
     # Travincal (its six presets), the Causeway bridge, then the three city areas going south
     trav = [("travnw", 8, 0), ("travn", 24, 0), ("travne", 56, 0), ("travsw", 8, 32), ("travs", 24, 32), ("travse", 56, 32)]
     for name, x, y in trav:
-        cv.put(A3 + "travincal\\%s.ds1" % name, x, y, 83, KURAST_LT)
-    b.areas[83] = (8 * SUB, 0, 72 * SUB, 64 * SUB)
-    cv.put(K + "bridge.ds1", 16, 64, 82, KURAST_LT)
-    b.areas[82] = (0, 64 * SUB, 80 * SUB, 80 * SUB)
+        cv.put(A3 + "travincal\\%s.ds1" % name, X + x, y, 83, KURAST_LT)
+    b.areas[83] = ((X + 8) * SUB, 0, (X + 72) * SUB, 64 * SUB)
+    cv.put(K + "bridge.ds1", X + 16, 64, 82, KURAST_LT)
+    b.areas[82] = (X * SUB, 64 * SUB, (X + 80) * SUB, 80 * SUB)
+    rows = {}
     for i, lid in enumerate((81, 80, 79)):
         y0 = 80 + i * 64
+        rows[lid] = y0
         spec = _kurast_spec(lid)
-        placed = block_area(cv, lid, 0, y0, 10, 8, 8, spec)
+        side = next((s_ for l_, s_ in ((76, "e"), (77, "w")) if SIDE_AREAS[l_]["like"] == lid), None)
+        if side:
+            spec = dict(spec, openings={side: (3, 1)})
+        placed = block_area(cv, lid, X, y0, 10, 8, 8, spec)
         for k, (names, w, h, where) in enumerate(spec["specials"]):
             if "waypoint" in names[0] and k in placed:
                 bx, by = placed[k]
-                b.objects.append(("waypoint", ((bx * 8 + 4) * SUB, (y0 + by * 8 + 4) * SUB), lid, -1))
+                b.objects.append(("waypoint", ((X + bx * 8 + 4) * SUB, (y0 + by * 8 + 4) * SUB), lid, -1))
+    # the side areas
+    for lid, sa in SIDE_AREAS.items():
+        y0 = rows[sa["like"]]
+        x0 = X + 80 if sa["side"] == "e" else 0
+        block_area(cv, lid, x0, y0, SIDE_W, 8, 8, _side_spec(lid))
     grid = cv.finish()
-    drlg.ensure_connected(b, grid, [(79, 80), (80, 81), (81, 82), (82, 83)], cv.ground_kit("slums"), rng)
+    drlg.ensure_connected(b, grid, [(79, 80), (80, 81), (81, 82), (82, 83), (79, 76), (80, 77)],
+                          cv.ground_kit("slums"), rng)
     drlg.ensure_waypoints(b, grid, 3)
-    # Lower Kurast's south gate: back into the jungle (another world)
-    x0, y0, x1, y1 = b.areas[79]
-    cells = drlg.edge_cells(grid, b.areas[79], "s", x_range=(24 * SUB, 56 * SUB))
-    b.edge_exits = [(cells, 78)]
+    # Lower Kurast's south gate: back to the Kurast Docks (another world)
+    cells = drlg.edge_cells(grid, b.areas[79], "s", x_range=((X + 24) * SUB, (X + 56) * SUB))
+    b.edge_exits = [(cells, 75)]
     return b, grid, rng
+
+
+# this game's named uniques of the two extra areas, who carry quest items
+SIDE_BOSSES = [
+    # (area, monster, name, boss tag, mods, minions)
+    (76, "fetish5", "Hexrattle the Stitched", "hexrattle", ("FAST", "FIRE"), ("fetish5", 5)),
+    (76, "arach4", "Silkmother Vashra", "silkmother", ("STRONG", "CURSE"), ("arach4", 3)),
+    (77, "cantor2", "Scribe Ophizek the Hollow", "scribe", ("MANAHIT", "TELEPORT"), ("zealot3", 4)),
+]
+
+
+def spawn_side_bosses(world, taken, info):
+    """The Armory's doll (the Gidbinn) and spider queen (Khalim's Eye), the Scriptorium's scribe
+    (Khalim's Brain): one each, deep inside their area."""
+    from . import actworld, monmods
+    import zlib
+    rng = world.rng
+    for lid, mid, name, tag, mods, (minion, n) in SIDE_BOSSES:
+        rect = world.areas.get(lid)
+        if rect is None or world.content is None or mid not in world.content.monstats:
+            continue
+        if any(getattr(m, "boss", None) == tag for m in world.monsters):
+            continue
+        x0, y0, x1, y1 = rect
+        cell = None
+        for _ in range(200):
+            c = (rng.randrange(x0 + 30, x1 - 30), rng.randrange(y0 + 30, y1 - 30))
+            if world.grid.walkable(*c) and c not in taken and actworld._reachable(world, c):
+                cell = c
+                break
+        if cell is None:
+            continue
+        lvl = info.monster_level(lid)
+        m = actworld._spawn(world, mid, cell, lvl + 3, taken, unique=True, name=name)
+        if m is None:
+            continue
+        m.boss = tag
+        monmods.apply(world, m, [getattr(monmods, k) for k in mods])
+        m.color_shift = 1 + zlib.crc32(name.encode()) % 7
+        for c in actworld._scatter(world, cell, n, taken):
+            mm = actworld._spawn(world, minion, c, lvl + 1, taken)
+            if mm is not None:
+                monmods.pass_aura(m, mm)

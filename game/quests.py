@@ -463,13 +463,5 @@ def journal(player, act=1):
 
 
 def _true_tomb_text():
-    """What Horazon's Journal showed: which of the seven is the true tomb."""
-    from . import act2
-    real = act2.CURRENT_REAL
-    if not real:
-        return ""
-    where = act2.tomb_hint(real)
-    n = real - 65
-    txt = "Horazon's Journal showed the true tomb: the entrance %s in the Canyon of the Magi" % (
-        where or "marked with its symbol")
-    return txt + ". Its entrance now reads \"(the true tomb)\"."
+    """What Horazon's Journal showed: the true tomb's symbol (the quest log draws it below)."""
+    return "Horazon's Journal showed this symbol - find the tomb entrance marked with it:"

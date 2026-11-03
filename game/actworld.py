@@ -46,7 +46,16 @@ class ActInfo:
         self.rows = kit.levels
         self.strings = getattr(content, "strings", None)
 
+    def _side(self, lid):
+        if self.kit is None or not isinstance(lid, int) or lid not in (76, 77):
+            return None
+        from .act3 import SIDE_AREAS
+        return SIDE_AREAS.get(lid)
+
     def name(self, lid):
+        sa = self._side(lid)
+        if sa:
+            return sa["name"]
         r = self.rows.get(lid)
         if r and self.strings is not None and r.get("levelname"):
             nm = self.strings.get(r["levelname"], None)
@@ -55,12 +64,20 @@ class ActInfo:
         return LEVEL_NAMES.get(lid, "Level %s" % lid)
 
     def monster_level(self, lid):
+        sa = self._side(lid)
+        if sa:
+            return self.monster_level(sa["like"]) + 1
         r = self.rows.get(lid) or {}
         sfx = getattr(self.content, "sfx", "")
         col = {"": "monlvl1ex", "(n)": "monlvl2ex", "(h)": "monlvl3ex"}.get(sfx, "monlvl1ex")
         return max(1, _int(r.get(col)) or _int(r.get("monlvl1"), 1))
 
     def roster(self, lid):
+        sa = self._side(lid)
+        if sa:
+            base = self.roster(sa["like"])
+            return base + [m for m in sa["extra"] if self.content is not None and m in self.content.monstats
+                           and m not in base]
         r = self.rows.get(lid)
         if not r or self.content is None:
             return []
@@ -354,6 +371,9 @@ def setup(world, built, grid, rng, info, level_key):
         if lid in TOWN_IDS or lid in (20, 73):
             continue
         _populate(world, lid, rect, taken, safe, info)
+    if level_key == "kurast":
+        from .act3 import spawn_side_bosses
+        spawn_side_bosses(world, taken, info)
     if level_key == 73:
         # Duriel's chamber: Duriel alone, nothing else (D2)
         world.monsters = [m for m in world.monsters
