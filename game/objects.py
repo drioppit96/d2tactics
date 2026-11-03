@@ -234,6 +234,9 @@ def populate(world, built, info, taken, safe):
         used_cells.add(o["cell"])
     for n, cell, owner in getattr(built, "gen_objects", []):
         oid = object_id(act, n)
+        countess = act == 1 and n == 38 and owner == 25       # the Countess's treasure chest
+        if countess:
+            oid = 6                                           # (drawn as D2's large chest)
         if oid is None:
             continue
         r = data.rows.get(oid) or {}
@@ -263,6 +266,8 @@ def populate(world, built, info, taken, safe):
         o = make(world, oid, cell, owner, data, town=owner in TOWN_IDS)
         if o is None:
             continue
+        if countess:
+            o["kind"], o["name"], o["sparkly"], o["countess"] = "chest", "The Countess's Chest", True, True
         if owner in TOWN_IDS and o["kind"] not in ("stash", "decor"):
             o["kind"], o["block"] = "decor", []          # nothing to open or break in town
         if any(c in taken or c in world.exits for c in o["block"]):
@@ -490,6 +495,13 @@ def _loot(world, o):
             it = _pick(c, lvl, rng, mf, gf, nothing)
             if it is not None:
                 drops.append(it)
+    if o.get("countess"):
+        # her hoard: besides the rich chest's loot, a low rune or two (she is the rune farm of D2)
+        for _ in range(rng.choice((1, 1, 2))):
+            n = min(11, 1 + int(rng.expovariate(0.45)))
+            code = "r%02d" % n
+            if code in c.base_by_code:
+                drops.append(c.make_item(c.base_by_code[code], lvl, rng))
     for it in drops:
         cell = world._drop_cell(o["cell"])
         world.ground.setdefault(cell, []).append(it)

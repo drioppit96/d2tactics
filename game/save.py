@@ -144,6 +144,7 @@ def save_character(player, difficulty="normal"):
         boss_kills=list(getattr(p, "boss_kills", []) or []),
         tracked_quest=getattr(p, "tracked_quest", None),
         qol=dict(getattr(p, "qol", None) or {}),
+        imbues=dict(getattr(p, "imbues", None) or {}),
         weapon_set=getattr(p, "weapon_set", 0),
         swap_gear={k: _item_dict(v) for k, v in (getattr(p, "swap_gear", None) or {}).items()},
         set_skills={str(k): list(v) for k, v in (getattr(p, "set_skills", None) or {}).items()},
@@ -230,6 +231,7 @@ def build_player(data, content):
     p.boss_kills = list(data.get("boss_kills") or [])
     p.tracked_quest = data.get("tracked_quest")
     p.qol = dict(data.get("qol") or {})
+    p.imbues = dict(data.get("imbues") or {})
     p.weapon_set = int(data.get("weapon_set", 0) or 0)
     p.swap_gear = {k: _item_from(v, content) for k, v in (data.get("swap_gear") or {}).items()}
     p.swap_gear.setdefault("weapon", None)

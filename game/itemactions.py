@@ -39,6 +39,34 @@ NPC_OPTIONS = {
 STORE_W, STORE_H = 10, 10
 TAB_NAMES = {"armo": "Armor", "weap": "Weapons", "misc": "Misc", "gamble": "Gamble"}
 
+def _difficulty(world):
+    return {"": "normal", "(n)": "nightmare", "(h)": "hell"}.get(getattr(world.content, "sfx", ""), "normal")
+
+
+def grant_imbue(world):
+    """Tools of the Trade: Charsi imbues one item - once per difficulty (D2)."""
+    p = world.player
+    im = p.__dict__.setdefault("imbues", {})
+    if im.get(_difficulty(world)) != "used":
+        im[_difficulty(world)] = "ready"
+
+
+def imbue_ready(world):
+    return (getattr(world.player, "imbues", None) or {}).get(_difficulty(world)) == "ready"
+
+
+def npc_options(world, npc_id):
+    """The NPC's menu, with what the story has unlocked (Charsi's Imbue)."""
+    opts = list(NPC_OPTIONS.get(npc_id, ["Talk"]))
+    p = world.player
+    if npc_id == "charsi" and (getattr(p, "quests", {}) or {}).get("malus") == "done" and \
+            _difficulty(world) not in (getattr(p, "imbues", None) or {}):
+        grant_imbue(world)              # (heroes who returned the Malus before Imbue existed)
+    if npc_id == "charsi" and imbue_ready(world):
+        opts.insert(2, "Imbue")
+    return opts
+
+
 # the blacksmiths: their trade screen has the Socket Item button
 SMITHS = ("charsi", "fara", "hratli", "halbu", "larzuk")
 
@@ -163,6 +191,36 @@ class ItemActions:
         finally:
             it.sockets = had
 
+    def imbue_item(self, it):
+        """Charsi's Imbue (D2): a normal (white) weapon or armor becomes a rare item of item level
+        character level + 4. Once per difficulty."""
+        p = self.player
+        c = self.content
+        if not imbue_ready(self):
+            return False
+        if it is None or getattr(it, "kind", "") != "equip" or not isinstance(getattr(it, "base", None), dict) \
+                or it.rarity not in ("normal", "superior", "low") or getattr(it, "runeword", None) \
+                or getattr(it, "socketed", None):
+            self.log("Charsi: I can only imbue a plain (white) weapon or armor with nothing in its sockets.", GREY)
+            return False
+        new = c.make_item(it.base, p.level + 4, self.rng, "rare", sockets=0, identified=True)
+        if new is None:
+            return False
+        if getattr(it, "ethereal", False):
+            new.ethereal = True
+        if it in p.inventory:
+            new.inv_pos = it.inv_pos
+            p.inventory[p.inventory.index(it)] = new
+        else:
+            slot = next((k for k, v in p.equipment.items() if v is it), None)
+            if slot is None:
+                return False
+            p.equipment[slot] = new
+        p.imbues[_difficulty(self)] = "used"
+        p.recalc()
+        self.log("Charsi imbues it: %s!" % new.name, new.color)
+        return True
+
     def socket_item(self, it):
         """The blacksmith adds one socket to an item (up to its D2 maximum) for twice its price."""
         p = self.player
@@ -275,15 +333,26 @@ class ItemActions:
         self.log("Sold %s for %d gold." % (it.shown_name, value), GREY)
         return True
 
-    def identify_all(self, free=True):
+    def identify_all(self, free=True, quiet=False):
+        """Deckard Cain identifies everything you own: backpack, equipment, the other weapon set,
+        what's in your Horadric Cube and in the stash."""
         p = self.player
         n = 0
-        for it in list(p.inventory) + [x for x in p.equipment.values() if x]:
+        items = list(p.inventory) + [x for x in p.equipment.values() if x] + \
+            [x for x in (getattr(p, "swap_gear", None) or {}).values() if x]
+        for it in list(items):
+            items += list(getattr(it, "contents", None) or [])          # the cube
+        st = getattr(p, "stash", None)
+        if st is not None:
+            for page in getattr(st, "pages", None) or [getattr(st, "contents", None) or []]:
+                items += list(page)
+        for it in items:
             if d2items.identify(it):
                 n += 1
         p.recalc()
-        self.log("Deckard Cain identifies %d item%s." % (n, "" if n == 1 else "s") if n else
-                 "Deckard Cain: You have nothing I need to look at.", YELLOW)
+        if n or not quiet:
+            self.log("Deckard Cain identifies %d item%s." % (n, "" if n == 1 else "s") if n else
+                     "Deckard Cain: You have nothing I need to look at.", YELLOW)
         return n
 
     # ------------------------------------------------------------ using items

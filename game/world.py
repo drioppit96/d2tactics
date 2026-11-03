@@ -734,6 +734,8 @@ class World(SkillCaster, ItemActions):
         if npc.npc in HEALERS:
             p.hp, p.mana = p.max_hp, p.max_mana
             self.emit("heal", p, 0)
+        if npc.npc.startswith("cain"):
+            self.identify_all(quiet=True)       # Deckard Cain looks at everything you carry, every act
         from .itemactions import NPC_OPTIONS
         if npc.npc in NPC_OPTIONS:
             self.open_npc = npc
@@ -1831,7 +1833,12 @@ class World(SkillCaster, ItemActions):
                     tc = unit.tc_quest
                     done.append(boss)
             if tc and hasattr(self.content, "roll_tc"):
-                drops = self.content.roll_tc(tc, unit.level, self.rng, mf=p.mf, gf=p.gf)
+                # Duriel: rares, sets and uniques 5% more often than Andariel's (same boss odds x 1.05)
+                self.content._q_bonus = 1.05 if boss == "duriel" else 1.0
+                try:
+                    drops = self.content.roll_tc(tc, unit.level, self.rng, mf=p.mf, gf=p.gf)
+                finally:
+                    self.content._q_bonus = 1.0
             else:
                 drops = self.content.roll_drop(unit.level, unit.unique, self.rng, mf=p.mf, gf=p.gf)
         else:

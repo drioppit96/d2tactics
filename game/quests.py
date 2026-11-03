@@ -151,8 +151,10 @@ def talk(world, npc):
             from .quests2 import take_item
             take_item(world, "hdm")
             q["malus"] = "done"
-            _reward_item(world, "weapon", "Charsi")
-            lines = ["Charsi: My Malus! Here - I made this for you."]
+            from .itemactions import grant_imbue
+            grant_imbue(world)
+            lines = ["Charsi: My Malus! As thanks I'll imbue one of your plain items with magic.",
+                     "Charsi: Choose Imbue when you talk to me and pick a normal (white) item."]
             world.log("Quest completed: Tools of the Trade.", DONE_COLOR)
     elif who == "cain1":
         if q["andariel"] == "none":

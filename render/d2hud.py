@@ -348,7 +348,8 @@ class D2Hud:
         from game import questguide
         p = world.player
         px0, py0 = getattr(self, "panel_origin", ((self.lw - 704) / 2.0, 600 - 104))
-        bx, by, bs = px0 + 6, py0 - 54, 46
+        # bottom left corner of the screen; the compass sits above the button, the text beside it
+        bx, by, bs = 6, 600 - 46 - 50, 46
         mx, my = self.mouse
         obj, objs = self.tracked_objective(world)
         if obj is None and not objs:
@@ -394,7 +395,7 @@ class D2Hud:
                     cell, lines = None, [obj.label]
                 cache.update(k=ck, t=now, cell=cell, lines=lines)
             cell, lines = cache["cell"], cache["lines"]
-            cx, cy, r = bx + bs + 26, by + bs / 2.0, 21
+            cx, cy, r = bx + bs / 2.0, by - 26, 21
             ring = pygame.Surface((int(2 * r * self.s) + 2, int(2 * r * self.s) + 2), pygame.SRCALPHA)
             pygame.draw.circle(ring, (20, 16, 10, 220), (ring.get_width() // 2, ring.get_height() // 2), int(r * self.s))
             surf.blit(ring, (int((cx - r) * self.s), int((cy - r) * self.s)))
@@ -419,7 +420,7 @@ class D2Hud:
                 img = (self.f16 if i == 0 else self.f10).render(t, col, self.ind)
                 bg = pygame.Surface((int((img.get_width() + 8) * self.s), int((img.get_height() + 2) * self.s)), pygame.SRCALPHA)
                 bg.fill((0, 0, 0, 150))
-                yy = by + 2 + i * 15
+                yy = cy - 21 + i * 15
                 surf.blit(bg, self.P(tx0 - 4, yy - 1))
                 self.put(surf, img, tx0, yy)
             self.region(cx - r, cy - r, 2 * r, 2 * r, "tracker")
@@ -431,7 +432,7 @@ class D2Hud:
         rows = [(o.key, "%s: %s" % (o.title, o.label)) for o in objs] + [(None, "Stop tracking")]
         w = max([self.f16.width(t) for _, t in rows] + [120]) + 34
         h = len(rows) * 20 + 8
-        x, y = bx, by - h - 6
+        x, y = bx, by - 54 - h - 6
         bg = pygame.Surface((int(w * self.s), int(h * self.s)), pygame.SRCALPHA)
         bg.fill((10, 8, 5, 235))
         surf.blit(bg, self.P(x, y))
@@ -979,9 +980,9 @@ class D2Hud:
 
     def _draw_npc_menu(self, surf, world):
         """D2's NPC menu: Talk / Trade / Gamble / ... / Cancel."""
-        from game.itemactions import NPC_OPTIONS
+        from game.itemactions import npc_options
         npc = self.npc_menu
-        opts = NPC_OPTIONS.get(getattr(npc, "npc", ""), ["Talk"]) + ["Cancel"]
+        opts = npc_options(world, getattr(npc, "npc", "")) + ["Cancel"]
         w, h = 200, 34 + 24 * len(opts)
         x0, y0 = self.lw / 2.0 - w / 2.0, 120
         bg = pygame.Surface((int(w * self.s), int(h * self.s)), pygame.SRCALPHA)

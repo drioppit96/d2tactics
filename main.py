@@ -392,6 +392,10 @@ class Game:
             h.show_skills = False
         elif opt == "Identify Items":
             w.identify_all()
+        elif opt == "Imbue":
+            w.cursor_mode = ("imbue", npc.npc)
+            h.show_inv = True
+            w.log("Charsi: Click the plain item you want me to imbue (right click to cancel).", (220, 210, 170))
         elif opt == "Recharge":
             from game import durability
             durability.recharge_all(w)
@@ -1374,6 +1378,11 @@ class Game:
                     if button == 1:
                         w.socket_item(eq)
                     w.cursor_mode = None
+                elif getattr(w, "cursor_mode", None) and w.cursor_mode[0] == "imbue":
+                    if button == 1 and eq is not None and w.imbue_item(eq):
+                        w.cursor_mode = None
+                    elif button == 3:
+                        w.cursor_mode = None
                 elif getattr(w, "cursor_mode", None) and w.cursor_mode[0] == "identify":
                     w.identify_with(w.cursor_mode[1], eq)
                 elif w.held is not None and getattr(w.held, "gem", None) is not None and eq is not None:
@@ -1394,6 +1403,11 @@ class Game:
                     if button == 1 and target is not None:
                         w.socket_item(target)
                     w.cursor_mode = None
+                elif getattr(w, "cursor_mode", None) and w.cursor_mode[0] == "imbue":
+                    if button == 1 and target is not None and w.imbue_item(target):
+                        w.cursor_mode = None
+                    elif button == 3:
+                        w.cursor_mode = None
                 elif getattr(w, "cursor_mode", None) and w.cursor_mode[0] == "identify":
                     w.identify_with(w.cursor_mode[1], target)
                 elif w.held is not None and getattr(w.held, "gem", None) is not None and target is not None \

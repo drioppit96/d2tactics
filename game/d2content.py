@@ -726,10 +726,11 @@ class D2Content:
         mf_u = mf * 250.0 / (mf + 250) if mf > 0 else mf
         mf_s = mf * 500.0 / (mf + 500) if mf > 0 else mf
         boost = 3.0 if boss else 1.0
+        better = getattr(self, "_q_bonus", 1.0) or 1.0          # (Duriel: x1.05)
         r = rng.random()
-        unique = 0.006 * boost * (1 + mf_u / 100.0)
-        setp = 0.010 * boost * (1 + mf_s / 100.0)
-        rare = (0.025 + (0.15 if boss else 0)) * (1 + mf / 150.0)
+        unique = 0.006 * boost * (1 + mf_u / 100.0) * better
+        setp = 0.010 * boost * (1 + mf_s / 100.0) * better
+        rare = (0.025 + (0.15 if boss else 0)) * (1 + mf / 150.0) * better
         magic = 0.18 * (1 + mf / 100.0) + (0.6 if boss else 0)
         if r < unique and self.uniques_for(base, ilvl):
             return "unique"

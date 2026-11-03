@@ -343,9 +343,13 @@ def setup(world, built, grid, rng, info, level_key):
     gobjects.populate(world, b, info, taken, safe)
     world._obj_time = _t.time() - _t0
     for lid, rect in world.areas.items():
-        if lid in TOWN_IDS or lid == 20:
+        if lid in TOWN_IDS or lid in (20, 73):
             continue
         _populate(world, lid, rect, taken, safe, info)
+    if level_key == 73:
+        # Duriel's chamber: Duriel alone, nothing else (D2)
+        world.monsters = [m for m in world.monsters
+                          if m.ai == "npc" or getattr(m, "ally", False) or getattr(m, "boss", None) == "duriel"]
     _drop_unreachable(world, [c for c in safe if c] + ([world._default_start()] if world.npcs else []))
 
 
