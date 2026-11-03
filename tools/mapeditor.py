@@ -8,7 +8,9 @@ Maps are saved as JSON in the maps folder (see game/custommap.py for the format)
 "level" is set to a level id replaces that level in the game (entered through an entrance,
 e.g. a cave or a tomb).
 
-  Left panel     Floor / Wall / Room / Object / Monster / Marker palettes (Tab or click a tab)
+  Left panel     Floor / Wall / Room / Object / Monster / Marker / Sprite palettes (Tab or click a tab)
+                 Object: every placeable thing - D2 objects and the game's sprites - in folders
+                 (Furniture, Light & fire, Chests...); click a folder to open it
                  type to search, Backspace / Esc clears the search, mouse wheel scrolls
   Map            left click / drag: place     right click / drag: remove     middle drag or arrows: pan
                  mouse wheel: zoom
@@ -58,6 +60,90 @@ def _act_of(lvltype):
     return int(m.group(1)) if m else 1
 
 
+# the Object tab: D2's objects and this game's sprites together, sorted into folders
+CATEGORIES = ["Buildings", "Waypoints & portals", "Doors & gates", "Chests & containers", "Light & fire",
+              "Furniture", "Forge & weapon racks", "Statues & pillars", "Banners & signs",
+              "Shrines, wells & fountains", "Pottery & urns", "Torture & executions", "Corpses & remains",
+              "Fences, walls & ruins", "Floors & rugs", "Nature", "Quest & special", "Other D2 objects",
+              "Invisible (no picture)"]
+_OBJ_RULES = [("Waypoints & portals", ("waypoint", "portal")),
+              ("Doors & gates", ("door", "gate", "portcullis")),
+              ("Shrines, wells & fountains", ("shrine", "well", "healthwell", "manawell", "fountain", "pool")),
+              ("Quest & special", ("seal", "orifice", "quest", "horadric", "hellforge", "altar", "tome",
+                                   "cairn", "trap", "stone theta", "stonetheta", "inifuss", "sanctuary")),
+              ("Light & fire", ("torch", "brazier", "fire", "candle", "lamp", "lantern", "light", "flame", "pyre",
+                                "burning")),
+              ("Forge & weapon racks", ("rack", "armor stand", "weapon stand", "anvil")),
+              ("Chests & containers", ("chest", "casket", "coffin", "sarcophag", "stash", "box", "basket", "jar",
+                                       "barrel", "crate", "bag", "sack", "cabinet", "armoir", "bookshel",
+                                       "bookcase", "wardrobe", "loose", "pile")),
+              ("Pottery & urns", ("urn", "vase", "pot", "amphora")),
+              ("Furniture", ("bench", "table", "chair", "bed", "throne", "stool", "desk", "shelf")),
+              ("Banners & signs", ("banner", "sign", "flag", "pennant")),
+              ("Torture & executions", ("gibbet", "stake", "pike", "cage", "gallow", "rack", "impale", "hung",
+                                        "hanging", "heads")),
+              ("Corpses & remains", ("corpse", "body", "skeleton", "bone", "skull", "dead", "guy", "carcass",
+                                     "rotting", "remains", "blood", "gore")),
+              ("Statues & pillars", ("statue", "pillar", "obelisk", "column", "gargoyle", "totem", "idol",
+                                     "stone", "pedestal")),
+              ("Nature", ("tree", "bush", "plant", "log", "stump", "rock", "grass", "flower", "reed", "tumbleweed",
+                          "cactus", "mushroom", "boulder", "weed", "vine", "fungus")),
+              ("Fences, walls & ruins", ("fence", "wall", "ruin", "rubble", "arch"))]
+_SPRITE_CATS = {
+    "Buildings": "cathedral demon_shrine fortress blood_spire_shrine banner_gate watchtower ruined_arch altar_pyramid "
+                 "ritual_dais arch_colonnade lava_cave shrine_gate",
+    "Furniture": "bunks table bookcase wardrobe cabinet throne beds stool round_table low_bench bench_table feast_table "
+                 "lectern",
+    "Forge & weapon racks": "anvil forge grindstone weaponrack armorstand shieldrack arrows dummy target spear_rack",
+    "Chests & containers": "chest crates kegs sacks barrels_stack chests_stack trunk open_crate crate barrel bucket "
+                           "stone_chest cart bone_cart reliquary sarcophagus",
+    "Light & fire": "candles candle candelabra candelabra_great torch_stand goblet_brazier lantern_post cauldron "
+                    "cauldron_tripod cauldron_big",
+    "Statues & pillars": "statue zealot_statue hooded_statue hooded_statue_small gargoyle obelisk obelisk_small "
+                         "cross_monument post post_short spire spire_small pedestal stone_block",
+    "Shrines, wells & fountains": "well washbasin font chalice_font",
+    "Pottery & urns": "vase vase_small amphora urn urn_stone jug pots pot",
+    "Torture & executions": "gibbet spikes skeleton_cage gallows_double hanging_cage pillory iron_chair breaking_wheel "
+                            "chopping_block bloody_table meat_rack hanged_skeleton hook_gallows spike_tripod "
+                            "torture_ladder rack_frame stake",
+    "Corpses & remains": "bones blood debris skull skull_small skulls skulls_small skull_heap skull_heap2 bone "
+                         "bone_heap bone_scatter bone_spread skeleton skeletons gore_pile",
+    "Fences, walls & ruins": "fence_wall_ruin ruin_arch_wall rubble_wall wall_ruin stone_arch ruin_chunk candle_arch "
+                             "rubble",
+    "Floors & rugs": "blood_tile dirt_patch gravel_patch web_patch",
+    "Nature": "dead_tree brambles rock_pile stone_pile firewood"}
+_SPRITE_CAT = {n: c for c, names in _SPRITE_CATS.items() for n in names.split()}
+
+
+def sprite_category(name):
+    if name in _SPRITE_CAT:
+        return _SPRITE_CAT[name]
+    if name.startswith(("floor_", "tile_", "rug_", "grate")):
+        return "Floors & rugs"
+    if name.startswith("brazier"):
+        return "Light & fire"
+    if name.startswith("pillar"):
+        return "Statues & pillars"
+    if name.startswith("banner"):
+        return "Banners & signs"
+    if name.startswith("iron_fence"):
+        return "Fences, walls & ruins"
+    return "Other D2 objects"
+
+
+def object_category(row, label):
+    try:
+        if int(row.get("draw") or 0) == 0:
+            return "Invisible (no picture)"
+    except ValueError:
+        pass
+    text = " " + label.lower() + " " + (row.get("token") or "").lower() + " "
+    for cat, words in _OBJ_RULES:
+        if any(re.search(r"\b" + re.escape(w), text) for w in words):
+            return cat
+    return "Other D2 objects"
+
+
 def new_doc(lvltype="Act 1 - Wilderness", w=32, h=32):
     return {"version": 1, "name": "new_area", "act": _act_of(lvltype), "lvltype": lvltype, "width": w,
             "height": h, "level": 0, "random_monsters": True, "rooms": [], "tiles": [], "objects": [],
@@ -81,6 +167,7 @@ class Editor:
         self.search = ""
         self.scroll = 0
         self.sel = {}                 # tab -> selected entry
+        self.open_cats = set()        # the Object tab's open folders
         self.kind = 0
         self.layer2 = False
         self.grid_on = True
@@ -130,7 +217,8 @@ class Editor:
                     if f and f != "0":
                         out.append(("%s  [%s]" % (r["name"], f.rsplit("/", 1)[-1]), f))
         elif self.tab == 3:
-            out.append(("Waypoint", "waypoint"))
+            groups = {c: [] for c in CATEGORIES}
+            groups["Waypoints & portals"].append(("Waypoint", "waypoint"))
             d = self.objdata
             if d is not None:
                 strings = getattr(self.content, "strings", None)
@@ -141,8 +229,23 @@ class Editor:
                     except Exception:
                         continue
                     r = d.rows[oid]
-                    nm = "%s (%s) #%d" % (d.name(oid, strings), (r.get("description - not loaded") or r.get("name", ""))[:28], oid)
-                    out.append((nm, oid))
+                    desc = (r.get("description - not loaded") or r.get("name", "")).strip('" ')[:28]
+                    base = d.name(oid, strings)
+                    nm = ("%s #%d" % (desc, oid)) if base.lower() == "an evil force" else "%s (%s) #%d" % (base, desc, oid)
+                    groups[object_category(r, nm)].append((nm, oid))
+            names = sorted(f[:-4] for f in os.listdir(DECOR_DIR) if f.endswith(".png")) if os.path.isdir(DECOR_DIR) else []
+            for n in names:
+                groups[sprite_category(n)].append((n.replace("_", " "), ("sprite", n)))
+            for c in CATEGORIES:
+                items = [e for e in sorted(groups[c], key=lambda e: e[0].lower()) if not s or s in e[0].lower()]
+                if not items:
+                    continue
+                opened = bool(s) or c in self.open_cats
+                out.append(("%s %s  (%d)" % ("-" if opened else "+", c, len(items)), ("cat", c)))
+                if opened:
+                    out += items
+            self._lists[key] = out
+            return out
         elif self.tab == 4:
             ms = getattr(self.content, "monstats", {}) or {}
             strings = getattr(self.content, "strings", None)
@@ -241,6 +344,9 @@ class Editor:
         if self.tab == 2 and first:
             self.doc["rooms"].append([tx, ty, v.replace("/", "\\").lower()])
             return "room"
+        if self.tab == 3 and first and isinstance(v, tuple) and v[0] == "sprite":
+            self.doc.setdefault("decor", []).append([cell[0], cell[1], v[1]])
+            return "obj"
         if self.tab == 3 and first:
             self.doc["objects"] = [o for o in self.doc["objects"] if (o[0], o[1]) != cell] + [[cell[0], cell[1], v]]
             return "obj"
@@ -307,11 +413,14 @@ class Editor:
                     return "room"
             return False
         if self.tab in (3, 4, 6) and first:
-            key = {3: "objects", 4: "monsters", 6: "decor"}[self.tab]
-            d.setdefault(key, [])
-            n = len(d[key])
-            d[key] = [o for o in d[key] if max(abs(o[0] - cell[0]), abs(o[1] - cell[1])) > 1]
-            return "obj" if n != len(d[key]) else False
+            keys = {3: ("objects", "decor"), 4: ("monsters",), 6: ("decor",)}[self.tab]
+            gone = False
+            for key in keys:
+                d.setdefault(key, [])
+                n = len(d[key])
+                d[key] = [o for o in d[key] if max(abs(o[0] - cell[0]), abs(o[1] - cell[1])) > 1]
+                gone = gone or n != len(d[key])
+            return "obj" if gone else False
         return False
 
     # ---------------------------------------------------------------- files
@@ -576,7 +685,12 @@ class Editor:
                         return
                 for r, i in self._entry_rects():
                     if r.collidepoint(e.pos):
-                        self.sel[self.tab] = self.entries()[i][1]
+                        v = self.entries()[i][1]
+                        if isinstance(v, tuple) and v[0] == "cat":
+                            self.open_cats ^= {v[1]}
+                            self._lists.clear()
+                        else:
+                            self.sel[self.tab] = v
                         return
             return
         if e.button == 2:
@@ -631,6 +745,8 @@ class Editor:
         return (2, 128, 78) if tiles else (1, PANEL_W - 12, 20)
 
     def _entry_rects(self):
+        if self.tab == 3:
+            return self._object_rects()
         cols, ew, eh = self._entry_geom()
         y0 = 112
         out = []
@@ -642,14 +758,38 @@ class Editor:
             out.append((r, i))
         return out
 
+    def _object_rects(self):
+        """The Object tab: a bar per folder, its pictures two to a row underneath when it is open.
+        (The wheel scrolls three bars or one row of pictures a step.)"""
+        y0, bottom = 112, self.H - 80
+        ents = self.entries()
+        out, y, col, skip = [], y0, 0, self.scroll * 30
+        for i, (label, value) in enumerate(ents):
+            if isinstance(value, tuple) and value[0] == "cat":
+                if col:
+                    y += 82
+                    col = 0
+                r = pygame.Rect(6, y - skip, PANEL_W - 14, 24)
+                y += 28
+            else:
+                r = pygame.Rect(6 + col * 134, y - skip, 128, 78)
+                col = (col + 1) % 2
+                if col == 0:
+                    y += 82
+            if r.y >= y0 and r.bottom <= bottom:
+                out.append((r, i))
+        return out
+
     def _thumb(self, value, w, h):
         key = (self.tab, self.doc["lvltype"], value, w, h)
         if key in self.thumbs:
             return self.thumbs[key]
         img = None
         try:
-            if self.tab == 6:
+            if isinstance(value, tuple) and value[0] == "sprite":
                 img = pygame.image.load(os.path.join(DECOR_DIR, value[1] + ".png")).convert_alpha()
+            elif self.tab == 3:
+                img = self._object_picture(value)
             elif self.tab in (0, 1):
                 ref = self.tileset().pick(value[0], value[1], value[2], 0)
                 ts = self.a.tile_surface(ref) if ref else None
@@ -663,6 +803,28 @@ class Editor:
             img = pygame.transform.smoothscale(img, (max(1, int(iw * f)), max(1, int(ih * f))))
         self.thumbs[key] = img
         return img
+
+    def _object_picture(self, value):
+        """A D2 object's first frame (as the map shows it) for the palette."""
+        if value == "waypoint":
+            tmp = pygame.Surface((220, 220), pygame.SRCALPHA)
+            self.a.draw_object(tmp, "waypoint", -1, (110, 170), 1.0, 0.0, False)
+            r = tmp.get_bounding_rect() if hasattr(tmp, "get_bounding_rect") else tmp.get_rect()
+            return tmp.subsurface(r).copy() if r.w and r.h else None
+        d = self.objdata
+        r = d.rows.get(int(value)) if d is not None else None
+        if r is None:
+            return None
+
+        def iv(k):
+            try:
+                return int(r.get(k) or 0)
+            except ValueError:
+                return 0
+        tok = r["token"].strip().upper()
+        mode = "ON" if iv("framecnt0") <= 1 and iv("framecnt2") > 1 else "NU"
+        fr = self.a._obj_frames(tok, mode) or self.a._obj_frames(tok, "NU") or self.a._obj_frames(tok, "ON")
+        return fr[0][0] if fr else None
 
     def draw_panel(self, surf):
         pygame.draw.rect(surf, PANEL, (0, 0, PANEL_W, self.H))
@@ -682,14 +844,28 @@ class Editor:
             pygame.draw.rect(surf, SEL if on else (36, 31, 25), r)
             if on:
                 pygame.draw.rect(surf, GOLD, r, 1)
-            if self.tab in (0, 1, 6):
+            if isinstance(value, tuple) and value[0] == "cat":
+                pygame.draw.rect(surf, (58, 48, 30), r)
+                pygame.draw.rect(surf, LINE, r, 1)
+                self.text(surf, label, (r.x + 6, r.y + 4), GOLD)
+                continue
+            if self.tab in (0, 1, 3, 6):
+                ew, eh = r.w, r.h
                 img = self._thumb(value, ew - 4, eh - 16)
                 if img is not None:
                     surf.blit(img, (r.x + (ew - img.get_width()) // 2, r.y + 2))
-                self.text(surf, label[-18:], (r.x + 3, r.bottom - 14), GREY, self.small)
+                self.text(surf, label[:20] if self.tab == 3 else label[-18:], (r.x + 3, r.bottom - 14), GREY, self.small)
             else:
                 self.text(surf, label[:44], (r.x + 4, r.y + 3), GOLD if on else WHITE, self.small)
-        self.text(surf, "%d entries - wheel scrolls" % len(ents), (8, self.H - 70), GREY, self.small)
+        if self.tab == 3:
+            n = sum(1 for _l, v in ents if not (isinstance(v, tuple) and v[0] == "cat"))
+            self.text(surf, "click a folder to open it - wheel scrolls", (8, self.H - 70), GREY, self.small)
+            if sel is not None:
+                lab = next((l for l, v in ents if v == sel), None)
+                if lab:
+                    self.text(surf, "placing: " + lab[:40], (8, self.H - 52), GOLD, self.small)
+        else:
+            self.text(surf, "%d entries - wheel scrolls" % len(ents), (8, self.H - 70), GREY, self.small)
         info = {4: "placed as: %s (Monsters button)" % KINDS[self.kind],
                 0: "painting floor layer %d (Floor layer button)" % (2 if self.layer2 else 1)}
         if self.tab in info:
