@@ -70,9 +70,19 @@ def blobs(im):
     lum = (a[..., 0] * 30 + a[..., 1] * 59 + a[..., 2] * 11) / 100.0
     sat = a.max(2) - a.min(2)
     fg = ndimage.binary_opening(~((lum > 200) & (sat < 16)), iterations=1)
-    lab, n = ndimage.label(ndimage.binary_dilation(fg, iterations=1))
+    whole = fg.copy()                   # (the pieces are found on this, before the edges are trimmed)
+    # the checkerboard bleeds into each piece's edge as a pale fringe: peel pale, greyish pixels off
+    # the outside, a ring at a time, then one more ring all round
+    pale = (lum > 125) & (sat < 30)     # (bones are pale too, but warmer: they stay)
+    for _ in range(3):
+        edge = fg & ~ndimage.binary_erosion(fg)
+        fg &= ~(edge & pale)
+    edge = fg & ~ndimage.binary_erosion(fg)
+    fg &= ~(edge & (lum > 95) & (sat < 22))
+    fg = ndimage.binary_opening(fg, iterations=1)
+    lab, n = ndimage.label(ndimage.binary_dilation(whole, iterations=1))
     objs = ndimage.find_objects(lab)
-    sizes = ndimage.sum(fg, lab, range(1, n + 1))
+    sizes = ndimage.sum(whole, lab, range(1, n + 1))
     items = [((sl[1].start, sl[0].start, sl[1].stop, sl[0].stop), i + 1) for i, sl in enumerate(objs) if sizes[i] >= 120]
     items.sort(key=lambda it: (it[0][1] + it[0][3]) / 2.0)
     rows = []

@@ -96,35 +96,35 @@
   63
  ],
  "cathedral": [
-  296,
-  484
+  295,
+  483
  ],
  "demon_shrine": [
-  237,
+  236,
   451
  ],
  "fortress": [
-  217,
-  460
+  216,
+  459
  ],
  "blood_spire_shrine": [
-  197,
-  482
+  196,
+  481
  ],
  "banner_gate": [
-  227,
+  226,
   447
  ],
  "watchtower": [
-  122,
-  429
+  121,
+  425
  ],
  "ruined_arch": [
-  189,
-  315
+  188,
+  314
  ],
  "altar_pyramid": [
-  244,
+  243,
   322
  ],
  "ritual_dais": [
@@ -132,15 +132,15 @@
   339
  ],
  "arch_colonnade": [
-  188,
-  342
+  187,
+  341
  ],
  "lava_cave": [
-  194,
+  193,
   287
  ],
  "floor_slab": [
-  97,
+  96,
   51
  ],
  "floor_cobble": [
@@ -148,20 +148,20 @@
   55
  ],
  "rug_small": [
-  55,
-  34
+  54,
+  33
  ],
  "floor_cracked": [
   79,
-  44
+  43
  ],
  "floor_cross": [
   51,
-  29
+  28
  ],
  "floor_broken": [
-  66,
-  34
+  65,
+  33
  ],
  "skull_heap": [
   59,
@@ -173,143 +173,143 @@
  ],
  "post": [
   18,
-  94
+  93
  ],
  "pillar_small": [
   21,
-  96
+  94
  ],
  "pillar_round": [
-  22,
-  115
+  21,
+  114
  ],
  "pillar_tall": [
-  30,
-  141
+  29,
+  139
  ],
  "spire_small": [
   15,
-  90
+  86
  ],
  "spire": [
-  16,
+  15,
   95
  ],
  "urn_stone": [
-  27,
+  26,
   78
  ],
  "gallows_double": [
-  52,
-  141
+  51,
+  140
  ],
  "floor_dark": [
   87,
   47
  ],
  "bone_heap": [
-  74,
-  41
+  73,
+  40
  ],
  "rug_large": [
-  95,
-  53
+  94,
+  52
  ],
  "floor_mosaic": [
   79,
-  44
+  43
  ],
  "floor_sigil": [
   96,
-  51
+  50
  ],
  "bone_scatter": [
   57,
-  24
+  23
  ],
  "floor_grate": [
   87,
-  47
+  46
  ],
  "gore_pile": [
-  55,
-  31
+  54,
+  30
  ],
  "floor_rune": [
-  67,
-  36
+  66,
+  35
  ],
  "goblet_brazier": [
-  29,
-  77
+  28,
+  76
  ],
  "brazier_bronze": [
-  33,
-  89
+  32,
+  88
  ],
  "banner_grey": [
-  14,
-  85
+  13,
+  82
  ],
  "banner_red2": [
   28,
-  111
+  110
  ],
  "banner_red3": [
   24,
-  113
+  110
  ],
  "banner_tattered": [
-  22,
-  112
+  21,
+  110
  ],
  "iron_fence_gate": [
   180,
   103
  ],
  "iron_fence_short": [
-  46,
-  121
+  45,
+  118
  ],
  "shrine_gate": [
-  71,
-  151
+  70,
+  150
  ],
  "iron_fence": [
   73,
-  135
+  133
  ],
  "iron_fence_ruin": [
-  41,
-  119
- ],
- "fence_wall_ruin": [
-  93,
+  40,
   114
  ],
+ "fence_wall_ruin": [
+  92,
+  113
+ ],
  "ruin_arch_wall": [
-  87,
-  93
+  86,
+  94
  ],
  "rubble_wall": [
-  67,
-  49
+  65,
+  48
  ],
  "wall_ruin": [
-  50,
+  49,
   98
  ],
  "hooded_statue_small": [
   33,
-  94
+  95
  ],
  "stone_block": [
-  36,
-  67
+  35,
+  66
  ],
  "candelabra_great": [
-  47,
-  178
+  46,
+  174
  ],
  "pillar_square": [
   30,
@@ -349,7 +349,7 @@
  ],
  "banner_red": [
   26,
-  156
+  155
  ],
  "banner_rag": [
   26,
@@ -385,19 +385,19 @@
  ],
  "brazier_wide": [
   30,
-  97
+  95
  ],
  "brazier_goblet": [
   21,
-  101
+  100
  ],
  "brazier_bowl": [
   25,
-  100
+  99
  ],
  "brazier_tower": [
   21,
-  111
+  110
  ],
  "cauldron_big": [
   30,
@@ -409,11 +409,11 @@
  ],
  "candles": [
   17,
-  30
+  29
  ],
  "candelabra": [
   22,
-  78
+  77
  ],
  "vase_small": [
   15,
@@ -440,7 +440,7 @@
   122
  ],
  "feast_table": [
-  76,
+  75,
   64
  ],
  "bench_table": [
@@ -449,7 +449,7 @@
  ],
  "throne": [
   30,
-  100
+  99
  ],
  "lectern": [
   29,
@@ -477,7 +477,7 @@
  ],
  "open_crate": [
   37,
-  59
+  58
  ],
  "stool": [
   18,
@@ -516,24 +516,24 @@
   29
  ],
  "pots": [
-  19,
-  43
+  18,
+  44
  ],
  "bone_cart": [
   63,
-  59
+  58
  ],
  "firewood": [
   51,
   24
  ],
  "bone_spread": [
-  50,
+  49,
   26
  ],
  "skull": [
-  12,
-  10
+  11,
+  9
  ],
  "sarcophagus": [
   57,
@@ -592,8 +592,8 @@
   32
  ],
  "web_patch": [
-  41,
-  24
+  35,
+  18
  ],
  "rock_pile": [
   37,
@@ -613,11 +613,11 @@
  ],
  "rack_frame": [
   29,
-  90
+  89
  ],
  "torture_ladder": [
   26,
-  83
+  82
  ],
  "hanging_cage": [
   27,
@@ -633,11 +633,11 @@
  ],
  "breaking_wheel": [
   33,
-  78
+  77
  ],
  "spear_rack": [
-  26,
-  87
+  25,
+  85
  ],
  "chopping_block": [
   29,
@@ -661,7 +661,7 @@
  ],
  "spike_tripod": [
   29,
-  73
+  72
  ],
  "bone": [
   37,
@@ -669,7 +669,7 @@
  ],
  "skull_small": [
   14,
-  9
+  8
  ],
  "skeleton": [
   36,
@@ -680,12 +680,12 @@
   21
  ],
  "skulls_small": [
-  19,
+  18,
   13
  ],
  "skull_heap2": [
   38,
-  21
+  20
  ],
  "candle": [
   13,
@@ -696,12 +696,12 @@
   14
  ],
  "dead_tree": [
-  30,
-  66
+  29,
+  63
  ],
  "brambles": [
-  30,
-  29
+  29,
+  27
  ],
  "stone_arch": [
   46,
@@ -720,7 +720,7 @@
   32
  ],
  "rubble": [
-  36,
+  35,
   25
  ]
 }
