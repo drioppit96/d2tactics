@@ -46,10 +46,11 @@ class Spr:
     """A sprite canvas; (0, 0) is the middle of its footprint on the ground."""
 
     def __init__(self, w, h, base=None, seed=1):
-        self.w, self.h = w, h
-        self.img = Image.new("RGBA", (w * S, h * S), (0, 0, 0, 0))
+        pad = 60                                  # room all round; the result is cropped to the drawing
+        self.w, self.h = w + 2 * pad, h + 2 * pad
+        self.img = Image.new("RGBA", (self.w * S, self.h * S), (0, 0, 0, 0))
         self.d = ImageDraw.Draw(self.img)
-        self.ox, self.oy = w * S // 2, (base if base is not None else h - 16) * S
+        self.ox, self.oy = self.w * S // 2, ((base if base is not None else h - 16) + pad) * S
         self.rnd = random.Random(seed)
         self.glows = []
 
@@ -309,9 +310,13 @@ class Spr:
         pimg.putpalette(flat)
         rgb = img.convert("RGB").quantize(palette=pimg, dither=Image.Dither.FLOYDSTEINBERG).convert("RGB")
         rgb.putalpha(alpha)
+        x0, y0, x1, y1 = alpha.getbbox() or (0, 0, rgb.width, rgb.height)
+        x0, y0 = max(0, x0 - 2), max(0, y0 - 2)
+        x1, y1 = min(rgb.width, x1 + 2), min(rgb.height, y1 + 2)
+        rgb = rgb.crop((x0, y0, x1, y1))
         os.makedirs(OUT, exist_ok=True)
         rgb.save(os.path.join(OUT, name + ".png"))
-        ANCHORS[name] = [int(self.ox / S * G), int(self.oy / S * G)]
+        ANCHORS[name] = [int(self.ox / S * G) - x0, int(self.oy / S * G) - y0]
         return rgb
 
 
