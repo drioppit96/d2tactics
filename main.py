@@ -1126,6 +1126,7 @@ class Game:
         h.show_char = h.show_quests = h.show_skills = False
         h.show_waypoints = False
         h.show_cube = False
+        self.world.goblin_open = True
         qol.ensure_pet(self.world)
         self.world.log("The Loot Goblin grins: \"Got anything shiny?\" (drag items here, or Ctrl + right click)",
                        (199, 179, 119))
@@ -1859,7 +1860,9 @@ class Game:
             self._end_socket_mode()             # the socket service ends with the trade screen
         if getattr(self.world, "player", None) is not None:
             from game import qol
-            qol.ensure_pet(self.world)          # the golden Fallen of the Loot Goblin option
+            st = getattr(self.hud, "store", None)
+            self.world.goblin_open = st is not None and getattr(st, "npc", None) == "goblin"
+            qol.ensure_pet(self.world)          # the Loot Goblin, there while his shop is open
         if getattr(self.world, "open_stash", False):
             self.world.open_stash = False
             self.open_stash()

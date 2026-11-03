@@ -3,7 +3,7 @@ saved with it.
 
   big_inv  - a second backpack page: twice the inventory (10 x 8, shown 10 x 4 at a time)
   goblin   - vendors sell the Loot Goblin: a 1x1 item, never used up; right click it to sell your
-             loot anywhere, and a golden Fallen (the goblin) follows you around
+             loot anywhere; a golden Fallen (the goblin) pops up while his shop is open
   inf_buffs - your own buffs (Battle Orders, Shout, Bone Armor, Holy Shield, Fade...) never wear off
 """
 from .items import Item
@@ -103,16 +103,39 @@ GOBLIN_PET = "lootgoblin"
 
 
 def ensure_pet(world):
-    """The golden Fallen follows you while the option is on and you carry the goblin."""
+    """The golden Fallen (the goblin himself) shows up while you trade with the Loot Goblin, and runs
+    off once you close his shop."""
+    import time
     p = world.player
     if p is None or not hasattr(world, "monsters"):
         return
-    want = get(p, "goblin") and has_goblin(p)
+    want = get(p, "goblin") and has_goblin(p) and getattr(world, "goblin_open", False)
     pets = [m for m in world.monsters if getattr(m, "pet", None) == GOBLIN_PET]
     if not want:
         for m in pets:
-            world.monsters.remove(m)
+            t = getattr(m, "fled_at", None)
+            if t is None:
+                # off he scurries: a dash away from you, then he is gone
+                m.fled_at = time.time()
+                far = None
+                for r in (9, 7, 5, 3):
+                    dx, dy = (m.x - p.x), (m.y - p.y)
+                    if dx == 0 and dy == 0:
+                        dx, dy = 1, 1
+                    n = float(max(abs(dx), abs(dy)))
+                    c = (m.x + int(round(dx * r / n)), m.y + int(round(dy * r / n)))
+                    if world.grid.walkable(*c) and world.unit_at(c) is None:
+                        path = world.grid.find_path(m.pos, c, limit=4000) if hasattr(world.grid, "find_path") else None
+                        if path:
+                            far = path
+                            break
+                if far:
+                    m.x, m.y = far[-1]
+                    world.emit("move", m, far)
+            elif time.time() - t > 1.2:
+                world.monsters.remove(m)
         return
+    pets = [m for m in pets if getattr(m, "fled_at", None) is None]
     if any(m.alive for m in pets):
         return
     from .units import Monster
