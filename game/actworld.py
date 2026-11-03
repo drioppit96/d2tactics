@@ -563,12 +563,26 @@ def _scatter(world, centre, n, taken, radius=6, gap=2):
     return out
 
 
+# nests that hatch monsters (Foul Crow Nests, ...): rare, and never more than one in a group
+NEST_PREFIXES = ("crownest", "minionspawner", "demonspawner", "evilhole", "evilhut", "suckernest")
+NEST_CHANCE = 0.12
+
+
+def is_nest(mid):
+    return (mid or "").lower().startswith(NEST_PREFIXES)
+
+
 def _pack(world, centre, mid, lvl, taken, champion=False, unique=False):
     c = world.content
     t = _template(world, mid, lvl)
     if t is None:
         return
     rng = world.rng
+    if is_nest(mid):
+        spots = _scatter(world, centre, 1, taken)
+        if spots:
+            _spawn(world, mid, spots[0], lvl, taken)
+        return
     lo, hi = sorted(t["group"])
     n = rng.randint(max(2, lo), max(3, hi))
     members = [mid] * n
@@ -673,8 +687,11 @@ def _populate(world, lid, rect, taken, safe, info):
     for r in roster:
         t = _template(world, r, lvl)
         weights.append(t["rarity"] if t else 1)
+    others = [(r, wt) for r, wt in zip(roster, weights) if not is_nest(r)]
     for c in centres:
         mid = rng.choices(roster, weights=weights)[0]
+        if is_nest(mid) and others and rng.random() > NEST_CHANCE:
+            mid = rng.choices([r for r, _ in others], weights=[wt for _, wt in others])[0]
         r = rng.random()
         # D2 sprinkles unique and champion packs among the ordinary ones
         _pack(world, c, mid, lvl, taken, unique=r < 0.04, champion=0.04 <= r < 0.10)

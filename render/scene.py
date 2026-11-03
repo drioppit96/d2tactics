@@ -52,6 +52,8 @@ class UnitView:
         return self.mode in ("DD", "DT")
 
     def busy(self):
+        if getattr(self, "spin", False):
+            return bool(self.path)        # Whirlwind: done with a step once you reach its cell
         return bool(self.path) or self.slide is not None or self.mode in ("A1", "SC", "DD")
 
 
@@ -185,6 +187,27 @@ class Scene:
             if free:
                 return 0                      # free walking (you and your followers) doesn't hold anything up
             return None   # wait until the walk finishes
+        if kind == "whirl_start":
+            v = self.view(ev[1])
+            v.spin = True
+            v.spin_a = 0.0
+            return 0
+        if kind == "whirl_end":
+            v = self.view(ev[1])
+            v.spin = False
+            v.mode = "NU"
+            return 0
+        if kind == "whirl":
+            unit, cells = ev[1], ev[2]
+            v = self.view(unit)
+            if not self._seen(unit, cells):
+                v.rx, v.ry = cells[-1]
+                return 0
+            if math.hypot(cells[0][0] - v.rx, cells[0][1] - v.ry) > 3:
+                v.rx, v.ry = float(cells[0][0]), float(cells[0][1])     # (out of step: catch up)
+            v.path = list(cells)
+            v.speed = 9.5                     # a quick spin from cell to cell
+            return None                       # hits on the way show as you pass
         if kind == "attack":
             unit, target, skill = ev[1], ev[2], ev[3]
             v = self.view(unit)
@@ -435,7 +458,7 @@ class Scene:
     def _blocking_done(self):
         ev = self.current
         kind = ev[0]
-        if kind in ("move", "attack", "knockback"):
+        if kind in ("move", "attack", "knockback", "whirl"):
             return not self.view(ev[1]).busy()
         if kind == "projectile":
             return not self.projectiles
@@ -459,6 +482,13 @@ class Scene:
             v.t += dt * 1.8
             v.mode = "WL"
             v.stop_t = 0.12
+            if getattr(v, "spin", False):
+                # Whirlwind: weapon out, turning round and round as you go
+                v.spin_a = getattr(v, "spin_a", 0.0) + dt * 22.0
+                v.facing = (math.cos(v.spin_a), math.sin(v.spin_a))
+                v.mode = "A1"
+                v.dur = 1.0
+                v.t = 0.45
             # carry over what is left of this frame's movement into the next tile (no stop at each tile)
             while v.path and dist <= step:
                 v.rx, v.ry = float(tx), float(ty)
@@ -487,6 +517,12 @@ class Scene:
             else:
                 v.rx, v.ry = sx + (ex - sx) * t, sy + (ey - sy) * t
                 v.slide = ((sx, sy), (ex, ey), t)
+            return
+        if getattr(v, "spin", False):
+            # between two spin steps (while the hits show) keep turning
+            v.spin_a = getattr(v, "spin_a", 0.0) + dt * 22.0
+            v.facing = (math.cos(v.spin_a), math.sin(v.spin_a))
+            v.mode, v.dur, v.t = "A1", 1.0, 0.45
             return
         if v.mode in ("A1", "SC", "GH", "DD"):
             v.t += dt

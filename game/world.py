@@ -1047,13 +1047,14 @@ class World(SkillCaster, ItemActions):
         self._maybe_auto_end()
         return True
 
-    def _whirlwind(self, cell, ap, mana, lv):
+    WHIRL_RANGE = 5           # cells you can spin to
+    WHIRL_RADIUS = 2          # cells around you that every step of the spin hits
+
+    def _whirl_path(self, cell):
+        """Whirlwind's way: a straight line up to 5 cells, through monsters, ending on a free cell."""
         p = self.player
-        dist = chebyshev(cell, p.pos)
-        if dist > 6 or dist < 1:
-            self.log("Whirlwind reaches up to 6 cells.", GREY)
-            return False
-        # straight line, passing through monsters; the end cell must be free
+        if cell is None or chebyshev(cell, p.pos) > self.WHIRL_RANGE or chebyshev(cell, p.pos) < 1:
+            return []
         steps, x, y = [], p.x, p.y
         while (x, y) != cell:
             x += (cell[0] > x) - (cell[0] < x)
@@ -1061,27 +1062,41 @@ class World(SkillCaster, ItemActions):
             if not self.grid.walkable(x, y):
                 break
             steps.append((x, y))
-        while steps and steps[-1] in self.occupied(p):
+        occ = self.occupied(p)
+        while steps and steps[-1] in occ:
             steps.pop()
+        return steps
+
+    def _whirlwind(self, cell, ap, mana, lv):
+        """D2's Whirlwind as a travel skill: pick a cell up to 5 away, spin there (through
+        monsters), and every enemy within 2 cells of you on the way is hit once."""
+        p = self.player
+        if chebyshev(cell, p.pos) > self.WHIRL_RANGE:
+            self.log("Whirlwind reaches up to %d cells." % self.WHIRL_RANGE, GREY)
+            return False
+        steps = self._whirl_path(cell)
         if not steps:
             return False
         if self.mode == "explore":
             self.check_awareness_force()
         self._pay(ap, mana)
         hit = set()
-        path = []
+        self.emit("whirl_start", p)
         for st in steps:
-            if st in self.occupied(p):
-                continue
             p.x, p.y = st
-            path.append(st)
-            for m in self.living_monsters():
-                if m.ai != "npc" and id(m) not in hit and chebyshev(m.pos, st) == 1:
+            self.emit("whirl", p, [st])
+            for m in self.enemies():
+                if id(m) in hit or not m.alive:
+                    continue
+                r = getattr(m, "radius", 0)
+                if chebyshev(m.pos, st) <= self.WHIRL_RADIUS + r:
                     hit.add(id(m))
                     m.aware = True
-                    self._resolve_attack(p, m, "Whirlwind")
-        self.emit("move", p, path)
+                    self._resolve_attack(p, m, "Whirlwind", quiet_anim=True)
+        self.emit("whirl_end", p)
         self.grid.update_visibility(p.pos, self.sight_radius())
+        if hit:
+            self.log("Whirlwind hits %d enem%s." % (len(hit), "y" if len(hit) == 1 else "ies"), GREY)
         self._maybe_auto_end()
         return True
 

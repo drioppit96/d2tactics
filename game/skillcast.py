@@ -579,6 +579,14 @@ class SkillCaster:
         def body(m):
             return sq(m.pos, getattr(m, "radius", 0))
         cells, hits = set(), set()
+        if name == "Whirlwind":
+            steps = self._whirl_path(cell)
+            for st in steps:
+                cells |= {c for c in sq(st, self.WHIRL_RADIUS) if self.grid.walkable(*c)}
+            for m in self.enemies():
+                if any(chebyshev(m.pos, st) <= self.WHIRL_RADIUS + getattr(m, "radius", 0) for st in steps):
+                    hits |= body(m)
+            return cells, hits
         if k == "missile":
             if s.weapon and not x.get("spread") and not x.get("splash") and not x.get("pierce"):
                 return None

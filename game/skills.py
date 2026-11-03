@@ -746,7 +746,7 @@ def describe_skill(name, lv):
         "Leap Attack": ["Leap to a monster and strike", "+%d%% damage, +%d%% attack rating" % (100 + 30 * L, 50 + 15 * L)],
         "Concentrate": ["Uninterruptible attack, +%d%% defense this turn" % (100 + 10 * L), "+%d%% damage" % (70 + 5 * L)],
         "Frenzy": ["Two hits; each hit gives +1 AP next turn (max 3)", "+%d%% damage" % (90 + 5 * L)],
-        "Whirlwind": ["Spin through enemies, hitting everything you pass", "%d%% damage" % (50 + 8 * L)],
+        "Whirlwind": ["Spin up to 5 cells through enemies, hitting everyone within 2 cells on the way", "%d%% damage" % (50 + 8 * L)],
         "Berserk": ["Hit with magic damage, but your defense drops to 0", "+%d%% damage" % (150 + 15 * L)],
         "Double Throw": ["Throwing weapons only (not implemented yet)"],
         "Howl": ["Monsters within %d cells flee for %d turns" % (4 + L // 2, 2 + L // 4)],
