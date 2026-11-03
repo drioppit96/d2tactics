@@ -8,3 +8,8 @@ ones added later. "Open" lists them; nothing else is edited in it.
   time you go there. Delete that file to go back to the map the game comes with.
 - A map's size, tileset and place in the game stay fixed. For the armory keep the gate where it is
   (the west side, facing the Bazaar), so it still joins the Bazaar.
+
+Random dungeons: "Map Generator.bat" makes them (theme, rooms, loops, monsters, packs, champions,
+uniques, a boss, shrines, wells, chests, barrels, bodies, racks, bookshelves, lights, waypoint).
+Save writes <name>.json here; set "Replaces level" and the game plays it in place of that level
+(its stairs lead where that level's stairs lead). The map editor opens these too.

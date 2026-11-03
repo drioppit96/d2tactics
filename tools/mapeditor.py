@@ -407,7 +407,7 @@ class Editor:
             return "tile" if n != len(d["tiles"]) else False
         if self.tab == 2 and first:
             for i in range(len(d["rooms"]) - 1, -1, -1):
-                rx, ry, path = d["rooms"][i]
+                rx, ry, path = d["rooms"][i][:3]
                 ds = self.kit.ds1(path)
                 if ds is not None and rx <= tx < rx + ds.width - 1 and ry <= ty < ry + ds.height - 1:
                     d["rooms"].pop(i)
@@ -1052,7 +1052,7 @@ class Editor:
             box = pygame.Rect(self.W // 2 - 220, 80, 440, 60 + 26 * len(self.picker))
             pygame.draw.rect(surf, PANEL, box)
             pygame.draw.rect(surf, GOLD, box, 1)
-            self.text(surf, "Open one of the game's maps (Esc closes)", (box.x + 12, box.y + 10), GOLD, self.big)
+            self.text(surf, "Open a map: the game's own and the generator's (Esc closes)", (box.x + 12, box.y + 10), GOLD, self.big)
             for r, fn in self._picker_rects():
                 hot = r.collidepoint(self.mouse)
                 pygame.draw.rect(surf, SEL if hot else (40, 34, 26), r)
@@ -1111,7 +1111,10 @@ def main():
         return 1
     ed = Editor(assets, screen.get_size())
     maps = custommap.game_maps()
-    if maps:
+    want = sys.argv[1] if len(sys.argv) > 1 else None          # (the map generator opens its map here)
+    if want and want in maps:
+        open_game_map(ed, want)
+    elif maps:
         open_game_map(ed, "kurast_armory" if "kurast_armory" in maps else maps[0])
     clock = pygame.time.Clock()
     while True:

@@ -291,7 +291,7 @@ def populate(world, built, info, taken, safe):
     # random objects per room
     rng = world.rng
     for lid, rect in world.areas.items():
-        if lid in TOWN_IDS:
+        if lid in TOWN_IDS or not getattr(built, "random_objects", True):
             continue
         row = info.rows.get(lid) if hasattr(info, "rows") else None
         if not row:

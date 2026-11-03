@@ -16,6 +16,8 @@ A map is a JSON file in the maps folder:
    "monsters": [[cx, cy, "monstats id or super unique name", "normal|champion|unique|pack|super"], ...],
    "decor":    [[cx, cy, "sprite name (assets/decor)"], ...],
    "markers":  [[cx, cy, "altar" | "smith"], ...],                  # (the Kurast Armory's quest spots)
+   "links":    {"prev": level_id, "next": level_id},  # where rooms [tx, ty, path, "prev"/"next"] stairs lead
+   "monster_level": 0,                        # 0: the level's own
    "start":    [cx, cy],
    "exits":    [[cx, cy, level_id], ...]}
 
@@ -35,10 +37,12 @@ _cache = {}
 
 
 def game_maps():
-    """The game's own hand-made maps (assets/maps/<name>.json) - the ones the map editor edits."""
-    if not os.path.isdir(GAME_MAPS):
-        return []
-    return sorted(f[:-5] for f in os.listdir(GAME_MAPS) if f.lower().endswith(".json"))
+    """The maps the map editor edits: the game's own (assets/maps) and the map generator's (maps)."""
+    out = set()
+    for d in (GAME_MAPS, MAPS):
+        if os.path.isdir(d):
+            out |= {f[:-5] for f in os.listdir(d) if f.lower().endswith(".json")}
+    return sorted(out)
 
 
 def game_map_path(name):
@@ -115,11 +119,23 @@ def lay_tiles(kit, b, data, ox, oy, owner):
     """The map's rooms and tiles into a Built, its tile (0, 0) at tile (ox, oy). Several wall entries
     of one orientation on a tile all stay (layered walls); a later paint replaces the room's."""
     lt = data.get("lvltype", "")
-    for tx, ty, path in data.get("rooms", []):
+    links = data.get("links") or {}
+    for room in data.get("rooms", []):
+        tx, ty, path = room[0], room[1], room[2]
         ds = kit.ds1(path)
         if ds is not None:
+            n0 = len(b.warps)
+            no, ng = len(b.objects), len(b.gen_objects)
             stamp(b, ds, kit.tiles_for(ds, lt), int(tx) + ox, int(ty) + oy, random.Random(_rnd(tx, ty)), owner,
                   keep_edges=False)
+            if not data.get("room_objects", True):        # (the generator's "rooms' own objects: off")
+                del b.gen_objects[ng:]
+                b.objects[no:] = [o for o in b.objects[no:] if o[0] in ("waypoint", "portal")]
+            # a room with a role ("prev" / "next" stairs): its stairs lead where the map says
+            wt = b.__dict__.setdefault("warp_targets", {})
+            role = room[3] if len(room) > 3 else None
+            for _t, main, ow in b.warps[n0:]:
+                wt[(ow, main)] = links.get(role) if role else wt.get((ow, main))
     ts = tileset(kit, lt)
     tm = b.tm
     mine = set()
@@ -210,6 +226,8 @@ def compose(kit, data, level_id=0, seed=None, with_grid=True):
         cells = [(cx + dx, cy + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)]
         b.edge_exits.append((cells, int(target)))
     b.random_monsters = bool(data.get("random_monsters", True))
+    b.monster_level = int(data.get("monster_level") or 0)
+    b.random_objects = bool(data.get("random_objects", True))
     return b, grid, rng
 
 
@@ -218,7 +236,7 @@ def spawn_monsters(world, built, taken, info):
     from . import actworld
     for cell, what, kind in getattr(built, "custom_monsters", []) or []:
         owner = world.area_at(cell) or world.level_id
-        lvl = info.monster_level(owner) if info else 10
+        lvl = getattr(built, "monster_level", 0) or (info.monster_level(owner) if info else 10)
         if kind == "super":
             actworld._spawn_preset(world, what, cell, owner, taken, info)
             continue

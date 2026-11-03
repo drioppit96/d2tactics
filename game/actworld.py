@@ -203,8 +203,9 @@ def setup(world, built, grid, rng, info, level_key):
     groups = {}
     for tile, main, owner in b.warps:
         groups.setdefault((owner, main), []).append(tile)
+    wt = getattr(b, "warp_targets", None) or {}
     for (owner, main), tiles in groups.items():
-        target = kit.vis(owner, main)
+        target = wt[(owner, main)] if (owner, main) in wt else kit.vis(owner, main)
         if not target:
             continue
         cells = []
