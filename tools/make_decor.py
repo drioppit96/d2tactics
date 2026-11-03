@@ -605,7 +605,292 @@ def blood(pal):
     return s.finish(pal, "blood", noise=0.1)
 
 
-SPRITES = [anvil, forge, weaponrack, armorstand, crates, arrows, dummy, debris, banner, cart, bones, blood]
+# ---------------------------------------------------------------- second set
+def statue(pal):
+    """A Zakarum zealot in stone on a stepped plinth, spear grounded, head bowed - one hand broken off."""
+    s = Spr(110, 230, seed=21)
+    s.grit(160, 2.4, 1.2, [DIRT, STONE, (40, 36, 30)])
+    s.box(-1.4, -1.4, 2.8, 2.8, 8, STONE)
+    s.box(-1.0, -1.0, 2.0, 2.0, 8, sh(STONE, 1.05)[:3], z=8)
+    X, Y = s.p(0, 0, 16)
+    d = s.d
+    st, dk, lt = sh(STONE, 0.95), sh(STONE, 0.6), sh(STONE, 1.3)
+    d.polygon([(X - 12 * S, Y), (X + 12 * S, Y), (X + 9 * S, Y - 60 * S), (X - 9 * S, Y - 60 * S)], fill=st)  # robe
+    d.polygon([(X - 12 * S, Y), (X - 2 * S, Y), (X - 3 * S, Y - 60 * S), (X - 9 * S, Y - 60 * S)], fill=lt)
+    for k in range(5):                                                    # robe folds
+        x = X + (-8 + k * 4) * S
+        d.line([(x, Y - 58 * S), (x + (k - 2) * S, Y)], fill=dk, width=S)
+    d.polygon([(X - 13 * S, Y - 60 * S), (X + 13 * S, Y - 60 * S), (X + 10 * S, Y - 82 * S), (X - 10 * S, Y - 82 * S)], fill=st)
+    d.polygon([(X - 13 * S, Y - 60 * S), (X - 1 * S, Y - 60 * S), (X - 2 * S, Y - 82 * S), (X - 10 * S, Y - 82 * S)], fill=lt)
+    d.ellipse((X - 7 * S, Y - 96 * S, X + 7 * S, Y - 80 * S), fill=st)  # hooded head, bowed
+    d.ellipse((X - 6 * S, Y - 96 * S, X + 1 * S, Y - 84 * S), fill=lt)
+    d.ellipse((X - 3 * S, Y - 88 * S, X + 4 * S, Y - 82 * S), fill=(18, 16, 14, 255))
+    s.line([(0.9, 0.3, 16), (0.9, 0.3, 120)], dk, 2.2)                    # the spear
+    s.line([(0.85, 0.3, 16), (0.85, 0.3, 120)], st, 1.0)
+    s.poly([(0.75, 0.3, 120), (1.05, 0.3, 120), (0.9, 0.3, 132)], lt)
+    d.ellipse((X + 7 * S, Y - 72 * S, X + 15 * S, Y - 64 * S), fill=st)  # the hand on it
+    s.disc(-1.8, 1.2, 1, 2.2, dk, 0.6)                                    # the broken hand on the ground
+    for _ in range(26):                                                   # moss and cracks
+        x0, y0 = X + s.rnd.uniform(-10, 10) * S, Y - s.rnd.uniform(4, 90) * S
+        d.line([(x0, y0), (x0 + s.rnd.uniform(-3, 3) * S, y0 + s.rnd.uniform(2, 6) * S)], fill=sh(MOSS, 0.9), width=S)
+    return s.finish(pal, "statue")
+
+
+def bunks(pal):
+    """Two wooden cots with filthy blankets, a dropped helmet and a chamber pot."""
+    s = Spr(170, 130, seed=22)
+    s.grit(200, 3.6, 1.8, [DIRT, STRAW])
+    for oy in (-1.3, 0.6):
+        s.box(-2.6, oy, 4.6, 1.3, 8, DWOOD)                               # frame
+        for x in (-2.5, 1.8):
+            s.box(x, oy, 0.2, 0.2, 14, DWOOD)                             # posts
+        s.box(-2.4, oy + 0.1, 4.2, 1.1, 3, sh((96, 84, 66), 1.0)[:3], z=8, mat=None)   # straw mattress
+        s.box(-2.2, oy + 0.1, 2.8, 1.1, 2, sh((86, 30, 24), 0.8)[:3], z=11, mat=None)  # blanket
+        s.box(1.0, oy + 0.25, 0.8, 0.8, 2, sh((160, 150, 120), 0.8)[:3], z=11, mat=None)   # pillow
+    hx, hy = s.p(2.6, 1.7, 2)
+    s.d.ellipse((hx - 5 * S, hy - 6 * S, hx + 5 * S, hy + 3 * S), fill=sh(IRON, 0.85))
+    s.d.ellipse((hx - 4 * S, hy - 6 * S, hx + 1 * S, hy + 1 * S), fill=sh(STEEL, 1.0))
+    s.barrel(-3.0, 1.6, 4, 5, (90, 70, 50))
+    return s.finish(pal, "bunks")
+
+
+def table(pal):
+    """A long mess table, benches, spilled mugs, a half-eaten loaf - and a knife stuck in the wood."""
+    s = Spr(180, 120, seed=23)
+    s.grit(200, 3.8, 1.8, [DIRT, (60, 50, 38)])
+    for x in (-2.4, 1.9):
+        for y in (-0.5, 0.5):
+            s.box(x, y, 0.25, 0.25, 12, DWOOD)                            # legs
+    s.planks(-2.6, -0.7, 5.0, 1.6, 3, WOOD, z=12)
+    for y in (-1.5, 1.2):                                                 # benches
+        s.box(-2.4, y, 4.4, 0.4, 2, sh(WOOD, 0.85)[:3], z=6)
+        for x in (-2.2, 1.7):
+            s.box(x, y + 0.1, 0.2, 0.2, 6, DWOOD)
+    for x, y in ((-1.6, -0.2), (-0.6, 0.3), (0.9, -0.1)):                 # mugs
+        s.barrel(x, y, 2.0, 4, sh(DWOOD, 1.1)[:3], z=15)
+    s.disc(0.2, 0.3, 15.5, 4, sh((150, 110, 60), 0.9), 0.55)               # bread
+    s.disc(-0.4, -0.1, 15.2, 5, sh((100, 30, 18), 0.6), 0.45)             # spilt wine
+    s.line([(1.4, 0.4, 15), (1.5, 0.3, 24)], sh(STEEL, 1.1), 0.9)         # the knife
+    s.barrel(3.0, 1.0, 2.0, 4, sh(DWOOD, 1.1)[:3])                        # a mug on the floor
+    return s.finish(pal, "table")
+
+
+def kegs(pal):
+    """Kegs on a wooden cradle, one tapped and dripping."""
+    s = Spr(160, 130, seed=24)
+    s.grit(180, 3.4, 1.6, [DIRT, (70, 30, 20)])
+    s.box(-2.6, -0.8, 5.0, 1.6, 4, DWOOD)
+    for x in (-1.6, 0.4):
+        X, Y = s.p(x, 0, 14)
+        for i in range(int(18 * S)):                                      # a keg on its side
+            k = 0.5 + 0.7 * math.sin(math.pi * i / (18.0 * S))
+            s.d.line([(X - 14 * S, Y - 9 * S + i), (X + 14 * S, Y - 9 * S + i + 0)], fill=sh(WOOD, k))
+        for f in (-0.6, 0.0, 0.6):
+            s.d.line([(X + f * 14 * S, Y - 9 * S), (X + f * 14 * S, Y + 9 * S)], fill=sh(IRON, 0.7), width=S)
+        s.d.ellipse((X + 11 * S, Y - 9 * S, X + 17 * S, Y + 9 * S), fill=sh(WOOD, 0.8))
+    s.barrel(2.4, 0.4, 7, 16)                                             # a standing one
+    s.line([(1.1, 0.3, 14), (1.5, 0.3, 11)], sh(IRON, 1.0), 1.0)          # tap
+    s.disc(1.6, 0.6, 0, 4, sh((80, 30, 20), 0.8), 0.5)                    # the puddle
+    return s.finish(pal, "kegs")
+
+
+def grindstone(pal):
+    """A treadle grindstone with a bucket, sparks frozen in mid-air and a notched sword waiting."""
+    s = Spr(140, 130, seed=25)
+    s.grit(180, 3.0, 1.4, [DIRT, IRON])
+    s.box(-1.6, -0.5, 3.2, 1.0, 10, DWOOD)                                # frame
+    X, Y = s.p(0, 0, 22)
+    s.d.ellipse((X - 16 * S, Y - 16 * S, X + 16 * S, Y + 16 * S), fill=sh((110, 104, 92), 0.8))   # wheel
+    s.d.ellipse((X - 15 * S, Y - 15 * S, X + 10 * S, Y + 10 * S), fill=sh((120, 114, 100), 1.05))
+    for k in range(8):
+        a = k * math.pi / 4
+        s.d.line([(X, Y), (X + math.cos(a) * 15 * S, Y + math.sin(a) * 15 * S)], fill=sh((110, 104, 92), 0.7), width=S)
+    s.d.ellipse((X - 3 * S, Y - 3 * S, X + 3 * S, Y + 3 * S), fill=sh(IRON, 1.0))
+    s.line([(0, 0, 22), (1.8, 0.4, 30)], sh(IRON, 0.9), 1.4)              # crank
+    for _ in range(14):                                                   # sparks
+        a = s.rnd.uniform(-0.6, 0.6)
+        l = s.rnd.uniform(4, 12) * S
+        x0, y0 = X + 14 * S, Y - 6 * S
+        s.d.line([(x0, y0), (x0 + math.cos(a) * l, y0 + math.sin(a) * l)], fill=(255, 200, 90, 255), width=S)
+    s.glow(0.6, -0.3, 26, 12, (255, 170, 60))
+    s.blade(-2.4, 0.9, 0, 24, tilt=0.4)
+    s.barrel(2.4, 1.0, 5, 8, (80, 82, 86))
+    return s.finish(pal, "grindstone")
+
+
+def target(pal):
+    """A straw archery butt on a tripod, painted rings, arrows in it and around it."""
+    s = Spr(110, 160, seed=26)
+    s.grit(140, 2.4, 1.2, [DIRT, STRAW])
+    s.line([(-1.0, 0.6, 0), (0, 0, 40)], sh(DWOOD, 1.0), 1.6)
+    s.line([(1.0, 0.6, 0), (0, 0, 40)], sh(DWOOD, 0.8), 1.6)
+    s.line([(0, -1.0, 0), (0, 0, 40)], sh(DWOOD, 0.7), 1.6)
+    X, Y = s.p(0, 0.3, 46)
+    d = s.d
+    for r, c in ((20, sh(STRAW, 0.75)), (18, sh(STRAW, 1.0)), (13, sh((200, 196, 180), 0.8)), (9, sh(CLOTH_RED, 1.0)),
+                 (5, sh((200, 196, 180), 0.9)), (2.5, sh(GOLD, 1.1))):
+        d.ellipse((X - r * 0.8 * S, Y - r * S, X + r * 0.8 * S, Y + r * S), fill=c)
+    for _ in range(40):                                                   # straw ends
+        a = s.rnd.uniform(0, 2 * math.pi)
+        d.line([(X + math.cos(a) * 15 * S, Y + math.sin(a) * 19 * S), (X + math.cos(a) * 17 * S, Y + math.sin(a) * 21 * S)],
+               fill=sh(STRAW, 1.2), width=S)
+    for _ in range(5):
+        x0, y0 = X + s.rnd.uniform(-8, 8) * S, Y + s.rnd.uniform(-10, 10) * S
+        d.line([(x0, y0), (x0 + 12 * S, y0 - 5 * S)], fill=sh(WOOD, 1.0), width=S)
+        d.ellipse((x0 + 11 * S, y0 - 7 * S, x0 + 14 * S, y0 - 3 * S), fill=(200, 196, 190, 255))
+    for _ in range(4):
+        a = s.rnd.uniform(-1.5, 1.5)
+        s.line([(a, 1.3, 0.5), (a + 0.9, 1.6, 2.5)], sh(WOOD, 0.9), 0.7)
+    return s.finish(pal, "target")
+
+
+def shieldrack(pal):
+    """A wooden frame hung with Zakarum shields - red, the gold eye, one split in two."""
+    s = Spr(170, 140, seed=27)
+    s.grit(140, 3.4, 1.2, [DIRT, DWOOD])
+    s.pole(-2.6, 0, 40, DWOOD, 2.0)
+    s.pole(2.6, 0, 40, DWOOD, 2.0)
+    s.box(-2.8, -0.15, 5.6, 0.3, 3, WOOD, z=36)
+    for i, x in enumerate((-1.7, 0.0, 1.7)):
+        X, Y = s.p(x, 0.2, 22)
+        r = 11
+        d = s.d
+        d.ellipse((X - r * S, Y - r * 1.15 * S, X + r * S, Y + r * 1.15 * S), fill=sh(IRON, 0.6))
+        d.ellipse((X - (r - 1.5) * S, Y - (r - 1.5) * 1.15 * S, X + (r - 1.5) * S, Y + (r - 1.5) * 1.15 * S),
+                  fill=sh(CLOTH_RED, 0.95))
+        d.ellipse((X - 5 * S, Y - 3.5 * S, X + 5 * S, Y + 3.5 * S), fill=sh(GOLD, 0.95))
+        d.ellipse((X - 2 * S, Y - 2 * S, X + 2 * S, Y + 2 * S), fill=sh(CLOTH_RED, 0.5))
+        d.line([(X, Y - 12 * S), s.p(x, 0, 36)], fill=sh(LEATHER, 0.8), width=S)
+        if i == 2:                                                        # the split one
+            d.line([(X - 3 * S, Y - 13 * S), (X + 2 * S, Y + 13 * S)], fill=(14, 10, 8, 255), width=2 * S)
+    for k in range(2):                                                    # fallen ones
+        X, Y = s.p(-1.0 + k * 2.4, 1.4, 1)
+        s.d.ellipse((X - 10 * S, Y - 5 * S, X + 10 * S, Y + 5 * S), fill=sh(CLOTH_RED, 0.7))
+        s.d.ellipse((X - 4 * S, Y - 2 * S, X + 4 * S, Y + 2 * S), fill=sh(GOLD, 0.8))
+    return s.finish(pal, "shieldrack")
+
+
+def chest(pal):
+    """An iron-bound strongbox, lid forced open, a few coins and a dagger spilled - long looted."""
+    s = Spr(120, 100, seed=28)
+    s.grit(160, 2.8, 1.4, [DIRT, (60, 50, 38)])
+    s.box(-1.4, -0.8, 2.8, 1.6, 12, DWOOD)
+    for f in (0.15, 0.85):                                                # iron bands
+        x = -1.4 + 2.8 * f
+        s.line([(x, 0.8, 0), (x, 0.8, 12)], sh(IRON, 0.9), 1.2)
+        s.line([(1.4, -0.8 + 1.6 * f, 0), (1.4, -0.8 + 1.6 * f, 12)], sh(IRON, 0.7), 1.2)
+    s.poly([(-1.4, -0.8, 12), (1.4, -0.8, 12), (1.4, -0.9, 26), (-1.4, -0.9, 26)], sh(DWOOD, 0.9))   # lid up
+    s.poly([(-1.3, -0.6, 12.2), (1.3, -0.6, 12.2), (1.3, 0.7, 12.2), (-1.3, 0.7, 12.2)], (16, 12, 8, 255))  # empty inside
+    for _ in range(8):
+        s.disc(s.rnd.uniform(-0.8, 2.2), s.rnd.uniform(1.0, 1.8), 0.5, 1.4, sh(GOLD, s.rnd.uniform(0.8, 1.2)), 0.5)
+    s.line([(1.6, 1.4, 0.5), (2.6, 0.9, 0.5)], sh(STEEL, 1.1), 1.0)
+    return s.finish(pal, "chest")
+
+
+def cauldron(pal):
+    """A black cauldron on a tripod over embers, something grey bubbling, a ladle hanging off it."""
+    s = Spr(120, 140, seed=29)
+    s.grit(200, 2.6, 1.3, [DIRT, (30, 26, 22)])
+    for _ in range(30):                                                   # the fire bed
+        a, r = s.rnd.uniform(0, 2 * math.pi), s.rnd.uniform(0, 1.2)
+        s.disc(math.cos(a) * r, math.sin(a) * r * 0.6, 0.5, 1.6,
+               (255, 120, 30, 255) if s.rnd.random() < 0.3 else sh((40, 36, 32), s.rnd.uniform(0.7, 1.2)), 0.6)
+    s.glow(0, 0, 4, 22)
+    for a in (0, 2.1, 4.2):                                               # tripod
+        s.line([(math.cos(a) * 1.8, math.sin(a) * 1.8, 0), (0, 0, 48)], sh(IRON, 0.7), 1.4)
+    s.line([(0, 0, 48), (0, 0, 34)], sh(IRON, 0.9), 0.8)                  # chain
+    X, Y = s.p(0, 0, 22)
+    s.d.ellipse((X - 15 * S, Y - 10 * S, X + 15 * S, Y + 14 * S), fill=(24, 22, 22, 255))       # pot
+    s.d.ellipse((X - 13 * S, Y - 9 * S, X + 4 * S, Y + 6 * S), fill=(44, 42, 42, 255))
+    s.d.ellipse((X - 14 * S, Y - 13 * S, X + 14 * S, Y - 5 * S), fill=(30, 28, 26, 255))
+    s.d.ellipse((X - 12 * S, Y - 12 * S, X + 12 * S, Y - 6 * S), fill=(96, 98, 80, 255))        # the stew
+    for _ in range(5):
+        bx, by = X + s.rnd.uniform(-8, 8) * S, Y + s.rnd.uniform(-11, -7) * S
+        s.d.ellipse((bx - 1.5 * S, by - 1 * S, bx + 1.5 * S, by + 1 * S), fill=(130, 132, 110, 255))
+    s.d.line([(X + 6 * S, Y - 9 * S), (X + 18 * S, Y - 22 * S)], fill=sh(DWOOD, 1.0), width=S)  # ladle
+    for k in range(4):                                                    # steam
+        r = (3 + k * 2) * S
+        sx, sy = X + (k - 1) * 2 * S, Y - (18 + k * 7) * S
+        s.d.ellipse((sx - r, sy - r * 0.7, sx + r, sy + r * 0.7), fill=(120, 120, 110, 110 - k * 20))
+    return s.finish(pal, "cauldron")
+
+
+def gibbet(pal):
+    """A hanging cage on a gallows arm, a skeleton slumped inside - a warning at the gate."""
+    s = Spr(120, 250, seed=30)
+    s.grit(120, 2.0, 1.0, [DIRT, BONE])
+    s.box(-0.8, -0.8, 1.6, 1.6, 6, STONE)
+    s.pole(0, 0, 150, DWOOD, 2.6, z=6)
+    s.line([(0, 0, 150), (2.4, -1.2, 150)], sh(DWOOD, 1.0), 2.2)          # the arm
+    s.line([(0, 0, 130), (1.4, -0.7, 150)], sh(DWOOD, 0.8), 1.2)          # brace
+    s.line([(2.4, -1.2, 150), (2.4, -1.2, 132)], sh(IRON, 0.8), 0.8)      # chain
+    X, Y = s.p(2.4, -1.2, 92)
+    d = s.d
+    for k in range(7):                                                    # cage bars
+        x = X + (-9 + k * 3) * S
+        d.line([(x, Y - 40 * S), (x, Y)], fill=sh(IRON, 0.7 + 0.08 * k), width=S)
+    for yy in (0, -20, -40):
+        d.ellipse((X - 9 * S, Y + yy * S - 3 * S, X + 9 * S, Y + yy * S + 3 * S), outline=sh(IRON, 0.9), width=S)
+    d.polygon([(X - 9 * S, Y - 40 * S), (X + 9 * S, Y - 40 * S), (X, Y - 47 * S)], fill=sh(IRON, 0.6))
+    # the prisoner: skull drooping on the ribs, an arm through the bars
+    s.skull(2.35, -1.25, 118, 0.9)
+    for k in range(4):
+        d.arc((X - 6 * S, Y - (27 - k * 3) * S, X + 6 * S, Y - (21 - k * 3) * S), 200, 340, fill=sh(BONE, 1.0), width=S)
+    d.line([(X + 2 * S, Y - 22 * S), (X + 12 * S, Y - 8 * S)], fill=sh(BONE, 0.9), width=S)
+    d.line([(X - 3 * S, Y - 8 * S), (X - 4 * S, Y - 1 * S)], fill=sh(BONE, 0.8), width=S)
+    for _ in range(3):                                                    # crows' leavings below
+        s.bone(s.rnd.uniform(1.2, 2.8), s.rnd.uniform(-0.6, 0.2), s.rnd.uniform(1.6, 3.2), s.rnd.uniform(-0.2, 0.6), 0.5, 1.2)
+    return s.finish(pal, "gibbet")
+
+
+def spikes(pal):
+    """Sharpened stakes in a row, heads of the fallen guard on three of them."""
+    s = Spr(170, 160, seed=31)
+    s.grit(200, 3.6, 1.4, [DIRT, BLOOD, (40, 34, 28)])
+    xs = [-2.6, -1.7, -0.8, 0.1, 1.0, 1.9, 2.8]
+    for i, x in enumerate(xs):
+        h = 40 + (i * 7) % 13
+        s.line([(x, -0.2, 0), (x + 0.1, -0.2, h)], sh(DWOOD, 0.8), 2.4)
+        s.line([(x - 0.04, -0.2, 0), (x + 0.06, -0.2, h)], sh(WOOD, 1.0), 1.0)
+        s.poly([(x - 0.08, -0.2, h), (x + 0.18, -0.2, h), (x + 0.1, -0.2, h + 8)], sh(WOOD, 0.8))
+        if i in (1, 3, 5):
+            X, Y = s.p(x + 0.1, -0.2, h + 2)
+            s.d.ellipse((X - 6 * S, Y - 11 * S, X + 6 * S, Y + 1 * S), fill=sh((120, 96, 80), 0.75))   # head
+            s.d.ellipse((X - 5 * S, Y - 11 * S, X + 2 * S, Y - 3 * S), fill=sh((140, 110, 92), 0.85))
+            s.d.ellipse((X - 4 * S, Y - 7 * S, X - 1 * S, Y - 5 * S), fill=(16, 10, 8, 255))
+            s.d.ellipse((X + 1 * S, Y - 7 * S, X + 4 * S, Y - 5 * S), fill=(16, 10, 8, 255))
+            s.d.line([(X - 2 * S, Y - 2 * S), (X + 2 * S, Y - 2 * S)], fill=(40, 10, 8, 255), width=S)
+            for _ in range(5):                                            # blood running down the stake
+                ry = s.rnd.uniform(4, 20)
+                s.d.line([(X + s.rnd.uniform(-1, 1) * S, Y), (X + s.rnd.uniform(-1, 1) * S, Y + ry * S)],
+                         fill=sh(BLOOD, 1.0), width=S)
+    for _ in range(10):
+        s.disc(s.rnd.uniform(-2.4, 2.8), s.rnd.uniform(0.2, 1.2), 0, s.rnd.uniform(2, 4), sh(BLOOD, 0.8), 0.5)
+    return s.finish(pal, "spikes")
+
+
+def sacks(pal):
+    """Grain sacks heaped against a crate, one slit open and spilling, a rat-gnawed hole."""
+    s = Spr(150, 110, seed=32)
+    s.grit(220, 3.4, 1.6, [DIRT, STRAW, (150, 130, 90)])
+    s.planks(0.8, -1.0, 1.8, 1.6, 16, WOOD)
+    SACK = (128, 110, 80)
+    for x, y, z, r in ((-1.6, 0.2, 0, 11), (-0.2, 0.6, 0, 12), (-1.0, -0.6, 0, 10), (-0.9, 0.0, 14, 10), (1.5, 1.2, 0, 9)):
+        X, Y = s.p(x, y, z + r * 0.7)
+        s.d.ellipse((X - r * S, Y - r * 0.75 * S, X + r * S, Y + r * 0.75 * S), fill=sh(SACK, 0.65))
+        s.d.ellipse((X - r * 0.95 * S, Y - r * 0.75 * S, X + r * 0.45 * S, Y + r * 0.4 * S), fill=sh(SACK, 0.95))
+        s.d.line([(X + r * 0.6 * S, Y - r * 0.6 * S), (X + r * 0.95 * S, Y - r * 0.95 * S)], fill=sh(SACK, 0.5), width=2 * S)  # tied neck
+    for _ in range(60):                                                   # spilt grain
+        s.disc(s.rnd.uniform(0.6, 2.6), s.rnd.uniform(1.3, 2.1), 0.3, 0.8, sh((190, 170, 110), s.rnd.uniform(0.7, 1.1)), 0.6)
+    X, Y = s.p(-0.2, 0.6, 6)
+    s.d.ellipse((X + 2 * S, Y, X + 6 * S, Y + 3 * S), fill=(14, 10, 8, 255))   # the gnawed hole
+    return s.finish(pal, "sacks")
+
+
+SPRITES2 = [statue, bunks, table, kegs, grindstone, target, shieldrack, chest, cauldron, gibbet, spikes, sacks]
+
+
+SPRITES = [anvil, forge, weaponrack, armorstand, crates, arrows, dummy, debris, banner, cart, bones, blood] + SPRITES2
 
 
 def main(path):
