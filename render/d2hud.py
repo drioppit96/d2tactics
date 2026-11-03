@@ -1513,6 +1513,7 @@ class D2Hud:
         self._panel_bg(surf, ox, self.frames["invchar6"], 4)
         mx, my = self.mouse
         held = getattr(world, "held", None)
+        self._weapon_tabs(surf, p, ox)
         for slot, (x, y, w, h) in INV_SLOTS.items():
             it = p.equipment.get(slot)
             box = pygame.Rect(int(ox + x), int(y), w, h)
@@ -1596,6 +1597,30 @@ class D2Hud:
         gy = int(round(fy))
         page = self._inv_page()
         return max(0, min(10 - w, gx)), max(0, min(4 - h, gy)) + 4 * page
+
+    # the I / II tabs above the weapon and shield slots (D2's art shows set I as the active one)
+    WEAPON_TABS = [(17, 24, 30, 19), (51, 24, 30, 19), (247, 24, 31, 19), (282, 24, 31, 19)]
+
+    def _weapon_tabs(self, surf, p, ox):
+        cur = getattr(p, "weapon_set", 0)
+        mx, my = self.mouse
+        for i, (x, y, w, h) in enumerate(self.WEAPON_TABS):
+            tab = i % 2
+            if cur == 1:
+                patch = pygame.Surface((int(w * self.s), int(h * self.s)), pygame.SRCALPHA)
+                if tab == 0:
+                    patch.fill((0, 0, 0, 120))
+                    surf.blit(patch, self.P(ox + x, y))
+                else:
+                    patch.fill((70, 64, 50, 0))
+                    surf.blit(patch, self.P(ox + x, y), special_flags=pygame.BLEND_RGB_ADD)
+            if tab != cur:
+                self.region(ox + x, y, w, h, "weapon_swap")
+            if pygame.Rect(int(ox + x), int(y), w, h).collidepoint((int(mx), int(my))):
+                other = p.swap_gear.get("weapon") if tab != cur else p.equipment.get("weapon")
+                self.hover_lines = [("Weapon set %s%s" % ("I" * (tab + 1), " (in use)" if tab == cur else ""), WHITE),
+                                    (other.shown_name if other is not None else "No weapon", GREY),
+                                    ("W: swap weapons", GREY)]
 
     def _inv_page_tabs(self, surf, ox, page):
         """Bigger Inventory: the two backpack pages (I / II) beside the gold box."""

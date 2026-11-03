@@ -4,10 +4,22 @@ saved with it.
   big_inv  - a second backpack page: twice the inventory (10 x 8, shown 10 x 4 at a time)
   goblin   - vendors sell the Loot Goblin: a 1x1 item, never used up; right click it to sell your
              loot anywhere, and a golden Fallen (the goblin) follows you around
+  inf_buffs - your own buffs (Battle Orders, Shout, Bone Armor, Holy Shield, Fade...) never wear off
 """
 from .items import Item
 
-OPTIONS = [("big_inv", "BIGGER INVENTORY"), ("goblin", "LOOT GOBLIN")]
+OPTIONS = [("big_inv", "BIGGER INVENTORY"), ("goblin", "LOOT GOBLIN"), ("inf_buffs", "INFINITE BUFFS")]
+
+# what Infinite Buffs keeps going: your own skill buffs (shouts, armors, auras' partners, forms...)
+NOT_BUFFS = ("Antidote", "Thawing")
+
+
+def endless(player, key, b):
+    """With the Infinite Buffs option, a buff from your own skills never runs out
+    (curses, shrines and potions still do)."""
+    if not get(player, "inf_buffs"):
+        return False
+    return not (str(key).startswith(("curse:", "shrine:")) or b.get("curse") or b.get("shrine") or key in NOT_BUFFS)
 GOBLIN_CODE = "lgb"
 GOBLIN_PRICE = 1000
 GOLD = (199, 179, 119)

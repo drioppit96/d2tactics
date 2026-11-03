@@ -78,6 +78,10 @@ class Player(Unit):
         self.gold = 0
         self.mana = 10
         self.equipment = {s: None for s in SLOTS}
+        # D2's weapon swap (W): the other weapon set's weapon and shield, and each set's skills
+        self.weapon_set = 0
+        self.swap_gear = {"weapon": None, "shield": None}
+        self.set_skills = {}
         self.inventory = []
         self.belt = []          # potions, max 4
         from .skills import SkillBook, load_tree

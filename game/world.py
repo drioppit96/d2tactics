@@ -855,7 +855,10 @@ class World(SkillCaster, ItemActions):
         changed = False
         from . import durability
         durability.tick_self_repair(p)
+        from .qol import get as qol_get
         for k in ("shout", "bo", "bcmd", "concentrate", "berserk"):
+            if k in ("shout", "bo", "bcmd") and qol_get(p, "inf_buffs"):
+                continue                       # Quality of Life: Infinite Buffs
             if p.effects.get(k):
                 p.effects[k] -= 1
                 if p.effects[k] <= 0:
@@ -880,6 +883,33 @@ class World(SkillCaster, ItemActions):
         if getattr(p, "active_aura", None) == "Meditation":
             pct += 100
         return max(1.0, p.max_mana * 0.04 * (100 + pct) / 100.0)
+
+    def swap_weapons(self):
+        """D2's weapon swap: the two weapon sets (I / II) change places, each with the left and
+        right skills you had on it. It costs nothing, like D2's quick swap."""
+        p = self.player
+        if not hasattr(p, "swap_gear"):
+            p.swap_gear, p.weapon_set, p.set_skills = {"weapon": None, "shield": None}, 0, {}
+        hp_frac = p.hp / float(max(1, p.max_hp))
+        mp_frac = p.mana / float(max(1, p.max_mana))
+        p.set_skills[p.weapon_set] = (getattr(p, "left_skill", None), p.right_skill)
+        for slot in ("weapon", "shield"):
+            p.equipment[slot], p.swap_gear[slot] = p.swap_gear.get(slot), p.equipment.get(slot)
+        p.weapon_set = 1 - p.weapon_set
+        p.recalc()
+        if p.weapon_set in p.set_skills:
+            left, right = p.set_skills[p.weapon_set]
+            known = lambda n: n in (None, "attack", "throw") or n in p.skills.tree
+            p.left_skill = left if known(left) else None
+            self.select_right_skill(right if known(right) else None)
+        p.recalc()
+        p.hp = min(p.max_hp, max(1, int(round(p.max_hp * hp_frac))))
+        p.mana = min(p.max_mana, int(round(p.max_mana * mp_frac)))
+        wpn = p.equipment.get("weapon")
+        self.log("Weapon set %s: %s." % ("I" if p.weapon_set == 0 else "II", wpn.shown_name if wpn else "bare hands"),
+                 (170, 170, 170))
+        self.emit("swap", p) if hasattr(self, "emit") else None
+        return True
 
     def select_right_skill(self, name):
         """The right mouse button skill; choosing an aura turns it on (D2), anything else turns it off."""

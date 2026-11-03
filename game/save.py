@@ -144,6 +144,9 @@ def save_character(player, difficulty="normal"):
         boss_kills=list(getattr(p, "boss_kills", []) or []),
         tracked_quest=getattr(p, "tracked_quest", None),
         qol=dict(getattr(p, "qol", None) or {}),
+        weapon_set=getattr(p, "weapon_set", 0),
+        swap_gear={k: _item_dict(v) for k, v in (getattr(p, "swap_gear", None) or {}).items()},
+        set_skills={str(k): list(v) for k, v in (getattr(p, "set_skills", None) or {}).items()},
         quests=dict(getattr(p, "quests", {})), waypoints=sorted(getattr(p, "waypoints", {1})),
         visited=sorted(getattr(p, "visited", {1})), cain=bool(getattr(p, "cain_rescued", False)),
         hireling=bool(getattr(p, "has_hireling", False)),
@@ -227,6 +230,11 @@ def build_player(data, content):
     p.boss_kills = list(data.get("boss_kills") or [])
     p.tracked_quest = data.get("tracked_quest")
     p.qol = dict(data.get("qol") or {})
+    p.weapon_set = int(data.get("weapon_set", 0) or 0)
+    p.swap_gear = {k: _item_from(v, content) for k, v in (data.get("swap_gear") or {}).items()}
+    p.swap_gear.setdefault("weapon", None)
+    p.swap_gear.setdefault("shield", None)
+    p.set_skills = {int(k): tuple(v) for k, v in (data.get("set_skills") or {}).items()}
     p.map_explored = dict(data.get("map_explored") or {})      # the automap ("same maps every game")
     p.cairn_order = data.get("cairn_order")
     p.quest_stats = dict(data.get("quest_stats", {}) or {})

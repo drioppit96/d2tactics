@@ -1000,6 +1000,9 @@ class SkillCaster:
             b = p.buffs[k]
             if b.get("periodic"):
                 self._periodic(k, b)
+            from .qol import endless
+            if endless(p, k, b):
+                continue
             b["turns"] -= 1
             if b["turns"] <= 0 or (b.get("absorb") is not None and b["absorb"] <= 0 and "absorb" in b):
                 p.buffs.pop(k)

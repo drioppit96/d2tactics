@@ -1192,6 +1192,9 @@ class Game:
             if action == "inv_page":
                 h.inv_page = arg
                 return
+            if action == "weapon_swap":
+                w.swap_weapons()
+                return
             if action == "end_turn" and self.can_act():
                 w.end_player_turn()
             elif action in ("inv", "char", "skills", "quests"):
@@ -1558,6 +1561,8 @@ class Game:
             self.toggle_panel("skills")
         elif key == pygame.K_q:
             self.toggle_panel("quests")
+        elif key == pygame.K_w:
+            w.swap_weapons()                                       # D2: W swaps weapon sets
         elif key == pygame.K_j:
             h.tracker_menu = not getattr(h, "tracker_menu", False)          # quest tracker
         elif key == pygame.K_g:
