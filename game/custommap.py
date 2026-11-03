@@ -9,7 +9,9 @@ A map is a JSON file in the maps folder:
    "rooms":    [[tx, ty, "act3\\kurast\\slums08x08_0.ds1"], ...],     # whole D2 presets, stamped first
    "tiles":    [[tx, ty, "f", main, sub], [tx, ty, "f2", main, sub],  # floors (f2 = second floor layer)
                 [tx, ty, "w", orientation, main, sub],               # walls / roofs / lower walls
-                [tx, ty, "x"]],                                      # erase everything on that tile
+                [tx, ty, "x"],                                       # erase everything on that tile
+                [tx, ty, "dw", "<preset .ds1>", o, main, sub],       # a tile borrowed from any D2 preset
+                [tx, ty, "df", "<preset .ds1>", main, sub]],         # (any act: Act 1's forge, Andariel's blood)
    "objects":  [[cx, cy, objects_txt_id], [cx, cy, "waypoint"], ...],  # cells (sub-tiles)
    "monsters": [[cx, cy, "monstats id or super unique name", "normal|champion|unique|pack|super"], ...],
    "decor":    [[cx, cy, "sprite name (assets/decor)"], ...],
@@ -121,9 +123,27 @@ def lay_tiles(kit, b, data, ox, oy, owner):
     ts = tileset(kit, lt)
     tm = b.tm
     mine = set()
+    foreign = {}
     for t in data.get("tiles", []):
         tx, ty, layer = int(t[0]), int(t[1]), t[2]
         pos = (tx + ox, ty + oy)
+        if layer in ("dw", "df", "df2"):
+            path = t[3]
+            if path not in foreign:
+                ds = kit.ds1(path)
+                foreign[path] = kit.tiles_for(ds) if ds is not None else None
+            fts = foreign[path]
+            if fts is None:
+                continue
+            if layer == "dw":
+                ref = fts.pick(int(t[4]), int(t[5]), int(t[6]), _rnd(tx, ty, int(t[4])))
+                if ref:
+                    tm.walls.setdefault(pos, []).append(ref)
+            else:
+                ref = fts.pick(0, int(t[4]), int(t[5]), _rnd(tx, ty))
+                if ref:
+                    (tm.floor if layer == "df" else tm.floor2)[pos] = ref
+            continue
         if layer == "x":
             tm.floor.pop(pos, None)
             tm.floor2.pop(pos, None)

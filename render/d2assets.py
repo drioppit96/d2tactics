@@ -291,9 +291,9 @@ class D2Assets(AssetProvider):
         out.blit(s, (0, 0))
         return out
 
-    def indexed_surface(self, w, h, pixels):
+    def indexed_surface(self, w, h, pixels, palette=None):
         s = pygame.image.frombuffer(bytes(pixels), (w, h), "P")
-        s.set_palette(self.palette)
+        s.set_palette(palette or self.palette)
         s.set_colorkey(0)
         out = pygame.Surface((w, h), pygame.SRCALPHA)   # index 0 -> fully transparent
         out.fill((0, 0, 0, 0))
@@ -305,8 +305,21 @@ class D2Assets(AssetProvider):
         key = id(t)
         if key not in self.tile_cache:
             w, h, px, x0, y0 = f.decode(t)
-            self.tile_cache[key] = (self.indexed_surface(w, h, px), x0, y0) if w else None
+            self.tile_cache[key] = (self.indexed_surface(w, h, px, self._tile_palette(f)), x0, y0) if w else None
         return self.tile_cache[key]
+
+    def _tile_palette(self, f):
+        """A tile borrowed from another act (Act 1's forge in Kurast) keeps its own act's colours."""
+        import re
+        m = re.search(r"tiles\\act(\d)\\", (getattr(f, "name", "") or "").lower())
+        if not m or int(m.group(1)) == self.act:
+            return None
+        pals = self.__dict__.setdefault("_act_pals", {})
+        a = int(m.group(1))
+        if a not in pals:
+            path = "data\\global\\palette\\act%d\\pal.dat" % a
+            pals[a] = load_palette(self.src.read(path)) if self.src.has(path) else None
+        return pals[a]
 
     def tile_rect(self, ref, tx, ty, cam):
         ts = self.tile_surface(ref)

@@ -388,7 +388,7 @@ class Editor:
             self.snapshot()
         d = self.doc
         if self.tab in (0, 1, 5):
-            lay = {0: ("f2" if self.layer2 else "f",), 1: ("w",), 5: ("x",)}[self.tab]
+            lay = {0: ("f2", "df2") if self.layer2 else ("f", "df"), 1: ("w", "dw"), 5: ("x",)}[self.tab]
             n = len(d["tiles"])
             d["tiles"] = [t for t in d["tiles"] if not (t[0] == tx and t[1] == ty and t[2] in lay)]
             if self.tab == 5:
