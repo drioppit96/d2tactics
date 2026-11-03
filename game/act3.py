@@ -229,7 +229,7 @@ def build_kurast(kit, seed=None, content=None):
     if dock is None:
         raise FileNotFoundError("Kurast Docks layout (act3\\docktown\\docktown3.ds1) not found")
     dw, dh = dock.width - 1, dock.height - 1
-    W, H = SW + 80 + 4 + ARMORY + 4, 64 + 16 + 64 * 3 + dh
+    W, H = SW + 80 + ARMORY_ROAD + ARMORY + 4, 64 + 16 + 64 * 3 + dh
     X = SW                                 # the main column (Travincal ... Lower Kurast) starts here
     cv = Canvas(kit, W, H, 3, seed)
     rng, b = cv.rng, cv.b
@@ -249,7 +249,7 @@ def build_kurast(kit, seed=None, content=None):
         spec = _kurast_spec(lid)
         if lid == 80:
             # the Bazaar opens west into the Scriptorium and, at its north-east, onto the armory road
-            spec = dict(spec, openings={"w": (3, 1), "e": (1, 1)})
+            spec = dict(spec, openings={"w": (3, 1), "e": (2.5, 0.5)})
         placed = block_area(cv, lid, X, y0, 10, 8, 8, spec)
         # (the waypoint block carries D2's waypoint object itself)
     # the Kurast Docks right below Lower Kurast: walk out of town and you are in the city
@@ -261,8 +261,9 @@ def build_kurast(kit, seed=None, content=None):
     b.stormtree_spot = ((xd + 29) * SUB, (yd - 13) * SUB)      # just inside Lower Kurast's south gate
     b.areas[75] = b.town_rect
     # the Kurast Armory beside the Bazaar: a road runs east from the Bazaar to its north gate
-    ax, ay = X + 80 + 4, rows[80] + 26
-    cv.ground("burbs", X + 80, rows[80] + 6, ax + 52 - (X + 80), 21)
+    # its gate (in the west wall) lines up with the opening in the Bazaar's east side, a short
+    # walled road between them
+    ax, ay = X + 80 + ARMORY_ROAD - 1, rows[80] + 16 - 1 - ARMORY_GATE[0]
     stamp_armory(kit, b, ax, ay)
     # the side areas
     for lid, sa in SIDE_AREAS.items():
@@ -350,96 +351,102 @@ class _Sub:
                         if t == 2 and sx * 5 <= x < (sx + w) * 5 and sy * 5 <= y < (sy + h) * 5]
 
 
-ARMORY = 72                    # blueprint size in tiles (the area is one tile bigger all round)
-# the designer's blueprint: crenellated walls between grid points (x0, y0) - (x1, y1)
-ARMORY_WALLS = [((0, 0), (28, 0)), ((47, 0), (72, 0)), ((0, 0), (0, 72)), ((72, 0), (72, 72)), ((0, 72), (72, 72)),
-                ((28, 0), (28, 14)), ((47, 0), (47, 14)),
-                ((0, 20), (28, 20)), ((47, 20), (72, 20)),
-                ((12, 29), (30, 29)), ((45, 29), (65, 29)),
-                ((12, 29), (12, 55)), ((12, 55), (22, 55)), ((22, 55), (22, 72)),
-                ((65, 29), (65, 51)), ((52, 51), (65, 51)), ((52, 51), (52, 72))]
-ARMORY_ALTARS = [(5, 5), (66, 5), (6, 67), (66, 67)]
-ARMORY_BOSS = (37, 64)
+ARMORY = 72                    # the compound in tiles (the area is one tile bigger all round)
+ARMORY_GATE = (28, 44)         # the gate in the west wall (y range), facing the Bazaar
+ARMORY_ROAD = 8                # tiles of walled road between the Bazaar's east edge and the gate
+FIELDSTONE = 20                # D2 Kurast wall styles (main index): solid fieldstone ...
+PLASTER = 24                   # ... and plastered, bloodied room walls
+# the designer's blueprint (north up, gate west): solid fieldstone walls, (x0, y0) - (x1, y1)
+ARMORY_WALLS = [((0, 0), (72, 0)), ((72, 0), (72, 72)), ((0, 72), (72, 72)), ((0, 0), (0, 28)), ((0, 44), (0, 72)),
+                ((0, 26), (14, 26)), ((0, 46), (14, 46)),
+                ((20, 0), (20, 26)), ((20, 46), (20, 72)),
+                ((29, 7), (29, 26)), ((29, 7), (51, 7)), ((51, 7), (51, 20)), ((51, 20), (72, 20)),
+                ((29, 44), (29, 61)), ((29, 61), (55, 61)), ((55, 51), (55, 61)), ((55, 51), (72, 51)),
+                # the road to the Bazaar and the two gate towers
+                ((-8, 28), (0, 28)), ((-8, 44), (0, 44)),
+                ((-4, 28), (-4, 32)), ((-4, 32), (0, 32)), ((-4, 40), (-4, 44)), ((-4, 40), (0, 40))]
+# rooms inside: plastered walls, with doorways left open
+ARMORY_INNER = [((0, 13), (14, 13)),                                         # barracks | mess hall
+                ((7, 0), (7, 5)), ((7, 8), (7, 13)),                         # officers' corner in the barracks
+                ((0, 59), (12, 59)), ((10, 46), (10, 52)), ((10, 55), (10, 59)),  # crypt | ossuary, the crypt's vaults
+                ((29, 44), (44, 44)), ((48, 44), (56, 44)), ((44, 44), (44, 48)),  # hall of arms | the vaults
+                ((29, 52), (38, 52)), ((42, 52), (55, 52)),                  # the vaults | grindstone hall
+                ((23, 64), (23, 70)), ((23, 70), (29, 70)), ((29, 64), (29, 70)),   # smithy row: three forge sheds
+                ((33, 64), (33, 70)), ((33, 70), (39, 70)), ((39, 64), (39, 70)),
+                ((43, 64), (43, 70)), ((43, 70), (49, 70)), ((49, 64), (49, 70)),
+                ((55, 62), (63, 62)), ((63, 62), (63, 66)),                  # the quartermaster's counter
+                ((56, 25), (60, 25)), ((68, 25), (72, 25)),                  # the forge court's inner gate
+                ((36, 27), (36, 30)), ((48, 27), (48, 30))]                  # pillars before the hall of arms
+ARMORY_ALTARS = [(4, 4), (68, 4), (4, 68), (68, 68)]
+ARMORY_BOSS = (64, 45)
 # Travincal buildings: (preset, source x, y, w, h, where in the blueprint)
-ARMORY_BUILDINGS = [("travn", 7, 14, 21, 12, (28, 33)),          # the great hall in the keep
-                    ("travs", 10, 2, 12, 9, (31, 58)),           # the council dais: the smith's forge court
-                    ("travs", 0, 13, 9, 8, (10, 58)),            # the ossuary chapel (bottom left)
-                    ("travs", 21, 15, 10, 8, (56, 58)),          # the quartermaster's house (bottom right)
-                    ("travn", 15, 26, 8, 6, (2, 37)),            # a sunken cistern in the west lane
-                    ("travnw", 10, 12, 7, 7, (17, 9))]           # the quartermaster's store (north-west)
-# this game's own sprites (assets/decor) and D2's objects: (what, x, y) in blueprint tiles
+ARMORY_BUILDINGS = [("travn", 7, 14, 21, 12, (30, 8)),           # the weapon vault (a Travincal hall)
+                    ("travs", 10, 2, 12, 9, (58, 31))]           # the council dais: the smith's forge court
+ARMORY_WAYPOINT = (4, 32)                                        # the waypoint block, in the gate hall
+# each room: (x0, y0, x1, y1, props to scatter, how many) - placed apart, off the walls and doorways
+ARMORY_ROOMS = [
+    (8, 1, 19, 12, ["bunks", "bunks", "chest", "armorstand", "sacks", "bunks"], 13),        # barracks
+    (1, 6, 6, 12, ["chest", "kegs"], 2),                                                    # officers' corner
+    (1, 14, 19, 25, ["table", "table", "kegs", "cauldron", "sacks", "table"], 13),           # mess hall
+    (15, 27, 28, 45, ["armorstand", "banner", "armorstand", "statue", "armorstand"], 13),    # muster court
+    (11, 47, 19, 58, ["bones", "chest", "blood", "debris"], 8),                             # crypt
+    (1, 47, 9, 58, ["bones", "statue"], 4),                                                  # the crypt's vaults
+    (1, 60, 19, 71, ["bones", "bones", "spikes", "blood", "statue", "bones"], 13),           # ossuary
+    (21, 1, 50, 6, ["cart", "crates", "sacks", "kegs", "crates", "cart", "sacks"], 15),      # supply lane
+    (21, 8, 28, 26, ["crates", "sacks", "arrows", "debris"], 8),                            # west lane
+    (52, 1, 71, 19, ["dummy", "target", "dummy", "weaponrack", "target", "arrows", "dummy"], 17),   # training yard
+    (30, 21, 50, 26, ["banner", "debris", "blood"], 6),                                      # before the vault
+    (30, 31, 55, 43, ["weaponrack", "shieldrack", "armorstand", "weaponrack", "shieldrack", "armorstand"], 22),
+    (30, 45, 43, 51, ["armorstand", "armorstand", "chest", "armorstand"], 8),               # armour vault
+    (45, 49, 54, 51, ["shieldrack", "chest"], 4),                                            # helms & shields
+    (30, 53, 54, 60, ["grindstone", "anvil", "grindstone", "crates", "grindstone"], 11),     # grindstone hall
+    (21, 47, 28, 60, ["crates", "arrows", "sacks", "blood"], 6),                            # the south lane
+    (24, 65, 28, 69, ["forge"], 2), (34, 65, 38, 69, ["forge"], 2), (44, 65, 48, 69, ["forge"], 2),
+    (21, 62, 54, 64, ["anvil", "anvil", "cart", "anvil"], 8),                               # in front of the sheds
+    (56, 53, 71, 71, ["crates", "sacks", "kegs", "chest", "crates", "cart", "sacks"], 15),   # quartermaster's
+    (57, 21, 71, 30, ["forge", "anvil", "cauldron", "debris"], 8),                           # forge court
+    (57, 41, 71, 50, ["forge", "anvil", "blood", "debris", "gibbet"], 8),
+]
+# the set pieces: (sprite, x, y)
 ARMORY_DECOR = [
-    # the gate: banners of Zakarum, and the guards' last stand
-    ("banner", 29.6, 2.0), ("banner", 46.0, 2.0), ("blood", 37.0, 7.0), ("debris", 34.5, 10.0),
-    ("debris", 41.0, 12.5), ("blood", 39.0, 16.0),
-    # storeroom (north-west): crates, barrels, an ore cart, arrows, the quartermaster's dropped load
-    ("crates", 3.5, 13.0), ("crates", 21.5, 3.0), ("cart", 11.0, 15.5),
-    ("arrows", 9.5, 3.0), ("arrows", 17.0, 9.0), ("debris", 12.0, 9.0),
-    # training yard (north-east): dummies in a row, racks, baskets of arrows
-    ("dummy", 53.0, 9.0), ("dummy", 57.0, 9.0), ("dummy", 61.0, 9.0), ("dummy", 57.0, 14.0),
-    ("weaponrack", 52.0, 3.0), ("weaponrack", 59.0, 3.0), ("arrows", 69.0, 12.0), ("arrows", 50.5, 16.0),
-    ("armorstand", 69.5, 16.0), ("blood", 61.0, 16.0),
-    # the parade ground between the halls
-    ("banner", 14.0, 22.0), ("banner", 61.0, 22.0), ("cart", 6.0, 24.5), ("crates", 68.0, 24.0),
-    ("debris", 32.0, 25.0), ("debris", 44.0, 23.0), ("blood", 38.0, 26.0), ("bones", 22.0, 25.5),
-    # the keep: armour on parade before the great hall, forges in its wings
-    ("armorstand", 20.0, 32.0), ("armorstand", 24.0, 32.0), ("armorstand", 52.0, 32.0), ("armorstand", 56.0, 32.0),
-    ("banner", 30.5, 31.0), ("banner", 45.0, 31.0),
-    ("forge", 17.0, 40.0), ("anvil", 22.5, 44.0), ("crates", 16.0, 50.0),
-    ("forge", 59.0, 40.0), ("anvil", 54.0, 44.0), ("cart", 58.0, 48.5),
-    ("weaponrack", 33.0, 49.0), ("weaponrack", 41.0, 49.0), ("blood", 37.0, 51.0),
-    # the lanes
-    ("armorstand", 4.0, 31.0), ("armorstand", 8.0, 31.0), ("crates", 5.0, 47.0), ("arrows", 9.0, 51.0),
-    ("weaponrack", 66.0, 31.0), ("crates", 68.5, 40.0), ("debris", 68.0, 47.0),
-    # the ossuary (south-west): the dead of the fall, heaped with candles
-    ("bones", 4.0, 59.0), ("bones", 15.0, 69.0), ("blood", 10.0, 66.0), ("debris", 18.0, 62.0),
-    # the quartermaster's (south-east)
-    ("crates", 57.0, 69.0), ("cart", 69.0, 58.0), ("arrows", 62.0, 70.0),
-    # the forge court: the smith's forges and anvils around the dais
-    ("forge", 25.5, 58.5), ("forge", 48.5, 58.5), ("anvil", 27.0, 66.0), ("anvil", 47.0, 66.0),
-    ("debris", 33.0, 70.0), ("blood", 41.0, 70.0), ("banner", 24.0, 70.5), ("banner", 50.5, 70.5),
+    # the road in from the Bazaar: a warning, then the banners of Zakarum on the towers
+    ("gibbet", -6.5, 30.0), ("spikes", -6.0, 42.0), ("banner", -3.0, 33.2), ("banner", -3.0, 39.0),
+    ("blood", -5.0, 36.0), ("debris", -2.0, 37.5),
+    # the gate hall: four stone zealots keep watch around the waypoint
+    ("statue", 1.6, 29.0), ("statue", 1.6, 43.0), ("statue", 12.5, 27.6), ("statue", 12.5, 44.6),
+    ("banner", 7.0, 27.4), ("banner", 7.0, 45.0),
+    # the officers' corner
+    ("table", 3.5, 9.0), ("banner", 1.5, 1.5),
+    # the hall of arms: racks in rows down both sides of an aisle
+    ("weaponrack", 33.0, 32.5), ("weaponrack", 39.0, 32.5), ("shieldrack", 45.0, 32.5), ("weaponrack", 51.0, 32.5),
+    ("armorstand", 33.0, 41.0), ("armorstand", 37.0, 41.0), ("armorstand", 41.0, 41.0), ("armorstand", 47.0, 41.0),
+    ("armorstand", 51.0, 41.0), ("banner", 30.5, 37.0), ("banner", 54.5, 37.0),
+    # the forge court's gate
+    ("banner", 61.0, 24.8), ("banner", 67.0, 24.8), ("blood", 64.0, 27.0),
 ]
-# D2's own objects: (Objects.txt id, x, y) - torches, racks and stands to loot, fallen guards, barrels
-ARMORY_OBJECTS = [(328, 27.0, 1.5), (328, 48.0, 1.5), (328, 11.0, 28.0), (328, 64.0, 28.0),
-                  (328, 29.0, 30.0), (328, 46.0, 30.0), (328, 21.0, 56.0), (328, 51.0, 56.0),
-                  (102, 16.0, 23.5), (102, 24.0, 23.5), (102, 51.0, 23.5), (102, 59.0, 23.5),
-                  (106, 2.0, 8.0), (107, 26.0, 8.0), (548, 70.0, 6.0), (549, 49.0, 12.0),
-                  (104, 36.0, 47.0), (105, 40.0, 47.0), (550, 14.0, 44.0), (551, 62.0, 44.0),
-                  (154, 36.0, 12.0), (270, 39.0, 21.0), (154, 25.0, 27.0), (270, 49.0, 26.0),
-                  (154, 8.0, 63.0), (270, 44.0, 62.0),
-                  (7, 2.5, 17.0), (7, 3.5, 18.0), (11, 26.0, 17.5), (7, 70.0, 18.5), (11, 9.0, 55.0),
-                  (7, 69.0, 66.0), (7, 54.5, 66.0)]
-# themed corners of the yard, filled with more of the same (deterministic): (x0, y0, x1, y1, props, count)
-ARMORY_THEMES = [
-    (1, 1, 27, 19, ["crates", "arrows", "cart", "debris", "crates"], 14),                   # storeroom
-    (48, 1, 71, 19, ["dummy", "weaponrack", "arrows", "armorstand", "dummy"], 14),          # training yard
-    (29, 2, 46, 13, ["debris", "blood", "blood"], 7),                                      # the gate fight
-    (1, 21, 71, 28, ["banner", "armorstand", "cart", "crates", "debris", "blood", "bones", "weaponrack"], 25),
-    (1, 30, 11, 54, ["crates", "arrows", "debris", "blood"], 7),                           # west lane
-    (66, 30, 71, 50, ["crates", "arrows", "blood"], 5),                                    # east lane
-    (13, 30, 27, 54, ["anvil", "weaponrack", "crates", "armorstand", "blood", "debris"], 10),  # keep, west wing
-    (50, 30, 64, 50, ["anvil", "weaponrack", "crates", "armorstand", "blood", "debris"], 10),  # keep, east wing
-    (28, 46, 49, 54, ["weaponrack", "debris", "blood", "banner"], 7),                      # behind the hall
-    (1, 56, 21, 71, ["bones", "blood", "debris", "bones", "blood"], 12),                    # the ossuary
-    (53, 52, 71, 71, ["crates", "cart", "arrows", "crates"], 10),                           # quartermaster's
-    (23, 56, 51, 71, ["anvil", "debris", "blood", "banner", "forge"], 10),                  # forge court
-]
-ARMORY_KEEP_CLEAR = [(31, 57, 44, 68), (27, 32, 50, 46)]          # the dais and the great hall
-# Travincal's low-walled planters (sunken dark-green beds): (x, y, w, h) in blueprint tiles
-ARMORY_PLANTERS = [(4, 22, 5, 4), (17, 22, 5, 4), (51, 22, 5, 4), (63, 22, 5, 4),
-                   (14, 47, 4, 4), (59, 51, 4, 3), (2, 44, 4, 3), (33, 15, 3, 3), (40, 15, 3, 3)]
+# D2's own objects: (Objects.txt id, x, y) - braziers, torches, racks and stands to loot, the fallen, barrels, chests
+ARMORY_OBJECTS = [(102, -1.5, 34.0), (102, -1.5, 38.0), (102, 2.0, 31.0), (102, 2.0, 41.0),
+                  (102, 13.0, 31.0), (102, 13.0, 41.0), (102, 31.0, 36.0), (102, 54.0, 36.0),
+                  (102, 59.0, 26.5), (102, 69.0, 26.5),
+                  (106, 21.5, 30.0), (107, 21.5, 42.0), (548, 70.0, 10.0), (549, 53.0, 17.0),
+                  (104, 35.0, 46.0), (105, 41.0, 46.0), (550, 46.0, 50.0), (551, 53.0, 46.0),
+                  (154, 6.0, 36.0), (270, 25.0, 35.0), (154, 40.0, 24.0), (270, 64.0, 49.0),
+                  (154, 9.0, 66.0), (270, 61.0, 34.0),
+                  (5, 2.0, 2.0), (6, 70.0, 70.0), (5, 18.0, 56.0),
+                  (7, 21.5, 2.0), (7, 22.5, 3.0), (11, 50.0, 2.0), (7, 70.0, 22.0), (11, 26.0, 50.0),
+                  (7, 57.5, 70.0), (7, 70.0, 53.0)]
 ARMORY_FLOOR_DECALS = [(49, 7), (49, 4), (49, 12), (49, 0), (49, 10)]
 # how many cells around its spot each sprite blocks (0: you walk over it)
-DECOR_BLOCK = {"anvil": 2, "forge": 5, "weaponrack": 3, "armorstand": 1, "crates": 4, "arrows": 2, "dummy": 1,
-               "banner": 1, "cart": 4, "bones": 2, "debris": 0, "blood": 0, "statue": 2, "bunks": 4, "table": 4,
-               "kegs": 3, "grindstone": 2, "target": 1, "shieldrack": 3, "chest": 2, "cauldron": 2, "gibbet": 1,
-               "spikes": 2, "sacks": 3}
+DECOR_BLOCK = {"anvil": 2, "forge": 4, "weaponrack": 3, "armorstand": 1, "crates": 3, "arrows": 2, "dummy": 1,
+               "banner": 1, "cart": 3, "bones": 2, "debris": 0, "blood": 0, "statue": 2, "bunks": 3, "table": 3,
+               "kegs": 2, "grindstone": 2, "target": 1, "shieldrack": 3, "chest": 2, "cauldron": 2, "gibbet": 1,
+               "spikes": 2, "sacks": 2}
 
 
-def _wall_tiles(lines, n_ok):
-    """Grid-point wall lines -> D2 wall tiles (orientation, main, sub), the way D2's own Travincal
-    walls are laid: along a tile's north (2) and west (1) edges, with north (3), east-end (5),
-    west-end (6) and south (7) corner pieces. Every piece is the full wall (body + battlements)."""
+def _wall_tiles(lines, n_ok, main):
+    """Grid-point wall lines -> D2 wall tiles (orientation, main, sub), the way D2 lays them: along a
+    tile's north (2) and west (1) edges, with north (3), east-end (5), west-end (6) and south (7)
+    corner pieces. `main` picks the wall (solid fieldstone or plaster)."""
     pts = {}
 
     def link(a, b_, d1, d2):
@@ -452,25 +459,27 @@ def _wall_tiles(lines, n_ok):
         else:
             for y in range(min(y0, y1), max(y0, y1)):
                 link((x0, y), (x0, y + 1), "S", "N")
+    nsub = {FIELDSTONE: {1: 3, 2: 3}, PLASTER: {1: 5, 2: 5}}[main]
     out = {}
     for (x, y), ds in pts.items():
         if not n_ok(x, y):
             continue
-        t = []
+        h = (x * 7 + y * 13) & 0xFFFF
         if "E" in ds and "S" in ds:
-            t = [(3, 32, 0), (3, 31, 0)]
+            t = (3, main, 0)
         elif "E" in ds and "N" in ds and "W" not in ds:
-            t = [(6, 32, 0), (6, 31, 0)]
+            t = (6, main, 0)
         elif "E" in ds:
-            t = [(2, 31, 0), (2, 32, 4 + x % 4)]
+            t = (2, main, h % nsub[2])
         elif "S" in ds and "W" in ds and "N" not in ds:
-            t = [(5, 32, 0), (5, 31, 0)]
+            t = (5, main, 0)
         elif "S" in ds:
-            t = [(1, 31, 0), (1, 32, y % 4)]
+            t = (1, main, h % nsub[1])
         elif "N" in ds and "W" in ds:
-            t = [(7, 32, 0), (7, 31, 0)]
-        if t:
-            out[(x, y)] = t
+            t = (7, main, 0)
+        else:
+            continue
+        out[(x, y)] = t
     return out
 
 
@@ -479,25 +488,30 @@ def _acell(ax, ay, x, y):
 
 
 def stamp_armory(kit, b, ax, ay):
-    """The Kurast Armory into a Built at tile (ax, ay): paving, Travincal's buildings, the walls of
-    the blueprint, altars, the smith's spot, D2 objects and this game's decoration sprites."""
+    """The Kurast Armory into a Built at tile (ax, ay), its gate road reaching west to the Bazaar:
+    paving, the waypoint block, Travincal's buildings, solid and plastered walls, rooms filled with
+    sprites and D2 objects, the altars and the smith's spot."""
     from .act1 import stamp
     from . import custommap
-    n = ARMORY + 2
     off = 1
     ts = custommap.tileset(kit, KURAST_LT)
     tm = b.tm
     R = custommap._rnd
-    for y in range(off, off + ARMORY):
-        for x in range(off, off + ARMORY):
-            ref = ts.pick(0, 20, 0, R(ax + x, ay + y))
-            if ref:
-                tm.floor[(ax + x, ay + y)] = ref
-            tm.walls.pop((ax + x, ay + y), None)
-    # the waypoint, on D2's Kurast waypoint platform, just inside the gate
+    g0, g1 = ARMORY_GATE
+
+    def pave(x0, y0, x1, y1):
+        for y in range(y0, y1):
+            for x in range(x0, x1):
+                ref = ts.pick(0, 20, 0, R(ax + off + x, ay + off + y))
+                if ref:
+                    tm.floor[(ax + off + x, ay + off + y)] = ref
+                tm.walls.pop((ax + off + x, ay + off + y), None)
+    pave(0, 0, ARMORY, ARMORY)
+    pave(-ARMORY_ROAD - 1, g0, 0, g1)                      # the gate road (meets the Bazaar's paving)
     wpds = kit.ds1(K + "burbs08x08_waypoint.ds1")
     if wpds is not None:
-        stamp(b, wpds, kit.tiles_for(wpds, KURAST_LT), ax + off + 33, ay + off + 4, random.Random(76), 76,
+        wx, wy = ARMORY_WAYPOINT
+        stamp(b, wpds, kit.tiles_for(wpds, KURAST_LT), ax + off + wx, ay + off + wy, random.Random(76), 76,
               keep_edges=False)
     for name, sx, sy, w, h, (bx, by) in ARMORY_BUILDINGS:
         ds = kit.ds1(A3 + "travincal\\%s.ds1" % name)
@@ -507,92 +521,70 @@ def stamp_armory(kit, b, ax, ay):
         stamp(b, _Sub(ds, sx, sy, w, h), kit.tiles_for(ds, KURAST_LT), ax + bx + off, ay + by + off,
               random.Random(R(bx, by)), 76, keep_edges=False)
         del b.warps[nwarps:]                 # (the chunks' own stairs lead nowhere here)
-    walls = _wall_tiles(ARMORY_WALLS, lambda x, y: 0 <= x + off < n and 0 <= y + off < n)
-    for (x, y), keys in walls.items():
-        pos = (ax + x + off, ay + y + off)
-        lst = []
-        for o, m, s_ in keys:
+    ok = lambda x, y: -ARMORY_ROAD - 2 <= x <= ARMORY + 1 and -1 <= y <= ARMORY + 1
+    for lines, main in ((ARMORY_WALLS, FIELDSTONE), (ARMORY_INNER, PLASTER)):
+        for (x, y), (o, m, s_) in _wall_tiles(lines, ok, main).items():
+            pos = (ax + x + off, ay + y + off)
+            lst = [r for r in tm.walls.get(pos, []) if main == PLASTER and getattr(r[1], "orientation", 0) != o]
             for oo in ([o, 4] if o == 3 else [o]):
-                ref = ts.pick(oo, m, s_, R(pos[0], pos[1], oo))
+                ref = ts.pick(oo, m, s_, R(pos[0], pos[1], oo)) or ts.pick(oo, m, 0, 0)
                 if ref:
                     lst.append(ref)
-        if lst:
-            tm.walls[pos] = lst
-    b.areas[76] = ((ax + off) * SUB, (ay + off) * SUB, (ax + off + ARMORY) * SUB, (ay + off + ARMORY) * SUB)
+            if lst:
+                tm.walls[pos] = lst
+    b.areas[76] = ((ax + off - ARMORY_ROAD) * SUB, (ay + off) * SUB, (ax + off + ARMORY) * SUB, (ay + off + ARMORY) * SUB)
     b.armory_at = (ax, ay)
     for oid, x, y in ARMORY_OBJECTS:
         b.gen_objects.append((("id", oid), _acell(ax, ay, x, y), 76))
     decor = getattr(b, "decor", None)
     if decor is None:
         decor = b.decor = []
-    rng = random.Random(7676)
-    placed = [(x, y) for _, x, y in ARMORY_DECOR]
+    placed = [(x, y) for _, x, y in ARMORY_DECOR] + [(x, y) for _, x, y in ARMORY_OBJECTS]
     for name, x, y in ARMORY_DECOR:
         decor.append((name, _acell(ax, ay, x, y)))
-    # fill the themed corners of the yard
+    # fill each room with its own things
+    rng = random.Random(7676)
     blocked = [(bx - 1, by - 1, bx + w + 1, by + h + 1) for _n, _sx, _sy, w, h, (bx, by) in ARMORY_BUILDINGS]
-    blocked += ARMORY_KEEP_CLEAR + [(px_ - 1, py_ - 1, px_ + pw + 1, py_ + ph + 1) for px_, py_, pw, ph in ARMORY_PLANTERS]
-    lines = ARMORY_WALLS
+    wx, wy = ARMORY_WAYPOINT
+    blocked.append((wx - 1, wy - 1, wx + 9, wy + 9))
+    blocked.append((-1, g0 + 2, 16, g1 - 2))                        # the way in stays clear
+    blocked.append((30, 35, 55, 38))                                # ... and the hall of arms' aisle
+    lines = ARMORY_WALLS + ARMORY_INNER
 
     def near_wall(x, y):
         for (x0, y0), (x1, y1) in lines:
-            if y0 == y1 and min(x0, x1) - 1 <= x <= max(x0, x1) + 1 and abs(y - y0) < 1.6:
+            if y0 == y1 and min(x0, x1) - 1 <= x <= max(x0, x1) + 1 and abs(y - y0) < 1.4:
                 return True
-            if x0 == x1 and min(y0, y1) - 1 <= y <= max(y0, y1) + 1 and abs(x - x0) < 1.6:
+            if x0 == x1 and min(y0, y1) - 1 <= y <= max(y0, y1) + 1 and abs(x - x0) < 1.4:
                 return True
         return False
-    for x0, y0, x1, y1, props, count in ARMORY_THEMES:
+    for x0, y0, x1, y1, props, count in ARMORY_ROOMS:
         done = 0
-        for _ in range(count * 40):
+        for _ in range(count * 80):
             if done >= count:
                 break
-            x, y = rng.uniform(x0 + 1, x1 - 1), rng.uniform(y0 + 1, y1 - 1)
+            x, y = rng.uniform(x0 + 0.8, x1 - 0.8), rng.uniform(y0 + 0.8, y1 - 0.8)
             if any(bx0 <= x <= bx1 and by0 <= y <= by1 for bx0, by0, bx1, by1 in blocked):
                 continue
-            if near_wall(x, y) or any(abs(x - px) + abs(y - py) < 4.5 for px, py in placed):
+            if near_wall(x, y) or any(abs(x - px) + abs(y - py) < 2.4 for px, py in placed):
                 continue
-            if any(abs(x - a) + abs(y - b_) < 5 for a, b_ in ARMORY_ALTARS + [ARMORY_BOSS]):
+            if any(abs(x - a) + abs(y - b_) < 4 for a, b_ in ARMORY_ALTARS + [ARMORY_BOSS]):
                 continue
-            name = props[done % len(props)]
-            decor.append((name, _acell(ax, ay, x, y)))
+            decor.append((props[done % len(props)], _acell(ax, ay, x, y)))
             placed.append((x, y))
             done += 1
-    # the planters
-    for px_, py_, pw, ph in ARMORY_PLANTERS:
-        x0, y0, x1, y1 = ax + off + px_, ay + off + py_, ax + off + px_ + pw, ay + off + py_ + ph
-        for y in range(y0, y1):
-            for x in range(x0, x1):
-                ref = ts.pick(0, 29, 12, R(x, y))
-                if ref:
-                    tm.floor[(x, y)] = ref
-        pieces = {}
-        for x in range(x0, x1 + 1):
-            pieces[(x, y0)] = 2
-            pieces[(x, y1)] = 2
-        for y in range(y0, y1 + 1):
-            pieces[(x0, y)] = 1
-            pieces[(x1, y)] = 1
-        pieces[(x0, y0)], pieces[(x1, y0)], pieces[(x0, y1)], pieces[(x1, y1)] = 3, 5, 6, 7
-        for pos, o in pieces.items():
-            lst = []
-            for oo in ([o, 4] if o == 3 else [o]):
-                ref = ts.pick(oo, 31, 0, R(pos[0], pos[1], oo))
-                if ref:
-                    lst.append(ref)
-            if lst:
-                tm.walls[pos] = lst
     # torches along the walls, a little in from them
-    for (x0, y0), (x1, y1) in lines:
+    for (x0, y0), (x1, y1) in ARMORY_WALLS:
         if y0 == y1:
-            for x in range(min(x0, x1) + 3, max(x0, x1) - 2, 9):
+            for x in range(min(x0, x1) + 3, max(x0, x1) - 2, 8):
                 for dy in (0.9, -0.9):
-                    if 0.5 < y0 + dy < ARMORY - 0.5:
+                    if 0.5 < y0 + dy < ARMORY - 0.5 and not near_wall(x, y0 + dy * 2.2):
                         b.gen_objects.append((("id", 328), _acell(ax, ay, x, y0 + dy), 76))
                         break
         else:
-            for y in range(min(y0, y1) + 3, max(y0, y1) - 2, 9):
+            for y in range(min(y0, y1) + 3, max(y0, y1) - 2, 8):
                 for dx in (0.9, -0.9):
-                    if 0.5 < x0 + dx < ARMORY - 0.5:
+                    if 0.5 < x0 + dx < ARMORY - 0.5 and not near_wall(x0 + dx * 2.2, y):
                         b.gen_objects.append((("id", 328), _acell(ax, ay, x0 + dx, y), 76))
                         break
     # wear on the paving: stains, cracks and grime (Travincal's second floor layer)
@@ -610,7 +602,7 @@ def armory_after_grid(b, grid, ax, ay):
     altars and the smith's spot are found on walkable ground."""
     from .grid import WALL
     off = 1
-    for (x0, y0), (x1, y1) in ARMORY_WALLS:
+    for (x0, y0), (x1, y1) in ARMORY_WALLS + ARMORY_INNER:
         if y0 == y1:
             Y = (ay + y0 + off) * SUB
             for X in range((ax + min(x0, x1) + off) * SUB, (ax + max(x0, x1) + off) * SUB + 1):

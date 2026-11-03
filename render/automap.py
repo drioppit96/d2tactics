@@ -164,7 +164,7 @@ class Automap:
             look = lid
             sa = info._side(lid) if info is not None and hasattr(info, "_side") else None
             if lid == 76:
-                name = ""                    # (the Kurast Armory: hand-laid walls, drawn as outlines)
+                name = "-outline-"           # (the Kurast Armory: hand-laid walls, drawn as outlines)
             else:
                 if sa:
                     look = sa["like"]
@@ -251,11 +251,19 @@ class Automap:
 
     def _add(self, cells):
         tiles = {(x // 5, y // 5) for x, y in cells}
+        lt = self.__dict__.setdefault("line_tiles", set())
         for t in tiles:
+            if t in lt:
+                self._lines(*t)              # outlined tiles fill in as more of them is explored
+                for n in ((t[0] + 1, t[1]), (t[0] - 1, t[1]), (t[0], t[1] + 1), (t[0], t[1] - 1)):
+                    if n in lt:
+                        self._lines(*n)
+                continue
             if t in self.done_tiles:
                 continue
             self.done_tiles.add(t)
             if not self._tile(*t):
+                lt.add(t)
                 self._lines(*t)
 
     def update(self):
