@@ -290,7 +290,15 @@ def setup(world, built, grid, rng, info, level_key):
     if level_key == "desert" and 50 in world.entries and not any(n.npc == "jerhyn" for n in world.npcs):
         door = world.entries[50]
         cell = None
-        for r in range(3, 9):
+        # at the foot of the palace stairs, beside the left brazier (where D2 has him)
+        for r in range(0, 4):
+            for dx in range(-r, r + 1):
+                for dy in range(-r, r + 1):
+                    c = (door[0] + 28 + dx, door[1] + 24 + dy)
+                    if cell is None and max(abs(dx), abs(dy)) == r and grid.walkable(*c) and \
+                            c not in world.exits and c not in {m.pos for m in monsters}:
+                        cell = c
+        for r in range(3, 9) if cell is None else ():
             for dx in range(-r, r + 1):
                 c = (door[0] + dx, door[1] + r)
                 if grid.walkable(*c) and c not in world.exits and c not in {m.pos for m in monsters}:
