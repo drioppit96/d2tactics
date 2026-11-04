@@ -964,7 +964,7 @@ class Scene:
             pass
 
     # D2's charge-up overlays (Overlay.txt): Tiger / Cobra Strike their own, the others by element
-    CHARGE_OVERLAY = {"Tiger Strike": "tigerstrike%d", "Cobra Strike": "cobrastrike%d",
+    CHARGE_OVERLAY = {"Tiger Strike": "progressive_damage_%d", "Cobra Strike": "progressive_steal_%d",
                       "Fists of Fire": "progressive_fire_%d", "Claws of Thunder": "progressive_lightning_%d",
                       "Blades of Ice": "progressive_cold_%d", "Phoenix Strike": "progressive_other_%d",
                       "Royal Strike": "progressive_other_%d"}

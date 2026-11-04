@@ -486,6 +486,13 @@ class SkillCaster:
             s = p.skills.tree.get(sk)
             title = s.title if s is not None else sk
             self.log("%s: %d charge%s released!" % (title, n, "" if n == 1 else "s"), YELLOW)
+            # the release flash (D2's prgoverlay / "_attack" overlays) - only when a finisher fires
+            flash = {"Tiger Strike": "tigerstrike%d" % min(3, n), "Cobra Strike": "cobrastrike%d" % min(3, n),
+                     "Fists of Fire": "progressive_fire_%d_attack" % min(3, n),
+                     "Claws of Thunder": "progressive_lightning_%d_attack" % min(3, n),
+                     "Blades of Ice": "progressive_cold_%d_attack" % min(3, n)}.get(sk)
+            if flash and (n >= 2 or sk in ("Tiger Strike", "Cobra Strike")):
+                self.emit("overlay", p, flash)
             if style == "dmg":
                 if target.alive:
                     lo, hi = p.dmg
