@@ -420,6 +420,12 @@ class Player(Unit):
         allres = self.mod("res_all")
         cap = {k: min(95, 75 + self.mod("maxres_" + k) + self.mod("maxres_all")) for k in ("fire", "cold", "ltng", "pois")}
         self.res = {k: min(cap[k], allres + pb["res"] + self.mod("res_" + k)) for k in ("fire", "cold", "ltng", "pois")}
+        # what skills, auras and potion infusions add (D2 shows a resistance they raise in blue)
+        sk = getattr(self, "_skill_stats", {}) or {}
+        from .potions import buff_stat
+        self.res_boost = {k: pb["res"] + sum(v for v in (sk.get("res_" + k, 0), sk.get("res_all", 0))
+                                             if not isinstance(v, tuple)) + buff_stat(self, "res_" + k)
+                          for k in ("fire", "cold", "ltng", "pois")}
         self.res_cap = cap
         self.dr_pct = min(50, self.mod("dr_pct"))
         self.life_kill = self.mod("life_kill")

@@ -917,7 +917,12 @@ class D2Hud:
             y = 332 + i * 24
             t(surf, f10, label, GOLD, 174, y + 2, "center", 96)
             v = res.get(key, 0)
-            t(surf, f16, str(v), WHITE if v >= 0 else RED, 271, y + 1, "center", 39)
+            # D2's colours: red below 0, gold at the maximum (75% unless items raise it), blue when a
+            # skill / aura (or here a potion infusion) raises it, white otherwise
+            cap = (getattr(p, "res_cap", None) or {}).get(key, 75)
+            boosted = (getattr(p, "res_boost", None) or {}).get(key, 0) > 0
+            col = RED if v < 0 else GOLD if v >= cap else BLUE if boosted else WHITE
+            t(surf, f16, str(v), col, 271, y + 1, "center", 39)
         if p.stat_points:
             t(surf, f10, "Stat Points", RED, 10, 340, "center", 110)
             t(surf, f10, "Remaining", RED, 10, 354, "center", 110)
