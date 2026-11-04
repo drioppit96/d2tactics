@@ -1586,30 +1586,35 @@ class SkillCaster:
         self._spend_shot(a)
 
     def _bolt_sentry(self, a, env):
-        """Charged Bolt Sentry: once a turn it sprays its charged bolts at the nearest enemy - erratic
-        sparks, most strike that enemy, the rest the enemies around it or the floor."""
+        """Charged Bolt Sentry: once a turn it sprays all its charged bolts at once towards the nearest
+        enemy, each on its own wobbly line; a bolt strikes the first enemy in its way (so several can
+        hit the same one) or fizzles out on the floor."""
         foes = [m for m in self.enemies() if self.udist(m, a) <= a.range and self.grid.line_of_sight(a.pos, m.pos)]
         if not foes:
             return
         main = min(foes, key=lambda m: self.udist(m, a))
-        near = [m for m in foes if chebyshev(m.pos, main.pos) <= 2]
         ed = env.elem_damage() or ("ltng", 2, 14, 0)
         a.face(*main.pos)
         rng = self.rng
+        import math
+        ang0 = math.atan2(main.y - a.y, main.x - a.x)
+        reach = a.range + 1
+        shots = []
         for _ in range(getattr(a, "bolts", 5)):
-            r = rng.random()
-            if r < 0.55:
-                tgt = main
-            elif r < 0.85 and near:
-                tgt = rng.choice(near)
-            else:
-                tgt = None
-            dst = tgt.pos if tgt is not None else (main.x + rng.randint(-2, 2), main.y + rng.randint(-2, 2))
+            ang = ang0 + rng.gauss(0, 0.22)                          # the erratic spread
+            end = (a.x + int(round(math.cos(ang) * reach)), a.y + int(round(math.sin(ang) * reach)))
+            hit, stop = self._first_hit_on_line(a.pos, end, max_len=reach)
+            tgt = hit[0] if hit else None
+            shots.append((tgt, tgt.pos if tgt is not None else stop))
+        for tgt, dst in shots:                                       # every bolt leaves at the same moment
             self.emit("projectile", a, a.pos, dst, "ltng", "chargedbolt")
+        for tgt, dst in shots:
             if tgt is not None and tgt.alive:
                 tgt.aware = True
                 self.elem_hit(tgt, "ltng", ed[1], ed[2], self.player, ed[3], show=False)
         self._spend_shot(a)
+
+    def _wake_of_fire(self, a, env):
         """D2's Wake of Fire: a widening wave of flames rolls along the ground towards the enemy."""
         foes = [m for m in self.enemies() if self.udist(m, a) <= a.range and self.grid.line_of_sight(a.pos, m.pos)]
         if not foes:
