@@ -94,6 +94,42 @@ SANCTUM = [((2, 0), ["wingn1", "wingn2"]), ((1, 1), ["wingw1", "wingw2"]), ((2, 
 SANCTUM_ROWS = 6
 
 
+def block_lava(tm, grid):
+    """The River of Flame and the Chaos Sanctuary lie on a sea of lava (the animated first floor
+    layer, which D2 doesn't flag as blocking); you walk only where the second floor layer - the
+    rock, the sanctuary's stone, the bridges - covers it: a cell is ground if that layer's picture
+    is there under the cell's centre."""
+    from .grid import WALL
+    f2 = getattr(tm, "floor2", None) or {}
+    for (tx, ty), (f, tile) in tm.floor.items():
+        if not getattr(tile, "animated", 0) or "\\lava\\" not in (getattr(f, "name", "") or "").lower():
+            continue
+        top = f2.get((tx, ty))
+        img = None
+        if top is not None:
+            w_, h_, px, x0, y0 = top[0].decode(top[1])
+            img = (w_, h_, px, x0, y0) if w_ else None
+        for sy in range(SUB):
+            for sx in range(SUB):
+                x, y = tx * SUB + sx, ty * SUB + sy
+                if not grid.walkable(x, y):
+                    continue
+                solid = False
+                if img is not None:
+                    w_, h_, px, x0, y0 = img
+                    # the cell's centre in the tile picture (tiles are drawn at (tx-ty)*80-80+x0, (tx+ty)*40-8+y0)
+                    cx = (x - y) * 16 - ((tx - ty) * 80 - 80 + x0)
+                    cy = (x + y) * 8 - ((tx + ty) * 40 - 8 + y0)
+                    hits = 0
+                    for dx, dy in ((0, 0), (-6, 0), (6, 0), (0, -3), (0, 3)):
+                        u, v = int(cx + dx), int(cy + dy)
+                        if 0 <= u < w_ and 0 <= v < h_ and px[v * w_ + u]:
+                            hits += 1
+                    solid = hits >= 3
+                if not solid:
+                    grid.cells[y][x] = WALL
+
+
 def build_lava(kit, seed=None, content=None):
     rng = random.Random(seed)
     mk = kit.mazes.get("lava")
@@ -137,6 +173,7 @@ def build_lava(kit, seed=None, content=None):
     b.areas[107] = (0, oy * SUB, W * SUB, H * SUB)
     b.tm.drawn = set(b.tm.floor) | set(b.tm.walls) | set(b.tm.floor2)
     grid = make_grid(b.tm)
+    block_lava(b.tm, grid)
     # Diablo waits at the heart; the three seal bosses in the wings
     heart = drlg.near_walkable(grid, ((2 * R + R // 2) * SUB, (R + R // 2) * SUB), 60)
     if heart:
@@ -147,7 +184,14 @@ def build_lava(kit, seed=None, content=None):
             b.presets.append((boss, c, 108))
     gds, gcodes = drlg.ground_codes(kit, A4 + "lava\\lavans.ds1")
     gk = drlg.GroundKit(kit, gds, gcodes, LAVA_LT)
+    before = set(b.tm.floor)
     drlg.ensure_connected(b, grid, [(107, 108)], gk, rng)
+    # trails carved to join pieces get the river's rock on top of the lava (not a walk on lava)
+    rock = kit.tiles_for(gds, LAVA_LT).pick(0, 22, 0, 0)
+    if rock is not None:
+        for t in set(b.tm.floor) - before:
+            b.tm.floor2.setdefault(t, rock)
+            b.tm.drawn.add(t)
     drlg.ensure_waypoints(b, grid, 4)
     b.role_rooms = rooms
     return b, grid, rng
