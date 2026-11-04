@@ -417,11 +417,6 @@ class SkillCaster:
         m["always"] = bool(x.get("always_hit"))
         if s.element == "mag":
             m["magic"] = True
-        # assassin charge-ups / finishers
-        if x.get("charges"):
-            p = self.player
-            ch = p.effects.get("charges", 0)
-            m["dmg"] += 0
         return m
 
     def after_melee_hit(self, attacker, target, skill, dealt):
@@ -449,10 +444,14 @@ class SkillCaster:
                 if m is not target and self.udist(m, target) <= x["splash"] and ed:
                     self.elem_hit(m, ed[0], ed[1], ed[2], p, ed[3])
         if x.get("charges"):
-            p.effects["charges"] = min(3, p.effects.get("charges", 0) + 1)
-            p.effects["charge_skill"] = skill
-        if x.get("finisher") and p.effects.get("charges"):
-            self._release_charges(target)
+            # D2's charge-up: each hit that lands stores a charge (3 at most) of that skill; several
+            # charge-up skills can be charged at the same time; they fade after 15 seconds unused
+            ch = p.__dict__.setdefault("charges", {})
+            ch[skill] = min(3, ch.get(skill, 0) + 1)
+            p.charge_turns = max(2, turns_from_frames(375) or 4)
+            self.log("%s: %d charge%s." % (s.title, ch[skill], "" if ch[skill] == 1 else "s"), YELLOW)
+        if x.get("finisher") and getattr(p, "charges", None):
+            self._release_charges(target, dealt)
         if x.get("self_damage"):
             hurt = max(1, dealt * x["self_damage"] // 100)
             p.hp = max(1, p.hp - hurt)
@@ -465,20 +464,77 @@ class SkillCaster:
                 self._make_ally(target)
                 self.log("%s is converted!" % target.name, YELLOW)
 
-    def _release_charges(self, target):
+    CHARGE_STYLE = {"Tiger Strike": "dmg", "Cobra Strike": "steal", "Fists of Fire": "fire",
+                    "Claws of Thunder": "ltng", "Blades of Ice": "cold", "Phoenix Strike": "phoenix",
+                    "Royal Strike": "phoenix"}
+
+    def _release_charges(self, target, dealt=0):
+        """A finishing move (the kicks, Dragon Claw) releases every stored charge, like D2:
+        Tiger Strike - more damage; Cobra Strike - life and mana stolen; Fists of Fire / Claws of
+        Thunder / Blades of Ice - 1: the element, 2: a burst around the target, 3: a spray at the
+        enemies nearby (fire wall / charged bolts / ice cubes); Phoenix Strike - meteor, chain
+        lightning, chaos ice bolts."""
         p = self.player
-        n = p.effects.pop("charges", 0)
-        sk = p.effects.pop("charge_skill", None)
-        if not n or sk is None or not target.alive:
-            return
-        env = self._skill_env(sk)
-        ed = env.elem_damage()
-        self.log("%d charges released!" % n, YELLOW)
-        if ed:
-            self.elem_hit(target, ed[0], ed[1] * n, ed[2] * n, p, ed[3])
-        else:
-            lo, hi = p.dmg
-            self._damage(target, self.rng.randint(lo, hi) * n, p)
+        charges = getattr(p, "charges", None) or {}
+        p.charges = {}
+        for sk, n in charges.items():
+            if not n:
+                continue
+            env = self._skill_env(sk)
+            lvl = max(1, env.lvl)
+            style = self.CHARGE_STYLE.get(sk, "dmg")
+            s = p.skills.tree.get(sk)
+            title = s.title if s is not None else sk
+            self.log("%s: %d charge%s released!" % (title, n, "" if n == 1 else "s"), YELLOW)
+            if style == "dmg":
+                if target.alive:
+                    lo, hi = p.dmg
+                    bonus = self.rng.randint(lo, max(lo, hi)) * n * (100 + 20 * (lvl - 1)) // 100
+                    self.emit("nova", p, target.pos, 1, "phys", None)
+                    self._damage(target, max(1, bonus), p)
+                continue
+            if style == "steal":
+                pct = 40 + 5 * (lvl - 1)
+                base = max(dealt, sum(p.dmg) // 2) * n
+                heal = max(1, base * pct // 100)
+                p.hp = min(p.max_hp, p.hp + heal)
+                p.mana = min(p.max_mana, p.mana + heal)
+                self.emit("heal", p, heal)
+                continue
+            ed = env.elem_damage()
+            if style == "phoenix":
+                lo, hi = (ed[1], ed[2]) if ed else (5 + 4 * lvl, 10 + 8 * lvl)
+                parts = [("fire", 2), ("ltng", 0), ("cold", 0)][:n]
+            else:
+                if not ed:
+                    continue
+                lo, hi = ed[1], ed[2]
+                parts = [(style, 0)] + ([(style, 2)] if n >= 2 else []) + ([(style, -1)] if n >= 3 else [])
+            for el, kind in parts:
+                if kind == 0 and style != "phoenix":           # 1 charge: the element on the target
+                    if target.alive:
+                        self.elem_hit(target, el, lo, hi, p, ed[3] if ed else 50)
+                elif kind == 2:                               # a burst around the target
+                    self.emit("nova", p, target.pos, 2, el, None)
+                    for m in [m for m in self.enemies() if chebyshev(m.pos, target.pos) <= 2 + getattr(m, "radius", 0)]:
+                        self.elem_hit(m, el, lo, hi, p, ed[3] if ed else 50)
+                        if el == "cold" and m.alive and n >= 2:
+                            m.effects["freeze"] = max(m.effects.get("freeze", 0), 1)
+                else:                                         # a spray at the enemies nearby
+                    foes = sorted([m for m in self.enemies() if self.udist(m, target) <= 5],
+                                  key=lambda m: self.udist(m, target))[:4]
+                    for m in foes:
+                        self.emit("projectile", p, target.pos, m.pos, {"fire": "fireball", "ltng": "ltng", "cold": "cold"}[el])
+                        self.elem_hit(m, el, max(1, lo // 2), max(1, hi // 2), p, ed[3] if ed else 50)
+
+    def tick_charges(self):
+        """Stored charges fade after 15 seconds (a few turns) when you don't use them."""
+        p = self.player
+        if getattr(p, "charges", None):
+            p.charge_turns = getattr(p, "charge_turns", 0) - 1
+            if p.charge_turns <= 0:
+                p.charges = {}
+                self.log("Your charges fade.", GREY)
 
     # ------------------------------------------------------------ projectiles
     def _first_hit_on_line(self, src, dst, pierce=False, max_len=SPELL_RANGE):

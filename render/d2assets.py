@@ -66,7 +66,7 @@ class DccAnim:
 # our animation names -> D2 mode codes to try, in order
 MODE_MAP = {
     "NU": ["NU"], "WL": ["WL"], "A1": ["A1"], "SC": ["SC", "A2", "A1"],
-    "GH": ["GH", "NU"], "DD": ["DT"], "DT": ["DD", "DT"],
+    "GH": ["GH", "NU"], "DD": ["DT"], "DT": ["DD", "DT"], "KK": ["KK", "A2", "A1"],
 }
 
 MONSTER_IDS = {"ZM": "zombie1", "FA": "fallen1", "FS": "fallenshaman1", "SI": "quillrat1", "SK": "skeleton1"}

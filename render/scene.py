@@ -214,7 +214,7 @@ class Scene:
             v.facing = (max(-1, min(1, target[0] - unit.x)), max(-1, min(1, target[1] - unit.y)))
             if not self._seen(unit):
                 return 0
-            v.mode = "SC" if skill in ("resurrect", "cast") else "A1"
+            v.mode = "SC" if skill in ("resurrect", "cast") else ("KK" if skill == "kick" else "A1")
             v.t, v.dur = 0.0, 0.38 if skill in ("bash", "cast") else 0.3
             return None
         if kind == "projectile":
@@ -792,6 +792,9 @@ class Scene:
                     for st in self._unit_states(u):
                         for ov in assets.state_overlays(st):
                             assets.draw_overlay(surf, ov, feet, self.clock, loop=True)
+                    if u.is_player:
+                        for ov in self._charge_overlays(u):          # the assassin's charge orbs
+                            assets.draw_overlay(surf, ov, feet, self.clock, loop=True)
                 if not u.is_player and u.alive and not v.dead:
                     if rect is None:
                         rect = pygame.Rect(0, 0, int(22 * s), int(38 * s))
@@ -959,6 +962,20 @@ class Scene:
             self.assets.draw_unit(surf, u, dict(pose, outline=(255, 60, 40), no_shadow=True), feet, cam.scale, 1.0)
         except Exception:
             pass
+
+    # D2's charge-up overlays (Overlay.txt): Tiger / Cobra Strike their own, the others by element
+    CHARGE_OVERLAY = {"Tiger Strike": "tigerstrike%d", "Cobra Strike": "cobrastrike%d",
+                      "Fists of Fire": "progressive_fire_%d", "Claws of Thunder": "progressive_lightning_%d",
+                      "Blades of Ice": "progressive_cold_%d", "Phoenix Strike": "progressive_other_%d",
+                      "Royal Strike": "progressive_other_%d"}
+
+    def _charge_overlays(self, u):
+        out = []
+        for sk, n in (getattr(u, "charges", None) or {}).items():
+            fmt = self.CHARGE_OVERLAY.get(sk, "progressive_damage_%d")
+            if n:
+                out.append(fmt % max(1, min(3, n)))
+        return out
 
     def _unit_states(self, u):
         """D2 states shown as overlays: your aura and buffs, curses on monsters."""

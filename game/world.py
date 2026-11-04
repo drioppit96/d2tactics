@@ -603,6 +603,7 @@ class World(SkillCaster, ItemActions):
                         self.tick_poison(u)
                 if self._regen_steps % 10 == 0:
                     self._tick_buffs()           # buffs also run out while exploring
+                    self.tick_charges()
                     self.tick_player_buffs()
             self.grid.update_visibility(p.pos, self.sight_radius())
             if self.areas:
@@ -1389,6 +1390,7 @@ class World(SkillCaster, ItemActions):
         self.tick_player_buffs()
         from . import potions
         potions.tick(self)                   # potion regeneration, infusions, belt slot cooldowns
+        self.tick_charges()                  # the assassin's stored charges fade
         p.ap = p.max_ap + min(3, p.frenzy)
         p.frenzy = 0
         if p.effects.get("chilled"):          # Cold Enchanted / Holy Freeze: you are slowed
@@ -1648,6 +1650,10 @@ class World(SkillCaster, ItemActions):
             attacker._acts = getattr(attacker, "_acts", 0) + 1
         mods = self._skill_mods(attacker, skill)
         anim = "bash" if mods["knock"] else ("resurrect" if skill == "resurrect" else "attack")
+        if attacker.is_player and getattr(attacker, "skills", None) is not None:
+            sk_ = attacker.skills.tree.get(skill)
+            if sk_ is not None and sk_.data is not None and (sk_.data.get("kick") == "1" or sk_.data.get("anim") == "KK"):
+                anim = "kick"                    # the assassin's kicks (Dragon Talon, Tail, Flight)
         if ranged_kind:
             self.emit("projectile", attacker, attacker.pos, target.pos, ranged_kind, self.weapon_missile(attacker))
             if attacker.is_player:
