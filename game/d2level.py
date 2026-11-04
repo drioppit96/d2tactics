@@ -122,6 +122,28 @@ def stamp(tm, room, tiles, ox, oy, rng):
                 tm.walls[pos] = walls
 
 
+# Act 3's open water (the Kurast canals, Travincal's moat, the jungle's swamp pools): floor tiles whose
+# subtiles block walking - you can't walk there but you see across, and the water watchers live in it
+WATER_TILES = {("sets.dt1", 29), ("bridge.dt1", 4), ("bridge.dt1", 10), ("trees.dt1", 4), ("trees.dt1", 15)}
+
+
+def water_cells(tm, grid):
+    out = set()
+    walls = tm.walls
+    for (tx, ty), (ref, tile) in tm.floor.items():
+        name = (getattr(ref, "name", "") or "").lower()
+        if "act3" not in name or (name.rsplit("\\", 1)[-1], getattr(tile, "main", -1)) not in WATER_TILES:
+            continue
+        if (tx, ty) in walls:
+            continue
+        for sy in range(SUB):
+            for sx in range(SUB):
+                x, y = tx * SUB + sx, ty * SUB + sy
+                if tile.flags[(4 - sy) * SUB + sx] & 1 and grid.in_bounds(x, y) and not grid.walkable(x, y):
+                    out.add((x, y))
+    return out
+
+
 def grid_from_tilemap(tm, keep_largest=True):
     """Walkable cells from the tiles' subtile flags (bit 0 = blocks walking)."""
     grid = Grid(tm.tw * SUB, tm.th * SUB, WALL)

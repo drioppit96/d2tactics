@@ -26,6 +26,7 @@ class Grid:
         self.new_explored = []       # cells revealed since the minimap last looked
         self._lit = []               # cells marked visible last time (cleared cheaply)
         self.explored_cells = []     # every explored cell, in order (the automap redraws from it)
+        self.water = set()           # cells of open water: not walkable, but you see (and shoot) across
 
     def in_bounds(self, x, y):
         return 0 <= x < self.w and 0 <= y < self.h
@@ -119,7 +120,7 @@ class Grid:
             if e2 <= dx:
                 err += dx
                 y0 += sy
-            if (x0, y0) != (x1, y1) and not self.walkable(x0, y0):
+            if (x0, y0) != (x1, y1) and not self.walkable(x0, y0) and (x0, y0) not in self.water:
                 return False
         return True
 
@@ -135,6 +136,7 @@ class Grid:
         if not self.in_bounds(ox, oy):
             return
         explored, cells, w, h = self.explored, self.cells, self.w, self.h
+        water = getattr(self, "water", ())
         r2 = radius * radius
         new = self.new_explored
         allc = self.explored_cells
@@ -168,7 +170,7 @@ class Grid:
                 if not (0 <= x0 < w and 0 <= y0 < h) or (x0 - ox) ** 2 + (y0 - oy) ** 2 > r2:
                     break
                 mark(x0, y0)
-                if cells[y0][x0] == WALL:
+                if cells[y0][x0] == WALL and (x0, y0) not in water:
                     break
         # reveal the walls bordering visible floor too
         for x, y in list(lit):

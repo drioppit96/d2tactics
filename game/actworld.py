@@ -186,6 +186,11 @@ def setup(world, built, grid, rng, info, level_key):
     import random as _random
     # the map comes from the builder's seed; monsters, chests and shrines are rolled anew each time
     world.grid, world.rng, world.tilemap = grid, _random.Random(), b.tm
+    try:
+        from .d2level import water_cells
+        grid.water = water_cells(b.tm, grid) if b.tm is not None else set()
+    except Exception:
+        grid.water = set()
     world.level_key = level_key
     world.info = info
     world.areas = dict(b.areas)

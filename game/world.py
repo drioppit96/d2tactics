@@ -1644,6 +1644,8 @@ class World(SkillCaster, ItemActions):
     def _resolve_attack(self, attacker, target, skill="attack", ranged_kind=None, quiet_anim=False):
         """One swing (or shot). Returns True on a hit."""
         attacker.face(*target.pos)
+        if not attacker.is_player:
+            attacker._acts = getattr(attacker, "_acts", 0) + 1
         mods = self._skill_mods(attacker, skill)
         anim = "bash" if mods["knock"] else ("resurrect" if skill == "resurrect" else "attack")
         if ranged_kind:
@@ -1826,6 +1828,9 @@ class World(SkillCaster, ItemActions):
         unit.alive = False
         unit.hp = 0
         self.emit("death", unit)
+        if getattr(unit, "special", None) == "tentacle_head":
+            from .specialmon import limbs_die
+            limbs_die(self, unit)
         if getattr(unit, "ally", False):
             if getattr(unit, "hireling", False):
                 from . import hireling
@@ -1912,8 +1917,17 @@ class World(SkillCaster, ItemActions):
         return origin
 
     # ------------------------------------------------------------ monster AI
+    @staticmethod
+    def _one_attack(m):
+        """The High Council of Travincal (members and their named leaders): one attack or spell a turn."""
+        return (getattr(m, "d2id", "") or "").lower().startswith("councilmember") or getattr(m, "boss", None) == "council"
+
+    def _attacks_spent(self, m):
+        return self._one_attack(m) and getattr(m, "_acts", 0) >= 1
+
     def _monster_turn(self, m):
         m.ap = m.max_ap
+        m._acts = 0
         p = self.player
         eff = m.effects
         if not self.monster_status(m):
@@ -2051,6 +2065,8 @@ class World(SkillCaster, ItemActions):
         return best[1] if best else p
 
     def _melee_step(self, m):
+        if self._attacks_spent(m):
+            return False
         p = self._monster_target(m)
         if getattr(m, "stationary", False) and self.udist(m, p) > getattr(m, "reach", 1):
             return False
@@ -2068,6 +2084,11 @@ class World(SkillCaster, ItemActions):
         return True
 
     def _ranged_step(self, m):
+        if self._attacks_spent(m):
+            return False
+        return self._ranged_step_(m)
+
+    def _ranged_step_(self, m):
         p = self._monster_target(m)
         d = self.udist(m, p)
         los = self.grid.line_of_sight(m.pos, p.pos)

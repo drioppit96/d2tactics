@@ -49,6 +49,60 @@ def _mark(m, kind, **kw):
     return m
 
 
+def _bank_dist(g, cell, r):
+    """Distance to the nearest walkable cell (within r), or None."""
+    x, y = cell
+    for d in range(1, r + 1):
+        for dx in range(-d, d + 1):
+            for dy in range(-d, d + 1):
+                if max(abs(dx), abs(dy)) == d and g.walkable(x + dx, y + dy):
+                    return d
+    return None
+
+
+def _water_spot(world, cell, water, taken, bank=3, radius=10):
+    """The water cell nearest the preset spot that is close enough to the bank to fight from."""
+    best = None
+    x, y = cell
+    for dx in range(-radius, radius + 1):
+        for dy in range(-radius, radius + 1):
+            c = (x + dx, y + dy)
+            if c in water and c not in taken and _bank_dist(world.grid, c, bank) is not None:
+                d = max(abs(dx), abs(dy))
+                if best is None or d < best[0]:
+                    best = (d, c)
+    return best[1] if best else None
+
+
+def _spawn_in_water(world, mid, cell, lvl, taken):
+    """_spawn on a water cell (it only spawns on walkable ground)."""
+    from .actworld import _spawn
+    from .grid import FLOOR
+    g = world.grid
+    old = g.cells[cell[1]][cell[0]]
+    g.cells[cell[1]][cell[0]] = FLOOR
+    try:
+        m = _spawn(world, mid, cell, lvl, taken)
+    finally:
+        g.cells[cell[1]][cell[0]] = old
+    if m is not None:
+        m.radius = 0                         # (one water cell each; nothing may shove them ashore)
+    return m
+
+
+def limbs_die(world, head):
+    """A water watcher's head is dead: its limbs sink back into the water."""
+    n = 0
+    for t in getattr(head, "limbs", None) or []:
+        if t.alive:
+            t.alive = False
+            t.hp = 0
+            world.emit("death", t)
+            n += 1
+    if n:
+        world.log("The watcher's limbs sink beneath the water.", (170, 170, 170))
+
+
 def spawn_preset(world, name, cell, owner, lvl, taken):
     from .actworld import _spawn, _free_near, _scatter
     low = name.lower()
@@ -79,19 +133,33 @@ def spawn_preset(world, name, cell, owner, lvl, taken):
     if low == "catapultspotter1" or low == "catapultspotter2":
         return True                     # D2's invisible helpers that aim the catapults
     if low.startswith(("place_tentacle",)):
+        # D2's water watchers: a head and its limbs, all in the water (none where there is no water)
+        water = getattr(g, "water", None) or set()
         head = _variant(world, "tentaclehead", lvl, 3)
-        if head is None:
+        if head is None or not water:
             return True
-        hcell = _free_near(g, cell, 5)
-        m = _spawn(world, head, hcell, lvl, taken)
+        hcell = _water_spot(world, cell, water, taken, bank=3, radius=10)
+        if hcell is None:
+            return True
+        m = _spawn_in_water(world, head, hcell, lvl, taken)
         if m is None:
             return True
-        _mark(m, "tentacle_head", stationary=True, range=6, elem="pois", trap_missile="tentaclegoo")
+        _mark(m, "tentacle_head", stationary=True, range=6, elem="pois", trap_missile="tentaclegoo", limbs=[])
         tent = _variant(world, "tentacle", lvl, 3)
-        for c2 in _scatter(world, hcell, rng.randint(3, 5), taken, radius=4):
-            t = _spawn(world, tent, c2, lvl, taken) if tent else None
+        spots = [c2 for c2 in water if chebyshev(c2, hcell) <= 5 and c2 not in taken and c2 != hcell
+                 and _bank_dist(g, c2, 1) is not None]
+        rng.shuffle(spots)
+        chosen = []
+        for c2 in spots:
+            if len(chosen) >= rng.randint(3, 5):
+                break
+            if all(chebyshev(c2, o) >= 2 for o in chosen):
+                chosen.append(c2)
+        for c2 in chosen:
+            t = _spawn_in_water(world, tent, c2, lvl, taken) if tent else None
             if t is not None:
-                _mark(t, "tentacle", stationary=True, reach=2)
+                _mark(t, "tentacle", stationary=True, reach=2, head=m)
+                m.limbs.append(t)
         return True
     if low == "place_mosquitonest":
         mid = _variant(world, "suckernest", lvl, 4)

@@ -142,6 +142,8 @@ def try_cast(world, m, size=None, chance=None):
         chance = 0.55 if boss else (0.5 if m.range > 1 else 0.3)
     if rng.random() > chance:
         return False
+    if size != "move" and hasattr(world, "_attacks_spent") and world._attacks_spent(m):
+        return False                      # (the High Council: one attack or spell a turn)
     usable = []
     for name, lvl in sk:
         kind = SKILLS[name][0]
@@ -176,6 +178,8 @@ def try_cast(world, m, size=None, chance=None):
         return False
     name, lvl = rng.choice(usable)
     m.ap -= m.attack_cost
+    if SKILLS[name][0] not in ("teleport",):
+        m._acts = getattr(m, "_acts", 0) + 1
     return cast(world, m, name, lvl, tgt)
 
 
