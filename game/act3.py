@@ -306,7 +306,10 @@ SIDE_BOSSES = [
     # (area, monster, name, boss tag, mods, minions)
     (76, "arach4", "Silkmother Vashra", "silkmother", ("STRONG", "CURSE"), ("arach4", 3)),
     (LIBRARY, "cantor2", "Scribe Ophizek the Hollow", "scribe", ("MANAHIT", "TELEPORT"), ("zealot3", 4)),
+    # the Scriptorium's crypt garden: a giant of the sewers' walking dead among the tombs and sigils
+    (77, "mummy4", "Sexton Morvane the Unburied", "crypt", ("STRONG", "STONESKIN"), ("mummy4", 5)),
 ]
+GIANTS = {"crypt": 2.0}         # boss tag -> drawn this many times its normal size
 
 
 def spawn_side_bosses(world, taken, info):
@@ -334,8 +337,9 @@ def spawn_side_bosses(world, taken, info):
         x0, y0, x1, y1 = rect
         cell = None
         nest = getattr(world, "armory_spider", None) if tag == "silkmother" else None
-        if tag == "scribe":                  # the scribe waits on his dais in the library's sanctum
-            nest = next((c for w, c in getattr(world, "markers", []) if w == "boss"), None)
+        if tag in ("scribe", "crypt"):       # they wait at their map's boss spot (dais, crypt garden)
+            nest = next((c for w, c in getattr(world, "markers", []) if w == "boss"
+                         and world.area_at(c) == lid), None)
         if nest is not None:                 # the Silkmother waits in her nest by the armory's gate
             cell = actworld._free_near(world.grid, nest, 8)
             if cell in taken or not world.grid.walkable(*cell):
@@ -354,6 +358,8 @@ def spawn_side_bosses(world, taken, info):
         m.boss = tag
         monmods.apply(world, m, [getattr(monmods, k) for k in mods])
         m.color_shift = 1 + zlib.crc32(name.encode()) % 7
+        if tag in GIANTS:
+            m.giant = GIANTS[tag]
         for c in actworld._scatter(world, cell, n, taken):
             mm = actworld._spawn(world, minion, c, lvl + 1, taken)
             if mm is not None:

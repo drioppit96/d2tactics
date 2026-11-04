@@ -660,6 +660,16 @@ class D2Assets(AssetProvider):
         img, x0, y0 = frames[i]
         if img is None:
             return
+        k = getattr(unit, "giant", 0)
+        if k:                                   # a giant (the Scriptorium's crypt boss): scaled up from the feet
+            gc = self.__dict__.setdefault("_giant_cache", {})
+            ent = gc.get((id(img), k))
+            if ent is None or ent[0] is not img:
+                if len(gc) > 300:
+                    gc.clear()
+                ent = gc[(id(img), k)] = (img, pygame.transform.scale(
+                    img, (int(img.get_width() * k), int(img.get_height() * k))))
+            img, x0, y0 = ent[1], x0 * k, y0 * k
         cx, cy = pos
         if mode not in ("DD", "DT") and not pose.get("no_shadow"):
             sh = self.placeholder._shadow(1, 16 if unit.token != "SI" else 20)
