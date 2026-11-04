@@ -68,8 +68,7 @@ def build_level(kit, level_id, seed=None):
         b.objects.append(("anya", centre, 114, -1))            # Anya, frozen in the river
     if level_id == 124 and centre:
         b.presets.append(("nihlathakboss", centre, 124))       # D2 puts Nihlathak here by code
-    if level_id == 131 and centre:
-        b.objects.append(("portal", centre, 131, 132))         # Baal's portal: open once the throne is cleared
+    # (Baal's portal to the Worldstone Chamber opens by his throne once the last wave falls)
     if level_id == 132:
         c = drlg.near_walkable(grid, (whole[2] // 2, whole[3] - 40), 80)
         if c:
@@ -144,11 +143,16 @@ def _sprinkle(cv, lid, x0, y0, bw, bh, kind):
 
 
 def build_siege(kit, seed=None, content=None):
+    """Harrogath and the way out of it, laid out like D2: the town's gate opens to the WEST onto the
+    Bloody Foothills (striptownsiege next to the town, the siege strips running west to the barricade),
+    then the Frigid Highlands and, furthest west, the Arreat Plateau with the Crystalline Passage."""
     _KIT[:] = [kit]
     strips = [S + "striptownsiege.ds1"] + [S + "strip%02d.ds1" % i for i in range(1, 14)] + [S + "stripseigebar.ds1"]
-    x_hi = 40 + 16 * len(strips)                  # the Rigid Highlands start here
-    x_pl = x_hi + 8 * B                            # ... the Arreat Plateau here
-    W, H = x_pl + 8 * B, 5 * B
+    x_pl = 0                                       # the Arreat Plateau (west)
+    x_hi = x_pl + 8 * B                            # the Frigid Highlands
+    x_fh = x_hi + 8 * B                            # the Bloody Foothills start here (at the barricade)
+    x_town = x_fh + 16 * len(strips)               # Harrogath (east)
+    W, H = x_town + 41, 5 * B
     cv = Canvas(kit, W, H, 5, seed)
     rng, b = cv.rng, cv.b
     cv.set_ground("dirt", S + "newbarrAA1.ds1", BAR_LT)
@@ -156,21 +160,22 @@ def build_siege(kit, seed=None, content=None):
     town = kit.ds1(X + "town\\townwest.ds1")
     if town is None:
         raise FileNotFoundError("Harrogath layout (expansion\\town\\townwest.ds1) not found")
-    cv.put(X + "town\\townwest.ds1", 0, 20, 109, "Act 5 - Town")
-    b.town_rect = (0, 20 * SUB, 40 * SUB, 60 * SUB)
+    # the town's west gate lines up with the siege strips' east opening (same rows)
+    cv.put(X + "town\\townwest.ds1", x_town, 16, 109, "Act 5 - Town")
+    b.town_rect = (x_town * SUB, 16 * SUB, (x_town + 40) * SUB, 56 * SUB)
     b.areas[109] = b.town_rect
-    # the Bloody Foothills: D2's siege strips side by side
+    # the Bloody Foothills: D2's siege strips side by side, the town's strip next to the town
     for i, name in enumerate(strips):
-        cv.put(name, 40 + i * 16, 16, 110, SIEGE_LT)
-    b.areas[110] = (40 * SUB, 0, x_hi * SUB, H * SUB)
-    # the Rigid Highlands: from the siege (west) to the Plateau (east)
-    hi_specials = [([S + "siege2barricade.ds1"], 1, 2, (0, 1)), ([S + "brdr16x32top.ds1"], 1, 2, (7, 1)),
-                   ([S + "siegewaypoint1.ds1", S + "siegewaypoint2.ds1"], 1, 1, None)] + \
+        cv.put(name, x_town - 16 * (i + 1), 16, 110, SIEGE_LT)
+    b.areas[110] = (x_fh * SUB, 0, x_town * SUB, H * SUB)
+    # the Frigid Highlands: from the barricade (east) to the Plateau (west)
+    # (the Highlands' waypoint is the one in D2's barricade piece, right where you come in)
+    hi_specials = [([S + "siege2barricade.ds1"], 1, 2, (7, 1)), ([S + "brdr16x32top.ds1"], 1, 2, (0, 1))] + \
                   [([S + "sharptooth%s.ds1" % k for k in ("aa", "bb", "cc", "dd", "ab", "ba", "cd", "dc")], 1, 1, None)] * 3
     block_area(cv, 111, x_hi, 0, 8, 5, B, _barricade_spec(111, False, hi_specials))
     _sprinkle(cv, 111, x_hi, 0, 8, 5, "dirt")
-    # the Arreat Plateau: from the Highlands (west) to the Crystalline Passage
-    pl_specials = [([S + "brdr16x32btm.ds1"], 1, 2, (0, 1)), ([ICE + "westentrance_snow.ds1", ICE + "westentrance_dirt.ds1"], 1, 2, (7, 2)),
+    # the Arreat Plateau: from the Highlands (east) to the Crystalline Passage (west)
+    pl_specials = [([S + "brdr16x32btm.ds1"], 1, 2, (7, 1)), ([ICE + "westentrance_snow.ds1", ICE + "westentrance_dirt.ds1"], 1, 2, (0, 2)),
                    ([S + "snowwaypoint1.ds1", S + "snowwaypoint2.ds1"], 1, 1, None)]
     block_area(cv, 112, x_pl, 0, 8, 5, B, _barricade_spec(112, True, pl_specials))
     _sprinkle(cv, 112, x_pl, 0, 8, 5, "snow")

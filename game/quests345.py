@@ -341,9 +341,23 @@ def on_enter(world, lid):
     restore(world)
 
 
+def _baal_portal(world, quiet=True):
+    """Baal's portal to the Worldstone Chamber, by his throne (D2 opens it after the fifth wave)."""
+    from .quests2 import open_portal
+    if any(o.get("kind") == "portal" and o.get("target") == 132 for o in world.objects):
+        return
+    tc = getattr(world, "throne_cell", None) or world.player.pos
+    cell = open_portal(world, tc, 132, "portal", quiet=quiet)
+    world.entries[132] = world._free_cell_near((cell[0] + 1, cell[1] + 2), 4)
+
+
 def restore(world):
     p = world.player
     q = getattr(p, "quests", {})
+    if getattr(world, "level_key", None) == 131 and (q.get("baal") in ("cleared", "done") or
+                                                     (getattr(p, "quest_stats", None) or {}).get("throne_cleared")):
+        world.baal_wave = 5                   # the throne was cleared already: its portal stands open
+        _baal_portal(world)
     key = getattr(world, "level_key", None)
     lid = getattr(world, "level_id", None)
     if key == 102 and q.get("mephisto") in ("cleared", "done"):
@@ -590,6 +604,8 @@ def on_killed(world, unit):
         from .bosses import waves_done
         if waves_done(world):
             world.log("The last wave falls. Baal flees into the Worldstone Chamber - follow him!", QUEST_COLOR)
+            world.player.quest_stats["throne_cleared"] = 1
+            _baal_portal(world, quiet=False)
 
 
 def on_transmute(world, box):
