@@ -579,7 +579,7 @@ class Scene:
         psum = pv.rx + pv.ry
         tm = getattr(world, "tilemap", None)
         use_tiles = tm is not None and hasattr(assets, "draw_tile")
-        outdoors = getattr(world, "level_key", "wild") == "wild"
+        outdoors = getattr(world, "level_key", "wild") in self.OUTDOOR_KEYS
         drawables = []
         roofs = []
 
@@ -588,8 +588,8 @@ class Scene:
             tx0, ty0 = max(0, x0 // 5 - 1), max(0, y0 // 5 - 1)
             ptx, pty = int(pv.rx) // 5, int(pv.ry) // 5
             # D2 only takes roofs off outdoor houses; in dungeons the roof pieces are the wall tops
-            inside = outdoors and any(getattr(r[1], "orientation", 0) == 15
-                         for dx in (-1, 0, 1) for dy in (-1, 0, 1) for r in tm.walls.get((ptx + dx, pty + dy), ()))
+            # inside a building: its whole roof comes off (every roof tile joined to the one over you)
+            open_roof = self._open_roof(tm, ptx, pty) if outdoors else frozenset()
             tx1, ty1 = min(tm.tw - 1, x1 // 5 + 1), min(tm.th - 1, y1 // 5 + 2)
             wtiles = getattr(tm, "warp_tiles", None) or {}
             # the entrance under the mouse lights up, like D2: its stairs swap to their lit version,
@@ -641,7 +641,7 @@ class Scene:
                         if getattr(wref[1], "orientation", 0) >= 16:
                             continue      # (drawn under the floors above)
                         if getattr(wref[1], "orientation", 0) == 15:
-                            if not (inside and abs(tx - ptx) <= 8 and abs(ty - pty) <= 8):
+                            if (tx, ty) not in open_roof:
                                 roofs.append((tx + ty, wref, tx, ty))   # D2 takes the roof off the house you are in
                             continue
                         # props sort by the back of their tile, so units next to them stay visible
@@ -852,6 +852,33 @@ class Scene:
                 pass
         if sel is not None:
             self._draw_selected(surf, cam, sel)
+
+    OUTDOOR_KEYS = ("wild", "desert", "jungle", "kurast", "mesa", "lava", "siege", 117)
+
+    def _open_roof(self, tm, ptx, pty):
+        """The roof tiles to leave out: the roof you stand under (or right next to), all of it."""
+        key = (id(tm), ptx, pty)
+        cache = self.__dict__.setdefault("_roof_cache", {})
+        if key in cache:
+            return cache[key]
+
+        def is_roof(t):
+            return any(getattr(r[1], "orientation", 0) == 15 for r in tm.walls.get(t, ()))
+        start = [(ptx + dx, pty + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1) if is_roof((ptx + dx, pty + dy))]
+        seen = set(start)
+        todo = list(start)
+        while todo and len(seen) < 1500:
+            a, b = todo.pop()
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    n = (a + dx, b + dy)
+                    if n not in seen and is_roof(n):
+                        seen.add(n)
+                        todo.append(n)
+        if len(cache) > 64:
+            cache.clear()
+        cache[key] = out = frozenset(seen)
+        return out
 
     SEEN_MARGIN = 160      # px (1:1 world scale) beyond the screen edge: about 2 D2 tiles
 
