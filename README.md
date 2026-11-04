@@ -134,7 +134,7 @@ Fallout). Each turn you get **Action Points** (the stamina bar shows them).
 | Throw (javelins, throwing knives / axes) | choose "Throw" on the right skill button: same AP as an attack, range 14. Left click stabs / swings in melee, like D2 |
 | Right click | your selected right skill (choose it on the right skill button, or F1-F8) |
 | Left click a monster | your left skill if you picked one on the left skill button, else a normal attack |
-| Drink potion (keys 1-4, belt only) | 2 AP; that belt slot then rests 8 turns |
+| Drink potion (right click in the belt, or keys 1-4) | 2 AP; that potion then rests 8 turns |
 | Pick up item | 1 AP (free outside combat) |
 
 **Skills:** one skill point per level, D2's full tree of your class (T). Right click a learned skill in
@@ -225,7 +225,8 @@ Full Rejuvenation: 100% life and mana + 6%/turn (Siege on Harrogath in Hell give
 get them). You drink only from the belt, and in combat the belt is locked (no refilling it). The belt
 has 4 slots (keys 1-4) and 2 rows of potions; killing Shenk adds a 3rd row in Normal and a 4th in
 Nightmare. You drink the bottom potion of a slot; hover over the belt to open the rows above, like D2.
-Drinking in combat rests that slot for 8 turns.
+Healing and mana potions are permanent: drinking one in combat puts it on an 8-turn cooldown
+instead of using it up (out of combat they are always ready). Rejuvenation potions are used up.
 
 Potions don't drop from monsters or chests: the potion sellers stock them, the two best tiers for
 their act and difficulty (Normal: Minor/Light in Acts 1-2, Light/Healing in Acts 3-5; Nightmare:

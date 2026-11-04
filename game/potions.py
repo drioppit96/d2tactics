@@ -10,7 +10,9 @@
   Shenk) adds a row in Normal and one in Nightmare (4 rows, 16 potions at most); in Hell it gives
   4 Full Rejuvenation potions, the only way to get them. You drink the bottom potion of a column and
   the ones above slide down; the rows above open up when you hover over the belt, like D2.
-- Drinking in combat puts that slot on an 8-turn cooldown (each slot counts down on its own).
+- Healing and mana potions are permanent: drinking one doesn't use it up, it goes on an 8-turn
+  cooldown in combat (each potion counts down on its own; out of combat they are always ready).
+  Rejuvenation potions (and antidote, thawing, stamina) are still used up.
 - The Horadric Cube infuses a potion with a gem (potion + gem): the gem adds a buff for 2 (chipped)
   to 6 (perfect) turns, and the bottle gets an outline in the gem's colour.
 """
@@ -124,7 +126,10 @@ def describe(it):
                                                   GEM_TITLES[inf[0]], turns), col))
         out += [(t, col) for t in lines]
     out.append(("Right click in the belt (or keys 1-4) to drink: 2 AP", GREY))
-    out.append(("Each belt slot rests %d turns after a drink in combat" % SLOT_COOLDOWN, GREY))
+    if permanent(it):
+        out.append(("Permanent: never used up, rests %d turns after a drink in combat" % SLOT_COOLDOWN, GREY))
+    else:
+        out.append(("Used up when you drink it", GREY))
     return out
 
 
@@ -157,15 +162,13 @@ def column(p, c):
     return [it for it in p.belt if getattr(it, "belt_col", None) == c]
 
 
-def _cooldowns(p):
-    cd = getattr(p, "belt_cd", None)
-    if not isinstance(cd, list) or len(cd) != MAX_SLOTS:
-        cd = p.belt_cd = [0] * MAX_SLOTS
-    return cd
+def permanent(it):
+    """Healing and mana potions are never used up (they go on cooldown); rejuvenations are."""
+    return getattr(it, "kind", "") == "potion" and getattr(it, "potion", "") in ("heal", "mana")
 
 
-def cooldown(p, c):
-    return _cooldowns(p)[c]
+def cooldown_of(it):
+    return getattr(it, "cd", 0) or 0
 
 
 def _free_column(p, it):
@@ -266,7 +269,7 @@ def normalize(p):
 
 
 # ------------------------------------------------------------------ drinking
-def drink(world, c, row=0):
+def drink(world, c, row=None):
     """Drink a potion of belt slot c (the bottom one; row: one higher up, right clicked in the open
     belt). -> True if you drank."""
     p = world.player
@@ -276,11 +279,20 @@ def drink(world, c, row=0):
     col = column(p, c)
     if not col:
         return False
-    if combat and cooldown(p, c) > 0:
-        world.log("That belt slot needs %d more turn%s." % (cooldown(p, c), "" if cooldown(p, c) == 1 else "s"),
-                  (170, 170, 170))
+    if row is None:                          # keys 1-4: the lowest potion of the slot that is ready
+        ready = [x for x in col if not (combat and cooldown_of(x))]
+        if not ready:
+            n = min(cooldown_of(x) for x in col)
+            world.log("No potion in that slot is ready (%d more turn%s)." % (n, "" if n == 1 else "s"),
+                      (170, 170, 170))
+            return False
+        pot = ready[0]
+    else:
+        pot = col[min(max(0, row), len(col) - 1)]
+    if combat and cooldown_of(pot):
+        n = cooldown_of(pot)
+        world.log("That potion needs %d more turn%s." % (n, "" if n == 1 else "s"), (170, 170, 170))
         return False
-    pot = col[min(max(0, row), len(col) - 1)]
     if not drinkable(pot):
         if not world.player_can_act():
             return False
@@ -293,8 +305,10 @@ def drink(world, c, row=0):
             world.log("Not enough AP to drink.", (170, 170, 170))
             return False
         p.ap -= POTION_AP
-        _cooldowns(p)[c] = SLOT_COOLDOWN
-    belt_remove(p, pot)
+        if permanent(pot):
+            pot.cd = SLOT_COOLDOWN
+    if not permanent(pot):
+        belt_remove(p, pot)                  # rejuvenations are used up
     apply(world, pot)
     world._maybe_auto_end()
     return True
@@ -382,14 +396,15 @@ def tick(world, regen=True, buffs=True, cooldowns=True):
             p.recalc()
             p.hp = min(p.max_hp, max(1, int(round(p.max_hp * hp_frac))))
     if cooldowns:
-        cd = _cooldowns(p)
-        for i in range(MAX_SLOTS):
-            cd[i] = max(0, cd[i] - 1)
+        for it in list(p.belt) + [x for x in p.inventory if getattr(x, "kind", "") == "potion"]:
+            if cooldown_of(it):
+                it.cd = cooldown_of(it) - 1
 
 
 def combat_over(p):
-    """Out of combat the belt slots are ready again."""
-    p.belt_cd = [0] * MAX_SLOTS
+    """Out of combat every potion is ready again."""
+    for it in list(p.belt) + [x for x in p.inventory if getattr(x, "kind", "") == "potion"]:
+        it.cd = 0
 
 
 # ------------------------------------------------------------------ crowd control checks

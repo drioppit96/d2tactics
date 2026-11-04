@@ -516,6 +516,15 @@ class D2Hud:
             y += 15
 
     # ------------------------------------------------------------ tooltip
+    def _cooldown_mark(self, surf, cd, bx, by):
+        """A potion resting after a drink: shaded, with the turns left."""
+        if not cd:
+            return
+        sh = pygame.Surface((int(29 * self.s), int(29 * self.s)), pygame.SRCALPHA)
+        sh.fill((0, 0, 0, 150))
+        surf.blit(sh, self.P(bx, by))
+        self.text(surf, self.f16, str(cd), (230, 80, 60), bx, by + 7, "center", 29)
+
     def _draw_belt_popup(self, surf, p):
         """The belt's upper rows, opened over everything else while the mouse is on the belt."""
         geom = getattr(self, "_belt_geom", None)
@@ -541,6 +550,8 @@ class D2Hud:
                 pygame.draw.rect(surf, (70, 60, 44), box, 1)
                 if r < len(col):
                     self._icon(surf, col[r], bx, by, 29, 29)
+                    if getattr(self.world, "mode", "") == "combat":
+                        self._cooldown_mark(surf, potions.cooldown_of(col[r]), bx, by)
                     if pygame.Rect(int(bx), int(by), 29, 29).collidepoint((int(mx), int(my))):
                         self.hover_lines = col[r].describe_lines(p)
                 self.region(bx, by, 29, 29, "potion", (i, r))
@@ -687,13 +698,9 @@ class D2Hud:
                 self._icon(surf, col[0], bx, by, 29, 29)
                 if pygame.Rect(int(bx), int(by), 29, 29).collidepoint(mpos):
                     self.hover_lines = col[0].describe_lines(p)
-            cd = potions.cooldown(p, i) if combat else 0
             bx, by = bx0 + i * 31, by0
-            if cd:
-                sh = pygame.Surface((int(29 * self.s), int(29 * self.s)), pygame.SRCALPHA)
-                sh.fill((0, 0, 0, 150))
-                surf.blit(sh, self.P(bx, by))
-                self.text(surf, self.f16, str(cd), (230, 80, 60), bx, by + 7, "center", 29)
+            if col and combat:
+                self._cooldown_mark(surf, potions.cooldown_of(col[0]), bx, by)
             self.text(surf, self.f10, str(i + 1), GREY, bx + 21, by + 18)
             self.region(bx, by, 29, 29, "potion", i)
 
