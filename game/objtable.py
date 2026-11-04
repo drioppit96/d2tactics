@@ -25,7 +25,7 @@ ACT2 = {
 }
 # Acts 3-5, read off their room presets the same way
 ACT3 = {1: "waypoint", 84: "waypoint", 115: "brain_chest", 113: "heart_chest"}   # 112 = a plain chest, 54 not only waypoints
-ACT4 = {42: "hellforge"}
+ACT4 = {42: "hellforge", 0: "waypoint", 52: "waypoint"}     # (52: the Pandemonium Fortress)
 ACT5 = {101: "waypoint", 103: "waypoint", 118: "waypoint", 119: "waypoint", 120: "waypoint", 58: "prison"}
 BY_ACT = {2: ACT2, 3: ACT3, 4: ACT4, 5: ACT5}
 
