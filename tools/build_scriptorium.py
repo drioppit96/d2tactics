@@ -3,6 +3,9 @@ dungeon under it) as map-editor maps: assets/maps/kurast_scriptorium.json and fo
 
     python tools/build_scriptorium.py <path to your Diablo II folder or extracted files>
 
+NOTE: the Scriptorium in assets/maps has since been cut down by hand (its west 20 tiles removed) and is
+edited in the map editor - do not run this to rebuild it.
+
 The layouts follow the sketches (north up, 1 square = 1 floor tile). Everything in them is Diablo II's
 own art: its tiles and its objects (Objects.txt) - no sprites of this game. Once written, the maps
 are edited by hand in the map editor; running this again replaces those edits.
