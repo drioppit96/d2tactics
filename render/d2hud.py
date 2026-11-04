@@ -543,6 +543,7 @@ class D2Hud:
                     self._icon(surf, col[r], bx, by, 29, 29)
                     if pygame.Rect(int(bx), int(by), 29, 29).collidepoint((int(mx), int(my))):
                         self.hover_lines = col[r].describe_lines(p)
+                self.region(bx, by, 29, 29, "potion", (i, r))
 
     def _draw_target_bar(self, surf, m, scene):
         """The monster under the mouse, like D2: its name on a red life bar at the top centre, then

@@ -1298,8 +1298,20 @@ class Game:
                 h.show_loot = False
             elif action == "loot_panel":
                 pass
-            elif action == "potion" and self.can_act():
-                w.use_potion(arg)
+            elif action == "potion":
+                # the belt: right click drinks, left click picks up / drops a potion (D2)
+                from game import potions
+                col, row = arg if isinstance(arg, tuple) else (arg, 0)
+                if button == 3:
+                    if self.can_act():
+                        potions.drink(w, col, row)
+                elif w.held is not None:
+                    if potions.belt_put(w, w.held, col):
+                        w.held = None
+                else:
+                    it = potions.belt_take(w, col, row)
+                    if it is not None:
+                        w.held = it
             elif action == "item":                      # simple HUD
                 if button == 1:
                     w.equip(arg)

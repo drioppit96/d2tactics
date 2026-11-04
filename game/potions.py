@@ -123,7 +123,7 @@ def describe(it):
         out.append(("Infused: %s%s (%d turns)" % ((GRADES[inf[1]] + " ") if GRADES[inf[1]] else "",
                                                   GEM_TITLES[inf[0]], turns), col))
         out += [(t, col) for t in lines]
-    out.append(("2 AP to drink, from the belt only (keys 1-4)", GREY))
+    out.append(("Right click in the belt (or keys 1-4) to drink: 2 AP", GREY))
     out.append(("Each belt slot rests %d turns after a drink in combat" % SLOT_COOLDOWN, GREY))
     return out
 
@@ -200,6 +200,39 @@ def belt_add(p, it, world=None):
     return True
 
 
+def belt_put(world, it, c):
+    """Drag and drop: a potion held on the cursor goes into belt slot c (or, if that one is full, the
+    first slot with room). Not in combat. -> True if it went in."""
+    p = world.player
+    if getattr(it, "kind", "") != "potion":
+        return False
+    if world.mode == "combat":
+        world.log("The belt is locked in combat.", (170, 170, 170))
+        return False
+    if 0 <= c < belt_slots(p) and len(column(p, c)) < belt_rows(p):
+        it.belt_col, it.inv_pos = c, None
+        p.belt.append(it)
+        return True
+    if belt_add(p, it, world):
+        return True
+    world.log("Your belt is full.", (170, 170, 170))
+    return False
+
+
+def belt_take(world, c, row=0):
+    """Left click on a belt potion: it comes onto the cursor (not in combat). -> the potion or None."""
+    p = world.player
+    if world.mode == "combat":
+        world.log("The belt is locked in combat.", (170, 170, 170))
+        return None
+    col = column(p, c)
+    if not 0 <= row < len(col):
+        return None
+    it = col[row]
+    belt_remove(p, it)
+    return it
+
+
 def belt_remove(p, it):
     if it in p.belt:
         p.belt.remove(it)
@@ -233,8 +266,9 @@ def normalize(p):
 
 
 # ------------------------------------------------------------------ drinking
-def drink(world, c):
-    """Drink the bottom potion of belt slot c. -> True if you drank."""
+def drink(world, c, row=0):
+    """Drink a potion of belt slot c (the bottom one; row: one higher up, right clicked in the open
+    belt). -> True if you drank."""
     p = world.player
     combat = world.mode == "combat"
     if not 0 <= c < belt_slots(p):
@@ -246,7 +280,7 @@ def drink(world, c):
         world.log("That belt slot needs %d more turn%s." % (cooldown(p, c), "" if cooldown(p, c) == 1 else "s"),
                   (170, 170, 170))
         return False
-    pot = col[0]
+    pot = col[min(max(0, row), len(col) - 1)]
     if not drinkable(pot):
         if not world.player_can_act():
             return False
