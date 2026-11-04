@@ -227,9 +227,16 @@ def transmute(world, cube):
         return False, "The cube is empty."
     if content is None:
         return False, "Nothing happens."
+    from . import potions
+    pot = potions.cube_infuse(items)
+    if pot is not None:                      # potion + gem: the gem infuses the potion
+        cube.contents = []
+        pot.cube_pos = None
+        cube_add(cube, pot)
+        return True, "The %s is infused." % pot.name
     recipe, m = find(content, items)
-    if recipe is None:
-        return False, "Nothing happens."
+    if recipe is None or recipe.output.code.lower() == "rvl":
+        return False, "Nothing happens."   # (Full Rejuvenations come only from Shenk in Hell)
     rng = getattr(world, "rng", random)
     out = recipe.output
     first = m[0][1][0]

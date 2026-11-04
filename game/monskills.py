@@ -215,9 +215,14 @@ def cast(world, m, name, lvl, tgt):
             from .monmods import chill
             chill(tgt, 2)
     elif kind == "prison":
-        tgt.effects["chilled"] = 2
+        from .monmods import chill
+        chill(tgt, 2)
         world.log("Bone walls rise around you!", (255, 90, 90))
     elif kind == "curse":
+        from .potions import curse_immune
+        if curse_immune(tgt):
+            world.log("You shrug off %s's curse." % m.name, (170, 170, 170))
+            return True
         title, stats = CURSE_STATS[el]
         tgt.buffs["curse:" + title] = {"turns": 4, "stats": dict(stats), "title": title, "curse": True}
         tgt.recalc()

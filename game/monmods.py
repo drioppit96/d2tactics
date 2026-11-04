@@ -171,7 +171,8 @@ def on_monster_hit(world, m, p, dmg):
         if burn:
             p.mana -= burn
             world.log("%s burns %d mana!" % (m.name, burn), BLUE)
-    if CURSE in mods and rng.random() < 0.35 and "curse:Amplify Damage" not in p.buffs:
+    from .potions import curse_immune
+    if CURSE in mods and rng.random() < 0.35 and "curse:Amplify Damage" not in p.buffs and not curse_immune(p):
         p.buffs["curse:Amplify Damage"] = {"turns": 3, "stats": {"dr_pct": -100}, "title": "Amplify Damage",
                                           "curse": True}
         p.recalc()
@@ -180,6 +181,9 @@ def on_monster_hit(world, m, p, dmg):
 
 def chill(p, turns=2):
     if getattr(p, "cbf", 0) or (hasattr(p, "mod") and p.mod("cbf")):
+        return
+    from .potions import resists_cc
+    if resists_cc(p):                        # a skull infusion shrugs it off
         return
     if hasattr(p, "mod") and p.mod("half_freeze"):
         turns = max(1, turns // 2)

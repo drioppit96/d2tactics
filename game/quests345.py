@@ -557,6 +557,9 @@ def on_killed(world, unit):
         if q["shenk"] in ("none", "active"):
             q["shenk"] = "cleared"
             world.log("Shenk the Overseer is dead! Talk to Larzuk.", QUEST_COLOR)
+        from . import potions                # each difficulty: a belt slot, or (Hell) Full Rejuvenations
+        diff = {"": "normal", "(n)": "nightmare", "(h)": "hell"}.get(getattr(world.content, "sfx", ""), "normal")
+        potions.shenk_reward(world, diff)
     elif boss == "nihlathak":
         q["nihl"] = "cleared"
         world.log("Nihlathak is dead! Tell Anya.", QUEST_COLOR)

@@ -160,7 +160,9 @@ class SkillCaster:
         res += self.mstat(m, "res_" + et) + self.mstat(m, "res_all")
         if getattr(m, "is_player", False):
             from .monmods import player_res_penalty
-            return min(75, res) - player_res_penalty(self, m)
+            if et == "pois" and m.mod("pois_immune"):
+                return 100                   # a skull infusion
+            return min((getattr(m, "res_cap", None) or {}).get(et, 75), res) - player_res_penalty(self, m)
         if et in ("fire", "cold", "ltng", "pois") and res < 100:
             res -= self._pierce(et)
         if res >= 100:

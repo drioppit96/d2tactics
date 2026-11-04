@@ -142,10 +142,15 @@ class Hud:
             rect = pygame.Rect(bx + i * 44, H - 50, 38, 38)
             pygame.draw.rect(surf, (30, 26, 22), rect)
             pygame.draw.rect(surf, EDGE, rect, 1)
-            if i < len(p.belt):
-                self.assets.draw_item_icon(surf, p.belt[i], rect)
+            from game import potions
+            col = potions.column(p, i) if i < potions.belt_slots(p) else []
+            if col:
+                self.assets.draw_item_icon(surf, col[0], rect)
+                oc = potions.outline_color(col[0])
+                if oc:
+                    pygame.draw.rect(surf, oc, rect, 2)
                 if rect.collidepoint(mouse):
-                    self._item_tip(p.belt[i], p)
+                    self._item_tip(col[0], p)
             surf.blit(self.fonts["small"].render(str(i + 1), True, DIM), (rect.x + 3, rect.y + 1))
             self.regions.append((rect, "potion", i))
 

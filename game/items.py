@@ -192,6 +192,9 @@ class Item:
                 out.append((t, (199, 179, 119)))
             out.append(("Quest Item", (170, 170, 170)))
             return out
+        if self.kind == "potion" and self.potion in ("heal", "mana", "rejuv"):
+            from .potions import describe
+            return describe(self)
         if self.kind == "potion":
             what = {"heal": "Heals %d life", "mana": "Restores %d mana", "rejuv": "Restores %d%% life and mana",
                     "antidote": "Cures poison, +%d%% poison resistance for a while",

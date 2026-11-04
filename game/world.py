@@ -22,6 +22,7 @@ from .mapgen import generate_cave, populate
 from .units import Player, Monster, CLASS_KIT
 from .skillcast import SkillCaster
 from .itemactions import ItemActions
+from . import potions
 
 SIGHT = 16          # how far monsters notice you (doubled: fights start before they are in your face)
 ALERT_RADIUS = 12   # pack mates that get woken up with them
@@ -347,7 +348,12 @@ class World(SkillCaster, ItemActions):
         if w is not None and right == "jav":
             w.amount = getattr(w, "amount", 0) or 20
         if "hp1" in c.base_by_code:
-            p.belt = [c.make_item(c.base_by_code["hp1"], 1, self.rng) for _ in range(4)]
+            from . import potions
+            p.belt = []
+            for _ in range(4):
+                it = c.make_item(c.base_by_code["hp1"], 1, self.rng)
+                if not potions.belt_add(p, it):
+                    p.inv_add(it)
         for code in ("tsc", "isc"):           # D2: a Scroll of Town Portal and one of Identify
             if code in c.base_by_code:
                 p.inv_add(c.make_item(c.base_by_code[code], 1, self.rng))
@@ -515,6 +521,8 @@ class World(SkillCaster, ItemActions):
 
     def check_combat_end(self):
         if self.mode == "combat" and not self.aware_monsters():
+            from . import potions
+            potions.combat_over(self.player)
             self.mode = "explore"
             self.turn = "player"
             self.player.ap = self.player.max_ap
@@ -588,6 +596,8 @@ class World(SkillCaster, ItemActions):
                 if p.mana < p.max_mana:
                     p.mana = min(p.max_mana, p.mana + self.mana_regen() / 2.0)
                 if self._regen_steps % 2 == 0:
+                    from . import potions
+                    potions.tick(self, buffs=self._regen_steps % 10 == 0, cooldowns=False)
                     self.tick_poison(p)
                     for u in self.allies() + [m for m in self.monsters if m.alive and m.effects.get("poison")]:
                         self.tick_poison(u)
@@ -663,8 +673,8 @@ class World(SkillCaster, ItemActions):
         for it in list(items):
             if it.kind == "gold":
                 p.gold += it.amount
-            elif it.kind == "potion" and len(p.belt) < 4:
-                p.belt.append(it)
+            elif it.kind == "potion" and potions.belt_add(p, it, self):
+                pass
             elif self._into_tome(it):
                 pass
             elif p.inv_add(it):
@@ -710,8 +720,8 @@ class World(SkillCaster, ItemActions):
                 return False
         if it.kind == "gold":
             p.gold += it.amount
-        elif it.kind == "potion" and len(p.belt) < 4:
-            p.belt.append(it)
+        elif it.kind == "potion" and potions.belt_add(p, it, self):
+            pass
         elif self._into_tome(it):
             pass
         elif not p.inv_add(it):
@@ -1312,40 +1322,27 @@ class World(SkillCaster, ItemActions):
             self.log("You strike first!", YELLOW)
 
     def use_inventory_potion(self, item):
+        """Potions are drunk from the belt only: a right click in the backpack puts it in the belt
+        (not in combat - the belt is locked then)."""
+        from . import potions
         p = self.player
-        if item in p.inventory and len(p.belt) < 4 + 1:
-            p.inventory.remove(item)
-            item.inv_pos = None
-            p.belt.insert(0, item)
-            if not self.use_potion(0):
-                p.belt.pop(0)
-                p.inv_add(item)
-
-    def use_potion(self, slot):
-        p = self.player
-        if not self.player_can_act() or slot >= len(p.belt):
+        if item not in p.inventory:
             return False
         if self.mode == "combat":
-            if p.ap < POTION_AP:
-                self.log("Not enough AP to drink.", GREY)
-                return False
-            p.ap -= POTION_AP
-        pot = p.belt.pop(slot)
-        kind = getattr(pot, "potion", "heal")
-        if kind == "mana":
-            got = min(pot.amount, p.max_mana - p.mana)
-            p.mana += got
-            self.log(f"You drink a {pot.name} (+{got} mana).", (120, 140, 255))
-        else:
-            amount = pot.amount if kind == "heal" else p.max_hp * pot.amount // 100
-            healed = min(amount, p.max_hp - p.hp)
-            p.hp += healed
-            if kind == "rejuv":
-                p.mana = min(p.max_mana, p.mana + p.max_mana * pot.amount // 100)
-            self.emit("heal", p, healed)
-            self.log(f"You drink a {pot.name} (+{healed}).", GREEN)
-        self._maybe_auto_end()
-        return True
+            self.log("In combat you can only drink from your belt.", GREY)
+            return False
+        p.inventory.remove(item)
+        if potions.belt_add(p, item, self):
+            self.log("%s goes into your belt." % item.name, GREY)
+            return True
+        p.inv_add(item)
+        self.log("Your belt is full.", GREY)
+        return False
+
+    def use_potion(self, slot):
+        """Keys 1-4 / a click on the belt: drink from that belt slot."""
+        from . import potions
+        return potions.drink(self, slot)
 
     def _maybe_auto_end(self):
         """In combat, end the turn automatically when the player can't do anything useful."""
@@ -1381,6 +1378,8 @@ class World(SkillCaster, ItemActions):
         p = self.player
         self._tick_buffs()
         self.tick_player_buffs()
+        from . import potions
+        potions.tick(self)                   # potion regeneration, infusions, belt slot cooldowns
         p.ap = p.max_ap + min(3, p.frenzy)
         p.frenzy = 0
         if p.effects.get("chilled"):          # Cold Enchanted / Holy Freeze: you are slowed
@@ -1413,9 +1412,10 @@ class World(SkillCaster, ItemActions):
             return False
         it = p.inventory[i]
         if it.kind == "potion":
-            if len(p.belt) < 4:
-                p.belt.append(p.inventory.pop(i))
-                it.inv_pos = None
+            from . import potions
+            if potions.has_room(p, it) and self.mode != "combat":
+                p.inventory.pop(i)
+                potions.belt_add(p, it, self)
             return True
         if it.kind != "equip" or not it.slot:
             return False
@@ -1557,9 +1557,11 @@ class World(SkillCaster, ItemActions):
         if it is None:
             return False
         if it.kind == "potion" and slot == "belt_potion":
-            if len(p.belt) < 4:
-                p.belt.append(it)
+            from . import potions
+            if potions.belt_add(p, it, self):
                 self.held = None
+            elif self.mode == "combat":
+                self.log("The belt is locked in combat.", GREY)
             return True
         if not self.slot_accepts(it, slot):
             return False

@@ -134,7 +134,7 @@ Fallout). Each turn you get **Action Points** (the stamina bar shows them).
 | Throw (javelins, throwing knives / axes) | choose "Throw" on the right skill button: same AP as an attack, range 14. Left click stabs / swings in melee, like D2 |
 | Right click | your selected right skill (choose it on the right skill button, or F1-F8) |
 | Left click a monster | your left skill if you picked one on the left skill button, else a normal attack |
-| Drink potion (keys 1-4) | 2 AP |
+| Drink potion (keys 1-4, belt only) | 2 AP; that belt slot then rests 8 turns |
 | Pick up item | 1 AP (free outside combat) |
 
 **Skills:** one skill point per level, D2's full tree of your class (T). Right click a learned skill in
@@ -216,3 +216,17 @@ tools/extract_samples.py  pulls a small sample set out of your MPQs (for develop
 tools/extract_monsters.py every monster's animations + a report and picture sheets (for checking)
 tools/extract_act.py      one act's layouts (DS1), tile libraries (DT1), palette, objects (for building an act)
 ```
+
+## Potions
+
+Healing and mana potions restore part of your maximum life / mana at once, then more every turn for
+5 turns: Minor 60% + 2%/turn, Light 70% + 3%, standard 80% + 4%, Greater 90% + 5%, Super 100% + 6%.
+Full Rejuvenation: 100% life and mana + 6%/turn (Siege on Harrogath in Hell gives 4 - the only way to
+get them). You drink only from the belt, and in combat the belt is locked (no refilling it). The belt
+has 2 slots; killing Shenk opens a 3rd in Normal and a 4th in Nightmare. Each slot holds as many
+potions as your belt has rows (no belt 1, sash 2, belt 3, girdle / exceptional / elite 4). Drinking in
+combat rests that slot for 8 turns.
+
+Horadric Cube: potion + gem infuses the potion (a buff for 2 turns chipped .. 6 turns perfect, and an
+outline in the gem's colour): Amethyst magic find, Diamond AP and damage reduction, Skull cleanse +
+poison immunity, Ruby / Sapphire / Topaz / Emerald fire / cold / lightning / poison resistance.

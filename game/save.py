@@ -50,7 +50,10 @@ def _item_dict(it):
                 invfile=getattr(it, "invfile", "") or "",
                 ethereal=bool(getattr(it, "ethereal", False)), grade=getattr(it, "grade", "") or "",
                 charm=bool(getattr(it, "charm", False)),
-                charges={k: list(v) for k, v in (getattr(it, "charges", None) or {}).items()} or None)
+                charges={k: list(v) for k, v in (getattr(it, "charges", None) or {}).items()} or None,
+                belt_col=getattr(it, "belt_col", None),
+                infused=list(it.infused) if getattr(it, "infused", None) else None,
+                base_name=getattr(it, "_base_name", None))
 
 
 def _item_from(d, content):
@@ -62,6 +65,10 @@ def _item_from(d, content):
               dmg=tuple(d["dmg"]) if d.get("dmg") else None, ap=d.get("ap"), defense=d.get("defense", 0),
               amount=d.get("amount", 0), kind=d.get("kind", "equip"))
     it.potion = d.get("potion", "heal")
+    it.belt_col = d.get("belt_col")
+    if d.get("infused"):
+        it.infused = tuple(d["infused"])
+        it._base_name = d.get("base_name") or it.name
     if d.get("mod_list") is not None:
         it.mod_list = [tuple([e[0], tuple(e[1]) if isinstance(e[1], list) else e[1]] + list(e[2:]))
                        for e in d["mod_list"]]
@@ -160,6 +167,7 @@ def save_character(player, difficulty="normal"):
                    items={k: _item_dict(v) for k, v in (p.merc.get("items") or {}).items() if v is not None})
               if getattr(p, "merc", None) else None),
         stash=_stash_dict(getattr(p, "stash", None)),
+        belt_unlocks=list(getattr(p, "belt_unlocks", None) or []),
     )
     path = os.path.join(SAVE_DIR, _safe(p.name) + ".json")
     tmp = path + ".tmp"
@@ -245,6 +253,9 @@ def build_player(data, content):
         p.equipment[k] = _item_from(data.get("equipment", {}).get(k), content)
     p.inventory = [it for it in (_item_from(d, content) for d in data.get("inventory", [])) if it is not None]
     p.belt = [it for it in (_item_from(d, content) for d in data.get("belt", [])) if it is not None]
+    p.belt_unlocks = list(data.get("belt_unlocks") or [])
+    if "belt_unlocks" not in data and p.quests.get("shenk") in ("cleared", "done"):
+        p.belt_unlocks = ["normal"]          # (saves from before the potion system: Shenk already killed)
     md = data.get("merc")
     if md:
         p.merc = dict(kind=md.get("kind", "rogue"), hid=md.get("hid", 0), name=md.get("name", "Hireling"),

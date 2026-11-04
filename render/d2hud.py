@@ -637,13 +637,35 @@ class D2Hud:
         self._skill_box(surf, px0 + 153, py0 + 65, getattr(p, "left_skill", None), "left")
         self._skill_box(surf, px0 + 510, py0 + 65, p.right_skill, "right")
 
-        # belt
+        # belt: 2-4 slots (Siege on Harrogath opens more), each a column of potions; drink the bottom one
+        from game import potions
+        nslots = potions.belt_slots(p)
+        combat = getattr(world, "mode", "") == "combat"
         for i in range(4):
             bx, by = px0 + 375 + i * 31, py0 + 66
-            if i < len(p.belt):
-                self._icon(surf, p.belt[i], bx, by, 29, 29)
-                if pygame.Rect(int(bx), int(by), 29, 29).collidepoint((int(mx), int(my))):
-                    self.hover_lines = p.belt[i].describe_lines(p)
+            hot = pygame.Rect(int(bx), int(by), 29, 29).collidepoint((int(mx), int(my)))
+            if i >= nslots:
+                lock = pygame.Surface((int(29 * self.s), int(29 * self.s)), pygame.SRCALPHA)
+                lock.fill((0, 0, 0, 170))
+                surf.blit(lock, self.P(bx, by))
+                self.text(surf, self.f10, "locked", (110, 100, 90), bx, by + 10, "center", 29)
+                if hot:
+                    self.hover_lines = [("Locked belt slot", GREY),
+                                        ("Siege on Harrogath opens one in Normal and one in Nightmare", GREY)]
+                continue
+            col = potions.column(p, i)
+            if col:
+                self._icon(surf, col[0], bx, by, 29, 29)
+                if len(col) > 1:
+                    self.text(surf, self.f10, "x%d" % len(col), WHITE, bx + 1, by + 1)
+                if hot:
+                    self.hover_lines = col[0].describe_lines(p)
+            cd = potions.cooldown(p, i) if combat else 0
+            if cd:
+                sh = pygame.Surface((int(29 * self.s), int(29 * self.s)), pygame.SRCALPHA)
+                sh.fill((0, 0, 0, 150))
+                surf.blit(sh, self.P(bx, by))
+                self.text(surf, self.f16, str(cd), (230, 80, 60), bx, by + 7, "center", 29)
             self.text(surf, self.f10, str(i + 1), GREY, bx + 21, by + 18)
             self.region(bx, by, 29, 29, "potion", i)
 
@@ -1552,7 +1574,24 @@ class D2Hud:
             iw, ih = img.get_size()
             k = min(1.0, w / float(iw), h / float(ih)) * self.s
             sc = self.S(img, k)
-            surf.blit(sc, (int((x + w / 2.0) * self.s - sc.get_width() / 2), int((y + h / 2.0) * self.s - sc.get_height() / 2)))
+            pos = (int((x + w / 2.0) * self.s - sc.get_width() / 2), int((y + h / 2.0) * self.s - sc.get_height() / 2))
+            from game.potions import outline_color
+            oc = outline_color(item)
+            if oc:                       # a gem-infused potion: an outline in the gem's colour
+                key = ("outline", id(sc), oc)
+                cache = self.__dict__.setdefault("_outline_cache", {})
+                ent = cache.get(key)
+                if ent is None or ent[0] is not sc:
+                    if len(cache) > 200:
+                        cache.clear()
+                    sil = sc.copy()
+                    sil.fill((0, 0, 0, 255), special_flags=pygame.BLEND_RGBA_MULT)
+                    sil.fill(tuple(oc) + (0,), special_flags=pygame.BLEND_RGBA_ADD)
+                    ent = cache[key] = (sc, sil)
+                t = max(1, int(round(self.s)))
+                for dx, dy in ((-t, 0), (t, 0), (0, -t), (0, t), (-t, -t), (t, t), (-t, t), (t, -t)):
+                    surf.blit(ent[1], (pos[0] + dx, pos[1] + dy))
+            surf.blit(sc, pos)
         else:
             self.assets.draw_item_icon(surf, item, self.R(x, y, w, h))
 

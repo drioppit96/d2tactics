@@ -329,6 +329,9 @@ class D2Content:
         return cands[-1]
 
     def make_item(self, base, ilvl, rng, quality="normal", sockets=None, identified=None, force=None):
+        if isinstance(base, dict) and base.get("code") == "rvl" and not getattr(self, "allow_full_rejuv", False) \
+                and "rvs" in self.base_by_code:
+            base = self.base_by_code["rvs"]     # Full Rejuvenation: only Siege on Harrogath in Hell gives them
         if quality in ("unique", "set"):
             it = (self.make_unique if quality == "unique" else self.make_set_item)(base, ilvl, rng, identified)
             if it is not None:

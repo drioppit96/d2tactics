@@ -184,6 +184,9 @@ class Player(Unit):
     def mod(self, stat):
         v0 = getattr(self, "_skill_stats", {}).get(stat, 0)
         v0 = 0 if isinstance(v0, tuple) else v0
+        if getattr(self, "potion_buffs", None):
+            from .potions import buff_stat
+            v0 += buff_stat(self, stat)      # gem-infused potions
         active = [it for it in getattr(self, "_active", []) if getattr(it, "identified", True)]
         v = v0 + sum(it.mods.get(stat, 0) for it in active if not isinstance(it.mods.get(stat, 0), tuple))
         # D2's "per character level" properties: value / 8 per level
@@ -434,6 +437,9 @@ class Player(Unit):
         if old_max is not None:
             self.hp = min(self.hp, self.max_hp)
             self.mana = min(self.mana, self.max_mana)
+        if getattr(self, "belt", None) is not None and hasattr(self, "inventory"):
+            from .potions import normalize
+            normalize(self)                  # belt columns follow the belt you wear and the slots you have
 
     @staticmethod
     def xp_threshold(level):

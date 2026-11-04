@@ -299,8 +299,9 @@ class ItemActions:
             new = self.content.make_item(it.base, it.base.get("qlvl", 1) or 1, self.rng, sockets=0)
         else:
             new = it
-        if new.kind == "potion" and len(p.belt) < 4:
-            p.belt.append(new)
+        from . import potions
+        if new.kind == "potion" and potions.belt_add(p, new, self):
+            pass
         elif not p.inv_add(new):
             self.log("Your inventory is full.", GREY)
             return False
@@ -546,7 +547,8 @@ class ItemActions:
         if it in p.inventory:
             p.inventory.remove(it)
         elif it in p.belt:
-            p.belt.remove(it)
+            from . import potions
+            potions.belt_remove(p, it)
         if it.potion == "antidote":
             p.effects.pop("poison", None)
             p.buffs["Antidote"] = {"turns": 15, "stats": {"res_pois": 50}, "title": "Antidote"}
