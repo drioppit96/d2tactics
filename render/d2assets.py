@@ -724,10 +724,11 @@ class D2Assets(AssetProvider):
                      "cube_chest": ["XK"], "staff_chest": ["XK"], "scroll_chest": ["XK"], "viper_altar": ["ZA"],
                      "journal": ["TT"], "wirt": ["BP"],
                      "eye_chest": ["XK"], "brain_chest": ["XK"], "heart_chest": ["XK"], "gidbinn": ["GA"],
-                     "lamtome": ["AB"], "orb": ["55"], "armory_altar": ["30", "31", "32", "33", "34"], "hellforge": ["UX"], "prison": ["GI"], "anya": ["2N"]}
+                     "lamtome": ["AB"], "orb": ["55"], "armory_altar": ["30", "31", "32", "33", "34"], "hellforge": ["UX"], "prison": ["GI"], "anya": ["2N"],
+                     "durance_gate": ["SV"]}
     USED_ON = ("waypoint", "cage", "inifuss", "cube_chest", "staff_chest", "scroll_chest", "viper_altar",
                "orifice", "journal", "eye_chest", "brain_chest", "heart_chest", "gidbinn", "lamtome", "orb",
-               "armory_altar",
+               "armory_altar", "durance_gate",
                "hellforge", "prison")
 
     def _obj_sprites(self, tok):

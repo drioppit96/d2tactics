@@ -389,8 +389,10 @@ def setup(world, built, grid, rng, info, level_key):
     world.stormtree_spot = getattr(b, "stormtree_spot", None)
     world.decor = list(getattr(b, "decor", []) or [])
     if level_key in ("kurast", 86):
-        from .act3 import spawn_side_bosses
+        from .act3 import spawn_side_bosses, travincal_temple
         spawn_side_bosses(world, taken, info)
+        if level_key == "kurast":
+            travincal_temple(world)
     if level_key == 73:
         # Duriel's chamber: Duriel alone, nothing else (D2)
         world.monsters = [m for m in world.monsters

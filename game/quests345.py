@@ -322,6 +322,10 @@ def on_enter(world, lid):
         _start(world, "diablo")
     if lid == 105:
         _start(world, "izual")
+    if lid == 83 and (q.get("khalim") in ("orb", "done") or q.get("mephisto") in ("cleared", "done")):
+        for o in world.objects:
+            if o.get("kind") == "durance_gate":
+                o["used"] = True              # (the orb is already broken: the gate stands open)
     if lid in (110,) and q["shenk"] == "none":
         _start(world, "shenk")
     if lid == 111 and q["barbs"] == "none":
@@ -426,6 +430,12 @@ def on_object(world, obj):
             give_item(world, "bbb", near=obj["cell"])
             world.log("Lam Esen's Tome! Bring it to Alkor.", QUEST_COLOR)
         return True
+    if k == "durance_gate":
+        if not obj["used"]:
+            world.log("The gate to the Durance of Hate is sealed. Smash the Compelling Orb with Khalim's Will.", GREY)
+            return False
+        grp = next((g_ for g_ in world.warp_groups if g_.get("target") == 100), None)
+        return world.enter_warp(grp) if grp is not None else False
     if k == "orb":
         if obj["used"]:
             return False
@@ -437,6 +447,9 @@ def on_object(world, obj):
         q["khalim"] = "orb"
         world.emit("nova", p, obj["cell"], 4, "ltng")
         world.log("You smash the Compelling Orb! The way into the Durance of Hate is open.", QUEST_COLOR)
+        for o in world.objects:
+            if o.get("kind") == "durance_gate":
+                o["used"] = True              # the gate by the back wall opens
         world.log("Quest completed: Khalim's Will.", DONE_COLOR)
         q["khalim"] = "done"
         return True

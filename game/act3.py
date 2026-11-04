@@ -314,6 +314,41 @@ GIANTS = {"crypt": 2.0}         # boss tag -> drawn this many times its normal s
 LOOT_LIKE = {"crypt": ("nihlathakboss", 124)}   # boss tag -> (boss whose loot he drops, that boss's area)
 
 
+def travincal_temple(world):
+    """Travincal's temple: the Compelling Orb on the council's dais and the Durance of Hate's gate
+    (D2's stairs structure, Objects.txt "stairsr") on the floor by the back wall - the gate is
+    sealed until the orb is smashed, then it stands open and is the way down."""
+    from .act1 import arrival_cell
+    grp = next((g_ for g_ in getattr(world, "warp_groups", []) if g_.get("target") == 100), None)
+    if grp is None or not grp.get("cells"):
+        return
+    g = world.grid
+    ax, ay = min(grp["cells"])
+    orb_spot, gate = (ax - 23, ay + 4), (ax, ay - 1)
+    for o in world.objects:
+        if o.get("kind") == "orb":
+            c = orb_spot if g.walkable(*orb_spot) else drlg.near_walkable(g, orb_spot, 3)
+            if c is not None:
+                o["cell"] = c
+    q = getattr(getattr(world, "player", None), "quests", None) or {}
+    opened = q.get("khalim") in ("orb", "done") or q.get("mephisto") in ("cleared", "done")
+    if not any(o.get("kind") == "durance_gate" for o in world.objects):
+        world.objects.append(dict(kind="durance_gate", cell=gate, level=83, oid=0, used=opened))
+    # the way down is the gate itself: its cells replace the old (invisible) entrance cells
+    for c in grp["cells"]:
+        world.exits.pop(c, None)
+        world.warp_cell.pop(c, None)
+    cells = {(gate[0] + dx, gate[1] + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)
+             if g.walkable(gate[0] + dx, gate[1] + dy)} or {gate}
+    grp["cells"] = cells
+    wx, wy = (gate[0] - gate[1]) * 16, (gate[0] + gate[1]) * 8      # (render.iso: the cell's centre)
+    grp["box"] = (wx - 80, wy - 150, wx + 80, wy + 30)
+    for c in cells:
+        world.exits[c] = 100
+        world.warp_cell[c] = grp
+    world.entries[100] = arrival_cell(g, sorted(cells), set(world.exits), world.rng)
+
+
 def spawn_side_bosses(world, taken, info):
     """The Armory's doll (the Gidbinn) and spider queen (Khalim's Eye), the Scriptorium's scribe
     (Khalim's Brain): one each, deep inside their area."""
