@@ -108,7 +108,7 @@ class BP:
 
 
 def _base(name, w, h, level=0, **kw):
-    d = {"version": 1, "name": name, "act": 3, "lvltype": "Act 3 - Kurast", "width": w, "height": h, "level": level,
+    d = {"version": 1, "revision": 1, "name": name, "act": 3, "lvltype": "Act 3 - Kurast", "width": w, "height": h, "level": level,
          "random_monsters": True, "rooms": [], "tiles": [], "objects": [], "monsters": [], "decor": [],
          "markers": [], "start": None, "exits": []}
     d.update(kw)

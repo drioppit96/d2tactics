@@ -41,19 +41,38 @@ def game_maps():
     out = set()
     for d in (GAME_MAPS, MAPS):
         if os.path.isdir(d):
-            out |= {f[:-5] for f in os.listdir(d) if f.lower().endswith(".json")}
+            out |= {f[:-5] for f in os.listdir(d) if f.lower().endswith(".json") and not f.lower().endswith(".old.json")}
     return sorted(out)
 
 
+def _revision(path):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return int(json.load(f).get("revision") or 0)
+    except Exception:
+        return -1
+
+
 def game_map_path(name):
-    """Your edited copy (maps/<name>.json) if there is one, else the game's own."""
+    """Your edited copy (maps/<name>.json) if there is one and it is up to date, else the game's own.
+    A game map carries a "revision" that goes up when the game's own version changes; a copy you
+    saved from an older revision is set aside (renamed .old.json) so the new one shows."""
     mine = os.path.join(MAPS, name + ".json")
-    return mine if os.path.exists(mine) else os.path.join(GAME_MAPS, name + ".json")
+    ours = os.path.join(GAME_MAPS, name + ".json")
+    if os.path.exists(mine) and os.path.exists(ours) and _revision(mine) < _revision(ours):
+        try:
+            old = os.path.join(MAPS, name + ".old.json")
+            if os.path.exists(old):
+                os.remove(old)
+            os.rename(mine, old)
+        except OSError:
+            return ours
+    return mine if os.path.exists(mine) else ours
 
 
 def game_map(name):
-    """One of the game's hand-made maps as data (your edited copy first), or None."""
-    for path in (os.path.join(MAPS, name + ".json"), os.path.join(GAME_MAPS, name + ".json")):
+    """One of the game's hand-made maps as data (your up-to-date edited copy first), or None."""
+    for path in (game_map_path(name), os.path.join(GAME_MAPS, name + ".json")):
         if os.path.exists(path):
             try:
                 return load(path)
@@ -65,7 +84,7 @@ def game_map(name):
 def list_maps():
     if not os.path.isdir(MAPS):
         return []
-    return sorted(f for f in os.listdir(MAPS) if f.lower().endswith(".json"))
+    return sorted(f for f in os.listdir(MAPS) if f.lower().endswith(".json") and not f.lower().endswith(".old.json"))
 
 
 def load(name):
@@ -86,6 +105,10 @@ def for_level(level_id):
     """The custom map that replaces this level, if there is one (yours first, then the game's own)."""
     if not isinstance(level_id, int) or level_id <= 0:
         return None
+    if os.path.isdir(GAME_MAPS):
+        for f in os.listdir(GAME_MAPS):
+            if f.lower().endswith(".json"):
+                game_map_path(f[:-5])              # (sets aside your copies the game has outgrown)
     paths = [os.path.join(MAPS, fn) for fn in list_maps()]
     if os.path.isdir(GAME_MAPS):
         mine = set(list_maps())
