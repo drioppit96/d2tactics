@@ -107,6 +107,31 @@ def d2_direction(facing, n_dirs):
     return 0
 
 
+class DC6Unit:
+    """A unit layer stored as a DC6 (Mephisto's): the same interface as a DCC for the composer."""
+
+    def __init__(self, data):
+        from d2.dc6 import DC6
+        from d2.dcc import Frame, Direction
+        dc = DC6(data)
+        self.n_dirs, self.frames_per_dir = dc.n_dirs, dc.frames_per_dir
+        self._dirs = []
+        for d in range(dc.n_dirs):
+            frs = []
+            for i in range(dc.frames_per_dir):
+                f6 = dc.frame(d, i)
+                f = Frame()
+                f.width, f.height, f.pixels = f6.width, f6.height, f6.pixels
+                f.xmin, f.ymin = f6.xoff, f6.yoff - f6.height
+                f.xmax, f.ymax = f.xmin + f6.width - 1, f.ymin + f6.height - 1
+                f.xoffset, f.yoffset, f.bottom_up, f.cells = f6.xoff, f6.yoff, False, None
+                frs.append(f)
+            self._dirs.append(Direction(frs))
+
+    def direction(self, d):
+        return self._dirs[min(d, len(self._dirs) - 1)]
+
+
 class UnitSprites:
     """All animations of one unit look (token + chosen armour/weapon types)."""
 
@@ -151,6 +176,14 @@ class UnitSprites:
             if self.a.src.has(name):
                 try:
                     found = DCC(self.a.src.read(name))
+                except Exception:
+                    found = None
+                break
+            # some units (Mephisto) are stored as DC6 pictures instead of DCC
+            name6 = name[:-4] + ".dc6"
+            if self.a.src.has(name6):
+                try:
+                    found = DC6Unit(self.a.src.read(name6))
                 except Exception:
                     found = None
                 break

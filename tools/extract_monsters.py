@@ -88,7 +88,8 @@ class MonsterFiles:
                     comp = L.component
                     lwc = L.weapon_class or wc
                     for arm in armtypes.get(comp, []) + ["LIT", "MED", "HVY"]:
-                        self.take(base + "%s\\%s%s%s%s%s.dcc" % (comp, tok, comp, arm, mode, lwc))
+                        if self.take(base + "%s\\%s%s%s%s%s.dcc" % (comp, tok, comp, arm, mode, lwc)) is None:
+                            self.take(base + "%s\\%s%s%s%s%s.dc6" % (comp, tok, comp, arm, mode, lwc))   # (Mephisto)
         return found
 
 
