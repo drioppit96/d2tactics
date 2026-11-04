@@ -1595,16 +1595,22 @@ class SkillCaster:
         main = min(foes, key=lambda m: self.udist(m, a))
         ed = env.elem_damage() or ("ltng", 2, 14, 0)
         a.face(*main.pos)
-        rng = self.rng
-        import math
-        ang0 = math.atan2(main.y - a.y, main.x - a.x)
+        # like the sorceress's Charged Bolt: one fan of bolts, all at once, widening as it flies;
+        # each bolt strikes the first enemy in its way (a big one can take several)
+        g = self.grid
+        free = lambda c: g.in_bounds(*c) and g.walkable(*c)
         reach = a.range + 1
+        idx = self._foe_index(a.pos, reach)
         shots = []
-        for _ in range(getattr(a, "bolts", 5)):
-            ang = ang0 + rng.gauss(0, 0.22)                          # the erratic spread
-            end = (a.x + int(round(math.cos(ang) * reach)), a.y + int(round(math.sin(ang) * reach)))
-            hit, stop = self._first_hit_on_line(a.pos, end, max_len=reach)
-            tgt = hit[0] if hit else None
+        for ray in _volley_rays(a.pos, main.pos, getattr(a, "bolts", 5), reach, free):
+            tgt, stop = None, a.pos
+            for c in ray:
+                if not free(c) and c not in idx:
+                    break
+                stop = c
+                if c in idx:
+                    tgt = idx[c]
+                    break
             shots.append((tgt, tgt.pos if tgt is not None else stop))
         for tgt, dst in shots:                                       # every bolt leaves at the same moment
             self.emit("projectile", a, a.pos, dst, "ltng", "chargedbolt")
