@@ -308,7 +308,7 @@ SIDE_BOSSES = [
     (LIBRARY, "cantor2", "Scribe Ophizek the Hollow", "scribe", ("MANAHIT", "TELEPORT"), ("zealot3", 4)),
     # the Scriptorium's crypt garden: a giant winged Venom Lord among the tombs and sigils, with the
     # sewers' walking dead around him; he drops exactly what Nihlathak drops
-    (77, "megademon3", "Morvane the Unburied", "crypt", ("STRONG", "STONESKIN"), ("mummy4", 5)),
+    (77, "megademon3", "Morgvane The Giant", "crypt", ("STRONG", "STONESKIN"), ("mummy4", 5)),
 ]
 GIANTS = {"crypt": 2.0}         # boss tag -> drawn this many times its normal size
 LOOT_LIKE = {"crypt": ("nihlathakboss", 124)}   # boss tag -> (boss whose loot he drops, that boss's area)

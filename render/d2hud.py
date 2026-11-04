@@ -302,8 +302,10 @@ class D2Hud:
         if not self.hover_lines and tip and getattr(world, "held", None) is None:
             texts, cols = tip
             anchor = getattr(self, "world_tip_anchor", None)
-            if anchor is not None:
-                # monster info sits at the top of the screen, out of the way of the fight
+            target = getattr(self, "world_target", None)
+            if target is not None:
+                self._draw_target_bar(surf, target, scene)      # D2's monster bar, top of the screen
+            elif anchor is not None:
                 self.tooltip(surf, list(zip(texts, list(cols) + [WHITE] * len(texts))), self.mouse, top=True)
             else:
                 self.tooltip(surf, list(zip(texts, list(cols) + [WHITE] * len(texts))), self.mouse)
@@ -513,6 +515,45 @@ class D2Hud:
             y += 15
 
     # ------------------------------------------------------------ tooltip
+    def _draw_target_bar(self, surf, m, scene):
+        """The monster under the mouse, like D2: its name on a red life bar at the top centre, then
+        its type and modifiers, then its immunities."""
+        try:
+            hp = max(0, scene.view(m).shown_hp)
+        except Exception:
+            hp = m.hp
+        frac = max(0.0, min(1.0, hp / float(m.max_hp or 1)))
+        name_col = GOLD if m.unique else ((110, 110, 255) if getattr(m, "champion", False) else WHITE)
+        w = max(200, self.f16.width(m.name) + 40)
+        x, y, h = self.lw / 2.0 - w / 2.0, 6, 18
+        bg = pygame.Surface((int(w * self.s), int(h * self.s)), pygame.SRCALPHA)
+        bg.fill((0, 0, 0, 190))
+        surf.blit(bg, self.P(x, y))
+        if frac > 0:
+            bar = pygame.Surface((max(1, int(w * frac * self.s)), int(h * self.s)), pygame.SRCALPHA)
+            bar.fill((120, 8, 8, 235))
+            surf.blit(bar, self.P(x, y))
+        pygame.draw.rect(surf, (90, 70, 40), pygame.Rect(self.P(x, y), (int(w * self.s), int(h * self.s))), 1)
+        self.text(surf, self.f16, m.name, name_col, x, y + 2, "center", w)
+        parts = []
+        if getattr(m, "demon", False):
+            parts.append("Demon")
+        elif getattr(m, "undead", False):
+            parts.append("Undead")
+        parts += list(getattr(m, "mod_names", None) or [])
+        res = getattr(m, "res", {}) or {}
+        imm = [n for k, n in (("fire", "Fire"), ("cold", "Cold"), ("ltng", "Lightning"), ("pois", "Poison"),
+                              ("mag", "Magic"), ("phys", "Physical")) if res.get(k, 0) >= 100]
+        ly = y + h + 3
+        for t, c in (("  -  ".join(parts), WHITE), ("Immune to " + ", ".join(imm) if imm else "", (160, 210, 90))):
+            if t:
+                tw = self.f16.width(t) + 12
+                sh = pygame.Surface((int(tw * self.s), int(15 * self.s)), pygame.SRCALPHA)
+                sh.fill((0, 0, 0, 120))
+                surf.blit(sh, self.P(self.lw / 2.0 - tw / 2.0, ly))
+                self.text(surf, self.f16, t, c, self.lw / 2.0 - tw / 2.0, ly, "center", tw)
+                ly += 15
+
     def tooltip(self, surf, lines, at, left_of=None, top=False):
         """lines: [(text, colour)] - drawn like D2's item description box."""
         if lines and isinstance(lines, tuple) and len(lines) == 2 and isinstance(lines[0], list):

@@ -1916,6 +1916,8 @@ class Game:
         self.scene.draw_overlay(self.screen, self.cam)
         self.hud.world_tip = tip
         self.hud.world_tip_anchor = self.unit_screen_rect(self._tip_unit) if getattr(self, "_tip_unit", None) else None
+        tu = getattr(self, "_tip_unit", None)
+        self.hud.world_target = tu if tu is not None and getattr(tu, "ai", "") != "npc" else None
         self.hud.draw(self.screen, self.world, self.scene, mouse)
         if tip and not self.hud.hover_lines and not hasattr(self.hud, "automap_mode"):
             from render.hud import tooltip

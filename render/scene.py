@@ -1062,7 +1062,7 @@ class Scene:
                 continue
             sx, sy = cam.cell_to_screen(v.rx, v.ry)
             w = 26 * cam.scale / 2 + (10 if u.unique else 0)
-            top = sy - ((44 if u.unique else 36) + self.bar_lift) * cam.scale
+            top = sy - ((44 if u.unique else 36) * (getattr(u, "giant", 0) or 1) + self.bar_lift) * cam.scale
             pygame.draw.rect(surf, (20, 0, 0), (sx - w / 2, top, w, 4))
             frac = max(0.0, v.shown_hp / u.max_hp)
             pygame.draw.rect(surf, (40, 190, 60) if getattr(u, "ally", False) else (200, 30, 30), (sx - w / 2, top, w * frac, 4))
