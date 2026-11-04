@@ -209,7 +209,8 @@ def _kurast_spec(lid):
 # join - the Kurast Armory off Lower Kurast's east side, the Kurast Scriptorium off the Bazaar's west
 SIDE_AREAS = {76: dict(name="Kurast Armory", like=80, side="e", own_world=True,
                        roster=["zealot1", "blunderbore1"]),      # Zakarumites and the harem's dark giants
-              77: dict(name="Kurast Scriptorium", like=80, side="w", extra=["cantor2", "zealot3", "mummy5"])}
+              77: dict(name="Kurast Scriptorium", like=80, side="w",                # the zealots who sacked it,
+                       roster=["zealot2", "zealot3", "cantor1", "cantor2", "mummy5"])}  # the scribes risen
 SIDE_W = 5                     # blocks (8 tiles) wide
 # the Forbidden Library under the Scriptorium (a map-editor map, assets/maps/forbidden_library.json): it
 # takes the level id of the Swampy Pit, which this game's Kurast has no way into

@@ -723,6 +723,10 @@ def _reachable(world, c):
     return 0 <= tx < tw and 0 <= ty < th and seen[ty * tw + tx]
 
 
+# (cells of walkable ground per monster pack, most packs) for areas that are crowded
+DENSE = {76: (480, 70), 77: (520, 90), 86: (260, 60)}
+
+
 def _populate(world, lid, rect, taken, safe, info):
     roster = info.roster(lid)
     if not roster:
@@ -738,7 +742,10 @@ def _populate(world, lid, rect, taken, safe, info):
     from .acts import OUTDOOR_IDS as ALL_OUTDOOR
     outdoor = lid in ALL_OUTDOOR
     per_pack = 1500 if outdoor else 330
-    n_packs = min(int(walk / per_pack), 42 if outdoor else 40)
+    cap = 42 if outdoor else 40
+    if lid in DENSE:                    # this game's packed compounds: the armory, the scriptorium
+        per_pack, cap = DENSE[lid]
+    n_packs = min(int(walk / per_pack), cap)
     lvl = info.monster_level(lid)
     centres = []
     tries = 0
