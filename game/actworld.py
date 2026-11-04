@@ -724,7 +724,9 @@ def _reachable(world, c):
 
 
 # (cells of walkable ground per monster pack, most packs) for areas that are crowded
-DENSE = {76: (480, 70), 77: (520, 90), 86: (260, 60)}
+DENSE = {76: (480, 70)}
+# areas whose packs are spread evenly over the whole map: how many
+SPREAD = {77: 48, 86: 24}
 
 
 def _populate(world, lid, rect, taken, safe, info):
@@ -750,6 +752,22 @@ def _populate(world, lid, rect, taken, safe, info):
     centres = []
     tries = 0
     town = world.town_rect
+    if lid in SPREAD:
+        # one pack to each patch of an even grid over the area (shuffled), so they fill the whole map
+        n_packs = SPREAD[lid]
+        step = max(12, int((walk / float(max(1, n_packs))) ** 0.5))
+        patches = [(px, py) for py in range(y0, y1, step) for px in range(x0, x1, step)]
+        rng.shuffle(patches)
+        for px, py in patches:
+            if len(centres) >= n_packs:
+                break
+            for _ in range(25):
+                c = (rng.randrange(px, min(px + step, x1)), rng.randrange(py, min(py + step, y1)))
+                if g.walkable(*c) and c not in taken and _reachable(world, c) and \
+                        not any(chebyshev(c, s) < 22 for s in safe if s):
+                    centres.append(c)
+                    break
+        tries = n_packs * 40                 # (no random top-up)
     while len(centres) < n_packs and tries < n_packs * 40:
         tries += 1
         c = (rng.randrange(x0, x1), rng.randrange(y0, y1))

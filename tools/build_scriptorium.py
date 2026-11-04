@@ -60,6 +60,12 @@ RATNEST = 244
 COCOONS = (223, 224)
 DEATHPOLE = (456, 457)
 SWINGING_HEADS = 446
+# this game's sprites allowed here: crates and flags
+CRATES_S = ("crates", "crate", "chests_stack", "barrels_stack")
+FLAGS_S = ("banner_red", "banner_red2", "banner_red3", "banner_rag", "banner_bone", "banner_grey", "banner_tattered")
+# Kurast's trees (orientation 14): (main, sub) - broadleaf, palm, fern, dead, tall; and grass tufts
+TREES = [(0, 0), (0, 4), (0, 6), (0, 10), (0, 12), (0, 18), (1, 0), (1, 4), (1, 6)]
+PLANTS = [(0, 14), (0, 15), (0, 16), (0, 17), (0, 8), (1, 2)]
 
 
 class BP:
@@ -77,6 +83,23 @@ class BP:
         self.rooms = []
         self.extra = []
         self.used = []
+        self.decor = []
+
+    def spr(self, name, x, y):
+        """One of this game's crate / flag sprites (the only ones these maps use)."""
+        if isinstance(name, (tuple, list)):
+            name = self.rng.choice(name)
+        c = self.cell(x, y)
+        if any(abs(c[0] - u[0]) + abs(c[1] - u[1]) < 4 for u in self.used):
+            return
+        self.used.append(c)
+        self.decor.append([c[0], c[1], name])
+
+    def tree(self, x, y, kind=None):
+        """A Kurast tree (wall layer, orientation 14) with its shadow."""
+        main, sub = kind or self.rng.choice(TREES)
+        self.extra.append([int(x), int(y), "w", 14, main, sub])
+        self.extra.append([int(x), int(y), "w", 13, main, sub])
 
     def fill(self, x0, y0, x1, y1, main, subs=(0,), layer=1):
         dst = self.floor if layer == 1 else self.floor2
@@ -172,10 +195,18 @@ def house(bp, x0, y0, x1, y1, kind, door):
     hut = kind in ("home", "hovel")
     bp.fill(x0, y0, x1, y1, 27 if hut else 20, (0, 1, 2, 3) if hut else (0, 1, 2))
     cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
-    bp.box(x0, y0, x1, y1, [(door, int(cx) - 1, int(cx) + 1)], PLASTER)
+    if door in ("e", "w"):
+        bp.box(x0, y0, x1, y1, [(door, int(cy) - 1, int(cy) + 1)], PLASTER)
+    else:
+        bp.box(x0, y0, x1, y1, [(door, int(cx) - 1, int(cx) + 1)], PLASTER)
     r = bp.rng
-    back = y0 + 0.7 if door == "s" else y1 - 0.7
-    front = y1 - 1.3 if door == "s" else y0 + 1.3
+    back = y0 + 0.7 if door in ("s", "e", "w") else y1 - 0.7
+    front = y1 - 1.3 if door in ("s", "e", "w") else y0 + 1.3
+    # every house has its clutter in the back corners: a crate stack, a flag hung by the door
+    if kind not in ("ruin", "barricade"):
+        bp.spr(CRATES_S, x1 - 0.8, back)
+        if r.random() < 0.5:
+            bp.spr(FLAGS_S, x0 + 0.6, front)
     if kind == "scribe":         # a copyist's shop: shelves at the back, his bench, a candle; often he lies dead
         bp.obj(SHELF, x0 + 1.2, back)
         bp.obj(SHELF, x1 - 1.4, back)
@@ -271,6 +302,10 @@ def build_city():
         bp.pillar(x, 7)
         bp.pillar(x, 14)
     bp.obj(WELL_K, 13.5, 10.5)
+    for t in ((8, 8), (19, 8), (8, 12), (19, 12)):                  # the garden's four great trees
+        bp.tree(*t)
+    for t in ((11, 8), (16, 8), (11, 12), (16, 12), (13, 13), (14, 8)):
+        bp.tree(t[0], t[1], r.choice(PLANTS))
     bp.obj(BONFIRE, 10.0, 9.0)                                       # books burned in the garden
     bp.obj(SHELF, 9.0, 11.6)
     bp.obj(DEAD_TOWN, 17.5, 9.0)
@@ -303,6 +338,10 @@ def build_city():
     bp.obj(BRAZIER_TALL, 48.4, 14.6)
     bp.obj(STANDARDS, 36.0, 2.2)
     bp.obj(STANDARDS, 45.0, 2.2)
+    for x in (34.0, 47.0):
+        bp.spr(("banner_red", "banner_red3"), x, 15.0)
+    bp.spr("crates", 24.8, 1.8)
+    bp.spr("chests_stack", 56.0, 15.0)
     # Hall of Records: shelf rows, the caskets of the old charters
     bp.fill(24, 1, 31, 16, 22, (0,))
     for y in (2.6, 5.6, 9.4, 13.0):
@@ -342,6 +381,12 @@ def build_city():
     bp.obj(WEAPON_RACKS, 59.4, 13.8)
 
     # ================= MIDDLE TIER
+    # palms and ferns along the streets, where the moss has taken the flagstones
+    for t in ((52, 26), (60, 26), (68, 26), (52, 37), (60, 37), (68, 37), (2, 17), (21, 17), (23, 17),
+              (57, 17), (36, 17), (2, 43), (27, 43), (34, 44), (61, 43), (77, 43)):
+        bp.tree(t[0], t[1], r.choice(TREES + PLANTS))
+    for t in ((4, 47), (18, 48), (36, 48), (46, 47), (62, 48), (76, 48), (9, 61), (30, 62), (55, 61), (72, 62)):
+        bp.tree(t[0], t[1], r.choice(TREES[:6] + PLANTS))
     # the Ink Road to the Bazaar gate: lit by town torches, a cart overturned
     bp.fill(50, 25, 79, 38, 20, (0, 1, 2))
     for x in (55, 63, 71):
@@ -351,26 +396,58 @@ def build_city():
     bp.obj(CRATE, 67.6, 30.3)
     bp.obj(BARREL, 65.6, 30.6)
     bp.obj(DEAD_GUARD, 74.0, 33.0)
-    # Plaza of Quills: the zealots' book burning, the heretics on stakes, the stalls abandoned
-    bp.fill(32, 20, 50, 42, 20, (0, 1, 2))
-    bp.fill(39, 29, 44, 34, 46, (2,))
-    bp.obj(FOUNTAIN, 41.5, 31.5)
-    bp.obj(BONFIRE, 37.0, 26.5)
-    bp.obj(FIRE_M, 38.6, 27.6)
-    bp.obj(SHELF, 35.6, 25.4)
-    for c in ((36.0, 36.0), (46.5, 26.0), (47.0, 35.0)):
+    # the road's edges: carters' loads dumped in the flight, flags of the scribes' guild
+    for x in (52.5, 57.0, 61.5, 70.0, 75.5):
+        bp.spr(CRATES_S, x, 27.2)
+        bp.obj((CRATE, BARREL) + BASKETS, x + 1.6, 27.4)
+        bp.spr(CRATES_S, x + 1.0, 35.8)
+        bp.obj(BASKETS + URNS, x - 0.8, 35.6)
+    for x in (54.5, 63.5, 72.5):
+        bp.spr(FLAGS_S, x, 31.5)
+    bp.obj(IMPALED, 58.5, 31.0)
+    bp.obj(DEAD_TOWN, 69.0, 32.4)
+    bp.blood(52, 28, 78, 35, 0.06)
+    # the strip below the middle terrace and the temple court: more of the same
+    for x in range(3, 78, 7):
+        bp.spr(CRATES_S, x, 44.9)
+    for x in (60.0, 63.5, 67.0):
+        bp.spr(FLAGS_S, x, 13.4)
+    # Plaza of Quills (12 x 12): the zealots' book burning, heretics on stakes, the stalls abandoned;
+    # new houses close it in on three sides, the Ink Road opens it to the east
+    bp.fill(32, 19, 50, 43, 20, (0, 1, 2))
+    bp.fill(39, 28, 44, 33, 46, (2,))
+    bp.obj(FOUNTAIN, 41.5, 30.5)
+    bp.obj(BONFIRE, 38.0, 27.0)
+    bp.obj(FIRE_M, 39.4, 27.8)
+    bp.obj(SHELF, 37.0, 26.0)
+    for c in ((37.0, 35.6), (46.6, 26.4), (46.8, 35.0)):
         bp.obj(IMPALED, *c)
-    bp.obj(SWINGING_HEADS, 44.0, 23.0)
-    bp.objects.append(list(bp.cell(46.5, 39.0)) + ["waypoint"])
-    for x in range(33, 49, 3):
-        bp.obj((CRATE,) + BASKETS + URNS, x + 0.5, 20.8)
-        bp.obj(BASKETS + URNS + (BARREL,), x + 0.5, 41.2)
-    for c in ((32.8, 24.0), (49.2, 24.0), (32.8, 38.0), (49.2, 38.0)):
+    bp.obj(SWINGING_HEADS, 44.0, 26.2)
+    bp.objects.append(list(bp.cell(45.5, 33.5)) + ["waypoint"])
+    for c in ((36.6, 25.6), (47.4, 25.6), (36.6, 36.4), (47.4, 36.4)):
         bp.obj(BRAZIER, *c)
-    bp.obj(MANA_K, 33.4, 33.5)
-    bp.blood(34, 22, 48, 40, 0.12)
-    bp.obj(DEAD_TOWN, 40.0, 35.0)
-    bp.obj(DEAD_TOWN, 44.5, 29.0)
+    for x in (38.5, 41.0, 43.5):                                     # the stalls left standing
+        bp.obj((CRATE,) + BASKETS + URNS, x, 36.2)
+    bp.spr(FLAGS_S, 40.0, 25.8)
+    bp.spr(FLAGS_S, 43.0, 25.8)
+    bp.obj(MANA_K, 37.2, 31.0)
+    bp.blood(37, 26, 48, 37, 0.15)
+    bp.obj(DEAD_TOWN, 40.0, 34.6)
+    bp.obj(DEAD_TOWN, 44.6, 29.0)
+    # the houses round it
+    house(bp, 32, 19, 37, 25, "scribe", "e")                          # (37-44: the stair lane)
+    for x0, x1, kind in ((44, 47, "home"), (47, 50, "tavern")):
+        house(bp, x0, 19, x1, 25, kind, "s")
+    bp.spr(FLAGS_S, 37.6, 21.0)
+    bp.spr(FLAGS_S, 43.4, 21.0)
+    for x0, x1, kind in ((34, 38, "home"), (38, 43, "binder"), (43, 47, "store"), (47, 50, "hovel")):
+        house(bp, x0, 37, x1, 43, kind, "n")
+    for y0, y1, kind in ((25, 31, "scribe"), (31, 37, "home")):     # (doors to the plaza)
+        bp.fill(32, y0, 36, y1, 20, (0, 1, 2))
+        bp.box(32, y0, 36, y1, [("e", y0 + 2, y0 + 4)], PLASTER)
+        bp.obj(SHELF if kind == "scribe" else BEDS, 33.0, y0 + 1.2)
+        bp.obj(BENCH if kind == "scribe" else CHESTS, 34.4, y1 - 1.4)
+        bp.spr(CRATES_S, 33.0, y1 - 0.8)
 
     # Scribes' Row
     cols = [(1, 6), (6, 11), (11, 16), (18, 23), (23, 28), (28, 31)]
@@ -403,29 +480,51 @@ def build_city():
         bp.obj((4, 94, 95), x, 20.6)
     bp.row(BARREL, 52.0, 54.0, 23.8, 1.0)
     bp.obj(DEAD_SEWER, 58.5, 23.0)
+    bp.spr("barrels_stack", 59.0, 20.4)
+    bp.spr("crates", 56.6, 23.8)
+    bp.obj(URNS, 51.8, 21.6)
     bp.box(61, 19, 70, 25, [("s", 64, 67)], FIELDSTONE)
     bp.fill(61, 19, 70, 25, 22, (0,))
     bp.row(BASKETS, 62.0, 69.0, 20.4, 1.4)
     bp.obj(CRATE, 62.4, 23.6)
     bp.obj(CRATE, 68.8, 23.6)
+    for x in (63.8, 65.4, 67.0):                                     # sheets hung to dry
+        bp.spr(("banner_grey", "banner_bone", "banner_rag"), x, 22.2)
+    bp.obj(DEAD_TOWN, 65.5, 23.8)
     bp.box(71, 19, 78, 25, [("s", 73, 76)], PLASTER)
     bp.fill(71, 19, 78, 25, 27, (0, 1, 2, 3))
     bp.row(CRATE, 72.0, 77.0, 20.2, 1.2)
     bp.obj(BOX, 72.2, 23.6)
     bp.obj(CHESTS, 77.0, 23.6)
+    bp.spr("chests_stack", 74.4, 22.2)
+    bp.spr("crates", 76.0, 22.0)
+    bp.spr("barrels_stack", 73.0, 22.4)
     bp.box(51, 38, 68, 43, [("n", 58, 61)], FIELDSTONE)            # Bookbinders' Guild
     bp.fill(51, 38, 68, 43, 22, (0,))
     bp.line((57, 38), (57, 40), PLASTER)
     bp.line((57, 42), (57, 43), PLASTER)
     bp.line((62, 38), (62, 40), PLASTER)
     bp.line((62, 42), (62, 43), PLASTER)
+    # west room: the binders' benches and their stacks of boards and hides
     bp.obj(BENCH, 53.0, 40.5)
     bp.obj(BENCH, 55.4, 40.5)
-    bp.row(SHELF, 63.4, 66.8, 42.2, 1.7)
-    bp.obj(ALTAR, 59.5, 41.6)
-    bp.obj(RICH_CHESTS, 67.2, 39.0)
     bp.obj(CRATE, 52.0, 42.2)
-    bp.obj(DEAD_TOWN, 60.0, 39.4)
+    bp.spr("crates", 52.0, 38.8)
+    bp.spr("chests_stack", 56.0, 42.2)
+    bp.obj(SHELF, 54.2, 38.8)
+    # middle hall: the guild's altar under its flags, the guildmaster dead before it
+    bp.obj(ALTAR, 59.5, 41.6)
+    bp.obj(CANDLES, 58.2, 42.2)
+    bp.obj(CANDLES, 60.8, 42.2)
+    bp.spr("banner_red", 58.0, 38.8)
+    bp.spr("banner_red2", 61.0, 38.8)
+    bp.obj(DEAD_TOWN, 60.0, 39.8)
+    # east room: the finished books, shelved and crated for the temple
+    bp.row(SHELF, 63.4, 66.8, 42.2, 1.7)
+    bp.obj(RICH_CHESTS, 67.2, 39.0)
+    bp.spr("crates", 63.4, 38.8)
+    bp.obj(BOX, 65.2, 38.8)
+    bp.obj(CRATE, 63.6, 40.6)
     bp.box(70, 38, 78, 43, [("n", 73, 75)], FIELDSTONE)            # the guard post, emptied for the temple
     bp.fill(70, 38, 78, 43, 22, (0,))
     bp.obj(WEAPON_RACKS[0], 71.4, 42.2)
@@ -433,6 +532,8 @@ def build_city():
     bp.obj(ARMOR_STANDS, 76.6, 41.8)
     bp.obj(BRAZIER_SMALL, 77.2, 39.0)
     bp.obj(CHESTS, 70.8, 39.0)
+    bp.spr("banner_tattered", 72.6, 38.8)
+    bp.spr("crates", 75.0, 39.0)
     bp.fill(68, 38, 70, 44, 20, (0, 1))
 
     # ================= LOWER QUARTER
@@ -478,6 +579,7 @@ def build_city():
     data = _base("Kurast Scriptorium", W, H, scriptorium=True)
     data["tiles"] = bp.to_tiles()
     data["objects"] = bp.objects
+    data["decor"] = bp.decor
     data["rooms"] = bp.rooms
     data["links"] = {"next": 86}
     return data
@@ -526,22 +628,22 @@ def build_library():
     bp.obj(DEAD_TOWN, 17.0, 31.4)
     bp.obj(CANDLES, 23.2, 26.8)
     bp.obj(CANDLES, 10.8, 26.8)
-    # 3 the stacks: long shelf rows, reading benches, a collapsed aisle, the scroll vault
-    for x in range(4, 23, 3):
-        for y0, y1 in ((2.0, 10.0), (13.0, 22.5)):
-            if (x == 10 and y0 > 10) or (x == 4 and y0 < 10):
-                continue
+    # 3 the stacks, in three rooms: the west stacks (shelf aisles, the scroll vault in the corner), the
+    # reading room (north-east) and the collapsed stacks (south-east)
+    bp.line((12, 1), (12, 5))
+    bp.line((12, 7), (12, 17))
+    bp.line((12, 19), (12, 24))
+    bp.line((12, 12), (17, 12))
+    bp.line((19, 12), (24, 12))
+    # west stacks
+    for x in (4, 7, 10):
+        for y0, y1 in ((8.6, 22.6),) if x == 4 else ((2.0, 10.6), (13.4, 22.6)):
             bp.col(SHELF, x + 0.5, y0, y1, 1.7)
-    bp.row(SHELF, 9.5, 23.0, 11.3, 1.7)
-    for y in (15.0, 17.5, 20.0):
-        bp.obj(BENCH, 11.0, y)
-    bp.obj(CANDLES, 12.0, 21.6)
-    bp.obj(DEAD_TOWN, 12.0, 16.2)
-    bp.obj(SKELETONS, 7.0, 18.4)
-    for c in ((20.6, 15.0), (21.8, 17.2), (20.6, 19.4)):           # the collapsed aisle
-        bp.obj(SKULLS, *c)
-    bp.obj(COCOONS, 22.8, 21.6)
+    bp.obj(DEAD_TOWN, 6.0, 12.0)
+    bp.obj(SKELETONS, 9.0, 19.0)
     bp.obj(COCOONS, 2.2, 22.6)
+    bp.spr(CRATES_S, 2.2, 9.0)
+    bp.spr(FLAGS_S, 11.4, 1.6)
     bp.box(1, 1, 7, 7, [("e", 5, 6)])                               # the scroll vault
     bp.fill(1, 1, 7, 7, 22, (0,))
     bp.obj(RICH_CHESTS[0], 2.4, 2.4)
@@ -549,7 +651,27 @@ def build_library():
     bp.obj(CASKETS, 2.4, 5.0)
     bp.obj(BOX, 5.8, 2.2)
     bp.obj(CANDLES, 5.8, 5.6)
-    bp.obj(MANA_K, 22.8, 2.4)
+    # the reading room: benches between two shelf walls, the candles still lit
+    bp.row(SHELF, 13.6, 22.6, 1.6, 1.8)
+    for y in (4.6, 7.0, 9.4):
+        bp.obj(BENCH, 16.0, y)
+        bp.obj(BENCH, 20.0, y)
+    bp.obj(CANDLES, 18.0, 4.6)
+    bp.obj(CANDLES, 18.0, 9.4)
+    bp.obj(DEAD_TOWN, 14.0, 8.0)
+    bp.obj(MANA_K, 22.8, 10.6)
+    bp.spr(("banner_red", "banner_red2"), 13.2, 10.8)
+    bp.obj(CHESTS, 22.8, 3.4)
+    # the collapsed stacks: shelves toppled, the dead under them, webs in the corners
+    for x in (15.5, 18.5):
+        bp.col(SHELF, x, 13.6, 18.0, 1.7)
+    for c in ((21.0, 14.6), (22.2, 17.0), (20.6, 19.4), (16.0, 21.4)):
+        bp.obj(SKULLS, *c)
+    bp.obj(BURNING if r.random() < 0 else SKELETONS, 19.0, 22.6)
+    bp.obj(COCOONS, 22.8, 22.6)
+    bp.obj(COCOONS, 13.2, 13.2)
+    bp.obj(CASKETS, 22.8, 13.4)
+    bp.spr("crates", 13.4, 22.6)
     # 4 the copying room: the copyists' benches, ink barrels, their last copies in the chests
     for y in (27.6, 29.9, 32.2):
         bp.obj(BENCH, 28.6, y)
@@ -610,6 +732,7 @@ def build_library():
     data = _base("Forbidden Library", W, H, level=86, links={"prev": 77})
     data["tiles"] = bp.to_tiles()
     data["objects"] = bp.objects
+    data["decor"] = bp.decor
     data["rooms"] = bp.rooms
     data["markers"] = bp.markers
     data["start"] = list(bp.cell(5.0, 31.0))
