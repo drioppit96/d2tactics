@@ -47,10 +47,10 @@ class ActInfo:
         self.strings = getattr(content, "strings", None)
 
     def _side(self, lid):
-        if self.kit is None or not isinstance(lid, int) or lid not in (76, 77):
+        if self.kit is None or not isinstance(lid, int) or lid not in (76, 77, 86):
             return None
-        from .act3 import SIDE_AREAS
-        return SIDE_AREAS.get(lid)
+        from .act3 import SIDE_AREAS, EXTRA_LEVELS
+        return SIDE_AREAS.get(lid) or EXTRA_LEVELS.get(lid)
 
     def name(self, lid):
         sa = self._side(lid)
@@ -66,7 +66,7 @@ class ActInfo:
     def monster_level(self, lid):
         sa = self._side(lid)
         if sa:
-            return self.monster_level(sa["like"]) + 1
+            return self.monster_level(sa["like"]) + sa.get("plus", 1)
         r = self.rows.get(lid) or {}
         sfx = getattr(self.content, "sfx", "")
         col = {"": "monlvl1ex", "(n)": "monlvl2ex", "(h)": "monlvl3ex"}.get(sfx, "monlvl1ex")
@@ -380,9 +380,10 @@ def setup(world, built, grid, rng, info, level_key):
     world.custom_start = getattr(b, "custom_start", None)
     world.armory_boss = getattr(b, "armory_boss", None)
     world.armory_spider = getattr(b, "armory_spider", None)
+    world.markers = list(getattr(b, "markers", []) or [])
     world.stormtree_spot = getattr(b, "stormtree_spot", None)
     world.decor = list(getattr(b, "decor", []) or [])
-    if level_key == "kurast":
+    if level_key in ("kurast", 86):
         from .act3 import spawn_side_bosses
         spawn_side_bosses(world, taken, info)
     if level_key == 73:

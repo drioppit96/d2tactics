@@ -167,7 +167,7 @@ def objectives(world):
             if not have("qey"):
                 add("khalim", "Khalim's Eye (Silkmother Vashra)", 76, ("boss", "silkmother"), "eye")
             if not have("qbr"):
-                add("khalim", "Khalim's Brain (Scribe Ophizek)", 77, ("boss", "scribe"), "brain")
+                add("khalim", "Khalim's Brain (Scribe Ophizek, Forbidden Library)", 86, ("boss", "scribe"), "brain")
             if not have("qhr"):
                 add("khalim", "Khalim's Heart", 93, ("object", "heart_chest"), "heart")
             if not have("qf1"):
@@ -256,7 +256,7 @@ def _graph(kit):
         if a and c and a != c:
             g.setdefault(a, {})[c] = min(w, g.get(a, {}).get(c, w))
             g.setdefault(c, {})[a] = min(w, g.get(c, {}).get(a, w))
-    for a, c in OUTDOOR_LINKS + PORTAL_LINKS:
+    for a, c in OUTDOOR_LINKS + PORTAL_LINKS + [(77, 86)]:     # (the Scriptorium's temple stairs)
         link(a, c)
     for lid in range(1, 137):
         for i in range(8):

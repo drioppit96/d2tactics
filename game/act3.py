@@ -211,6 +211,12 @@ SIDE_AREAS = {76: dict(name="Kurast Armory", like=80, side="e", own_world=True,
                        roster=["zealot1", "blunderbore1"]),      # Zakarumites and the harem's dark giants
               77: dict(name="Kurast Scriptorium", like=80, side="w", extra=["cantor2", "zealot3", "mummy5"])}
 SIDE_W = 5                     # blocks (8 tiles) wide
+# the Forbidden Library under the Scriptorium (a map-editor map, assets/maps/forbidden_library.json): it
+# takes the level id of the Swampy Pit, which this game's Kurast has no way into
+LIBRARY = 86
+EXTRA_LEVELS = {LIBRARY: dict(name="Forbidden Library", like=80, plus=3,
+                              roster=["zealot3", "cantor2", "mummy5", "unraveler3"])}
+SCRIPTORIUM_MAP = "kurast_scriptorium"
 
 
 def _side_spec(lid):
@@ -224,7 +230,9 @@ def _side_spec(lid):
 
 
 def build_kurast(kit, seed=None, content=None):
-    SW = SIDE_W * 8
+    from . import custommap
+    city = custommap.game_map(SCRIPTORIUM_MAP)          # the Kurast Scriptorium, hand-made (80 x 64)
+    SW = int(city["width"]) if city else SIDE_W * 8
     dock = kit.ds1(A3 + "docktown\\docktown3.ds1")
     if dock is None:
         raise FileNotFoundError("Kurast Docks layout (act3\\docktown\\docktown3.ds1) not found")
@@ -269,10 +277,21 @@ def build_kurast(kit, seed=None, content=None):
     for lid, sa in SIDE_AREAS.items():
         if sa.get("own_world"):
             continue
+        if lid == 77 and city:
+            # its east gate meets the Bazaar's west opening; the temple in its north-east corner holds
+            # the stairs down to the Forbidden Library
+            cy = rows[sa["like"]]
+            custommap.lay_tiles(kit, b, city, 0, cy, 77)
+            custommap.lay_things(b, city, 0, cy, 77)
+            b.areas[77] = (0, cy * SUB, int(city["width"]) * SUB, (cy + int(city["height"])) * SUB)
+            b.scriptorium_json = (city, 0, cy)
+            continue
         y0 = rows[sa["like"]]
         x0 = X + 80 if sa["side"] == "e" else 0
         block_area(cv, lid, x0, y0, SIDE_W, 8, 8, _side_spec(lid))
     grid = cv.finish()
+    if getattr(b, "scriptorium_json", None):
+        custommap.block_walls(*b.scriptorium_json[:1], grid, *b.scriptorium_json[1:])
     armory_after_grid(b, grid, ax, ay)
     drlg.ensure_connected(b, grid, [(75, 79), (79, 80), (80, 81), (81, 82), (82, 83), (80, 77), (80, 76)],
                           cv.ground_kit("burbs"), rng)
@@ -285,7 +304,7 @@ def build_kurast(kit, seed=None, content=None):
 SIDE_BOSSES = [
     # (area, monster, name, boss tag, mods, minions)
     (76, "arach4", "Silkmother Vashra", "silkmother", ("STRONG", "CURSE"), ("arach4", 3)),
-    (77, "cantor2", "Scribe Ophizek the Hollow", "scribe", ("MANAHIT", "TELEPORT"), ("zealot3", 4)),
+    (LIBRARY, "cantor2", "Scribe Ophizek the Hollow", "scribe", ("MANAHIT", "TELEPORT"), ("zealot3", 4)),
 ]
 
 
@@ -314,6 +333,8 @@ def spawn_side_bosses(world, taken, info):
         x0, y0, x1, y1 = rect
         cell = None
         nest = getattr(world, "armory_spider", None) if tag == "silkmother" else None
+        if tag == "scribe":                  # the scribe waits on his dais in the library's sanctum
+            nest = next((c for w, c in getattr(world, "markers", []) if w == "boss"), None)
         if nest is not None:                 # the Silkmother waits in her nest by the armory's gate
             cell = actworld._free_near(world.grid, nest, 8)
             if cell in taken or not world.grid.walkable(*cell):

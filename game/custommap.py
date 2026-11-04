@@ -83,11 +83,15 @@ def save(data, name):
 
 
 def for_level(level_id):
-    """The custom map that replaces this level, if there is one."""
+    """The custom map that replaces this level, if there is one (yours first, then the game's own)."""
     if not isinstance(level_id, int) or level_id <= 0:
         return None
-    for fn in list_maps():
-        path = os.path.join(MAPS, fn)
+    paths = [os.path.join(MAPS, fn) for fn in list_maps()]
+    if os.path.isdir(GAME_MAPS):
+        mine = set(list_maps())
+        paths += [os.path.join(GAME_MAPS, f) for f in sorted(os.listdir(GAME_MAPS))
+                  if f.lower().endswith(".json") and f not in mine]
+    for path in paths:
         try:
             mt = os.path.getmtime(path)
             ent = _cache.get(path)
@@ -134,17 +138,23 @@ def lay_tiles(kit, b, data, ox, oy, owner):
     for room in data.get("rooms", []):
         tx, ty, path = room[0], room[1], room[2]
         ds = kit.ds1(path)
+        if ds is not None and len(room) > 4 and room[4]:
+            from .act3 import _Sub                  # [tx, ty, path, role, [sx, sy, w, h]]: a piece of it
+            sx, sy, sw, sh = room[4]
+            src_ds = ds
+            ds = _Sub(src_ds, int(sx), int(sy), int(sw), int(sh))
+            ds.files = src_ds.files
         if ds is not None:
             n0 = len(b.warps)
             no, ng = len(b.objects), len(b.gen_objects)
-            stamp(b, ds, kit.tiles_for(ds, lt), int(tx) + ox, int(ty) + oy, random.Random(_rnd(tx, ty)), owner,
+            stamp(b, ds, kit.tiles_for(src_ds if len(room) > 4 and room[4] else ds, lt), int(tx) + ox, int(ty) + oy, random.Random(_rnd(tx, ty)), owner,
                   keep_edges=keep)
             if not data.get("room_objects", True):        # (the generator's "rooms' own objects: off")
                 del b.gen_objects[ng:]
                 b.objects[no:] = [o for o in b.objects[no:] if o[0] in ("waypoint", "portal")]
             # a room with a role ("prev" / "next" stairs): its stairs lead where the map says
             wt = b.__dict__.setdefault("warp_targets", {})
-            role = room[3] if len(room) > 3 else None
+            role = room[3] if len(room) > 3 and room[3] else None
             for _t, main, ow in b.warps[n0:]:
                 wt[(ow, main)] = links.get(role) if role else wt.get((ow, main))
     ts = tileset(kit, lt)
@@ -209,6 +219,33 @@ def lay_things(b, data, ox, oy, owner):
         b.markers.append((what, (int(cx) + dx, int(cy) + dy)))
 
 
+def block_walls(data, grid, ox, oy):
+    """Solid Kurast fieldstone / plaster walls block all along their edges, pillars round them (their
+    tiles alone leave gaps). ox, oy: the map's tile offset in the grid."""
+    from .grid import WALL
+
+    def block(x0, y0, x1, y1):
+        for y in range(y0, y1):
+            for x in range(x0, x1):
+                if grid.in_bounds(x, y):
+                    grid.cells[y][x] = WALL
+    for t in data.get("tiles", []):
+        if t[2] != "w":
+            continue
+        o, main = int(t[3]), int(t[4])
+        X, Y = (int(t[0]) + ox) * SUB, (int(t[1]) + oy) * SUB
+        if o == 12:
+            block(X - 1, Y - 1, X + 2, Y + 2)
+            continue
+        if main not in (20, 24):
+            continue
+        block(X - 1, Y - 1, X + 1, Y + 1)
+        if o in (2, 3, 6):
+            block(X, Y - 1, X + SUB + 1, Y + 1)
+        if o in (1, 3, 5):
+            block(X - 1, Y, X + 1, Y + SUB + 1)
+
+
 def compose(kit, data, level_id=0, seed=None, with_grid=True):
     """The map as a Built (tiles, objects, monsters, exits) - used by the editor and the game."""
     from .acts import apply_act_tables
@@ -227,6 +264,7 @@ def compose(kit, data, level_id=0, seed=None, with_grid=True):
     lay_things(b, data, 0, 0, owner)
     if grid is not None:
         from .act3 import _block_decor
+        block_walls(data, grid, 0, 0)
         _block_decor(b, grid)
     b.custom_monsters = [((int(m[0]), int(m[1])), m[2], (m[3] if len(m) > 3 else "normal"))
                          for m in data.get("monsters", [])]
