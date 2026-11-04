@@ -298,6 +298,7 @@ class D2Hud:
             sc.set_alpha(int(255 * min(1.0, t * 2)))
             surf.blit(sc, (W / 2 - sc.get_width() / 2, int(70 * self.s)))
             sc.set_alpha(None)
+        self._draw_belt_popup(surf, p)
         tip = getattr(self, "world_tip", None)
         if not self.hover_lines and tip and getattr(world, "held", None) is None:
             texts, cols = tip
@@ -515,6 +516,34 @@ class D2Hud:
             y += 15
 
     # ------------------------------------------------------------ tooltip
+    def _draw_belt_popup(self, surf, p):
+        """The belt's upper rows, opened over everything else while the mouse is on the belt."""
+        geom = getattr(self, "_belt_geom", None)
+        if not geom:
+            return
+        from game import potions
+        bx0, by0, rows, pop_rect = geom
+        if pop_rect.collidepoint((int(self.mouse[0]), int(self.mouse[1]))):
+            self.hover_lines = None          # (not the tooltips of what lies under the open belt)
+        bg = pygame.Surface((int(pop_rect.w * self.s), int(pop_rect.h * self.s)), pygame.SRCALPHA)
+        bg.fill((12, 10, 8, 240))
+        surf.blit(bg, self.P(pop_rect.x, pop_rect.y))
+        pygame.draw.rect(surf, (120, 100, 60), pygame.Rect(self.P(pop_rect.x, pop_rect.y),
+                                                           (int(pop_rect.w * self.s), int(pop_rect.h * self.s))), 1)
+        self.region(pop_rect.x, pop_rect.y, pop_rect.w, pop_rect.h, "belt_popup")
+        mx, my = self.mouse
+        for i in range(4):
+            col = potions.column(p, i)
+            for r in range(1, rows):
+                bx, by = bx0 + i * 31, by0 - r * 31
+                box = pygame.Rect(self.P(bx, by), (int(29 * self.s), int(29 * self.s)))
+                pygame.draw.rect(surf, (40, 34, 26), box)
+                pygame.draw.rect(surf, (70, 60, 44), box, 1)
+                if r < len(col):
+                    self._icon(surf, col[r], bx, by, 29, 29)
+                    if pygame.Rect(int(bx), int(by), 29, 29).collidepoint((int(mx), int(my))):
+                        self.hover_lines = col[r].describe_lines(p)
+
     def _draw_target_bar(self, surf, m, scene):
         """The monster under the mouse, like D2: its name on a red life bar at the top centre, then
         its type and modifiers, then its immunities."""
@@ -637,30 +666,28 @@ class D2Hud:
         self._skill_box(surf, px0 + 153, py0 + 65, getattr(p, "left_skill", None), "left")
         self._skill_box(surf, px0 + 510, py0 + 65, p.right_skill, "right")
 
-        # belt: 2-4 slots (Siege on Harrogath opens more), each a column of potions; drink the bottom one
+        # belt: 4 slots (keys 1-4), 2-4 rows (Siege on Harrogath adds rows); the bottom row sits in the
+        # panel, the rows above open up while the mouse is over the belt - like D2
         from game import potions
-        nslots = potions.belt_slots(p)
+        rows = potions.belt_rows(p)
         combat = getattr(world, "mode", "") == "combat"
+        bx0, by0 = px0 + 375, py0 + 66
+        belt_rect = pygame.Rect(int(bx0), int(by0), 4 * 31, 29)
+        up_h = (rows - 1) * 31
+        pop_rect = pygame.Rect(int(bx0 - 4), int(by0 - up_h - 6), 4 * 31 + 6, up_h + 6)
+        mpos = (int(mx), int(my))
+        self.belt_open = rows > 1 and (belt_rect.collidepoint(mpos) or
+                                       (getattr(self, "belt_open", False) and pop_rect.collidepoint(mpos)))
+        self._belt_geom = (bx0, by0, rows, pop_rect) if self.belt_open else None
         for i in range(4):
-            bx, by = px0 + 375 + i * 31, py0 + 66
-            hot = pygame.Rect(int(bx), int(by), 29, 29).collidepoint((int(mx), int(my)))
-            if i >= nslots:
-                lock = pygame.Surface((int(29 * self.s), int(29 * self.s)), pygame.SRCALPHA)
-                lock.fill((0, 0, 0, 170))
-                surf.blit(lock, self.P(bx, by))
-                self.text(surf, self.f10, "locked", (110, 100, 90), bx, by + 10, "center", 29)
-                if hot:
-                    self.hover_lines = [("Locked belt slot", GREY),
-                                        ("Siege on Harrogath opens one in Normal and one in Nightmare", GREY)]
-                continue
             col = potions.column(p, i)
+            bx, by = bx0 + i * 31, by0
             if col:
                 self._icon(surf, col[0], bx, by, 29, 29)
-                if len(col) > 1:
-                    self.text(surf, self.f10, "x%d" % len(col), WHITE, bx + 1, by + 1)
-                if hot:
+                if pygame.Rect(int(bx), int(by), 29, 29).collidepoint(mpos):
                     self.hover_lines = col[0].describe_lines(p)
             cd = potions.cooldown(p, i) if combat else 0
+            bx, by = bx0 + i * 31, by0
             if cd:
                 sh = pygame.Surface((int(29 * self.s), int(29 * self.s)), pygame.SRCALPHA)
                 sh.fill((0, 0, 0, 150))

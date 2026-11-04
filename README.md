@@ -223,9 +223,9 @@ Healing and mana potions restore part of your maximum life / mana at once, then 
 5 turns: Minor 60% + 2%/turn, Light 70% + 3%, standard 80% + 4%, Greater 90% + 5%, Super 100% + 6%.
 Full Rejuvenation: 100% life and mana + 6%/turn (Siege on Harrogath in Hell gives 4 - the only way to
 get them). You drink only from the belt, and in combat the belt is locked (no refilling it). The belt
-has 2 slots; killing Shenk opens a 3rd in Normal and a 4th in Nightmare. Each slot holds as many
-potions as your belt has rows (no belt 1, sash 2, belt 3, girdle / exceptional / elite 4). Drinking in
-combat rests that slot for 8 turns.
+has 4 slots (keys 1-4) and 2 rows of potions; killing Shenk adds a 3rd row in Normal and a 4th in
+Nightmare. You drink the bottom potion of a slot; hover over the belt to open the rows above, like D2.
+Drinking in combat rests that slot for 8 turns.
 
 Horadric Cube: potion + gem infuses the potion (a buff for 2 turns chipped .. 6 turns perfect, and an
 outline in the gem's colour): Amethyst magic find, Diamond AP and damage reduction, Skull cleanse +

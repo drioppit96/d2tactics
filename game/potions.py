@@ -6,10 +6,10 @@
   Full Rejuvenation: 100% life and mana at once + 6%/turn for 5 turns (130% in all).
 - You drink only from the belt. In combat the belt is locked: no drinking from the backpack and no
   putting potions into the belt (they go to the backpack).
-- The belt has 2 slots (columns) at first; Siege on Harrogath (killing Shenk) adds one in Normal and
-  one in Nightmare (4 at most); in Hell it gives 4 Full Rejuvenation potions, the only way to get them.
-  Each slot holds as many potions as your belt has rows (no belt 1, sash / light belt 2,
-  belt / heavy belt 3, girdles and exceptional / elite belts 4); you drink the bottom one.
+- The belt has 4 slots (columns, keys 1-4) and 2 rows at first (8 potions); Siege on Harrogath (killing
+  Shenk) adds a row in Normal and one in Nightmare (4 rows, 16 potions at most); in Hell it gives
+  4 Full Rejuvenation potions, the only way to get them. You drink the bottom potion of a column and
+  the ones above slide down; the rows above open up when you hover over the belt, like D2.
 - Drinking in combat puts that slot on an 8-turn cooldown (each slot counts down on its own).
 - The Horadric Cube infuses a potion with a gem (potion + gem): the gem adds a buff for 2 (chipped)
   to 6 (perfect) turns, and the bottle gets an outline in the gem's colour.
@@ -21,6 +21,7 @@ from .d2items import GRADES
 REGEN_TURNS = 5
 SLOT_COOLDOWN = 8
 MAX_SLOTS = 4
+MAX_ROWS = 4
 
 # potion code -> (instant %, % per turn for REGEN_TURNS turns)
 TIERS = {"hp1": (60, 2), "hp2": (70, 3), "hp3": (80, 4), "hp4": (90, 5), "hp5": (100, 6),
@@ -28,8 +29,6 @@ TIERS = {"hp1": (60, 2), "hp2": (70, 3), "hp3": (80, 4), "hp4": (90, 5), "hp5": 
          "rvs": (35, 0), "rvl": (100, 6)}
 FULL_REJUV = "rvl"
 
-# belt rows by belt code (Belts.txt numboxes / 4); any other belt (girdles, exceptional, elite): 4
-BELT_ROWS = {"lbl": 2, "vbl": 2, "mbl": 3, "tbl": 3}
 
 GEM_COLORS = {"amethyst": (175, 70, 235), "diamond": (235, 235, 250), "skull": (205, 195, 170),
               "ruby": (240, 40, 40), "sapphire": (60, 110, 255), "topaz": (250, 220, 40),
@@ -134,16 +133,14 @@ def infuse(it, gem, grade):
 
 # ------------------------------------------------------------------ the belt
 def belt_slots(p):
-    """Columns you can use: 2, +1 for Shenk in Normal, +1 for Shenk in Nightmare."""
-    got = set(getattr(p, "belt_unlocks", None) or ())
-    return min(MAX_SLOTS, 2 + len(got & {"normal", "nightmare"}))
+    """The belt always has 4 slots (columns, keys 1-4)."""
+    return MAX_SLOTS
 
 
 def belt_rows(p):
-    b = (getattr(p, "equipment", None) or {}).get("belt")
-    if b is None:
-        return 1
-    return BELT_ROWS.get(getattr(b, "code", ""), 4)
+    """Rows of potions: 2 at first, +1 for Shenk in Normal, +1 for Shenk in Nightmare (4 at most)."""
+    got = set(getattr(p, "belt_unlocks", None) or ())
+    return min(MAX_ROWS, 2 + len(got & {"normal", "nightmare"}))
 
 
 def column(p, c):
@@ -230,8 +227,7 @@ def drink(world, c):
     """Drink the bottom potion of belt slot c. -> True if you drank."""
     p = world.player
     combat = world.mode == "combat"
-    if c >= belt_slots(p):
-        world.log("That belt slot is locked (Siege on Harrogath opens more).", (170, 170, 170))
+    if not 0 <= c < belt_slots(p):
         return False
     col = column(p, c)
     if not col:
@@ -389,7 +385,8 @@ def shenk_reward(world, difficulty):
         return
     got.append(difficulty)
     if difficulty in ("normal", "nightmare"):
-        world.log("Your belt has %d potion slots now." % belt_slots(p), (199, 179, 119))
+        world.log("Your belt has %d rows now (%d potions)." % (belt_rows(p), belt_rows(p) * MAX_SLOTS),
+                  (199, 179, 119))
         normalize(p)
     elif difficulty == "hell" and world.content is not None and FULL_REJUV in world.content.base_by_code:
         c = world.content

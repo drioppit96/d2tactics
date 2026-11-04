@@ -143,7 +143,7 @@ class Hud:
             pygame.draw.rect(surf, (30, 26, 22), rect)
             pygame.draw.rect(surf, EDGE, rect, 1)
             from game import potions
-            col = potions.column(p, i) if i < potions.belt_slots(p) else []
+            col = potions.column(p, i)
             if col:
                 self.assets.draw_item_icon(surf, col[0], rect)
                 oc = potions.outline_color(col[0])
