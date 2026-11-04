@@ -1860,7 +1860,8 @@ class World(SkillCaster, ItemActions):
                 # Duriel: rares, sets and uniques 5% more often than Andariel's (same boss odds x 1.05)
                 self.content._q_bonus = 1.05 if boss == "duriel" else 1.0
                 try:
-                    drops = self.content.roll_tc(tc, unit.level, self.rng, mf=p.mf, gf=p.gf)
+                    drops = self.content.roll_tc(tc, getattr(unit, "drop_level", None) or unit.level, self.rng,
+                                                 mf=p.mf, gf=p.gf)
                 finally:
                     self.content._q_bonus = 1.0
             else:

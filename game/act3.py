@@ -306,10 +306,12 @@ SIDE_BOSSES = [
     # (area, monster, name, boss tag, mods, minions)
     (76, "arach4", "Silkmother Vashra", "silkmother", ("STRONG", "CURSE"), ("arach4", 3)),
     (LIBRARY, "cantor2", "Scribe Ophizek the Hollow", "scribe", ("MANAHIT", "TELEPORT"), ("zealot3", 4)),
-    # the Scriptorium's crypt garden: a giant of the sewers' walking dead among the tombs and sigils
-    (77, "mummy4", "Sexton Morvane the Unburied", "crypt", ("STRONG", "STONESKIN"), ("mummy4", 5)),
+    # the Scriptorium's crypt garden: a giant winged Venom Lord among the tombs and sigils, with the
+    # sewers' walking dead around him; he drops exactly what Nihlathak drops
+    (77, "megademon3", "Morvane the Unburied", "crypt", ("STRONG", "STONESKIN"), ("mummy4", 5)),
 ]
 GIANTS = {"crypt": 2.0}         # boss tag -> drawn this many times its normal size
+LOOT_LIKE = {"crypt": ("nihlathakboss", 124)}   # boss tag -> (boss whose loot he drops, that boss's area)
 
 
 def spawn_side_bosses(world, taken, info):
@@ -360,6 +362,12 @@ def spawn_side_bosses(world, taken, info):
         m.color_shift = 1 + zlib.crc32(name.encode()) % 7
         if tag in GIANTS:
             m.giant = GIANTS[tag]
+        if tag in LOOT_LIKE:                 # the same treasure classes, rolled at that boss's own level
+            other, area = LOOT_LIKE[tag]
+            at = actworld._template(world, other, info.monster_level(area) + 2, unique=True)
+            if at is not None:
+                m.tc, m.tc_quest = at.get("tc"), at.get("tc_quest")
+                m.drop_level = at.get("level")
         for c in actworld._scatter(world, cell, n, taken):
             mm = actworld._spawn(world, minion, c, lvl + 1, taken)
             if mm is not None:
