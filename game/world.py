@@ -1211,10 +1211,7 @@ class World(SkillCaster, ItemActions):
             return True
         found = None
         if name == "Find Potion" and self.rng.random() * 100 < min(100, 30 + 5 * L):
-            found = self.content.make_potion(max(1, corpse.level), self.rng) if self.content else None
-            if found is None:
-                from .items import make_potion
-                found = make_potion(corpse.level, self.rng)
+            found = self._find_gem(corpse, L) if self.content else None
         elif name == "Find Item" and self.rng.random() * 100 < min(60, 15 + 3 * L):
             drops = (self.content.roll_drop(corpse.level, True, self.rng) if self.content
                      else roll_drop(corpse.level, True, self.rng))
@@ -1309,6 +1306,18 @@ class World(SkillCaster, ItemActions):
         if dx and dy:   # diagonal: can't attack through a wall corner
             return self.grid.walkable(a[0] + dx, a[1]) or self.grid.walkable(a[0], a[1] + dy)
         return True
+
+    def _find_gem(self, corpse, L):
+        """Find Gem (the barbarian's Find Potion): a gem from the corpse - chipped and flawed at first,
+        better with the monster's level and the skill's."""
+        c, rng = self.content, self.rng
+        gems = [b for b in c.bases if b.get("gem") and b["gem"][0] == "gem"]
+        if not gems:
+            return None
+        top = min(4, (corpse.level // 15) + L // 8)          # best grade reachable: 0 chipped .. 4 perfect
+        grade = max(0, min(top, int(rng.triangular(0, top + 1, top * 0.6))))
+        pick = [b for b in gems if b["gem"][2] == grade] or gems
+        return c.make_item(rng.choice(pick), max(1, corpse.level), rng)
 
     def check_awareness_force(self):
         if self.mode == "explore":

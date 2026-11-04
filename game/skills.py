@@ -226,6 +226,8 @@ def load_all(src, strings=None):
         s.title = _strings_get(strings, d.get("str name"), key)
         s.short = _strings_get(strings, d.get("str short"), "")
         s.long = _strings_get(strings, d.get("str long"), "")
+        if key == "Find Potion":             # potions only come from vendors here: the barbarian finds gems
+            s.title, s.short, s.long = "Find Gem", "Search a corpse for a gem", "Search a corpse for a gem"
         s.element = r.get("etype", "")
         s.itype = tuple(x for x in (r.get("itypea1"), r.get("itypea2"), r.get("itypea3")) if x)
         s.extra = dict(OVERRIDES.get(key, {}))
@@ -754,7 +756,7 @@ def describe_skill(name, lv):
         "Berserk": ["Hit with magic damage, but your defense drops to 0", "+%d%% damage" % (150 + 15 * L)],
         "Double Throw": ["Throwing weapons only (not implemented yet)"],
         "Howl": ["Monsters within %d cells flee for %d turns" % (4 + L // 2, 2 + L // 4)],
-        "Find Potion": ["Search a corpse for a potion (%d%% chance)" % min(100, 30 + 5 * L)],
+        "Find Potion": ["Search a corpse for a gem (%d%% chance; better gems at higher levels)" % min(100, 30 + 5 * L)],
         "Taunt": ["Target attacks you, -%d%% damage and -%d%% attack" % (5 + 2 * L, 5 + 2 * L)],
         "Shout": ["+%d%% defense for %d turns" % (100 + 10 * L, 6 + L)],
         "Find Item": ["Search a corpse for an item (%d%% chance)" % min(60, 15 + 3 * L)],
