@@ -78,8 +78,9 @@ class ObjData:
         except Exception:
             pass
 
-    def kind(self, oid):
-        """What an Objects.txt row is here: a kind from OPERATE_KIND, "decor" or None (not used)."""
+    def kind(self, oid, scenery=False):
+        """What an Objects.txt row is here: a kind from OPERATE_KIND, "decor" or None (not used).
+        scenery: a map editor placement - any object with graphics is at least scenery."""
         r = self.rows.get(oid)
         if r is None:
             return None
@@ -91,7 +92,7 @@ class ObjData:
         fn = _int(r.get("operatefn"))
         if fn in OPERATE_KIND:
             return OPERATE_KIND[fn]
-        if fn in DECOR_FNS:
+        if fn in DECOR_FNS or scenery:
             return "decor"
         return None
 
@@ -147,8 +148,8 @@ def _ring_ok(grid, cells):
     return all(grid.walkable(*c) for c in cells)
 
 
-def make(world, oid, cell, owner, data, town=False):
-    kind = data.kind(oid)
+def make(world, oid, cell, owner, data, town=False, scenery=False):
+    kind = data.kind(oid, scenery)
     if kind is None:
         return None
     r = data.rows[oid]
@@ -265,7 +266,8 @@ def populate(world, built, info, taken, safe):
                 gold = world.content.make_gold(max(1, lvl) * 2, world.rng)
                 world.ground.setdefault(c2, []).append(gold)
             continue
-        kind = data.kind(oid)
+        placed = isinstance(n, tuple)                         # map editor objects: anything drawable
+        kind = data.kind(oid, placed)
         if kind is None or kind == "door":
             continue                    # no doors in this game: doorways are always open
         if kind == "decor":
@@ -281,7 +283,7 @@ def populate(world, built, info, taken, safe):
                 cell = c2
             if cell in used_cells or cell in world.exits:
                 continue
-        o = make(world, oid, cell, owner, data, town=owner in TOWN_IDS)
+        o = make(world, oid, cell, owner, data, town=owner in TOWN_IDS, scenery=placed)
         if o is None:
             continue
         if countess:

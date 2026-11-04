@@ -39,7 +39,7 @@ from game import custommap  # noqa: E402
 PANEL_W = 290
 TOP_H = 92                     # info line + two rows of buttons
 BOT_H = 24
-TABS = ["Floor", "Wall", "Room", "Object", "Monster", "Marker", "Sprite"]
+TABS = ["Floor", "Wall", "Room", "Object", "Monster", "Marker"]     # (the "Sprite" tab - our own recoloured art - is gone)
 DECOR_DIR = os.path.join(ROOT, "assets", "decor")
 BG = (14, 12, 10)
 PANEL = (28, 24, 20)
@@ -224,7 +224,7 @@ class Editor:
                 strings = getattr(self.content, "strings", None)
                 for oid in sorted(d.rows):
                     try:
-                        if d.kind(oid) is None:
+                        if d.kind(oid, True) is None:     # every original object with graphics
                             continue
                     except Exception:
                         continue
@@ -233,9 +233,7 @@ class Editor:
                     base = d.name(oid, strings)
                     nm = ("%s #%d" % (desc, oid)) if base.lower() == "an evil force" else "%s (%s) #%d" % (base, desc, oid)
                     groups[object_category(r, nm)].append((nm, oid))
-            names = sorted(f[:-4] for f in os.listdir(DECOR_DIR) if f.endswith(".png")) if os.path.isdir(DECOR_DIR) else []
-            for n in names:
-                groups[sprite_category(n)].append((n.replace("_", " "), ("sprite", n)))
+            # (our own recoloured sprites are no longer offered: original D2 art only)
             for c in CATEGORIES:
                 items = [e for e in sorted(groups[c], key=lambda e: e[0].lower()) if not s or s in e[0].lower()]
                 if not items:

@@ -118,6 +118,7 @@ class UnitSprites:
         self.arms = arms            # component -> preferred armtype list
         self.wclass = weapon_class
         self.remap = None           # 256-byte palette shift (unique monsters' colour), or None
+        self.pal = None             # another act's palette (an object from another act), or None
         self.cache = {}             # (mode, dir) -> [(surface, x0, y0)]
         self.cofs = {}
         self.dccs = {}
@@ -197,7 +198,7 @@ class UnitSprites:
             comp_surf = pygame.Surface((x1 - x0 + 1, y1 - y0 + 1), pygame.SRCALPHA)
             for fr, L in parts:
                 px = fr.pixels if self.remap is None else bytes(fr.pixels).translate(self.remap)
-                img = self.a.indexed_surface(fr.width, fr.height, px)
+                img = self.a.indexed_surface(fr.width, fr.height, px, self.pal)
                 if L.transparent:
                     img.set_alpha(150)
                 comp_surf.blit(img, (fr.xmin - x0, fr.ymin - y0))
@@ -314,8 +315,10 @@ class D2Assets(AssetProvider):
         m = re.search(r"tiles\\act(\d)\\", (getattr(f, "name", "") or "").lower())
         if not m or int(m.group(1)) == self.act:
             return None
+        return self.act_palette(int(m.group(1)))
+
+    def act_palette(self, a):
         pals = self.__dict__.setdefault("_act_pals", {})
-        a = int(m.group(1))
         if a not in pals:
             path = "data\\global\\palette\\act%d\\pal.dat" % a
             pals[a] = load_palette(self.src.read(path)) if self.src.has(path) else None
@@ -717,11 +720,39 @@ class D2Assets(AssetProvider):
                "armory_altar",
                "hellforge", "prison")
 
-    def _obj_frames(self, tok, mode):
+    def _obj_sprites(self, tok):
         key = ("obj", tok)
         sp = self.sprites.get(key)
         if sp is None:
             sp = self.sprites[key] = UnitSprites(self, "objects", tok, {}, "HTH")
+            sp.pal = self._obj_palette(tok)
+        return sp
+
+    def _obj_palette(self, tok):
+        """An object made for other acts (Act 1's rogue fountain in Kurast) keeps its own act's
+        colours: the lowest act in its Objects.txt act mask, unless it is made for this act too."""
+        acts = self.__dict__.get("_objacts_by_tok")
+        if acts is None:
+            acts = self._objacts_by_tok = {}
+            try:
+                for r in read_table(self.src, "Objects"):
+                    t = (r.get("token") or "").strip().upper()
+                    try:
+                        m = int(r.get("act") or 0)
+                    except ValueError:
+                        m = 0
+                    if t:
+                        acts[t] = acts.get(t, 0) | m
+            except Exception:
+                pass
+        m = acts.get(tok.upper(), 0)
+        if not m or m & (1 << (self.act - 1)):
+            return None
+        a = min(i + 1 for i in range(5) if m & (1 << i))
+        return self.act_palette(a)
+
+    def _obj_frames(self, tok, mode):
+        sp = self._obj_sprites(tok)
         try:
             fr = sp.frames(mode, (0, 1))
         except Exception:
@@ -821,10 +852,7 @@ class D2Assets(AssetProvider):
             m_ = mode
             if row is not None and mode == "NU" and row[0][0] == 0 and row[0][2] > 0:
                 m_ = "ON"           # portals: D2 keeps them in their (looping) "on" animation
-            key = ("obj", tok)
-            sp = self.sprites.get(key)
-            if sp is None:
-                sp = self.sprites[key] = UnitSprites(self, "objects", tok, {}, "HTH")
+            sp = self._obj_sprites(tok)
             frames = None
             for m in ((m_, "NU") if m_ != "NU" else ("NU",)):
                 try:
