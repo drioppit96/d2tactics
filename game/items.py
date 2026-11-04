@@ -410,7 +410,7 @@ def make_item(level, magic_chance=0.25, rng=random):
 def roll_drop(mlevel, is_boss=False, rng=random):
     """Returns a list of items a dying monster drops."""
     if is_boss:
-        drops = [make_gold(mlevel * 3, rng), make_potion(mlevel, rng)]
+        drops = [make_gold(mlevel * 3, rng)]
         drops += [make_item(mlevel + 2, magic_chance=1.0, rng=rng) for _ in range(2)]
         drops.append(make_item(mlevel + 2, magic_chance=0.5, rng=rng))
         return drops
@@ -420,5 +420,5 @@ def roll_drop(mlevel, is_boss=False, rng=random):
     if r < 0.72:
         return [make_gold(mlevel, rng)]
     if r < 0.88:
-        return [make_potion(mlevel, rng)]
+        return [make_gold(mlevel, rng)]
     return [make_item(mlevel, rng=rng)]

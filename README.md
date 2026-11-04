@@ -227,6 +227,10 @@ has 4 slots (keys 1-4) and 2 rows of potions; killing Shenk adds a 3rd row in No
 Nightmare. You drink the bottom potion of a slot; hover over the belt to open the rows above, like D2.
 Drinking in combat rests that slot for 8 turns.
 
+Potions don't drop from monsters or chests: the potion sellers stock them, the two best tiers for
+their act and difficulty (Normal: Minor/Light in Acts 1-2, Light/Healing in Acts 3-5; Nightmare:
+Light/Healing, then Healing/Greater; Hell: Healing/Greater, then Greater/Super from Act 3 on).
+
 Horadric Cube: potion + gem infuses the potion (a buff for 2 turns chipped .. 6 turns perfect, and an
 outline in the gem's colour): Amethyst magic find, Diamond AP and damage reduction, Skull cleanse +
 poison immunity, Ruby / Sapphire / Topaz / Emerald fire / cold / lightning / poison resistance.

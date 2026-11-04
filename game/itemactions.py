@@ -157,8 +157,20 @@ class ItemActions:
             store = Store(npc_id, [("gamble", _pack(items))])
         else:
             col = VENDORS.get(npc_id)
+            from . import potions
+            sells = potions.vendor_tiers(getattr(p, "current_act", 1) or 1, _difficulty(self))
             for b in c.bases:
                 sh = b.get("shop", {}).get(col)
+                if b.get("code") in potions.TIERS and b.get("code") not in ("rvs", "rvl"):
+                    # healing / mana potions: no drops any more - the potion sellers stock the tiers
+                    # that fit their act and the difficulty (the two best ones)
+                    if not any((x.get("shop", {}) or {}).get(col) and x.get("code") in potions.TIERS
+                               for x in c.bases) or b["code"][2:] not in sells:
+                        continue
+                    it = c.make_item(b, ilvl, rng, sockets=0)
+                    it.infinite = True
+                    pages["misc"].append(it)
+                    continue
                 if not sh or b["qlvl"] > ilvl:
                     continue
                 mn, mx, mmn, mmx, mlvl = sh

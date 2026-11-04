@@ -572,7 +572,7 @@ def _pick(c, lvl, rng, mf, gf, nothing):
     if r < 0.42:
         return c.make_gold(lvl, rng, gf)
     if r < 0.70:
-        return c.make_potion(lvl, rng)
+        return c.make_gold(lvl, rng, gf)        # (potions only come from vendors now)
     if r < 0.75:
         return c.make_gem_or_rune(lvl, rng)
     b = c.pick_base(max(1, lvl), rng)

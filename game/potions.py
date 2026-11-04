@@ -82,6 +82,16 @@ def infusion_stats(gem, grade):
     return turns, stats, ap, cleanse, lines
 
 
+# what potion sellers stock: the best tier (1 Minor .. 5 Super) by difficulty and act; they sell it
+# and the tier below
+VENDOR_BEST = {"normal": (2, 2, 3, 3, 3), "nightmare": (3, 3, 4, 4, 4), "hell": (4, 4, 5, 5, 5)}
+
+
+def vendor_tiers(act, difficulty):
+    best = VENDOR_BEST.get(difficulty, VENDOR_BEST["normal"])[max(1, min(5, int(act))) - 1]
+    return {str(t) for t in (best - 1, best) if t >= 1}
+
+
 # ------------------------------------------------------------------ the item
 def drinkable(it):
     return getattr(it, "kind", "") == "potion" and getattr(it, "potion", "") in ("heal", "mana", "rejuv")

@@ -930,8 +930,8 @@ class D2Content:
                 b = rng.choice(cands)
                 return [self.make_item(b, mlvl, rng, self.roll_quality(b, mlvl, rng, mf, boss_q))]
         b = self.base_by_code.get(code)
-        if b is None:
-            return []
+        if b is None or "potion" in b:
+            return []                          # potions don't drop: only vendors sell them
         q = self.roll_quality(b, mlvl, rng, mf, boss_q) if b.get("slot") and b["kind"] in ("weapon", "armor") else "normal"
         it = self.make_item(b, mlvl, rng, q)
         return [it] if it is not None else []
@@ -947,9 +947,7 @@ class D2Content:
             if r < 0.80 and not is_boss:
                 out.append(self.make_gold(mlvl, rng, gf))
             elif r < 0.92 and not is_boss:
-                p = self.make_potion(mlvl, rng)
-                if p:
-                    out.append(p)
+                out.append(self.make_gold(mlvl, rng, gf))    # (potions only come from vendors now)
             elif r < 0.935 and not is_boss:
                 g = self.make_gem_or_rune(mlvl, rng)
                 if g:
