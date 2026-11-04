@@ -65,7 +65,7 @@ class DccAnim:
 
 # our animation names -> D2 mode codes to try, in order
 MODE_MAP = {
-    "NU": ["NU"], "WL": ["WL"], "A1": ["A1"], "SC": ["SC", "A2", "A1"],
+    "NU": ["NU"], "WL": ["WL"], "A1": ["A1"], "SC": ["SC", "A2", "A1", "S1"],
     "GH": ["GH", "NU"], "DD": ["DT"], "DT": ["DD", "DT"], "KK": ["KK", "A2", "A1"],
 }
 

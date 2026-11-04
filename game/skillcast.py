@@ -1437,6 +1437,13 @@ class SkillCaster:
             a.shots = 5
             a.range = 7
             a.combat_only = True
+        elif s.key == "Charged Bolt Sentry":
+            # D2: shoots 5 times (+1 per 4 levels of Lightning Sentry), each shot a spray of 5 charged
+            # bolts (+1 per 3 levels of Shock Field)
+            sk = p.skills
+            a.shots = 5 + sk.level("Lightning Sentry") // 4
+            a.bolts = 5 + sk.level("Shock Field") // 3
+            a.range = 8
         self.log("%s placed." % s.title, YELLOW)
         return True
 
@@ -1571,7 +1578,31 @@ class SkillCaster:
             self.phys_hit(m, pd[0], pd[1], self.player)
         self._spend_shot(a)
 
-    def _wake_of_fire(self, a, env):
+    def _bolt_sentry(self, a, env):
+        """Charged Bolt Sentry: once a turn it sprays its charged bolts at the nearest enemy - erratic
+        sparks, most strike that enemy, the rest the enemies around it or the floor."""
+        foes = [m for m in self.enemies() if self.udist(m, a) <= a.range and self.grid.line_of_sight(a.pos, m.pos)]
+        if not foes:
+            return
+        main = min(foes, key=lambda m: self.udist(m, a))
+        near = [m for m in foes if chebyshev(m.pos, main.pos) <= 2]
+        ed = env.elem_damage() or ("ltng", 2, 14, 0)
+        a.face(*main.pos)
+        rng = self.rng
+        for _ in range(getattr(a, "bolts", 5)):
+            r = rng.random()
+            if r < 0.55:
+                tgt = main
+            elif r < 0.85 and near:
+                tgt = rng.choice(near)
+            else:
+                tgt = None
+            dst = tgt.pos if tgt is not None else (main.x + rng.randint(-2, 2), main.y + rng.randint(-2, 2))
+            self.emit("projectile", a, a.pos, dst, "ltng", "chargedbolt")
+            if tgt is not None and tgt.alive:
+                tgt.aware = True
+                self.elem_hit(tgt, "ltng", ed[1], ed[2], self.player, ed[3], show=False)
+        self._spend_shot(a)
         """D2's Wake of Fire: a widening wave of flames rolls along the ground towards the enemy."""
         foes = [m for m in self.enemies() if self.udist(m, a) <= a.range and self.grid.line_of_sight(a.pos, m.pos)]
         if not foes:
@@ -1603,6 +1634,8 @@ class SkillCaster:
             return self._blade_sentinel(a, env)
         if env is not None and env.s.key.startswith("Wake of"):
             return self._wake_of_fire(a, env)
+        if env is not None and env.s.key == "Charged Bolt Sentry":
+            return self._bolt_sentry(a, env)
         foes = [m for m in self.enemies() if self.udist(m, a) <= a.range and self.grid.line_of_sight(a.pos, m.pos)]
         if not foes or env is None:
             return
