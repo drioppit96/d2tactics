@@ -15,7 +15,8 @@ from .grid import chebyshev
 # Objects.txt OperateFn -> what the object is in this game
 OPERATE_KIND = {1: "casket", 3: "urn", 4: "chest", 5: "barrel", 7: "xbarrel", 14: "corpse", 19: "armor_rack",
                 20: "weapon_rack", 26: "bookshelf", 2: "shrine", 22: "well", 8: "door", 29: "door", 32: "stash",
-                52: "seal", 54: "seal", 55: "seal", 56: "seal", 65: "altar"}
+                52: "seal", 54: "seal", 55: "seal", 56: "seal", 65: "altar",
+                44: "drain", 45: "lever"}         # (the Kurast Sewers' drain stairs and the lever that opens them)
 DECOR_FNS = {0, 11, 13}               # torches, braziers, fires, banners, bodies on stakes: drawn only
 LOOT_KINDS = {"casket", "urn", "chest", "barrel", "xbarrel", "corpse", "armor_rack", "weapon_rack", "bookshelf"}
 BREAKS = {"urn", "barrel", "xbarrel"}           # D2: these break when you open them
@@ -176,11 +177,15 @@ def make(world, oid, cell, owner, data, town=False):
         o["name"] = "Seal"
     elif kind == "altar":
         o["name"] = "Ancients' Altar"
+    elif kind == "lever":
+        o["name"] = "Lever"
+    elif kind == "drain":
+        o["name"] = "Drain"
     elif kind in ("weapon_rack", "armor_rack"):
         o["name"] = "Weapon Rack" if kind == "weapon_rack" else "Armor Stand"
     elif kind == "decor":
         _idle_anim(o, r)
-    if kind != "decor":
+    if kind not in ("decor", "drain"):          # (the drain lies over the stairs: you walk onto it)
         cells = footprint(cell, o["size"])
         if kind == "door":
             o["block"] = [c for c in cells if world.grid.walkable(*c)]
@@ -266,6 +271,8 @@ def populate(world, built, info, taken, safe):
         if kind == "decor":
             if not g.in_bounds(*cell):
                 continue
+        elif kind == "drain":
+            pass                                # (it lies right over the stairs)
         else:
             if not g.walkable(*cell) and kind not in ("door",):
                 c2 = _free(g, cell, 2)
@@ -435,6 +442,8 @@ def operate(world, o):
         return True
     if o["used"]:
         return False
+    if kind == "lever":
+        return _lever(world, o)
     if kind in LOOT_KINDS:
         return _loot(world, o)
     if kind == "shrine":
@@ -442,6 +451,23 @@ def operate(world, o):
     if kind == "well":
         return _well(world, o)
     return False
+
+
+def _lever(world, o):
+    """D2's Kurast Sewers: the lever opens the drain beside it - the stairs down appear."""
+    o["used"] = True
+    o["mode"] = "OP"
+    o["op_t"] = None
+    world.emit("object", o)
+    drains = [d for d in world.objects if d.get("kind") == "drain"]
+    if drains:
+        d = min(drains, key=lambda d: abs(d["cell"][0] - o["cell"][0]) + abs(d["cell"][1] - o["cell"][1]))
+        d["used"] = True
+        d["mode"] = "OP"
+        d["op_t"] = None
+        world.emit("object", d)
+    world.log("Stone grinds on stone. The drain opens.", (255, 215, 90))
+    return True
 
 
 def _door(world, o):
@@ -707,6 +733,8 @@ def tooltip(o):
         return ["Stash", "Click to open"]
     if k == "seal":
         return ["Seal", "Click to open"]
+    if k == "lever":
+        return ["Lever", "Click to pull"]
     if k == "altar":
         return ["Ancients' Altar", "Touch it to call the Ancients"]
     return [o["name"]]
@@ -716,7 +744,7 @@ def clickable(o):
     if not o.get("generic"):
         return True
     k = o["kind"]
-    if k == "decor":
+    if k in ("decor", "drain"):
         return False
     if k in ("door", "stash"):
         return True

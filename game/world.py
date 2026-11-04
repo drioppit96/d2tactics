@@ -624,6 +624,12 @@ class World(SkillCaster, ItemActions):
         """Use a clicked entrance (cave mouth, stairs) - D2 only changes level when you click it."""
         from . import quests
         target = grp["target"]
+        cells = grp.get("cells") or ()
+        shut = [d for d in self.objects if d.get("kind") == "drain" and not d.get("used")
+                and any(abs(d["cell"][0] - c[0]) + abs(d["cell"][1] - c[1]) < 25 for c in cells)]
+        if shut:
+            self.log("The drain is shut. Pull the lever beside it.", (220, 210, 170))
+            return False
         msg = quests.blocked(self, target)
         if msg:
             self.log(msg, (220, 210, 170))
