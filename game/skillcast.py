@@ -1595,22 +1595,33 @@ class SkillCaster:
         main = min(foes, key=lambda m: self.udist(m, a))
         ed = env.elem_damage() or ("ltng", 2, 14, 0)
         a.face(*main.pos)
-        # like the sorceress's Charged Bolt: one fan of bolts, all at once, widening as it flies;
-        # each bolt strikes the first enemy in its way (a big one can take several)
+        # a fan of bolts spread evenly over a wide arc centred on the nearest enemy (like spokes),
+        # all at once; each bolt strikes the first enemy in its way (a big one can take several)
+        import math
         g = self.grid
         free = lambda c: g.in_bounds(*c) and g.walkable(*c)
         reach = a.range + 1
         idx = self._foe_index(a.pos, reach)
+        n = max(1, getattr(a, "bolts", 5))
+        arc = math.radians(110)
+        ang0 = math.atan2(main.y - a.y, main.x - a.x)
         shots = []
-        for ray in _volley_rays(a.pos, main.pos, getattr(a, "bolts", 5), reach, free):
+        for k in range(n):
+            ang = ang0 + (arc * (k / (n - 1) - 0.5) if n > 1 else 0.0) + self.rng.uniform(-0.06, 0.06)
+            ux, uy = math.cos(ang), math.sin(ang)
             tgt, stop = None, a.pos
-            for c in ray:
-                if not free(c) and c not in idx:
-                    break
-                stop = c
+            last = None
+            for st in range(1, reach * 2 + 1):
+                c = (a.x + int(round(ux * st / 2.0)), a.y + int(round(uy * st / 2.0)))
+                if c == last:
+                    continue
+                last = c
                 if c in idx:
                     tgt = idx[c]
                     break
+                if not free(c):
+                    break
+                stop = c
             shots.append((tgt, tgt.pos if tgt is not None else stop))
         for tgt, dst in shots:                                       # every bolt leaves at the same moment
             self.emit("projectile", a, a.pos, dst, "ltng", "chargedbolt")
