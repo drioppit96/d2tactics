@@ -266,6 +266,8 @@ class Editor:
         else:
             out = [("Start (where you arrive)", "start"), ("Exit to a level...", "exit"),
                    ("Erase a tile completely (even a room's)", "x")]
+            if any(m[2] == "boss" for m in self.doc.get("markers", [])) or int(self.doc.get("level") or 0):
+                out = [("The boss's spot", "boss")] + out
             if self.doc.get("armory"):
                 out = [("Seal (open all four to call the smith)", "altar"), ("The smith's spot", "smith"),
                        ("The spider queen's nest (Silkmother)", "spider"),
@@ -359,9 +361,9 @@ class Editor:
         if self.tab == 6 and first:
             self.doc.setdefault("decor", []).append([cell[0], cell[1], v[1]])
             return "obj"
-        if self.tab == 5 and v in ("altar", "smith", "spider") and first:
+        if self.tab == 5 and v in ("altar", "smith", "spider", "boss") and first:
             mk = self.doc.setdefault("markers", [])
-            if v in ("smith", "spider"):
+            if v in ("smith", "spider", "boss"):
                 mk[:] = [m for m in mk if m[2] != v]
             mk.append([cell[0], cell[1], v])
             return "obj"
@@ -951,7 +953,7 @@ class Editor:
             self._marker(off, cam, tuple(self.doc["start"]), (60, 220, 90), "START")
         for mx_, my_, what in self.doc.get("markers", []):
             col, lab = {"altar": ((80, 170, 255), "SEAL"), "smith": ((230, 50, 50), "SMITH"),
-                        "spider": ((200, 90, 230), "SPIDER QUEEN")}.get(what, ((200, 200, 200), what.upper()))
+                        "spider": ((200, 90, 230), "SPIDER QUEEN"), "boss": ((230, 50, 50), "BOSS")}.get(what, ((200, 200, 200), what.upper()))
             self._marker(off, cam, (mx_, my_), col, lab)
         for e in self.doc.get("exits", []):
             self._marker(off, cam, (e[0], e[1]), (170, 90, 230), "EXIT -> %s" % e[2])
@@ -1078,6 +1080,12 @@ def open_game_map(ed, name):
     path = custommap.game_map_path(name)
     ed.open(path)
     ed.map_key = name
+    try:                                          # (the editor opens this map again next time)
+        os.makedirs(custommap.MAPS, exist_ok=True)
+        with open(os.path.join(custommap.MAPS, ".editor_last"), "w") as f:
+            f.write(name)
+    except OSError:
+        pass
     mine = path.startswith(custommap.MAPS)
     in_game = os.path.exists(os.path.join(custommap.GAME_MAPS, name + ".json")) or int(ed.doc.get("level") or 0)
     ed.msg = "%s (%s). Save writes maps/%s.json%s" % (
@@ -1113,6 +1121,12 @@ def main():
     ed = Editor(assets, screen.get_size())
     maps = custommap.game_maps()
     want = sys.argv[1] if len(sys.argv) > 1 else None          # (the map generator opens its map here)
+    if not want:
+        try:
+            with open(os.path.join(custommap.MAPS, ".editor_last")) as f:
+                want = f.read().strip()
+        except OSError:
+            want = None
     if want and want in maps:
         open_game_map(ed, want)
     elif maps:
