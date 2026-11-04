@@ -24,7 +24,7 @@ SKILLS = {
     "Defense Curse": ("curse", "def", 0, None), "Blood Mana": ("curse", "bloodmana", 0, None),
     "NihlathakCorpseExplosion": ("ce", "fire", 1.0, "corpseexplosion"),
     "Horror Arctic Blast": ("cone", "cold", 0.9, "frozenhorror arcticblast1"),
-    "Hydra": ("bolt", "fire", 0.9, "hydra"), "ZakarumHeal": ("heal", None, 0.25, None),
+    "Hydra": ("bolt", "fire", 0.9, "hydra"), "ZakarumHeal": ("heal", None, 1.0, None),
     "UnHolyBolt": ("bolt", "mag", 0.8, "unholybolt1"), "Frost Nova": ("nova", "cold", 0.8, "frostnova"),
     "Glacial Spike": ("bolt", "cold", 1.0, "glacialspike"), "Fire Ball": ("bolt", "fire", 1.0, "fireball"),
     "VampireFirewall": ("area", "fire", 0.8, "vampirefirewallmaker"), "VampireFireball": ("bolt", "fire", 0.9, "vampirefireball"),
@@ -246,9 +246,12 @@ def cast(world, m, name, lvl, tgt):
                 if a.alive and world.udist(a, m) <= 1:
                     world._resolve_attack(m, a, quiet_anim=True)
     elif kind == "heal":
+        council = (getattr(m, "d2id", "") or "").lower().startswith("councilmember") or getattr(m, "boss", None) == "council"
         for o in world.monsters:
             if o.alive and not o.ally and o.ai != "npc" and chebyshev(o.pos, m.pos) <= 6 and o.hp < o.max_hp:
-                h = max(1, int(o.max_hp * 15 * power / 100))    # (Zakarum Heal: 1/4 of D2's, 3.75%)
+                h = max(1, int(o.max_hp * 15 * power / 100))
+                if council:
+                    h = max(1, h // 4)          # the High Council heals a quarter of D2's (cantors: the full heal)
                 o.hp = min(o.max_hp, o.hp + h)
                 world.emit("heal", o, h)
     elif kind == "summon":
