@@ -32,7 +32,7 @@ JOURNAL = {
              "potion": "Alkor brewed you a Potion of Life from the bird's ashes. Drink it.",
              "done": "Completed. The Potion of Life gave you +20 Life."},
     "gidbinn": {"active": "Ormus says the Gidbinn, a sacred blade, is held by the smith of the Kurast Armory "
-                           "(east of the Kurast Bazaar). Light the four altars in the armory's corners to call him out.",
+                           "(east of the Kurast Bazaar). Open the four hellish seals in the armory's corners to call him out.",
                 "cleared": "You have the Gidbinn. Bring it to Ormus.",
                 "done": "Completed. Ormus gave you a ring."},
     "khalim": {"active": "Remake Khalim's Will: his Eye (Silkmother Vashra, Kurast Armory), Brain (Scribe Ophizek, "
@@ -155,7 +155,7 @@ def talk(world, npc):
         if q["gidbinn"] == "none":
             _start(world, "gidbinn")
             lines = ["Ormus: The Gidbinn - a sacred blade - is held by the pale smith of the Kurast Armory, east "
-                     "of the Bazaar. Light the four altars in its corners and he will come out. Ormus needs the blade."]
+                     "of the Bazaar. Open the four hellish seals in its corners and he will come out. Ormus needs the blade."]
         elif has_item(p, "g33", world):
             take_item(world, "g33")
             _done(world, "gidbinn", "A ring for you.")
@@ -397,11 +397,11 @@ def on_object(world, obj):
         world.emit("nova", p, obj["cell"], 1, "fire")
         left = [o for o in world.objects if o["kind"] == "armory_altar" and not o["used"]]
         if left:
-            world.log("The altar flares up. %d more to light." % len(left), QUEST_COLOR)
+            world.log("The seal breaks open. %d more to open." % len(left), QUEST_COLOR)
         else:
             from .act3 import summon_smith, SMITH_NAME
             if summon_smith(world) is not None:
-                world.log("All four altars burn! %s strides out of the forge court." % SMITH_NAME, QUEST_COLOR)
+                world.log("All four seals are open! %s strides out of the forge court." % SMITH_NAME, QUEST_COLOR)
         return True
     if k == "gidbinn":
         if obj["used"]:

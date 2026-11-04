@@ -711,7 +711,7 @@ class D2Assets(AssetProvider):
                      "cube_chest": ["XK"], "staff_chest": ["XK"], "scroll_chest": ["XK"], "viper_altar": ["ZA"],
                      "journal": ["TT"], "wirt": ["BP"],
                      "eye_chest": ["XK"], "brain_chest": ["XK"], "heart_chest": ["XK"], "gidbinn": ["GA"],
-                     "lamtome": ["AB"], "orb": ["55"], "armory_altar": ["GA"], "hellforge": ["UX"], "prison": ["GI"], "anya": ["2N"]}
+                     "lamtome": ["AB"], "orb": ["55"], "armory_altar": ["30", "31", "32", "33", "34"], "hellforge": ["UX"], "prison": ["GI"], "anya": ["2N"]}
     USED_ON = ("waypoint", "cage", "inifuss", "cube_chest", "staff_chest", "scroll_chest", "viper_altar",
                "orifice", "journal", "eye_chest", "brain_chest", "heart_chest", "gidbinn", "lamtome", "orb",
                "armory_altar",
@@ -813,6 +813,8 @@ class D2Assets(AssetProvider):
                 toks = [WAYPOINT_TOKEN[oid]] + [t for t in toks if t != WAYPOINT_TOKEN[oid]]
         if kind == "cairn" and isinstance(oid, int) and 7 <= oid <= 11:
             toks = [toks[oid - 7]]
+        if kind == "armory_altar" and isinstance(oid, int) and 0 <= oid < len(toks):
+            toks = [toks[oid]] + [t for t in toks if t != toks[oid]]      # (each a different Chaos seal)
         mode = "ON" if used and kind in self.USED_ON else "NU"
         for tok in toks:
             row = self._obj_row(tok)

@@ -631,10 +631,10 @@ def _armory_after_grid_json(b, grid):
             block(X - 1, Y, X + 1, Y + SUB + 1)
     _block_decor(b, grid)
     altars = [c for w, c in getattr(b, "markers", []) if w == "altar"]
-    for c in altars:
+    for i, c in enumerate(altars):           # Diablo's seals from the Chaos Sanctuary, one of each kind
         c2 = drlg.near_walkable(grid, c, 12)
         if c2:
-            b.objects.append(("armory_altar", c2, 76, -1))
+            b.objects.append(("armory_altar", c2, 76, i % 5))
     smith = [c for w, c in getattr(b, "markers", []) if w == "smith"]
     b.armory_boss = drlg.near_walkable(grid, smith[0], 12) if smith else None
     spider = [c for w, c in getattr(b, "markers", []) if w == "spider"]
@@ -806,7 +806,7 @@ def armory_after_grid(b, grid, ax, ay):
     for a in ARMORY_ALTARS:
         c = drlg.near_walkable(grid, _acell(ax, ay, *a), 12)
         if c:
-            b.objects.append(("armory_altar", c, 76, -1))
+            b.objects.append(("armory_altar", c, 76, len([o for o in b.objects if o[0] == "armory_altar"]) % 5))
     b.armory_boss = drlg.near_walkable(grid, _acell(ax, ay, *ARMORY_BOSS), 12)
     b.armory_spider = drlg.near_walkable(grid, _acell(ax, ay, *ARMORY_SPIDER), 12)
 

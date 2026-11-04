@@ -158,7 +158,7 @@ def objectives(world):
             from .act3 import SMITH_NAME
             add("gidbinn", "Kill " + SMITH_NAME, 76, ("boss", "armory_smith"))
         else:
-            add("gidbinn", "Light the four altars (Kurast Armory)", 76, ("object", "armory_altar"))
+            add("gidbinn", "Open the four seals (Kurast Armory)", 76, ("object", "armory_altar"))
     elif s == "cleared":
         add("gidbinn", "Bring the Gidbinn to Ormus", *_npc("ormus"))
     s = st("khalim")

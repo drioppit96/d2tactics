@@ -267,7 +267,7 @@ class Editor:
             out = [("Start (where you arrive)", "start"), ("Exit to a level...", "exit"),
                    ("Erase a tile completely (even a room's)", "x")]
             if self.doc.get("armory"):
-                out = [("Altar (light all to call the smith)", "altar"), ("The smith's spot", "smith"),
+                out = [("Seal (open all four to call the smith)", "altar"), ("The smith's spot", "smith"),
                        ("The spider queen's nest (Silkmother)", "spider"),
                        ("Erase a tile completely (even a room's)", "x")]
         if s:
@@ -950,7 +950,7 @@ class Editor:
         if self.doc.get("start"):
             self._marker(off, cam, tuple(self.doc["start"]), (60, 220, 90), "START")
         for mx_, my_, what in self.doc.get("markers", []):
-            col, lab = {"altar": ((80, 170, 255), "ALTAR"), "smith": ((230, 50, 50), "SMITH"),
+            col, lab = {"altar": ((80, 170, 255), "SEAL"), "smith": ((230, 50, 50), "SMITH"),
                         "spider": ((200, 90, 230), "SPIDER QUEEN")}.get(what, ((200, 200, 200), what.upper()))
             self._marker(off, cam, (mx_, my_), col, lab)
         for e in self.doc.get("exits", []):
