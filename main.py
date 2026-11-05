@@ -528,8 +528,11 @@ class Game:
         # D2's spot for town portals: by the campfire in the Rogue Encampment, by the waypoint elsewhere
         fire = [o["cell"] for o in wild.objects if o.get("token") == "RB" and wild.area_at(o["cell"]) == town]
         wps = [c for c, l in getattr(wild, "waypoints", {}).items() if l == town]
+        malah = next((n for n in wild.npcs if getattr(n, "npc", "") == "malah"), None) if town == 109 else None
         if town == 1 and fire:
             base = (fire[0][0] + 3, fire[0][1] + 3)
+        elif malah is not None:
+            base = (malah.x + 3, malah.y + 4)    # Harrogath: in front of Malah's house, like D2
         elif wps:
             base = (wps[0][0] + 4, wps[0][1] + 4)
         cell = wild._free_cell_near((base[0] + 2, base[1] - 2), 4)

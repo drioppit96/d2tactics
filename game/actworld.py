@@ -93,7 +93,8 @@ class ActInfo:
 
 
 PORTAL_KINDS = ("portal", "arcane_portal", "duriel_portal")
-CODE_NPCS = {"jungle": ["hratli"], "kurast": ["hratli"], "siege": ["larzuk", "tyrael3"]}
+CODE_NPCS = {"jungle": ["hratli"], "kurast": ["hratli"], "siege": ["larzuk"]}
+# (Tyrael only comes to Harrogath once Baal is dead - quests345.restore)
 
 
 _LVLWARP = {}
@@ -344,6 +345,9 @@ def setup(world, built, grid, rng, info, level_key):
         x0, y0, x1, y1 = world.town_rect
         occ = {m.pos for m in monsters}
         cx, cy = (x0 + x1) // 2 + rng.randint(-25, 25), (y0 + y1) // 2 + rng.randint(-25, 25)
+        forge = _smithy(world) if npc_id == "larzuk" else None
+        if forge is not None:
+            cx, cy = forge                        # Larzuk works at his forge, like D2
         cell = None
         for r in range(0, 60, 2):
             for dx in range(-r, r + 1, 2):
@@ -733,7 +737,23 @@ def _reachable(world, c):
 # (cells of walkable ground per monster pack, most packs) for areas that are crowded
 DENSE = {76: (480, 70)}
 # areas whose packs are spread evenly over the whole map: how many
-SPREAD = {77: 48, 86: 24}
+SPREAD = {77: 48, 86: 24, 110: 90}       # (110: the Bloody Foothills - Baal's siege army, packed like D2's)
+
+
+def _smithy(world):
+    """The middle of Harrogath's smithy (its blacksmith.dt1 tiles: the forge and the anvil) -> a cell
+    just in front of it, or None."""
+    tm = getattr(world, "tilemap", None)
+    if tm is None or not world.town_rect:
+        return None
+    x0, y0, x1, y1 = world.town_rect
+    tiles = [t for t, lst in tm.walls.items() for r in lst if "blacksmith" in (getattr(r[0], "name", "") or "").lower()
+             and x0 <= t[0] * 5 < x1 and y0 <= t[1] * 5 < y1]
+    if not tiles:
+        return None
+    cx = sum(t[0] for t in tiles) * 5 // len(tiles) + 2
+    cy = sum(t[1] for t in tiles) * 5 // len(tiles) + 2
+    return (cx, cy + 4)
 
 
 def _populate(world, lid, rect, taken, safe, info):

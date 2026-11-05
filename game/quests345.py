@@ -363,6 +363,9 @@ def restore(world):
     if key == 102 and q.get("mephisto") in ("cleared", "done"):
         spot = getattr(world, "_meph_spot", None) or world._default_start()
         _ensure_portal(world, spot, 103, "portal")
+    if key == "siege" and q.get("baal") in ("cleared", "done") and \
+            not any(getattr(n, "npc", "") == "tyrael3" for n in world.npcs):
+        _add_town_npc(world, "tyrael3")       # Tyrael comes to Harrogath once Baal is dead
     if key == "siege":
         # Anya home in Harrogath once freed, with her red portal to Nihlathak's Temple
         if q.get("anya") in ("cleared", "done") and not any(getattr(n, "npc", "") == "drehya" for n in world.npcs):
