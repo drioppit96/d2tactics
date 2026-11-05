@@ -64,6 +64,14 @@ def npc_options(world, npc_id):
         grant_imbue(world)              # (heroes who returned the Malus before Imbue existed)
     if npc_id == "charsi" and imbue_ready(world):
         opts.insert(2, "Imbue")
+    if npc_id in ("tyrael3", "difficulty"):
+        # once Baal is dead: travel on to the next difficulty (or back to one you have played)
+        cur = getattr(p, "difficulty", "normal")
+        for d in getattr(p, "diff_unlocked", None) or ["normal"]:
+            if d != cur:
+                opts.append("Go to %s" % d.title())
+    if npc_id == "difficulty":
+        opts = [o for o in opts if o.startswith("Go to ")] + ["Stay here"]
     return opts
 
 

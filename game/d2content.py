@@ -83,6 +83,7 @@ class D2Content:
         props.SRC = src
         sfx = {"normal": "", "nightmare": "(n)", "hell": "(h)"}.get(difficulty, "")
         self.sfx = sfx
+        self.difficulty = difficulty if sfx or difficulty == "normal" else "normal"
         self.strings = Strings(src)
         self.types = {r["code"]: r for r in read_table(src, "ItemTypes") if r.get("code")}
         self._ancestors = {}
@@ -327,6 +328,12 @@ class D2Content:
             if r <= 0:
                 return a
         return cands[-1]
+
+    def set_difficulty(self, difficulty):
+        """Normal / Nightmare / Hell: monster stats, levels, treasure classes all read the matching
+        columns (D2's "(N)" / "(H)" ones)."""
+        self.sfx = {"normal": "", "nightmare": "(n)", "hell": "(h)"}.get(difficulty, "")
+        self.difficulty = difficulty if difficulty in ("normal", "nightmare", "hell") else "normal"
 
     def make_item(self, base, ilvl, rng, quality="normal", sockets=None, identified=None, force=None):
         if isinstance(base, dict) and base.get("code") == "rvl" and not getattr(self, "allow_full_rejuv", False) \

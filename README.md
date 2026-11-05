@@ -235,3 +235,12 @@ Light/Healing, then Healing/Greater; Hell: Healing/Greater, then Greater/Super f
 Horadric Cube: potion + gem infuses the potion (a buff for 2 turns chipped .. 6 turns perfect, and an
 outline in the gem's colour): Amethyst magic find, Diamond AP and damage reduction, Skull cleanse +
 poison immunity, Ruby / Sapphire / Topaz / Emerald fire / cold / lightning / poison resistance.
+
+## Difficulties
+
+Normal, Nightmare and Hell, like D2. Killing Baal in Normal unlocks Nightmare, killing him in Nightmare
+unlocks Hell: right after the kill (or later from Tyrael in Harrogath) you can go on to the next one,
+and when you pick a hero who has unlocked more than Normal you choose the difficulty before entering.
+Each difficulty has its own quests, waypoints and progress (a new difficulty starts in the Rogue
+Encampment); your character, items and skills carry over. Monsters use D2's Nightmare / Hell stats and
+levels, and your resistances get D2's penalty: -40% in Nightmare, -100% in Hell.

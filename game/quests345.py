@@ -599,6 +599,17 @@ def on_killed(world, unit):
     elif boss == "baal":
         q["baal"] = "cleared"
         world.log("Baal, the Lord of Destruction, is dead! Talk to Tyrael in Harrogath.", QUEST_COLOR)
+        # D2: beating Baal opens the next difficulty (Normal -> Nightmare -> Hell)
+        cur = getattr(p, "difficulty", "normal")
+        nxt = {"normal": "nightmare", "nightmare": "hell"}.get(cur)
+        got = p.__dict__.setdefault("diff_unlocked", ["normal"])
+        if nxt and nxt not in got:
+            got.append(nxt)
+            world.log("%s difficulty unlocked!" % nxt.title(), (255, 120, 80))
+        if nxt:
+            import types
+            world.open_npc = types.SimpleNamespace(npc="difficulty", name="%s awaits" % nxt.title(),
+                                                   pos=p.pos, facing=(1, 1))
         world.emit("victory")
     if getattr(world, "level_key", None) == 131 and getattr(unit, "wave", None):
         from .bosses import waves_done

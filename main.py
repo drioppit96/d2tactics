@@ -145,6 +145,9 @@ class Game:
         from game import act2 as _act2
         _act2.CURRENT_REAL = _act2.real_tomb(name)          # which of the seven is Tal Rasha's
         player = None
+        diff = (saved or {}).get("difficulty") or "normal"
+        if hasattr(a.content, "set_difficulty"):
+            a.content.set_difficulty(diff)          # monsters, levels, loot of this difficulty
         if saved is not None:
             from game.save import build_player
             player = build_player(saved, a.content)
@@ -197,6 +200,26 @@ class Game:
         if self.asset_warning:
             self.world.log(self.asset_warning, (230, 160, 90))
 
+    def start_difficulty(self, diff):
+        """Leave this game and go on in another difficulty (Nightmare after Baal in Normal, Hell after
+        Baal in Nightmare) - D2 keeps each difficulty's quests and waypoints apart."""
+        import json
+        import os
+        from game.save import SAVE_DIR, _safe, switch_difficulty
+        p = self.world.player
+        if diff not in (getattr(p, "diff_unlocked", None) or ["normal"]):
+            return
+        self.save()
+        path = os.path.join(SAVE_DIR, _safe(p.name) + ".json")
+        with open(path) as f:
+            d = json.load(f)
+        d = switch_difficulty(d, diff)
+        self.hud.npc_menu = None
+        self.hud.store = None
+        self.start_act(d.get("cls", "bar"), d.get("name", "Hero"), saved=d)
+        self.world.log("%s difficulty. Monsters are stronger - and your resistances are %s." %
+                       (diff.title(), "40% lower" if diff == "nightmare" else "100% lower"), (255, 120, 80))
+
     def save(self):
         """Save the hero (on every level change, waypoint, respawn and when quitting)."""
         if getattr(self.world, "level_key", None) is None:
@@ -208,7 +231,7 @@ class Game:
             except Exception:
                 pass
             self.remember_maps()
-            save_character(self.world.player, self.cfg.get("game", "difficulty"))
+            save_character(self.world.player, getattr(self.world.player, "difficulty", "normal"))
         except Exception:
             import traceback
             traceback.print_exc()
@@ -378,6 +401,11 @@ class Game:
         w, h = self.world, self.hud
         h.npc_menu = None
         if npc is None:
+            return
+        if opt.startswith("Go to ") and opt[6:].lower() in ("nightmare", "hell", "normal"):
+            self.start_difficulty(opt[6:].lower())
+            return
+        if npc.npc == "difficulty":
             return
         if opt == "Talk":
             from game import quests

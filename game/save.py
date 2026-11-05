@@ -140,12 +140,50 @@ def _item_from(d, content):
     return it
 
 
+# what D2 keeps separately for each difficulty (quests, waypoints, Cain, the act you are in...)
+PER_DIFF = ("quests", "waypoints", "visited", "cain", "act", "quest_stats", "boss_kills", "map_explored",
+            "tracked_quest", "cairn_order")
+DIFFICULTIES = ("normal", "nightmare", "hell")
+
+
+def unlocked(data):
+    """The difficulties a saved hero may play: Normal, + Nightmare once Baal fell in Normal, + Hell
+    once he fell in Nightmare."""
+    got = list(data.get("unlocked") or ["normal"])
+    if "unlocked" not in data and (data.get("quests") or {}).get("baal") in ("cleared", "done"):
+        nxt = {"normal": "nightmare", "nightmare": "hell"}.get(data.get("difficulty") or "normal")
+        if nxt:
+            got.append(nxt)                  # (saves from before difficulties were chosen in the game)
+    return [d for d in DIFFICULTIES if d in got]
+
+
+def switch_difficulty(data, new):
+    """The save, set up to play `new`: the current difficulty's progress is put aside and the other
+    one's taken out (a fresh start the first time: Act 1, no quests, only the Encampment's waypoint)."""
+    cur = data.get("difficulty") or "normal"
+    if new == cur:
+        return data
+    d = dict(data)
+    state = dict(d.get("diff_state") or {})
+    state[cur] = {k: d.get(k) for k in PER_DIFF}
+    fresh = dict(quests={}, waypoints=[1], visited=[1], cain=False, act=1, quest_stats={}, boss_kills=[],
+                 map_explored={}, tracked_quest=None, cairn_order=None)
+    d.update(state.pop(new, None) or fresh)
+    d["diff_state"] = state
+    d["difficulty"] = new
+    d["unlocked"] = unlocked(data)
+    return d
+
+
 def save_character(player, difficulty="normal"):
     """Write the hero to saves/<name>.json. Returns the path."""
     os.makedirs(SAVE_DIR, exist_ok=True)
     p = player
     data = dict(
-        version=1, name=p.name, cls=p.cls, level=p.level, xp=p.xp, gold=p.gold, difficulty=difficulty,
+        version=1, name=p.name, cls=p.cls, level=p.level, xp=p.xp, gold=p.gold,
+        difficulty=getattr(p, "difficulty", None) or difficulty,
+        unlocked=list(getattr(p, "diff_unlocked", None) or ["normal"]),
+        diff_state=dict(getattr(p, "diff_state", None) or {}),
         stats=[p.base_str, p.base_dex, p.base_vit, p.base_eng], stat_points=p.stat_points,
         skills=dict(p.skills.levels), skill_points=p.skills.points, right_skill=p.right_skill, left_skill=getattr(p, "left_skill", None),
         boss_kills=list(getattr(p, "boss_kills", []) or []),
@@ -229,6 +267,9 @@ def build_player(data, content):
     p.right_skill = data.get("right_skill") if (data.get("right_skill") in p.skills.tree
                                                 or data.get("right_skill") == "throw") else None
     p.quests = dict(data.get("quests", {}))
+    p.difficulty = data.get("difficulty") or "normal"
+    p.diff_unlocked = unlocked(data)
+    p.diff_state = dict(data.get("diff_state") or {})
     p.waypoints = set(data.get("waypoints", [1]))
     p.visited = set(data.get("visited", [1]))
     p.cain_rescued = data.get("cain", False)

@@ -84,6 +84,9 @@ class Player(Unit):
         self.set_skills = {}
         self.inventory = []
         self.belt = []          # potions, max 4
+        self.difficulty = "normal"          # Normal / Nightmare / Hell (chosen when you enter the game)
+        self.diff_unlocked = ["normal"]
+        self.diff_state = {}                # the other difficulties' quests, waypoints...
         from .skills import SkillBook, load_tree
         self.skills = SkillBook(tree if tree is not None else load_tree(), cls)
         self.right_skill = None     # skill used with the right mouse button
@@ -419,7 +422,9 @@ class Player(Unit):
         self.crit = pb.get("crit", 0)
         allres = self.mod("res_all")
         cap = {k: min(95, 75 + self.mod("maxres_" + k) + self.mod("maxres_all")) for k in ("fire", "cold", "ltng", "pois")}
-        self.res = {k: min(cap[k], allres + pb["res"] + self.mod("res_" + k)) for k in ("fire", "cold", "ltng", "pois")}
+        # D2's difficulty penalty: -40% in Nightmare, -100% in Hell (on every resistance, before the cap)
+        pen = {"nightmare": 40, "hell": 100}.get(getattr(self, "difficulty", "normal"), 0)
+        self.res = {k: min(cap[k], allres + pb["res"] + self.mod("res_" + k) - pen) for k in ("fire", "cold", "ltng", "pois")}
         # what skills, auras and potion infusions add (D2 shows a resistance they raise in blue)
         sk = getattr(self, "_skill_stats", {}) or {}
         from .potions import buff_stat

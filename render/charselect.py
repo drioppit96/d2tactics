@@ -112,10 +112,23 @@ class CharSelect(FrontEnd):
         return pygame.Rect(400, 368, 96, 32)
 
     # ------------------------------------------------------------ actions
-    def play(self):
+    DIFFS = ("normal", "nightmare", "hell")
+
+    def diff_rect(self, i):
+        return pygame.Rect(272, 232 + i * 44, 256, 35)
+
+    def play(self, diff=None):
+        """OK: a hero who has beaten Baal picks the difficulty first, like D2."""
         if not self.heroes:
             return
+        from game.save import unlocked, switch_difficulty
         d = self.heroes[self.selected]
+        got = unlocked(d)
+        if diff is None and len(got) > 1:
+            self.choose_diff = got
+            return
+        self.choose_diff = None
+        d = switch_difficulty(d, diff or d.get("difficulty") or "normal")
         self.game.start_act(d.get("cls", "bar"), d.get("name", "Hero"), saved=d)
 
     def create(self):
@@ -140,6 +153,23 @@ class CharSelect(FrontEnd):
 
     # ------------------------------------------------------------ input
     def handle(self, ev):
+        if getattr(self, "choose_diff", None):
+            if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+                lp = self._to_logical(ev.pos)
+                for i, dname in enumerate(self.DIFFS):
+                    if self.diff_rect(i).collidepoint(lp) and dname in self.choose_diff:
+                        self.play(dname)
+                        return
+                if not self.popup_rect().collidepoint(lp) or pygame.Rect(330, 366, 140, 36).collidepoint(lp):
+                    self.choose_diff = None             # outside, or the CANCEL button
+            elif ev.type == pygame.KEYDOWN:
+                if ev.key == pygame.K_ESCAPE:
+                    self.choose_diff = None
+                elif ev.key in (pygame.K_1, pygame.K_2, pygame.K_3):
+                    dname = self.DIFFS[ev.key - pygame.K_1]
+                    if dname in self.choose_diff:
+                        self.play(dname)
+            return
         if self.confirm_delete:
             if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
                 lp = self._to_logical(ev.pos)
@@ -269,7 +299,11 @@ class CharSelect(FrontEnd):
             cls = NAMES.get(d.get("cls"), "?")
             self._text(canvas, self.f16, d.get("name", "?"), GOLD, r.x + 96, r.y + 22)
             self._text(canvas, self.f16, "Level %d %s" % (d.get("level", 1), cls), WHITE, r.x + 96, r.y + 40)
-            self._text(canvas, self.f16, "Expansion Character", GREEN, r.x + 96, r.y + 58)
+            from game.save import unlocked as _unl
+            best = _unl(d)[-1]
+            self._text(canvas, self.f16, "Expansion Character" if best == "normal" else
+                       ("Slayer" if best == "nightmare" else "Champion") + " - %s" % best.title(),
+                       GREEN, r.x + 96, r.y + 58)
         if len(self.heroes) > PER_PAGE:
             pages = "%d-%d of %d (mouse wheel / arrows)" % (self.scroll + 1, min(len(self.heroes), self.scroll + PER_PAGE),
                                                            len(self.heroes))
@@ -278,6 +312,26 @@ class CharSelect(FrontEnd):
         self._wide_button(canvas, self.delete_rect(), "DELETE CHARACTER", bool(self.heroes))
         self._button(canvas, self.medium, self.exit_rect(), "EXIT")
         self._button(canvas, self.medium, self.ok_rect(), "OK", bool(self.heroes))
+        if getattr(self, "choose_diff", None) and self.heroes:
+            shade = pygame.Surface((800, 600), pygame.SRCALPHA)
+            shade.fill((0, 0, 0, 150))
+            canvas.blit(shade, (0, 0))
+            pr = self.popup_rect()
+            if self.popup is not None:
+                canvas.blit(self.popup, pr.topleft)
+            else:
+                pygame.draw.rect(canvas, (20, 18, 14), pr)
+                pygame.draw.rect(canvas, (120, 110, 80), pr, 1)
+            self._text(canvas, self.f16, "Select Difficulty", GOLD, 400, pr.y + 14, center=True)
+            for i, dname in enumerate(self.DIFFS):
+                rect = self.diff_rect(i)
+                ok = dname in self.choose_diff
+                self._wide_button(canvas, rect, dname.upper(), ok)
+                if ok and rect.collidepoint(lp):
+                    pygame.draw.rect(canvas, GOLD, rect, 1)
+            cr = pygame.Rect(330, 366, 140, 36)
+            self._text(canvas, self.f16, "CANCEL", WHITE if cr.collidepoint(lp) else (230, 220, 190),
+                       cr.centerx, cr.y + 10, center=True)
         if self.confirm_delete and self.heroes:
             shade = pygame.Surface((800, 600), pygame.SRCALPHA)
             shade.fill((0, 0, 0, 120))
