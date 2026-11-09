@@ -555,28 +555,23 @@ class SkillBook:
         m = SkillEnv(self, s, lv).mana()
         return round(m, 1) if m != int(m) else int(m)
 
-    def ap_cost(self, name, weapon_ap):
-        """AP for a skill, worked out from its mana cost at skill level 1 - so a skill costs the
-        same AP from level 1 to 20 even when its mana cost goes up.
+    # AP by the skill's row in its tree (D2's rows: level 1, 6, 12, 18, 24, 30)
+    ROW_AP = {1: 2, 2: 3, 3: 3, 4: 4, 5: 4, 6: 4}
+    SUMMON_KINDS = ("summon", "turret", "golem", "raise", "revive")
 
-        Spells and other non-weapon skills: 1.5 + sqrt(mana), rounded, 2..10 AP
-        (Fire Bolt 3, Frost Nova 5, Meteor 6, Frozen Orb 7, Revive 8).
-        Skills that swing or shoot your weapon: the weapon's attack AP + 0.6 * sqrt(mana)
-        (Bash +1, Leap Attack +2, Whirlwind +3). Auras cost 1 AP to switch on.
-        """
+    def ap_cost(self, name, weapon_ap):
+        """AP for a skill: summons (minions, golems, traps, raised dead) 2; otherwise by the skill's
+        row in its tree - the first row 2, the second and third 3, the rest 4. Auras cost 1 AP to
+        switch on."""
         s = self.tree[name]
         k = s.kind
         if k == "aura":
             return 1
-        try:
-            mana = max(0.0, float(self.mana_cost(name, at_level=1) or 0))
-        except Exception:
-            mana = max(0.0, float(self.mana_cost(name) or 0))
-        weapon_skill = k in ("attack", "melee", "charge") or (k == "missile" and s.weapon) or \
-            name in ("Double Swing", "Frenzy", "Leap Attack", "Whirlwind", "Double Throw")
-        if weapon_skill:
-            return int(weapon_ap + max(1, int(0.6 * math.sqrt(mana) + 0.5)))
-        return max(2, min(10, int(1.5 + math.sqrt(mana) + 0.5)))
+        if k in self.SUMMON_KINDS or (s.extra or {}).get("trap") or "Sentry" in name or name.startswith("Wake of"):
+            return 2
+        lv = int(s.reqlevel or 1)               # the row, from the level it needs (1/6/12/18/24/30)
+        row = 1 if lv < 6 else 2 if lv < 12 else 3 if lv < 18 else 4 if lv < 24 else 5 if lv < 30 else 6
+        return self.ROW_AP[row]
 
     # ------------------------------------------------------------ text
     def describe(self, name):

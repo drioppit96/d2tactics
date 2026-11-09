@@ -319,6 +319,8 @@ class Game:
             pass
         if t is not None and t.is_alive():
             self.loading("Entering %s..." % title)
+            from game import throttle
+            throttle.release()
             t.join(timeout=10)
             if key in self._prebuilt:
                 return self._prebuilt.pop(key)
@@ -815,6 +817,8 @@ class Game:
             t = getattr(self, "_builders", {}).get(target)
             if t is not None and t.is_alive():
                 self.loading("Entering the Den of Evil...")
+                from game import throttle
+                throttle.release()
                 t.join()
             w = getattr(self, "_prebuilt", {}).pop(target, None)
             if w is not None:
@@ -1921,6 +1925,12 @@ class Game:
         self._warm_skill_art()
         self._perf_mark("prep", tp)
         self.scene.update(dt)
+        from game import throttle
+        sc = self.scene
+        if sc.queue or getattr(sc, "current", None) or getattr(sc, "projectiles", None) or \
+                (self.world is not None and (self.world.mode == "combat" or self.world.turn != "player")) or \
+                any(pygame.mouse.get_pressed()):
+            throttle.busy()                  # (background level builds wait - no hitches)
         if self.world.pending_exit and self.scene.idle():
             w = self.world
             kind = getattr(w, "pending_portal", None)

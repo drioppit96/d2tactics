@@ -431,7 +431,7 @@ class Scene:
                     # a volley (a Charged Bolt Sentry's fan, a shaman's spray) leaves all at once
                     while self.queue and self.queue[0][0] == "projectile" and self.queue[0][1] is head[1]:
                         self._start(self.queue.pop(0))
-                self.wait = 0.0 if head[0] == "move" else 0.12
+                self.wait = 0.0 if head[0] == "move" else 0.05     # (the monsters act almost together)
                 continue
             ev = self.queue.pop(0)
             w = self._start(ev)

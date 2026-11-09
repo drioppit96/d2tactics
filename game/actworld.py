@@ -656,6 +656,8 @@ def is_nest(mid):
 
 
 def _pack(world, centre, mid, lvl, taken, champion=False, unique=False):
+    from .throttle import pause
+    pause()
     c = world.content
     t = _template(world, mid, lvl)
     if t is None:

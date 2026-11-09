@@ -153,7 +153,8 @@ class SkillCaster:
         return tot
 
     def _has_flag(self, m, flag):
-        return any(flag in c.get("flags", ()) for c in getattr(m, "curses", {}).values())
+        cs = getattr(m, "curses", None)
+        return bool(cs) and any(flag in c.get("flags", ()) for c in cs.values())
 
     def _resist(self, m, et):
         res = getattr(m, "res", {}).get(et, 0)

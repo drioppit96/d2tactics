@@ -182,6 +182,8 @@ class LevelKit:
 
 def stamp(b, ds, tiles, ox, oy, rng, owner, skip_npc_objects=False, keep_edges=True):
     """Copy a DS1 into the level: floors, walls, warp markers, monster presets, objects."""
+    from .throttle import pause
+    pause()                                  # (a background build waits while the game is busy)
     tm = b.tm
     w, h = ds.width, ds.height
     for y in range(h):
@@ -1120,6 +1122,8 @@ class MazeKit:
                 self.rooms[key] = good
 
     def joins(self, ds, exits):
+        from .throttle import pause
+        pause()
         """Can every doorway of this room be reached from the others?"""
         from collections import deque
         if len(exits) < 2:

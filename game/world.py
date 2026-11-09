@@ -384,10 +384,15 @@ class World(SkillCaster, ItemActions):
                 return m
         return None
 
-    def occupied(self, exclude=None):
+    def occupied(self, exclude=None, near=None, reach=48):
+        """Cells taken by units (and blocking objects). near: only units within `reach` cells of it
+        (a monster's path search never goes further - much cheaper on a crowded map)."""
         cells = set()
+        nx, ny = near if near is not None else (0, 0)
         for m in self.monsters:
             if m.alive and m is not exclude:
+                if near is not None and (abs(m.x - nx) > reach or abs(m.y - ny) > reach):
+                    continue
                 r = getattr(m, "radius", 0)
                 if r:
                     cells.update((m.x + dx, m.y + dy) for dx in range(-r, r + 1) for dy in range(-r, r + 1))
@@ -649,17 +654,25 @@ class World(SkillCaster, ItemActions):
         self.pending_exit = target
         return True
 
+    GOLD_REACH = 2
+
     def _auto_pickup_gold(self, cell):
-        items = self.ground.get(cell)
-        if not items:
+        """Gold is picked up by itself, free, when you pass by it (within 2 cells)."""
+        if not self.ground:
             return
-        for it in [i for i in items if i.kind == "gold"]:
-            items.remove(it)
-            self.player.gold += it.amount
-            self.emit("pickup", cell, it)
-            self.log(f"Picked up {it.amount} gold.", (230, 210, 140))
-        if not items:
-            del self.ground[cell]
+        x, y = cell
+        r = self.GOLD_REACH
+        for c in [(x + dx, y + dy) for dx in range(-r, r + 1) for dy in range(-r, r + 1)]:
+            items = self.ground.get(c)
+            if not items:
+                continue
+            for it in [i for i in items if i.kind == "gold"]:
+                items.remove(it)
+                self.player.gold += it.amount
+                self.emit("pickup", c, it)
+                self.log(f"Picked up {it.amount} gold.", (230, 210, 140))
+            if not items:
+                del self.ground[c]
 
     def player_pickup(self, cell):
         p = self.player
@@ -1358,6 +1371,8 @@ class World(SkillCaster, ItemActions):
         """In combat, end the turn automatically when the player can't do anything useful."""
         if getattr(self, "_free_cast", False):
             return                  # a chance-to-cast spell never ends your turn
+        if self.player.alive:
+            self._auto_pickup_gold(self.player.pos)     # gold your blows dropped next to you
         if self.mode == "combat" and self.turn == "player" and self.player.ap <= 0:
             self.end_player_turn()
 
@@ -1924,12 +1939,22 @@ class World(SkillCaster, ItemActions):
 
     # ------------------------------------------------------------ monster AI
     @staticmethod
-    def _one_attack(m):
-        """The High Council of Travincal (members and their named leaders): one attack or spell a turn."""
-        return (getattr(m, "d2id", "") or "").lower().startswith("councilmember") or getattr(m, "boss", None) == "council"
+    def _attack_limit(m):
+        """Attacks / spells a monster may make in one turn, however much AP it has (None: no limit):
+        the High Council of Travincal 1, the Moon Clan goatmen and Moon Lord vampires 3."""
+        mid = (getattr(m, "d2id", "") or "").lower()
+        if mid.startswith("councilmember") or getattr(m, "boss", None) == "council":
+            return 1
+        if mid.startswith(("goatman1", "goatman6", "bloodlord1", "bloodlord6")) or "moon" in (m.name or "").lower():
+            return 3
+        return None
+
+    def _one_attack(self, m):
+        return self._attack_limit(m) == 1
 
     def _attacks_spent(self, m):
-        return self._one_attack(m) and getattr(m, "_acts", 0) >= 1
+        lim = self._attack_limit(m)
+        return lim is not None and getattr(m, "_acts", 0) >= lim
 
     def _monster_turn(self, m):
         m.ap = m.max_ap
@@ -2059,7 +2084,7 @@ class World(SkillCaster, ItemActions):
             if others:
                 return min(others, key=lambda o: self.udist(o, m))
         for o in self.living_monsters():
-            if o is not m and self._has_flag(o, "attract") and self.udist(o, m) <= 10:
+            if o is not m and getattr(o, "curses", None) and self._has_flag(o, "attract") and self.udist(o, m) <= 10:
                 return o
         best = (self.udist(m, p) - (0.5 if True else 0), p) if p.alive else None
         for a in self.allies():
@@ -2151,25 +2176,18 @@ class World(SkillCaster, ItemActions):
         return False
 
     def _path_to_adjacent(self, m, target):
-        blocked = self.occupied(m)
+        blocked = self.occupied(m, near=m.pos)
         tu = self.unit_at(target)
         tr = getattr(tu, "radius", 0) if tu is not None else 0
         if getattr(m, "radius", 0) or tr:
-            return self.path_near(m, target, 1, tr, blocked=blocked, limit=6000) or None
+            return self.path_near(m, target, 1, tr, blocked=blocked, limit=2500) or None
         path = self.grid.find_path(m.pos, target, blocked=blocked, allow_goal_blocked=True)
         if path and len(path) >= 1:
             path = path[:-1]
             # first step must not be the target cell itself
             return path if path else None
-        # direct route blocked by other monsters: try each free cell around the target
-        best = None
-        for dx, dy in DIRS8:
-            c = (target[0] + dx, target[1] + dy)
-            if not self.grid.walkable(*c) or c in blocked:
-                continue
-            pth = self.grid.find_path(m.pos, c, blocked=blocked)
-            if pth and (best is None or len(pth) < len(best)):
-                best = pth
+        # direct route blocked by other monsters: the nearest free cell next to the target, in one search
+        best = self.path_near(m, target, 1, 0, blocked=blocked, limit=2500)
         if best:
             return best
         # completely boxed in: shuffle closer greedily
