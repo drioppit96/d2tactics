@@ -824,12 +824,29 @@ class D2Content:
         cap = caps[2] if ilvl >= 40 else caps[1] if ilvl >= 25 else caps[0]
         return max(0, min(base.get("maxsock", 0), cap or base.get("maxsock", 0)))
 
+    def good_tc(self, mlvl):
+        """D2's "Act N Good" treasure class for this difficulty and monster level: the gems (chipped
+        to flawless, by difficulty), runes and jewelry the monsters of that act drop."""
+        sfx = {"(n)": " (N)", "(h)": " (H)"}.get(getattr(self, "sfx", ""), "")
+        rows = self.tc_rows()
+        best = None
+        for a in range(1, 6):
+            r = rows.get(("act %d%s good" % (a, sfx)).lower())
+            if r is None:
+                continue
+            if best is None or _int(r.get("level")) <= mlvl:
+                best = r.get("treasure class")
+        return best
+
     def make_gem_or_rune(self, mlvl, rng):
-        """Gems (chipped/flawed early), low runes, now and then a jewel."""
-        if rng.random() < 0.12:
-            j = self.make_jewel(mlvl, rng)
-            if j is not None:
-                return j
+        """One roll on D2's "Good" class for this act and difficulty: gems (mostly chipped / flawed
+        in Normal, normal / flawless in Nightmare and Hell), runes, rings, amulets, jewels, charms."""
+        tc = self.good_tc(mlvl)
+        if tc:
+            for _ in range(3):
+                got = self.roll_tc(tc, mlvl, rng)
+                if got:
+                    return got[0]
         if rng.random() < 0.35:
             n = 1 + min(32, int(rng.expovariate(1.0 / (1.5 + mlvl / 6.0))))
             b = self.base_by_code.get("r%02d" % n)
@@ -953,9 +970,11 @@ class D2Content:
                 continue
             if r < 0.80 and not is_boss:
                 out.append(self.make_gold(mlvl, rng, gf))
-            elif r < 0.92 and not is_boss:
+            elif r < 0.875 and not is_boss:
                 out.append(self.make_gold(mlvl, rng, gf))    # (potions only come from vendors now)
             elif r < 0.935 and not is_boss:
+                # D2's "Good" drop (gems, runes, jewelry). D2 rolls it on ~1.3% of kills, but you kill
+                # far fewer monsters here than in D2, so it comes about four times as often
                 g = self.make_gem_or_rune(mlvl, rng)
                 if g:
                     out.append(g)
