@@ -1922,6 +1922,7 @@ class Game:
                 h.show_cube = False         # walked away from the stash
         if getattr(self, "scene", None) is not None:
             self.scene.walk_target = self.walk_goal if self.walk_queue and self.world.mode == "explore" else None
+            self.scene.walk_ahead = list(self.walk_queue[:4]) if self.scene.walk_target is not None else None
         tp = time.perf_counter()
         self._warm_skill_art()
         self._perf_mark("prep", tp)
@@ -2086,7 +2087,9 @@ class Game:
 
     def run(self):
         while self.running:
-            dt = self.clock.tick(60) / 1000.0
+            # tick_busy_loop: an even 60 frames a second (plain tick sleeps in Windows' 15 ms timer
+            # steps, so frames came 16 / 31 ms apart - movement looked like it stuttered)
+            dt = self.clock.tick_busy_loop(60) / 1000.0
             self.frame(min(dt, 0.05))
         if self.state == "play":
             self.save()

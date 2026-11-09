@@ -31,6 +31,12 @@ def status_tint(u):
     return None
 
 
+
+def _screen_len(dx, dy):
+    """A grid step's length on screen, in cells along a tile edge (iso: across 2:1, down 1:2) -
+    walkers move at one even screen speed whichever way they go, so no direction looks jerky."""
+    return math.hypot((dx - dy) * 2.0, dx + dy) / 2.2360679775
+
 class UnitView:
     def __init__(self, unit):
         self.unit = unit
@@ -183,7 +189,7 @@ class Scene:
             v.path = list(cells)
             v.mode = "WL"
             # (about 12% quicker than before: walking felt slow without the fast-forward key)
-            v.speed = (10.6 if explore else 7.9) if unit.is_player else (12.3 if free else 10.1)
+            v.speed = (11.6 if explore else 8.7) if unit.is_player else (13.5 if free else 11.1)
             if free:
                 return 0                      # free walking (you and your followers) doesn't hold anything up
             return None   # wait until the walk finishes
@@ -468,6 +474,57 @@ class Scene:
             return not self.projectiles
         return True
 
+    LOOKAHEAD = 2.2         # cells: how far ahead along the route a walker steers (cuts the zig-zags)
+
+    def _pursue(self, v, step):
+        """Walk `step` cells along v.path like D2's smooth movement: steer at a point a little way
+        ahead on the route (pure pursuit), so a route of straight and diagonal tiles reads as one
+        straight line at an even speed, instead of jerking from tile centre to tile centre."""
+        ahead = list(v.path)
+        if v.unit.is_player and getattr(self, "walk_ahead", None):
+            ahead += [c for c in self.walk_ahead if not ahead or c != ahead[-1]][:4]
+        while step > 1e-6 and v.path:
+            # the steering point: LOOKAHEAD along the polyline from where you are
+            px, py = v.rx, v.ry
+            left = self.LOOKAHEAD
+            cx, cy = ahead[0]
+            for (ax, ay) in ahead:
+                d = math.hypot(ax - px, ay - py)
+                if d >= left:
+                    cx, cy = px + (ax - px) / d * left, py + (ay - py) / d * left
+                    break
+                left -= d
+                px, py = cx, cy = float(ax), float(ay)
+            dx, dy = cx - v.rx, cy - v.ry
+            dist = math.hypot(dx, dy)
+            fx, fy = v.path[0]
+            near = math.hypot(fx - v.rx, fy - v.ry)
+            if len(ahead) == 1 or dist < 1e-6:
+                # the last tile: arrive on it exactly
+                sn = _screen_len(fx - v.rx, fy - v.ry)
+                if sn <= step:
+                    v.rx, v.ry = float(fx), float(fy)
+                    v.path.pop(0)
+                    ahead.pop(0)
+                    step -= sn
+                    continue
+                v.rx += (fx - v.rx) * step / sn
+                v.ry += (fy - v.ry) * step / sn
+                break
+            k = _screen_len(dx, dy) / dist          # screen length of one cell this way
+            mv = min(step / k, dist)
+            v.rx += dx / dist * mv
+            v.ry += dy / dist * mv
+            step -= mv * k
+            if not v.unit.is_player or self.walk_target is None:
+                v.facing = (dx, dy)
+            # a tile counts as passed once you are about level with it
+            while len(v.path) > 1 and math.hypot(v.path[0][0] - v.rx, v.path[0][1] - v.ry) <= 0.55:
+                v.path.pop(0)
+                ahead.pop(0)
+            if mv < 1e-6:
+                break
+
     def _update_view(self, v, dt):
         if v.flash > 0:
             v.flash = max(0.0, v.flash - dt * 5)
@@ -479,9 +536,8 @@ class Scene:
             if goal is not None and math.hypot(goal[0] - v.rx, goal[1] - v.ry) > 0.7:
                 # face where you are going: a zig-zag of tiles still reads as one straight walk
                 v.facing = (goal[0] - v.rx, goal[1] - v.ry)
-            elif dist > 0.01:
-                v.facing = (dx, dy) if v.unit.is_player else \
-                    ((dx > 0.01) - (dx < -0.01), (dy > 0.01) - (dy < -0.01))
+            elif dist > 0.01 and v.unit.is_player:
+                v.facing = (dx, dy)
             step = v.speed * dt
             v.t += dt * 1.8
             v.mode = "WL"
@@ -493,18 +549,7 @@ class Scene:
                 v.mode = "A1"
                 v.dur = 1.0
                 v.t = 0.45
-            # carry over what is left of this frame's movement into the next tile (no stop at each tile)
-            while v.path and dist <= step:
-                v.rx, v.ry = float(tx), float(ty)
-                v.path.pop(0)
-                step -= dist
-                if v.path:
-                    tx, ty = v.path[0]
-                    dx, dy = tx - v.rx, ty - v.ry
-                    dist = math.hypot(dx, dy)
-            if v.path and dist > 0:
-                v.rx += dx / dist * step
-                v.ry += dy / dist * step
+            self._pursue(v, step)
             return
         if v.mode == "WL" and v.stop_t > 0:
             v.stop_t -= dt          # the next step usually arrives within a frame or two
@@ -713,7 +758,10 @@ class Scene:
         for c, lid in getattr(world, "waypoints", {}).items():
             if x0 - 4 <= c[0] <= x1 + 4 and y0 - 4 <= c[1] <= y1 + 4:
                 drawables.append((c[0] + c[1] - 0.5, 0.2, "object", ("waypoint", lid, c, False)))
-        for v in self.views.values():
+        # only the units around the screen (a level holds a thousand monsters or more)
+        self._near_views = near_views = [v for v in self.views.values() if v.unit.is_player or
+                                         (x0 - 8 <= v.rx <= x1 + 8 and y0 - 8 <= v.ry <= y1 + 8)]
+        for v in near_views:
             cx, cy = int(round(v.rx)), int(round(v.ry))
             if getattr(v.unit, "hidden", False):
                 continue                   # hidden traps and the hell meteors' spawners
@@ -1099,7 +1147,7 @@ class Scene:
     def _draw_overhead_bars(self, surf, cam):
         """Small HP bars over damaged / aware monsters."""
         g = self.world.grid
-        for v in self.views.values():
+        for v in getattr(self, "_near_views", None) or list(self.views.values()):
             u = v.unit
             if u.is_player or v.dead or getattr(u, "ai", "") in ("npc", "wall") or getattr(u, "invulnerable", False):
                 continue
