@@ -330,6 +330,8 @@ def on_enter(world, lid):
         _start(world, "shenk")
     if lid == 111 and q["barbs"] == "none":
         _start(world, "barbs")
+    if lid == 111:
+        setup_prisons(world)
     if lid == 114 and q["anya"] == "none":
         _start(world, "anya")
     if lid == 120:
@@ -358,6 +360,10 @@ def restore(world):
                                                      (getattr(p, "quest_stats", None) or {}).get("throne_cleared")):
         world.baal_wave = 5                   # the throne was cleared already: its portal stands open
         _baal_portal(world)
+    if getattr(world, "level_key", None) == "siege":
+        setup_prisons(world)
+    if getattr(world, "level_key", None) == 114 and q.get("anya") in ("cleared", "done"):
+        world.objects = [o for o in world.objects if o.get("kind") != "anya"]     # she is home already
     key = getattr(world, "level_key", None)
     lid = getattr(world, "level_id", None)
     if key == 102 and q.get("mephisto") in ("cleared", "done"):
@@ -377,6 +383,93 @@ def restore(world):
     if key in (121, 122, 123, 124) and q.get("anya") in ("cleared", "done"):
         if key == 121:
             _ensure_portal(world, world._default_start(), 109, "portal")
+
+
+# ------------------------------------------------------------------ the Barricade Prisons (Frigid Highlands)
+def _pen_gap(grid, c):
+    """A Barricade Prison's pen around cell c (D2's "caged fellow" marker in its middle): the
+    fence's four lines and the cells of its opening - where D2 puts the breakable pen gate."""
+    def reach(dx, dy):
+        hits = []
+        for off in range(-5, 6):
+            x, y = (c[0] + off, c[1]) if dx == 0 else (c[0], c[1] + off)
+            for d in range(1, 16):
+                if not grid.walkable(x + dx * d, y + dy * d):
+                    hits.append(d)
+                    break
+        # the fence line: the distance most lines stop at (the posts stick in here and there)
+        return max(set(hits), key=hits.count) if hits else None
+    up, down, left, right = reach(0, -1), reach(0, 1), reach(-1, 0), reach(1, 0)
+    if None in (up, down, left, right):
+        return None
+    y0, y1, x0, x1 = c[1] - up, c[1] + down, c[0] - left, c[0] + right
+    sides = [[(x, y) for y in range(y0 + 1, y1) if grid.walkable(x, y)] for x in (x0, x1)] + \
+            [[(x, y) for x in range(x0 + 1, x1) if grid.walkable(x, y)] for y in (y0, y1)]
+    gap = max(sides, key=len)
+    if not gap or len(gap) > 9:
+        return None
+    out = {0: (-1, 0), 1: (1, 0), 2: (0, -1), 3: (0, 1)}[sides.index(gap)]
+    return gap, (x0, y0, x1, y1), out
+
+
+def setup_prisons(world):
+    """D2's Rescue on Mount Arreat: each Barricade Prison is a pen with Qual-Kehk's men inside and
+    a gate you break (the only gates in the game you can use)."""
+    if getattr(world, "_pens_ready", False):
+        return
+    world._pens_ready = True
+    pens = [o for o in world.objects if o.get("kind") == "prison"]
+    if not pens:
+        return
+    p = world.player
+    q = getattr(p, "quests", {}) or {}
+    done = q.get("barbs") in ("cleared", "done")
+    broken = int(((getattr(p, "quest_stats", None) or {}).get("prisons_broken")) or 0)
+    c = world.content
+    for i, o in enumerate(pens):
+        found = _pen_gap(world.grid, o["cell"])
+        if found is None:
+            continue
+        gap, (x0, y0, x1, y1), out = found
+        o["pen"] = list(o["cell"])
+        o["cell"] = gap[len(gap) // 2]
+        o["block"] = gap
+        o["out"] = out
+        o["name"] = "Prison Gate"
+        o["pen_id"] = i
+        if done or i < broken:
+            o["used"] = True
+            continue
+        if c is None or "act5pow" not in c.monstats:
+            continue
+        from .units import Monster
+        inside = [(x, y) for y in range(y0 + 2, y1 - 1) for x in range(x0 + 2, x1 - 1)
+                  if world.grid.walkable(x, y) and abs(x - o["pen"][0]) + abs(y - o["pen"][1]) <= 5]
+        world.rng.shuffle(inside)
+        occ = world.occupied()
+        for cell in [x for x in inside if x not in occ][:4]:
+            m = Monster("zombie", *cell, rng=world.rng, template=c.monster_template("act5pow"))
+            m.npc, m.name, m.ai, m.aware = "act5pow", "Barbarian Prisoner", "npc", False
+            m.pen_id = i
+            world.npcs.append(m)
+            world.monsters.append(m)
+    from .objects import rebuild_blocks
+    rebuild_blocks(world)
+
+
+def _free_pows(world, gate):
+    """The gate breaks: the prisoners run out of the pen (and home to Harrogath)."""
+    ox, oy = gate.get("out", (1, 0))
+    gx, gy = gate["cell"]
+    for m in [n for n in world.npcs if getattr(n, "pen_id", None) == gate.get("pen_id")]:
+        goal = world._free_cell_near((gx + ox * 6 + world.rng.randint(-2, 2), gy + oy * 6 + world.rng.randint(-2, 2)), 4)
+        path = world.grid.find_path(m.pos, goal, blocked=world.occupied(m)) if goal else None
+        if path and len(path) > 1:
+            steps = path[1:]
+            m.x, m.y = steps[-1]
+            world.emit("move", m, steps)
+        m.npc = "act5pow_free"
+        m.name = "Barbarian"
 
 
 def _add_town_npc(world, npc_id):
@@ -505,7 +598,13 @@ def on_object(world, obj):
         if obj["used"]:
             return False
         obj["used"] = True
-        world.emit("nova", p, obj["cell"], 2, "fire")
+        obj["mode"] = "OP"
+        world.emit("object", obj)
+        from .objects import rebuild_blocks
+        rebuild_blocks(world)
+        _free_pows(world, obj)
+        st = p.quest_stats if isinstance(getattr(p, "quest_stats", None), dict) else {}
+        st["prisons_broken"] = sum(1 for o in world.objects if o["kind"] == "prison" and o["used"])
         left = [o for o in world.objects if o["kind"] == "prison" and not o["used"]]
         if q["barbs"] in ("none", "active"):
             _start(world, "barbs")
@@ -523,6 +622,8 @@ def on_object(world, obj):
             return False
         take_item(world, "ice")
         obj["used"] = True
+        if obj in world.objects:
+            world.objects.remove(obj)          # the ice is gone: Anya goes home to Harrogath
         q["anya"] = "cleared"
         world.log("The ice melts. Anya: 'Thank you! I'll go home to Harrogath.' Talk to Malah.", QUEST_COLOR)
         return True

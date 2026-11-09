@@ -757,12 +757,29 @@ class D2Assets(AssetProvider):
                      "cube_chest": ["XK"], "staff_chest": ["XK"], "scroll_chest": ["XK"], "viper_altar": ["ZA"],
                      "journal": ["TT"], "wirt": ["BP"],
                      "eye_chest": ["XK"], "brain_chest": ["XK"], "heart_chest": ["XK"], "gidbinn": ["GA"],
-                     "lamtome": ["AB"], "orb": ["55"], "armory_altar": ["30", "31", "32", "33", "34"], "hellforge": ["UX"], "prison": ["GI"], "anya": ["2N"],
+                     "lamtome": ["AB"], "orb": ["55"], "armory_altar": ["30", "31", "32", "33", "34"], "hellforge": ["UX"], "prison": ["2Q"], "anya": ["2N"],
                      "durance_gate": ["SV"]}
     USED_ON = ("waypoint", "cage", "inifuss", "cube_chest", "staff_chest", "scroll_chest", "viper_altar",
                "orifice", "journal", "eye_chest", "brain_chest", "heart_chest", "gidbinn", "lamtome", "orb",
                "armory_altar", "durance_gate",
                "hellforge", "prison")
+
+    def _draw_prison_gate(self, surf, pos, clock, used):
+        """A Barricade Prison's gate: D2 draws it as the "prisondoor" monster (2Q) - standing, or
+        broken down (its dead pose) once you smashed it."""
+        sp = self.sprites.get(("mon", "2Q"))
+        if sp is None:
+            sp = self.sprites[("mon", "2Q")] = UnitSprites(self, "monsters", "2Q", {}, "HTH")
+        for m in (("DD", "DT") if used else ("NU",)):
+            try:
+                frames = [f for f in (sp.frames(m, (0, 1)) or []) if f[0] is not None]
+            except Exception:
+                frames = None
+            if frames:
+                img, x0, y0 = frames[-1] if used else frames[int(clock * 10) % len(frames)]
+                surf.blit(img, (int(pos[0] + x0), int(pos[1] + y0)))
+                return True
+        return False
 
     def _obj_sprites(self, tok):
         key = ("obj", tok)
@@ -890,6 +907,8 @@ class D2Assets(AssetProvider):
             toks = [toks[oid - 7]]
         if kind == "armory_altar" and isinstance(oid, int) and 0 <= oid < len(toks):
             toks = [toks[oid]] + [t for t in toks if t != toks[oid]]      # (each a different Chaos seal)
+        if kind == "prison" and self._draw_prison_gate(surf, pos, clock, used):
+            return
         mode = "ON" if used and kind in self.USED_ON else "NU"
         for tok in toks:
             row = self._obj_row(tok)

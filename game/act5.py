@@ -64,8 +64,8 @@ def build_level(kit, level_id, seed=None):
     drlg.ensure_waypoints(b, grid, 5, {level_id: rooms.get("way")})
     whole = (0, 0, b.tm.tw * SUB, b.tm.th * SUB)
     centre = drlg.near_walkable(grid, ((whole[0] + whole[2]) // 2, (whole[1] + whole[3]) // 2), 80)
-    if level_id == 114 and centre:
-        b.objects.append(("anya", centre, 114, -1))            # Anya, frozen in the river
+    if level_id == 114 and centre and not any(o[0] == "anya" for o in b.objects):
+        b.objects.append(("anya", centre, 114, -1))            # (only if the river piece has no Anya spot)
     if level_id == 124 and centre:
         b.presets.append(("nihlathakboss", centre, 124))       # D2 puts Nihlathak here by code
     # (Baal's portal to the Worldstone Chamber opens by his throne once the last wave falls)

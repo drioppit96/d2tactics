@@ -49,6 +49,8 @@ NPC_NAMES = {"akara": "Akara", "charsi": "Charsi", "gheed": "Gheed", "kashya": "
              "qual-kehk": "Qual-Kehk", "tyrael3": "Tyrael", "cain6": "Deckard Cain"}
 HEALERS = {"akara", "fara", "ormus", "jamella", "malah"}
 NPC_LINES = {
+    "act5pow": "Barbarian: Break the gate, friend - Qual-Kehk must know we still live!",
+    "act5pow_free": "Barbarian: Thank you! We go home to Harrogath.",
     "akara": "Akara: Rest a moment, I will mend your wounds.",
     "charsi": "Charsi: My forge isn't ready for trading yet - check back soon!",
     "gheed": "Gheed: Gambling and trade? Not quite yet, friend. Soon.",

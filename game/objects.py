@@ -219,6 +219,9 @@ def _pick_shrine(parm, data, rng):
 def rebuild_blocks(world):
     world.obj_block = set()
     for o in world.objects:
+        if o.get("kind") == "prison" and o.get("block") and not o.get("used"):
+            world.obj_block.update(o["block"])          # a Barricade Prison's gate, still shut
+            continue
         if not o.get("generic") or not o.get("block"):
             continue
         if o["kind"] == "door":
