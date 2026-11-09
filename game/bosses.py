@@ -187,7 +187,7 @@ def _clone(world, baal):
     k = _spawn(world, "baalclone", spots[0], baal.level, set(world.occupied()), unique=True, name=baal.name)
     if k is None:
         return
-    k.max_hp = k.hp = max(1, baal.hp)
+    k.max_hp = k.hp = max(1, baal.max_hp // 5)          # the illusion has 20% of Baal's life
     k.aware = True
     world.emit("place", k, k.pos)
     world.log("Baal splits in two - one of them is an illusion!", RED)
