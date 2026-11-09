@@ -483,23 +483,20 @@ class Scene:
         ahead = list(v.path)
         if v.unit.is_player and getattr(self, "walk_ahead", None):
             ahead += [c for c in self.walk_ahead if not ahead or c != ahead[-1]][:4]
-        while step > 1e-6 and v.path:
-            # the steering point: LOOKAHEAD along the polyline from where you are
-            px, py = v.rx, v.ry
-            left = self.LOOKAHEAD
-            cx, cy = ahead[0]
-            for (ax, ay) in ahead:
-                d = math.hypot(ax - px, ay - py)
-                if d >= left:
-                    cx, cy = px + (ax - px) / d * left, py + (ay - py) / d * left
+        for _ in range(8):                       # (a few pieces per frame at most: never spins)
+            if step <= 1e-6 or not v.path:
+                break
+            # a tile counts as passed once you are about level with it, or past it on the way to the next
+            while len(v.path) > 1:
+                (ax, ay), (bx, by) = v.path[0], v.path[1]
+                if math.hypot(ax - v.rx, ay - v.ry) <= 0.55 or \
+                        math.hypot(bx - v.rx, by - v.ry) < math.hypot(bx - ax, by - ay):
+                    v.path.pop(0)
+                    ahead.pop(0)
+                else:
                     break
-                left -= d
-                px, py = cx, cy = float(ax), float(ay)
-            dx, dy = cx - v.rx, cy - v.ry
-            dist = math.hypot(dx, dy)
             fx, fy = v.path[0]
-            near = math.hypot(fx - v.rx, fy - v.ry)
-            if len(ahead) == 1 or dist < 1e-6:
+            if len(ahead) == 1:
                 # the last tile: arrive on it exactly
                 sn = _screen_len(fx - v.rx, fy - v.ry)
                 if sn <= step:
@@ -511,6 +508,21 @@ class Scene:
                 v.rx += (fx - v.rx) * step / sn
                 v.ry += (fy - v.ry) * step / sn
                 break
+            # the steering point: LOOKAHEAD along the route from where you are
+            px, py = v.rx, v.ry
+            left = self.LOOKAHEAD
+            cx, cy = px, py
+            for (ax, ay) in ahead:
+                d = math.hypot(ax - px, ay - py)
+                if d >= left:
+                    cx, cy = px + (ax - px) / d * left, py + (ay - py) / d * left
+                    break
+                left -= d
+                px, py = cx, cy = float(ax), float(ay)
+            dx, dy = cx - v.rx, cy - v.ry
+            dist = math.hypot(dx, dy)
+            if dist < 0.02:
+                break                              # at the end of what is known: the next step comes
             k = _screen_len(dx, dy) / dist          # screen length of one cell this way
             mv = min(step / k, dist)
             v.rx += dx / dist * mv
@@ -518,12 +530,6 @@ class Scene:
             step -= mv * k
             if not v.unit.is_player or self.walk_target is None:
                 v.facing = (dx, dy)
-            # a tile counts as passed once you are about level with it
-            while len(v.path) > 1 and math.hypot(v.path[0][0] - v.rx, v.path[0][1] - v.ry) <= 0.55:
-                v.path.pop(0)
-                ahead.pop(0)
-            if mv < 1e-6:
-                break
 
     def _update_view(self, v, dt):
         if v.flash > 0:
