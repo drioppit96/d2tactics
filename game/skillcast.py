@@ -1452,6 +1452,10 @@ class SkillCaster:
             a.shots = 5 + sk.level("Lightning Sentry") // 4
             a.bolts = 5 + sk.level("Shock Field") // 3
             a.range = 8
+        elif s.key in ("Lightning Sentry", "Death Sentry"):
+            # D2: Lightning Sentry shoots 10 times, Death Sentry 5 (Skills.txt param1)
+            a.shots = 10 if s.key == "Lightning Sentry" else 5
+            a.range = 9
         self.log("%s placed." % s.title, YELLOW)
         return True
 
@@ -1632,6 +1636,24 @@ class SkillCaster:
                 self.elem_hit(tgt, "ltng", ed[1], ed[2], self.player, ed[3], show=False)
         self._spend_shot(a)
 
+    def _lightning_sentry(self, a, env):
+        """Lightning Sentry (and Death Sentry's lightning): D2's sentry lightning bolt - a straight
+        bolt at the nearest enemy that runs on to its full length and strikes every enemy on its way."""
+        foes = [m for m in self.enemies() if self.udist(m, a) <= a.range and self.grid.line_of_sight(a.pos, m.pos)]
+        if not foes:
+            return
+        main = min(foes, key=lambda m: self.udist(m, a))
+        a.face(*main.pos)
+        path, hit = self._missile_path(a.pos, main.pos, pierce=True, max_len=a.range + 2)
+        end = path[-1] if path else main.pos
+        self.emit("projectile", a, a.pos, end, "ltng", "sentrylightningbolt")
+        ed = env.elem_damage() or ("ltng", 1, 20, 0)
+        for m in hit:
+            if m.alive:
+                m.aware = True
+                self.elem_hit(m, "ltng", ed[1], ed[2], self.player, ed[3], show=False)
+        self._spend_shot(a)
+
     def _wake_of_fire(self, a, env):
         """D2's Wake of Fire: a widening wave of flames rolls along the ground towards the enemy."""
         foes = [m for m in self.enemies() if self.udist(m, a) <= a.range and self.grid.line_of_sight(a.pos, m.pos)]
@@ -1666,6 +1688,8 @@ class SkillCaster:
             return self._wake_of_fire(a, env)
         if env is not None and env.s.key == "Charged Bolt Sentry":
             return self._bolt_sentry(a, env)
+        if env is not None and env.s.key in ("Lightning Sentry", "Death Sentry"):
+            return self._lightning_sentry(a, env)
         foes = [m for m in self.enemies() if self.udist(m, a) <= a.range and self.grid.line_of_sight(a.pos, m.pos)]
         if not foes or env is None:
             return
