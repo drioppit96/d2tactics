@@ -135,8 +135,10 @@ def _next_wave(world):
     tc = world.throne_cell
     c = world.content
     shown = c.strings.get(name, name) if c is not None else name
-    # they come out in front of the throne
-    spot = actworld._free_near(world.grid, (tc[0] + 6, tc[1] + 6), 10) or tc
+    # they come out in front of the throne: its alcove opens towards +y (screen down-left, the way you
+    # come in), so the pack stands at the alcove's mouth instead of beside the throne's walls
+    spot = actworld._free_near(world.grid, (tc[0], tc[1] + 12), 5) or \
+        actworld._free_near(world.grid, (tc[0], tc[1] + 8), 8) or tc
     before = len(world.monsters)
     lvl = world.info.monster_level(131) if getattr(world, "info", None) else 40
     actworld._spawn_preset(world, name, spot, 131, set(world.occupied()), world.info)
