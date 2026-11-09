@@ -38,6 +38,16 @@ def screen_direction(dx, dy, n_dirs):
     return 0
 
 
+
+def _display_format(surf, alpha=True):
+    """Pictures in the screen's own pixel format blit far quicker (no conversion on every blit)."""
+    try:
+        if pygame.display.get_surface() is not None:
+            return surf.convert_alpha() if alpha else surf.convert()
+    except Exception:
+        pass
+    return surf
+
 class DccAnim:
     """A one-layer DCC (missile / overlay): frames decoded per direction on first use."""
 
@@ -235,7 +245,7 @@ class UnitSprites:
                 if L.transparent:
                     img.set_alpha(150)
                 comp_surf.blit(img, (fr.xmin - x0, fr.ymin - y0))
-            out.append((comp_surf, x0, y0))
+            out.append((_display_format(comp_surf), x0, y0))
         return out
 
 
@@ -332,14 +342,33 @@ class D2Assets(AssetProvider):
         out = pygame.Surface((w, h), pygame.SRCALPHA)   # index 0 -> fully transparent
         out.fill((0, 0, 0, 0))
         out.blit(s, (0, 0))
-        return out
+        return _display_format(out, alpha=True)
+
+    KEY = (255, 0, 255)
+
+    def keyed_surface(self, w, h, pixels, palette=None):
+        """A map tile as a colour-keyed, run-length encoded surface in the screen's pixel format:
+        blitting it is several times quicker than a per-pixel-alpha picture (tiles are most of
+        what is drawn every frame)."""
+        try:
+            if pygame.display.get_surface() is None:
+                return self.indexed_surface(w, h, pixels, palette)
+            s = pygame.image.frombuffer(bytes(pixels), (w, h), "P")
+            pal = list(palette or self.palette)
+            pal[0] = self.KEY                      # index 0 (transparent) -> a colour no tile uses
+            s.set_palette(pal)
+            out = s.convert()
+            out.set_colorkey(self.KEY, pygame.RLEACCEL)
+            return out
+        except Exception:
+            return self.indexed_surface(w, h, pixels, palette)
 
     def tile_surface(self, ref):
         f, t = ref
         key = id(t)
         if key not in self.tile_cache:
             w, h, px, x0, y0 = f.decode(t)
-            self.tile_cache[key] = (self.indexed_surface(w, h, px, self._tile_palette(f)), x0, y0) if w else None
+            self.tile_cache[key] = (self.keyed_surface(w, h, px, self._tile_palette(f)), x0, y0) if w else None
         return self.tile_cache[key]
 
     def _tile_palette(self, f):
@@ -389,8 +418,14 @@ class D2Assets(AssetProvider):
             key = (id(ref[1]), "lit")
             if key not in self.tile_cache:
                 bright = img.copy()
+                ck = img.get_colorkey()
                 try:
+                    if ck is not None:
+                        bright.set_colorkey(None)
                     bright.fill((55, 50, 40), special_flags=pygame.BLEND_RGB_ADD)
+                    if ck is not None:          # the key colour moved with the fill
+                        bright.set_colorkey((min(255, ck[0] + 55), min(255, ck[1] + 50), min(255, ck[2] + 40)),
+                                            pygame.RLEACCEL)
                 except Exception:
                     pass
                 self.tile_cache[key] = bright
@@ -399,7 +434,10 @@ class D2Assets(AssetProvider):
             key = (id(ref[1]), "a")
             if key not in self.tile_cache:
                 faded = img.copy()
-                faded.fill((255, 255, 255, alpha), special_flags=pygame.BLEND_RGBA_MULT)
+                if img.get_colorkey() is not None:
+                    faded.set_alpha(alpha)          # colour key + whole-surface alpha
+                else:
+                    faded.fill((255, 255, 255, alpha), special_flags=pygame.BLEND_RGBA_MULT)
                 self.tile_cache[key] = faded
             img = self.tile_cache[key]
         sx, sy = cam.to_screen((tx - ty) * 80 - 80 + x0, (tx + ty) * 40 - 8 + y0 - self._roof_lift(ref))

@@ -2048,11 +2048,20 @@ class Game:
         rcam = Camera(ow, oh, 1.0)
         rcam.wx, rcam.wy = self.cam.wx, self.cam.wy
         self.scene.draw(off, rcam, cell, highlight, preview)
-        if abs(z - round(z)) < 1e-6:
-            img = pygame.transform.scale(off, (int(ow * z), int(oh * z)))
-        else:
-            img = pygame.transform.smoothscale(off, (int(ow * z), int(oh * z)))
-        self.screen.blit(img, (int(W / 2 - ow * z / 2), int(H / 2 - oh * z / 2)))
+        size = (int(ow * z), int(oh * z))
+        pos = (int(W / 2 - ow * z / 2), int(H / 2 - oh * z / 2))
+        if abs(size[0] - W) <= 4 and abs(size[1] - H) <= 4:
+            size, pos = (W, H), (0, 0)               # (the buffer is rounded: fill the window exactly)
+        scale = pygame.transform.scale if abs(z - round(z)) < 1e-6 else pygame.transform.smoothscale
+        dest = pygame.Rect(pos, size)
+        if self.screen.get_rect().contains(dest):
+            try:
+                # straight onto the screen: no new full-screen picture to allocate and copy every frame
+                scale(off, size, self.screen.subsurface(dest))
+                return
+            except Exception:
+                pass
+        self.screen.blit(scale(off, size), pos)
 
     def draw_overlays(self):
         W, H = self.screen.get_size()
