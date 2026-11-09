@@ -1941,12 +1941,12 @@ class World(SkillCaster, ItemActions):
     @staticmethod
     def _attack_limit(m):
         """Attacks / spells a monster may make in one turn, however much AP it has (None: no limit):
-        the High Council of Travincal 1, the Moon Clan goatmen and Moon Lord vampires 3."""
+        the High Council of Travincal 1, the Night Lord and Blood Lord vampires 3."""
         mid = (getattr(m, "d2id", "") or "").lower()
         if mid.startswith("councilmember") or getattr(m, "boss", None) == "council":
             return 1
-        if mid.startswith(("goatman1", "goatman6", "bloodlord1", "bloodlord6")) or "moon" in (m.name or "").lower():
-            return 3
+        if mid in ("vampire2", "vampire4", "vampire6", "bloodlord2", "bloodlord3"):
+            return 3                         # the Night Lord and Blood Lord vampires
         return None
 
     def _one_attack(self, m):
