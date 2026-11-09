@@ -498,17 +498,25 @@ class ItemActions:
             del st.bank[code]
         return it
 
-    def stash_gold(self, deposit=True):
+    def stash_gold(self, deposit=True, amount=None):
+        """Gold into the stash (or out of it): all of it, or `amount`."""
         p = self.player
         st = getattr(p, "stash", None)
         if st is None:
             return False
+        have = p.gold if deposit else st.gold
+        n = have if amount is None else min(have, amount)
+        if n <= 0:
+            self.log("No gold to %s." % ("put in the stash" if deposit else "take"), GREY)
+            return False
         if deposit:
-            st.gold += p.gold
-            p.gold = 0
+            st.gold += n
+            p.gold -= n
+            self.log("You put %d gold in your stash." % n, (230, 210, 140))
         else:
-            p.gold += st.gold
-            st.gold = 0
+            p.gold += n
+            st.gold -= n
+            self.log("You take %d gold from your stash." % n, (230, 210, 140))
         return True
 
     def transmute(self, box):

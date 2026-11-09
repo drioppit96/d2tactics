@@ -1296,7 +1296,8 @@ class Game:
                     w.bank_take(arg, to_inventory=(button == 3))
                 return
             elif action == "stash_gold":
-                w.stash_gold(deposit=(button == 1))
+                dep = arg if isinstance(arg, bool) else (button == 1)
+                w.stash_gold(deposit=dep, amount=1000 if (button == 3 and isinstance(arg, bool)) else None)
             elif action == "transmute":
                 if h.cube_item is not None and w.held is None:
                     w.transmute(h.cube_item)

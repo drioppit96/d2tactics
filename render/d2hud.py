@@ -1532,6 +1532,19 @@ class D2Hud:
                 self.hover_lines = [("Left click: put your gold in the stash", WHITE),
                                     ("Right click: take the stash's gold", WHITE)]
             self._draw_stash_tabs(surf, box)
+            # gold: D2's deposit / withdraw (left click: all of it, right click: 1000)
+            for x, label, dep in ((144, "DEPOSIT", True), (208, "TAKE", False)):
+                hot = pygame.Rect(x, 455, 60, 26).collidepoint((int(mx), int(my)))
+                bg = pygame.Surface((int(60 * self.s), int(26 * self.s)), pygame.SRCALPHA)
+                bg.fill((40, 32, 20, 230) if hot else (20, 16, 10, 220))
+                surf.blit(bg, self.P(x, 455))
+                pygame.draw.rect(surf, GOLD if hot else (120, 105, 70), self.R(x, 455, 60, 26), 1)
+                self.text(surf, self.f10, label, GOLD if hot else WHITE, x, 463, "center", 60)
+                self.region(x, 455, 60, 26, "stash_gold", dep)
+                if hot and held is None:
+                    self.hover_lines = [("Left click: %s all your gold" % ("put" if dep else "take"), WHITE),
+                                        ("Right click: %s 1000 gold" % ("put" if dep else "take"), WHITE),
+                                        ("Gold in stash: %d" % getattr(box, "gold", 0), GOLD)]
             well = pygame.Surface((int(276 * self.s), int(366 * self.s)), pygame.SRCALPHA)
             well.fill((8, 8, 10, 255))
             surf.blit(well, self.P(22, 86))
@@ -1711,6 +1724,13 @@ class D2Hud:
         if p.INV_H > 4:
             self._inv_page_tabs(surf, ox, page)
         self.text(surf, self.f16, str(p.gold), WHITE, ox + GOLD_BOX[0] + 4, GOLD_BOX[1] + 2)
+        if self._is_stash() and getattr(self, "cube_item", None) is not None:
+            # with the stash open, your gold goes into it with a click (right click: 1000)
+            self.region(ox + GOLD_BOX[0], GOLD_BOX[1], GOLD_BOX[2], GOLD_BOX[3], "stash_gold", True)
+            if pygame.Rect(ox + GOLD_BOX[0], GOLD_BOX[1], GOLD_BOX[2], GOLD_BOX[3]).collidepoint(
+                    (int(self.mouse[0]), int(self.mouse[1]))):
+                self.hover_lines = [("Click: put all your gold in the stash", WHITE),
+                                    ("Right click: put 1000 gold in the stash", WHITE)]
         self._close_button(surf, INV_CLOSE, ox, "inv")
 
     def _held_anchor(self, cell, item):
