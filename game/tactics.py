@@ -6,7 +6,7 @@ control to the next hero, and after the last one the monsters move.
 """
 ACTIVE = False            # set when a tactics game starts (read by the map builders and the world)
 HP_MULT = 2.5             # monsters as in a 4-player D2 game (/players 4: +150% life)
-XP_MULT = 3.0             # fewer, tougher monsters and no hireling: more experience per kill
+XP_MULT = 1.2             # the difficulty's own experience + 20% (fewer monsters, no hireling)
 FALLEN_LIFE = 4           # a fallen hero gets up with 1/4 of their life when the fight is over
 
 

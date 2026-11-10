@@ -639,12 +639,25 @@ def build_outdoors(kit, seed=None, content=None):
         tx0, ty0 = sx * ST, sy * ST
         nb = neighbours.get(lid, {})
         taken = set()
+        # tactics mode: a second ring of tree line inside the slot - a smaller area to cross, its
+        # doorways lined up with the outer ones (two opening pieces in a row make the passage)
+        rings = 2 if small else 1
         for bx in range(SLOT):
             for by in range(SLOT):
-                edge_n, edge_s, edge_w, edge_e = by == 0, by == SLOT - 1, bx == 0, bx == SLOT - 1
-                if not (edge_n or edge_s or edge_w or edge_e):
+                k = min(bx, by, SLOT - 1 - bx, SLOT - 1 - by)
+                if k >= rings:
                     continue
+                edge_n, edge_s, edge_w, edge_e = by == k, by == SLOT - 1 - k, bx == k, bx == SLOT - 1 - k
                 taken.add((bx, by))
+                if rings == 2 and k == 0:
+                    sd_ = ("n" if edge_n else "s") if (edge_n or edge_s) else ("w" if edge_w else "e")
+                    al_ = bx if (edge_n or edge_s) else by
+                    o_ = nb.get(sd_)
+                    corner_ = (edge_n or edge_s) and (edge_w or edge_e)
+                    if corner_ or o_ is None or openings.get((lid, o_)) != al_ or o_ == 1:
+                        if o_ != 1 or corner_:
+                            b.__dict__.setdefault("moat", []).append(
+                                (tx0 + bx * BLOCK, ty0 + by * BLOCK, tx0 + (bx + 1) * BLOCK, ty0 + (by + 1) * BLOCK))
                 X, Y = tx0 + bx * BLOCK, ty0 + by * BLOCK
                 vert = "n" if edge_n else ("s" if edge_s else None)
                 hor = "w" if edge_w else ("e" if edge_e else None)
@@ -666,7 +679,7 @@ def build_outdoors(kit, seed=None, content=None):
                     name = "Act1/Outdoors/%s%s.ds1" % (OutdoorKit.EDGE[side], v)
                     if put(name, X, Y, lid) is None:
                         put("Act1/Outdoors/%s.ds1" % OutdoorKit.EDGE[side], X, Y, lid)
-        inner = [(bx, by) for bx in range(1, SLOT - 1) for by in range(1, SLOT - 1)]
+        inner = [(bx, by) for bx in range(rings, SLOT - rings) for by in range(rings, SLOT - rings)]
         rng.shuffle(inner)
         # plain grass under every inner block first: presets a tile short of their block (waypoint
         # pads, camps, cave entrances) otherwise left a one-tile black line next to them
@@ -676,7 +689,7 @@ def build_outdoors(kit, seed=None, content=None):
         def place(name, w=1, h=1, owner=lid):
             for bx, by in inner:
                 cells = [(bx + i, by + j) for i in range(w) for j in range(h)]
-                if all(1 <= c[0] < SLOT - 1 and 1 <= c[1] < SLOT - 1 and c not in taken for c in cells):
+                if all(rings <= c[0] < SLOT - rings and rings <= c[1] < SLOT - rings and c not in taken for c in cells):
                     if put(name, tx0 + bx * BLOCK, ty0 + by * BLOCK, owner) is None:
                         return False
                     taken.update(cells)
@@ -767,6 +780,14 @@ def build_outdoors(kit, seed=None, content=None):
         import traceback
         traceback.print_exc()
     seal_world(b, grid, gtiles, gcodes, rng, (2, 3, 4), skip=getattr(b, "barracks_rect", None))
+    # tactics: the strip of grass between the two tree lines is not ground you can walk (only the
+    # doorway passages through it are)
+    from .grid import WALL
+    for (x0, y0, x1, y1) in getattr(b, "moat", ()):
+        for y in range(y0 * SUB, min(grid.h, y1 * SUB)):
+            row = grid.cells[y]
+            for x in range(x0 * SUB, min(grid.w, x1 * SUB)):
+                row[x] = WALL
     return b, grid, rng
 
 

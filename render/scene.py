@@ -769,7 +769,7 @@ class Scene:
                                          (x0 - 8 <= v.rx <= x1 + 8 and y0 - 8 <= v.ry <= y1 + 8)]
         for v in near_views:
             cx, cy = int(round(v.rx)), int(round(v.ry))
-            if getattr(v.unit, "hidden", False):
+            if getattr(v.unit, "hidden", False) or (getattr(v.unit, "exploded", False) and not v.unit.alive):
                 continue                   # hidden traps and the hell meteors' spawners
             if not v.unit.is_player and not self.unit_seen(v.unit, cam, v):
                 continue

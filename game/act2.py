@@ -460,14 +460,23 @@ def build_desert(kit, seed=None, content=None):
         b.areas[lid] = (bx0 * SUB, by0 * SUB, (bx0 + size * BLOCK) * SUB, (by0 + size * BLOCK) * SUB)
         nb = nbr.get(lid, {})
         taken = set()
-        ring = 0
+        from . import tactics
+        ring = 1 if tactics.ACTIVE and size >= 7 else 0      # (tactics: a second ring of cliffs inside)
         for bx in range(size):
             for by in range(size):
-                en, es, ew, ee = by == 0, by == size - 1, bx == 0, bx == size - 1
-                if not (en or es or ew or ee):
+                k = min(bx, by, size - 1 - bx, size - 1 - by)
+                if k > ring:
                     continue
+                en, es, ew, ee = by == k, by == size - 1 - k, bx == k, bx == size - 1 - k
                 taken.add((bx, by))
                 X, Y = bx0 + bx * BLOCK, by0 + by * BLOCK
+                if ring and k == 0:
+                    sd_ = ("n" if en else "s") if (en or es) else ("w" if ew else "e")
+                    al_ = (bx + off[0]) if (en or es) else (by + off[1])
+                    o_ = nb.get(sd_)
+                    corner_ = (en or es) and (ew or ee)
+                    if corner_ or o_ is None or abs(al_ - openings[(lid, o_)]) > (3 if o_ == 40 else 1):
+                        b.__dict__.setdefault("moat", []).append((X, Y, X + BLOCK, Y + BLOCK))
                 vert = "n" if en else ("s" if es else None)
                 hor = "w" if ew else ("e" if ee else None)
                 if vert and hor:
@@ -533,6 +542,12 @@ def build_desert(kit, seed=None, content=None):
             b.objects.append(("waypoint", c, 40, -1))
     act1._connect(b, grid, pos, links, _SandKit(kit, sds, scodes), rng, openings)
     act1.seal_world(b, grid, stiles, scodes, rng, (41, 42, 43))
+    from .grid import WALL
+    for (x0, y0, x1, y1) in getattr(b, "moat", ()):      # (tactics: the strip between the two rings)
+        for y in range(y0 * SUB, min(grid.h, y1 * SUB)):
+            row = grid.cells[y]
+            for x in range(x0 * SUB, min(grid.w, x1 * SUB)):
+                row[x] = WALL
     return b, grid, rng
 
 

@@ -984,7 +984,15 @@ class SkillCaster:
         corpse.searched = True
         if corpse in self.corpses:
             self.corpses.remove(corpse)
-        self.emit("nova", self.player, corpse.pos, r, s.element or "fire")
+        # D2's own pictures: the body bursts (guts), then the blast (Skills.txt cltmissile a / b)
+        if s.key == "Corpse Explosion":
+            self.emit("explosion", corpse.pos, "corpseexplosion")
+            self.emit("explosion", corpse.pos, "explodingarrowexp")
+        elif s.key == "Poison Explosion":
+            self.emit("explosion", corpse.pos, "poisoncorpseexplosion")
+            self.emit("explosion", corpse.pos, "poisonexplosioncloud")
+        else:
+            self.emit("nova", self.player, corpse.pos, r, s.element or "fire")
         self._wake(foes)
         if s.key == "Corpse Explosion":
             lo, hi = env.par(1) or 70, env.par(2) or 120
