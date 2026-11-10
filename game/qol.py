@@ -5,10 +5,13 @@ saved with it.
   goblin   - vendors sell the Loot Goblin: a 1x1 item, never used up; right click it to sell your
              loot anywhere; a golden Fallen (the goblin) pops up while his shop is open
   inf_buffs - your own buffs (Battle Orders, Shout, Bone Armor, Holy Shield, Fade...) never wear off
+  used_up_pots - D2's potions: every potion is used up when you drink it, and none has a cooldown
+             (off: healing and mana potions are permanent and rest a few turns after a drink)
 """
 from .items import Item
 
-OPTIONS = [("big_inv", "BIGGER INVENTORY"), ("goblin", "LOOT GOBLIN"), ("inf_buffs", "INFINITE BUFFS")]
+OPTIONS = [("big_inv", "BIGGER INVENTORY"), ("goblin", "LOOT GOBLIN"), ("inf_buffs", "INFINITE BUFFS"),
+           ("used_up_pots", "USED-UP POTIONS")]
 
 # what Infinite Buffs keeps going: your own skill buffs (shouts, armors, auras' partners, forms...)
 NOT_BUFFS = ("Antidote", "Thawing")

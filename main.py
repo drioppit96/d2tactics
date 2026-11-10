@@ -2120,6 +2120,8 @@ class Game:
             if not any(o.get("kind") == "stash" and _cheb(o["cell"], pp) <= 5 for o in self.world.objects):
                 h.show_cube = False         # walked away from the stash
         if getattr(self, "scene", None) is not None:
+            from game import potions as _pots, qol as _qol
+            _pots.CLASSIC = _qol.get(self.world.player, "used_up_pots")     # (QoL: D2's used-up potions)
             if self.world.player is not getattr(self, "_party_seen", None):
                 self._on_hero_switch()
             self.scene.walk_target = self.walk_goal if self.walk_queue and self.world.mode == "explore" else None

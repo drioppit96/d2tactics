@@ -162,12 +162,20 @@ def column(p, c):
     return [it for it in p.belt if getattr(it, "belt_col", None) == c]
 
 
+CLASSIC = False          # Quality of Life "USED-UP POTIONS": D2's potions, gone when you drink them (no cooldown)
+
+
 def permanent(it):
-    """Healing and mana potions are never used up (they go on cooldown); rejuvenations are."""
+    """Healing and mana potions are never used up (they go on cooldown); rejuvenations are.
+    With the Used-up Potions option every potion is used up, D2 style, and none has a cooldown."""
+    if CLASSIC:
+        return False
     return getattr(it, "kind", "") == "potion" and getattr(it, "potion", "") in ("heal", "mana")
 
 
 def cooldown_of(it):
+    if CLASSIC:
+        return 0                  # (used-up potions have no cooldown)
     return getattr(it, "cd", 0) or 0
 
 

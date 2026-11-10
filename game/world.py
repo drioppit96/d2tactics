@@ -1276,7 +1276,7 @@ class World(SkillCaster, ItemActions):
             return True
         found = None
         if name == "Find Potion" and self.rng.random() * 100 < min(100, 30 + 5 * L):
-            found = self._find_gem(corpse, L) if self.content else None
+            found = self._find_potion(corpse, L) if self.content else None
         elif name == "Find Item" and self.rng.random() * 100 < min(60, 15 + 3 * L):
             drops = (self.content.roll_drop(corpse.level, True, self.rng) if self.content
                      else roll_drop(corpse.level, True, self.rng))
@@ -1371,6 +1371,19 @@ class World(SkillCaster, ItemActions):
         if dx and dy:   # diagonal: can't attack through a wall corner
             return self.grid.walkable(a[0] + dx, a[1]) or self.grid.walkable(a[0], a[1] + dy)
         return True
+
+    def _find_potion(self, corpse, L):
+        """D2's Find Potion: a healing, mana or (rarely) rejuvenation potion from the corpse, of a
+        size fitting the monster's level."""
+        c, rng = self.content, self.rng
+        tier = max(1, min(5, 1 + corpse.level // 12 + L // 10))
+        r = rng.random()
+        if r < 0.12 + 0.01 * L:
+            code = "rvl" if corpse.level >= 40 and rng.random() < 0.3 else "rvs"
+        else:
+            code = ("hp%d" if r < 0.6 else "mp%d") % tier
+        b = c.base_by_code.get(code)
+        return c.make_item(b, max(1, corpse.level), rng) if b else None
 
     def _find_gem(self, corpse, L):
         """Find Gem (the barbarian's Find Potion): a gem from the corpse - chipped and flawed at first,
