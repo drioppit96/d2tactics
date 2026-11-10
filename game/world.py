@@ -521,6 +521,7 @@ class World(SkillCaster, ItemActions):
             self.mode = "combat"
             self.round = 1
             self.player.ap = self.player.max_ap
+            self.player.free_steps = getattr(self.player, "free_move", 0)
             self.emit("combat_start")
             names = sorted({m.name for m in newly if not getattr(m, "hidden", False)})
             self.log(f"Combat! {', '.join(names)} spotted you." if names else "Combat! A trap!", RED)
@@ -542,14 +543,23 @@ class World(SkillCaster, ItemActions):
                     self.emit("death", a)
 
     # ------------------------------------------------------------ player actions
+    def move_budget(self):
+        """How many tiles you can still walk this turn: your AP plus Faster Run/Walk's free tiles."""
+        p = self.player
+        return p.ap + max(0, getattr(p, "free_steps", 0))
+
+    def move_ap_cost(self, n):
+        """AP that walking n tiles costs now (the free tiles go first)."""
+        return max(0, n - max(0, getattr(self.player, "free_steps", 0)))
+
     def move_cost_ok(self, n):
-        return self.mode == "explore" or self.player.ap >= n
+        return self.mode == "explore" or self.move_budget() >= n
 
     def reachable_cells(self):
         """Move range for highlighting (combat only)."""
         if self.mode != "combat":
             return {}
-        return self.grid.reachable(self.player.pos, self.player.ap, blocked=self.occupied(self.player))
+        return self.grid.reachable(self.player.pos, self.move_budget(), blocked=self.occupied(self.player))
 
     def path_for_player(self, cell):
         blocked = self.occupied(self.player)
@@ -583,7 +593,7 @@ class World(SkillCaster, ItemActions):
         if not path:
             return False
         if self.mode == "combat":
-            path = path[: self.player.ap]
+            path = path[: self.move_budget()]
             if not path:
                 return False
         walked = []
@@ -595,7 +605,10 @@ class World(SkillCaster, ItemActions):
             walked.append(step)
             self.blaze_step(prev)
             if self.mode == "combat":
-                p.ap -= 1
+                if getattr(p, "free_steps", 0) > 0:
+                    p.free_steps -= 1                 # a free tile from Faster Run/Walk
+                else:
+                    p.ap -= 1
             else:
                 self._regen_steps += 1
                 if self._regen_steps % 2 == 0 and p.hp < p.max_hp:
@@ -834,10 +847,11 @@ class World(SkillCaster, ItemActions):
                         path = path[: i + 1]
                         break
             if self.mode == "combat":
-                if len(path) + cost > p.ap:
+                if self.move_ap_cost(len(path)) + cost > p.ap:
                     # can't reach and swing this turn: get as close as AP allows
                     self.log("Not enough AP to reach and attack - moving closer.", GREY)
-                    return self.player_move_to(path[min(len(path), p.ap) - 1]) if p.ap else False
+                    budget = self.move_budget()
+                    return self.player_move_to(path[min(len(path), budget) - 1]) if budget else False
                 self.player_move_to(path[-1])
             else:
                 mode_before = self.mode
@@ -1343,6 +1357,7 @@ class World(SkillCaster, ItemActions):
             self.mode = "combat"
             self.round = 1
             self.player.ap = self.player.max_ap
+            self.player.free_steps = getattr(self.player, "free_move", 0)
             self.emit("combat_start")
             self.log("You strike first!", YELLOW)
 
@@ -1375,7 +1390,8 @@ class World(SkillCaster, ItemActions):
             return                  # a chance-to-cast spell never ends your turn
         if self.player.alive:
             self._auto_pickup_gold(self.player.pos)     # gold your blows dropped next to you
-        if self.mode == "combat" and self.turn == "player" and self.player.ap <= 0:
+        if self.mode == "combat" and self.turn == "player" and self.player.ap <= 0 \
+                and getattr(self.player, "free_steps", 0) <= 0:      # (free tiles left: you may still step)
             self.end_player_turn()
 
     def end_player_turn(self):
@@ -1409,6 +1425,7 @@ class World(SkillCaster, ItemActions):
         potions.tick(self)                   # potion regeneration, infusions, belt slot cooldowns
         self.tick_charges()                  # the assassin's stored charges fade
         p.ap = p.max_ap + min(3, p.frenzy)
+        p.free_steps = getattr(p, "free_move", 0)      # Faster Run/Walk's free tiles this turn
         p.frenzy = 0
         if p.effects.get("chilled"):          # Cold Enchanted / Holy Freeze: you are slowed
             p.ap = max(1, p.ap - 2)

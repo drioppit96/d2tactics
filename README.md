@@ -143,7 +143,7 @@ button takes any skill too. RESET SKILLS (bottom of the tree) gives back every p
 from the skill's mana cost: spells 1.5 + square root of the mana (Fire Bolt 3, Frost Nova 5,
 Meteor 6, Frozen Orb 7), weapon skills your attack AP + 0.6 x square root of the mana (Bash +1,
 Whirlwind +3); switching auras 1 AP. Your maximum AP grows: 8, +1 at levels 10/20/30/45/60/80,
-+1 per 40 Dexterity above your class's start, +1 per 20% Faster Run/Walk. Choosing an aura turns it on.
++1 per 40 Dexterity above your class's start. Faster Run/Walk gives free movement in combat: +1 tile each turn per 25% (up to +4 at 100%), used before AP. Choosing an aura turns it on.
 
 **Dying:** you wake up in the Rogue Encampment and lose half your gold (press R).
 

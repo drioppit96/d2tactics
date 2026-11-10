@@ -1808,10 +1808,14 @@ class Game:
                     self._path_cache[key] = path
                 path = self._path_cache[key]
                 if path and w.mode == "combat":      # outside combat you just walk, no AP to plan
-                    preview = [(c, i < p.ap) for i, c in enumerate(path)]
+                    budget = w.move_budget()
+                    preview = [(c, i < budget) for i, c in enumerate(path)]
                     if w.mode == "combat":
-                        tip = ([f"{len(path)} AP" + ("" if len(path) <= p.ap else f"  (only {p.ap} left)")],
-                               [TEXT if len(path) <= p.ap else (230, 120, 90)])
+                        cost = w.move_ap_cost(len(path))
+                        free = len(path) - cost
+                        txt = f"{cost} AP" + (f" (+{free} free)" if free else "")
+                        tip = ([txt + ("" if len(path) <= budget else f"  (only {p.ap} AP left)")],
+                               [TEXT if len(path) <= budget else (230, 120, 90)])
             grp = self.warp_under_mouse(mouse, cell)
             if grp is not None:
                 self.scene.lit_warp = grp

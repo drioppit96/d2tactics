@@ -418,7 +418,7 @@ class D2Assets(AssetProvider):
             key = (id(ref[1]), "lit")
             if key not in self.tile_cache:
                 bright = img.copy()
-                ck = img.get_colorkey()
+                ck = getattr(img, "get_colorkey", lambda: None)()
                 try:
                     if ck is not None:
                         bright.set_colorkey(None)
@@ -434,7 +434,7 @@ class D2Assets(AssetProvider):
             key = (id(ref[1]), "a")
             if key not in self.tile_cache:
                 faded = img.copy()
-                if img.get_colorkey() is not None:
+                if getattr(img, "get_colorkey", lambda: None)() is not None:
                     faded.set_alpha(alpha)          # colour key + whole-surface alpha
                 else:
                     faded.fill((255, 255, 255, alpha), special_flags=pygame.BLEND_RGBA_MULT)

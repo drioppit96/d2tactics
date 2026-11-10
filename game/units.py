@@ -409,7 +409,9 @@ class Player(Unit):
         # more AP as you grow: character level, dexterity above your class's start, faster run/walk
         dex_bonus = max(0, self.dexterity - d0) // 40
         lvl_bonus = sum(1 for t in AP_LEVELS if self.level >= t)
-        self.max_ap = 8 + lvl_bonus + dex_bonus + self.mod("ap") + max(0, frw) // 20 + pb["ap"]
+        self.max_ap = 8 + lvl_bonus + dex_bonus + self.mod("ap") + pb["ap"]
+        # Faster Run/Walk: free tiles of movement each turn, +1 per 25% (up to +4 at 100%)
+        self.free_move = min(4, max(0, frw) // 25)
         self.thorns = self.mod("thorns")
         self.light = 9 + self.mod("light")
         self.regen = self.mod("regen")

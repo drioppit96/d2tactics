@@ -661,12 +661,17 @@ class D2Hud:
         ap_frac = p.ap / float(max(1, p.max_ap)) if combat else 1.0
         self._bar(surf, px0 + 226, py0 + 76, 102, 17, ap_frac, (196, 156, 24) if combat else (120, 100, 40))
         if combat:
-            self.text(surf, self.f10, "AP %d / %d" % (p.ap, p.max_ap), WHITE, px0 + 226, py0 + 78, "center", 102)
+            fs = getattr(p, "free_steps", 0)
+            self.text(surf, self.f10, "AP %d / %d" % (p.ap, p.max_ap) + ("  +%d" % fs if fs > 0 else ""),
+                      WHITE, px0 + 226, py0 + 78, "center", 102)
         if pygame.Rect(int(px0 + 210), int(py0 + 60), 118, 9).collidepoint((int(mx), int(my))):
             self.hover_lines = [("Experience: %d / %d" % (p.xp, p.xp_to_next()), WHITE)]
         if pygame.Rect(int(px0 + 226), int(py0 + 74), 102, 20).collidepoint((int(mx), int(my))):
             self.hover_lines = [("Action Points: %d / %d" % (p.ap if combat else p.max_ap, p.max_ap), WHITE),
-                                ("Moving costs 1 AP per step in combat", GREY)]
+                                ("Moving costs 1 AP per step in combat", GREY)] + \
+                ([("Faster Run/Walk: %d free step%s each turn (%d left)" % (
+                    p.free_move, "s" if p.free_move > 1 else "", getattr(p, "free_steps", 0)), (120, 160, 255))]
+                 if getattr(p, "free_move", 0) else [])
 
         # run button = fast animations toggle
         rb = self.frames.get("runbutton")
