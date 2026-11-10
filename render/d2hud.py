@@ -922,11 +922,19 @@ class D2Hud:
                                 [("Aura slot", WHITE)]) + [("Reaches every ally near you", GREY),
                                                             ("Click to choose an aura", GREY)]
 
+    def _hotkey_mark(self, surf, p, name, x, y):
+        """The Num key a skill is bound to, in the corner of its icon (like D2's F-keys)."""
+        for k, v in (getattr(p, "hotkeys", None) or {}).items():
+            if v == name:
+                self.text(surf, self.f10, "N" + str(k), GOLD, x + 1, y + 1)
+                break
+
     def _draw_skill_popup(self, surf, p):
         """Choose the left / right click skill: learned active skills in rows above that button
         (the paladin's auras have a slot of their own)."""
         px0, py0 = self.panel_origin
         side = self.skill_popup if self.skill_popup in ("left", "right", "aura") else "right"
+        self.popup_hover = None
         if side == "aura":
             options = ["none"] + [n for n in p.skills.actives() if p.skills.tree[n].kind == "aura"]
             current = getattr(p, "active_aura", None) or "none"
@@ -944,10 +952,13 @@ class D2Hud:
                 if name == current:
                     pygame.draw.rect(surf, GOLD, self.R(x - 1, y - 1, 38, 38), 1)
                 self.region(x, y, 36, 36, "pick_skill", ("aura", name))
+                self._hotkey_mark(surf, p, name, x, y)
                 mx, my = self.mouse
                 if pygame.Rect(int(x), int(y), 36, 36).collidepoint((int(mx), int(my))):
                     sk = p.skills.tree.get(name)
-                    self.hover_lines = [(sk.title if sk else "No aura", GREEN)]
+                    self.popup_hover = ("aura", name)
+                    self.hover_lines = [(sk.title if sk else "No aura", GREEN)] + \
+                        ([("Press Num 0-9 to bind it to that key", GREY)] if sk else [])
             return
         options = ["attack"] + (["throw"] if getattr(p, "throwing", False) else []) + \
             [n for n in p.skills.actives() if not (getattr(p, "cls", "") == "pal" and p.skills.tree[n].kind == "aura")]
@@ -969,11 +980,14 @@ class D2Hud:
             if name == current:
                 pygame.draw.rect(surf, GOLD, self.R(x - 1, y - 1, 38, 38), 1)
             self.region(x, y, 36, 36, "pick_skill", (side, name))
+            self._hotkey_mark(surf, p, name, x, y)
             mx, my = self.mouse
             if pygame.Rect(int(x), int(y), 36, 36).collidepoint((int(mx), int(my))):
                 sk = p.skills.tree.get(name)
+                self.popup_hover = (side, name)
                 title = {"attack": "Attack", "throw": "Throw"}.get(name) or (sk.title if sk else name)
-                self.hover_lines = [(title, GREEN if name not in ("attack", "throw") else WHITE)]
+                self.hover_lines = [(title, GREEN if name not in ("attack", "throw") else WHITE),
+                                    ("Press Num 0-9 to bind it to that key", GREY)]
 
     # ------------------------------------------------------------ panels
     def _panel_bg(self, surf, ox, frames, base=0):

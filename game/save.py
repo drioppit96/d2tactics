@@ -254,6 +254,7 @@ def save_character(player, difficulty="normal"):
         stats=[p.base_str, p.base_dex, p.base_vit, p.base_eng], stat_points=p.stat_points,
         skills=dict(p.skills.levels), skill_points=p.skills.points, right_skill=p.right_skill, left_skill=getattr(p, "left_skill", None),
         aura=getattr(p, "active_aura", None),
+        hotkeys=dict(getattr(p, "hotkeys", None) or {}),
         boss_kills=list(getattr(p, "boss_kills", []) or []),
         tracked_quest=getattr(p, "tracked_quest", None),
         qol=dict(getattr(p, "qol", None) or {}),
@@ -405,6 +406,7 @@ def build_player(data, content):
         p.active_aura = p.right_skill
         if cls == "pal":
             p.right_skill = None             # (the paladin's aura has its own slot now)
+    p.hotkeys = {str(k): v for k, v in (data.get("hotkeys") or {}).items()}
     a = data.get("aura")
     if a and a in p.skills.tree and p.skills.tree[a].kind == "aura":
         p.active_aura = a

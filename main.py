@@ -1803,11 +1803,55 @@ class Game:
             elif g.in_bounds(*cell) and g.walkable(*cell):
                 w.player_move_to(cell)
 
+    NUMPAD = None
+
+    def _numpad(self, key):
+        """Num 0 - Num 9 -> 0..9 (or None)."""
+        if Game.NUMPAD is None:
+            Game.NUMPAD = {getattr(pygame, "K_KP%d" % i, None): i for i in range(10)}
+            Game.NUMPAD.update({getattr(pygame, "K_KP_%d" % i, None): i for i in range(10)})
+            Game.NUMPAD.pop(None, None)
+        return Game.NUMPAD.get(key)
+
+    def skill_hotkey(self, n):
+        """D2's skill hotkeys, on Num 0-9: over a skill in the skill list, the key binds it; otherwise
+        it makes the bound skill your right click skill (a paladin's aura goes to his aura slot)."""
+        w, h = self.world, self.hud
+        p = w.player
+        keys = p.__dict__.setdefault("hotkeys", {})
+        hov = getattr(h, "popup_hover", None) if getattr(h, "skill_popup", False) else None
+        if hov is not None:
+            side, name = hov
+            if name in ("none",):
+                return
+            for k in [k for k, v in keys.items() if v == name]:
+                keys.pop(k)
+            keys[str(n)] = name
+            sk = p.skills.tree.get(name)
+            w.log("%s bound to Num %d." % (sk.title if sk else name.title(), n), (199, 179, 119))
+            return
+        name = keys.get(str(n))
+        if not name:
+            w.log("Nothing on Num %d - open the skill list, point at a skill and press Num %d." % (n, n),
+                  (170, 170, 170))
+            return
+        if name == "attack":
+            w.select_right_skill(None)
+        elif name == "throw" or name in p.skills.tree and (p.skills.level(name) or name in p.skills.actives()):
+            w.select_right_skill(name)
+            sk = p.skills.tree.get(name)
+            if sk is not None and sk.kind != "aura":
+                w.log("Right click: %s." % sk.title, (170, 170, 170))
+
     def handle_key(self, key):
         w = self.world
         h = self.hud
         if self.menu is not None:
             self.menu.key(key)
+            return
+        n = self._numpad(key)
+        if n is not None and getattr(self, "state", "") == "play":
+            self.skill_hotkey(n)
             return
         if key == pygame.K_ESCAPE:
             if getattr(h, "store", None) is not None or getattr(h, "npc_menu", None) is not None:

@@ -227,6 +227,8 @@ like D2: none 1, Sash / Light Belt 2, Belt / Heavy Belt 3, Plated Belt 4 (and th
 elite versions). You drink the bottom potion of a slot; hover over the belt to open the rows above.
 Healing and mana potions are permanent: drinking one in combat puts it on an 8-turn cooldown
 instead of using it up (out of combat they are always ready). Rejuvenation potions are used up.
+Skill hotkeys (like D2's F-keys): open the skill list, point at a skill and press Num 0-9 to bind it;
+pressing that key later makes it your right click skill.
 Quality of Life > Used-Up Potions switches to D2's potions (every potion used up, no cooldown).
 Siege on Harrogath (Shenk): Larzuk sockets an item and gives you a skill point, in each difficulty.
 
