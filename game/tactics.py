@@ -5,7 +5,10 @@ world.monsters, like a hireling) and take their turn in combat one after another
 control to the next hero, and after the last one the monsters move.
 """
 ACTIVE = False            # set when a tactics game starts (read by the map builders and the world)
-HP_MULT = 2.5             # monsters as in a 4-player D2 game (/players 4: +150% life)
+HP_MULT = 2.5             # monsters as in a 4-player D2 game (/players 4: +150% life) - Hell
+# Normal and Nightmare: three heroes out-damage D2's 4-player life, so monsters there are tougher
+DIFF_HP = {"normal": 3.5, "nightmare": 3.5, "hell": HP_MULT}
+DIFF_DMG = {"normal": 1.35, "nightmare": 1.35, "hell": 1.0}      # monster damage to the party
 XP_MULT = 1.2             # the difficulty's own experience + 20% (fewer monsters, no hireling)
 FALLEN_LIFE = 4           # a fallen hero gets up with 1/4 of their life when the fight is over
 
@@ -136,14 +139,61 @@ def carry(old, new):
         h.aura_source = new.aura_stats
 
 
-def scale_monster(m):
-    """A monster joining a fight in tactics mode: 4-player life (once)."""
+def _diff(world):
+    return getattr(getattr(world, "content", None), "difficulty", "normal") or "normal"
+
+
+def damage_mult(world, unit, source):
+    """Monster damage to the party (heroes, minions) on this difficulty."""
+    if source is None or getattr(source, "ally", False) or getattr(source, "is_player", False):
+        return 1.0
+    if not (getattr(unit, "is_player", False) or getattr(unit, "ally", False)):
+        return 1.0
+    return DIFF_DMG.get(_diff(world), 1.0)
+
+
+def scale_monster(m, world=None):
+    """A monster joining a fight in tactics mode: more life (once) - by the difficulty."""
     if getattr(m, "_tscaled", False) or getattr(m, "ally", False) or getattr(m, "ai", "") == "npc":
         return
     m._tscaled = True
     frac = m.hp / float(max(1, m.max_hp))
-    m.max_hp = int(m.max_hp * HP_MULT)
+    m.max_hp = int(m.max_hp * (DIFF_HP.get(_diff(world), HP_MULT) if world is not None else HP_MULT))
     m.hp = max(1, int(m.max_hp * frac))
+
+
+# ------------------------------------------------------------------ who monsters go for
+SQUISHY = {"sor", "nec", "ama", "ass", "dru"}       # the back line: casters, archers
+FAST_AP = 8                                         # D2 velocity 5+ (Fallen, dolls, leapers...)
+
+
+def pick_target(world, m):
+    """Tactics targeting, decided once per monster per round:
+    * fast melee monsters (Fallen, dolls...) rush the back line - the most hurt sorceress,
+      necromancer, amazon, assassin or druid they can reach - instead of whoever stands in front;
+    * ranged monsters and casters: half the time the nearest, half the time any hero in range.
+    Everyone else (and when nothing fits): the nearest, as before (None)."""
+    memo = getattr(m, "_tpick", None)
+    if memo and memo[0] == world.round and (memo[1] is None or memo[1].alive):
+        return memo[1]
+    pick = None
+    heroes = [h for h in living(world) if not getattr(h, "invisible", False)]
+    ranged = m.ai in ("ranged", "shaman") or getattr(m, "caster", False) or getattr(m, "range", 1) > 1
+    if heroes and not getattr(m, "stationary", False):
+        rng = getattr(world, "rng", None)
+        roll = rng.random() if rng is not None else __import__("random").random()
+        if ranged:
+            if roll < 0.5:
+                reach = getattr(m, "range", 6) + 6
+                near = [h for h in heroes if world.udist(m, h) <= reach]
+                if near:
+                    pick = near[int(roll * 2 * len(near)) % len(near)]
+        elif getattr(m, "max_ap", 0) >= FAST_AP:
+            soft = [h for h in heroes if getattr(h, "cls", "") in SQUISHY and world.udist(m, h) <= m.max_ap * 2 + 4]
+            if soft:
+                pick = min(soft, key=lambda h: (h.hp / float(max(1, h.max_hp)), world.udist(m, h)))
+    m._tpick = (world.round, pick)
+    return pick
 
 
 # ------------------------------------------------------------------ curated packs

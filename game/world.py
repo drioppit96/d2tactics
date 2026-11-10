@@ -514,7 +514,7 @@ class World(SkillCaster, ItemActions):
         from . import tactics
         if tactics.ACTIVE:
             for m in newly:
-                tactics.scale_monster(m)
+                tactics.scale_monster(m, self)
         for m in list(newly):
             m.aware = True
             for o in self.living_monsters():
@@ -541,7 +541,7 @@ class World(SkillCaster, ItemActions):
         from . import tactics
         if tactics.ACTIVE:
             for m in self.aware_monsters():
-                tactics.scale_monster(m)          # 4-player life for everything in the fight
+                tactics.scale_monster(m, self)    # more life for everything in the fight
 
     def check_combat_end(self):
         if self.mode == "combat" and not self.aware_monsters():
@@ -1975,6 +1975,11 @@ class World(SkillCaster, ItemActions):
     def _damage(self, unit, amount, source):
         if getattr(unit, "invulnerable", False):
             return
+        from . import tactics
+        if tactics.ACTIVE and amount > 0:
+            mult = tactics.damage_mult(self, unit, source)
+            if mult != 1.0:
+                amount = max(1, int(amount * mult + 0.5))
         if unit.is_player and amount > 0:
             amount = self._absorb(unit, amount)
             if amount <= 0:
@@ -2262,6 +2267,11 @@ class World(SkillCaster, ItemActions):
         for o in self.living_monsters():
             if o is not m and getattr(o, "curses", None) and self._has_flag(o, "attract") and self.udist(o, m) <= 10:
                 return o
+        from . import tactics
+        if tactics.ACTIVE and len(tactics.party(self)) > 1:
+            t = tactics.pick_target(self, m)
+            if t is not None:
+                return t
         best = (self.udist(m, p) - (0.5 if True else 0), p) if p.alive else None
         for a in self.allies():
             if a.ai in ("turret", "wall") or getattr(a, "invulnerable", False):
