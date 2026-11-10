@@ -983,10 +983,17 @@ def ensure_cain(world):
     from .world import NPC_NAMES
     cell = None
     occ = world.occupied()
-    for r in (2, 3, 4, 5):
+    # beside the camp's bonfire, on its south-east side (where D2 has him)
+    fires = [o["cell"] for o in getattr(world, "objects", []) if o.get("token") == "RB"]
+    anchor = (akara.x, akara.y)
+    if fires:
+        f = min(fires, key=lambda c: abs(c[0] - akara.x) + abs(c[1] - akara.y))
+        if abs(f[0] - akara.x) + abs(f[1] - akara.y) < 160:
+            anchor = (f[0] + 12, f[1] + 4)
+    for r in (0, 1, 2, 3, 4, 5):
         for dy in range(-r, r + 1):
             for dx in range(-r, r + 1):
-                c = (akara.x + dx, akara.y + dy)
+                c = (anchor[0] + dx, anchor[1] + dy)
                 if world.grid.walkable(*c) and c not in occ:
                     cell = c
                     break

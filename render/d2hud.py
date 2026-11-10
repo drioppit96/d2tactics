@@ -306,6 +306,8 @@ class D2Hud:
             sc.set_alpha(int(255 * min(1.0, t * 2)))
             surf.blit(sc, (W / 2 - sc.get_width() / 2, int(70 * self.s)))
             sc.set_alpha(None)
+        if getattr(world, "dialog", None):
+            self._draw_dialog(surf, world)
         self._draw_belt_popup(surf, p)
         tip = getattr(self, "world_tip", None)
         if not self.hover_lines and tip and getattr(world, "held", None) is None:
@@ -1220,6 +1222,54 @@ class D2Hud:
 
     # ------------------------------------------------------------ vendors
     STORE_GRID = (15, 62)
+
+    def _wrap(self, font, text, width):
+        out = []
+        for para in (text or "").split("\n\n"):
+            line = ""
+            for wd in para.split():
+                trial = (line + " " + wd).strip()
+                if font.width(trial) > width and line:
+                    out.append(line)
+                    line = wd
+                else:
+                    line = trial
+            if line:
+                out.append(line)
+            out.append("")
+        return out[:-1] if out else out
+
+    def _draw_dialog(self, surf, world):
+        """D2's NPC speech: the text in a dark box over the town, scrolling up slowly when it is long.
+        A click (or Space / Enter) goes on, Esc stops the speech."""
+        import time as _t
+        speaker, text = world.dialog[0]
+        key = (speaker, text)
+        if getattr(self, "dialog_key", None) != key or getattr(self, "dialog_t0", None) is None:
+            self.dialog_key, self.dialog_t0 = key, _t.time()
+        w, lh, visible = 440, 16, 12
+        lines = self._wrap(self.f16, text, w - 36)
+        h = 44 + lh * min(visible, len(lines)) + 22
+        x0, y0 = self.lw / 2.0 - w / 2.0, 126
+        bg = pygame.Surface((int(w * self.s), int(h * self.s)), pygame.SRCALPHA)
+        bg.fill((0, 0, 0, 200))
+        surf.blit(bg, self.P(x0, y0))
+        pygame.draw.rect(surf, (110, 100, 70), self.R(x0, y0, w, h), 1)
+        self.text(surf, self.f16, speaker, GOLD, x0, y0 + 10, "center", w)
+        # long speeches scroll like D2's: a short pause, then a line every ~1.6 s
+        extra = max(0, len(lines) - visible)
+        el = _t.time() - self.dialog_t0
+        off = 0.0 if el < 2.5 else min(float(extra), (el - 2.5) / 1.6)
+        first = int(off)
+        frac = off - first
+        clip = surf.get_clip()
+        surf.set_clip(self.R(x0, y0 + 34, w, lh * min(visible, len(lines)) + 4))
+        for i, ln in enumerate(lines[first:first + visible + 1]):
+            y = y0 + 36 + (i - frac) * lh
+            self.text(surf, self.f16, ln, WHITE, x0, y, "center", w)
+        surf.set_clip(clip)
+        more = len(world.dialog) > 1
+        self.text(surf, self.f10, "click to continue" if more else "click to close", GREY, x0, y0 + h - 16, "center", w)
 
     def _draw_npc_menu(self, surf, world):
         """D2's NPC menu: Talk / Trade / Gamble / ... / Cancel."""

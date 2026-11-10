@@ -520,6 +520,17 @@ class Game:
             spot = w._default_start()
         self.change_level_act(lid, arrive=spot)
 
+    def dialog_next(self):
+        w, h = self.world, self.hud
+        if w.dialog:
+            w.dialog.pop(0)
+        h.dialog_t0 = None
+        if not w.dialog:
+            npc = getattr(w, "dialog_npc", None)
+            w.dialog_npc = None
+            if npc is not None:
+                h.npc_menu = npc
+
     def npc_option(self, npc, opt):
         w, h = self.world, self.hud
         h.npc_menu = None
@@ -531,11 +542,9 @@ class Game:
         if npc.npc == "difficulty":
             return
         if opt == "Talk":
-            from game import quests
-            lines = quests.talk(w, npc)
-            from game.world import NPC_LINES
-            for line in lines or [NPC_LINES.get(npc.npc, npc.name + ": Hello.")]:
-                w.log(line, (220, 210, 170))
+            if w.talk_to(npc, menu=True):
+                from game.itemactions import NPC_OPTIONS
+                w.dialog_npc = npc if npc.npc in NPC_OPTIONS else None
         elif opt in ("Trade", "Gamble"):
             h.store = w.open_store(npc.npc, gamble=opt == "Gamble")
             h.show_inv = True
@@ -1349,6 +1358,9 @@ class Game:
     def handle_click(self, pos, button):
         w = self.world
         h = self.hud
+        if getattr(w, "dialog", None):
+            self.dialog_next()               # the dialogue box: a click turns the page (or ends the speech)
+            return
         ui = h.hit(pos)
         if getattr(h, "npc_menu", None) is not None and not (ui and ui[0] == "npc_opt"):
             h.npc_menu = None
@@ -1575,7 +1587,13 @@ class Game:
                 h.skill_popup = False
             elif action == "q_dialogue":
                 title, status, text = arg
-                w.log("%s: %s" % (title, text if status != "done" else "Quest completed."), (220, 210, 170))
+                from game import dialogue
+                k = dialogue.init_text_key(dialogue.qid_of(title))
+                if k and dialogue.get(k):
+                    w.dialog = [(title, dialogue.get(k))]
+                    w.dialog_npc = None
+                else:
+                    w.log("%s: %s" % (title, text if status != "done" else "Quest completed."), (220, 210, 170))
             elif action == "wp_page":
                 h.wp_page = arg
             elif action == "q_pick":
@@ -1852,6 +1870,12 @@ class Game:
         n = self._numpad(key)
         if n is not None and getattr(self, "state", "") == "play":
             self.skill_hotkey(n)
+            return
+        if getattr(w, "dialog", None) and key in (pygame.K_ESCAPE, pygame.K_SPACE, pygame.K_RETURN):
+            if key == pygame.K_ESCAPE:
+                w.dialog = []
+                w.dialog_npc = None
+            self.dialog_next()
             return
         if key == pygame.K_ESCAPE:
             if getattr(h, "store", None) is not None or getattr(h, "npc_menu", None) is not None:

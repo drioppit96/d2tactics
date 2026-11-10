@@ -85,6 +85,8 @@ class D2Content:
         self.sfx = sfx
         self.difficulty = difficulty if sfx or difficulty == "normal" else "normal"
         self.strings = Strings(src)
+        from . import dialogue
+        dialogue.STRINGS = self.strings          # NPC speech and quest log text (the player's own tables)
         self.types = {r["code"]: r for r in read_table(src, "ItemTypes") if r.get("code")}
         self._ancestors = {}
         self.bases = []

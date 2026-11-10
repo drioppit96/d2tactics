@@ -454,6 +454,8 @@ def journal(player, act=1):
     for qid, title in table:
         st = player.quests.get(qid, "none")
         text = texts.get(qid, {}).get(st, "")
+        from . import dialogue
+        text = dialogue.quest_log(player, qid, st) or text      # D2's own quest log line
         if st == "none":
             text = "Not started."
         if act == 2 and qid == "tombs" and st == "active" and player.quests.get("summoner") == "done":

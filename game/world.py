@@ -131,6 +131,8 @@ class World(SkillCaster, ItemActions):
         self.town_rect = None
         self.cursor_mode = None      # ("identify", scroll) while choosing an item
         self.open_npc = None
+        self.dialog = []            # [(speaker, text)]: the dialogue box, page by page
+        self.dialog_npc = None      # whose menu opens when the speech is over
         self.pending_arrive = None
         if built is not None:
             self._init_act(built, content, level_key, info, player, char_class, char_name)
@@ -819,22 +821,49 @@ class World(SkillCaster, ItemActions):
                 return True
         p.face(*npc.pos)
         npc.face(*p.pos)
-        from . import quests
-        extra = quests.talk(self, npc)
-        if extra:
-            for line in extra:
-                self.log(line, (220, 210, 170))
-        else:
-            self.log(NPC_LINES.get(npc.npc, npc.name + ": Hello."), (220, 210, 170))
+        pages = self.talk_to(npc, menu=False)
         if npc.npc in HEALERS:
             p.hp, p.mana = p.max_hp, p.max_mana
             self.emit("heal", p, 0)
         if npc.npc.startswith("cain"):
             self.identify_all(quiet=True)       # Deckard Cain looks at everything you carry, every act
         from .itemactions import NPC_OPTIONS
-        if npc.npc in NPC_OPTIONS:
+        if pages:
+            self.dialog_npc = npc if npc.npc in NPC_OPTIONS else None     # (the menu comes after the speech)
+        elif npc.npc in NPC_OPTIONS:
             self.open_npc = npc
         return True
+
+    def talk_to(self, npc, menu=True):
+        """Talk to an NPC: the quest logic, then what they say - D2's own introductions, quest speech
+        and gossip from the string tables, shown in the dialogue box (self.dialog: [(speaker, text)]).
+        menu=False (clicking the NPC): only an introduction or what the talk changed is spoken."""
+        from . import quests, dialogue
+        p = self.player
+        quests.init(p)
+        before = dict(p.quests)
+        lines = quests.talk(self, npc) or []
+        after = dict(p.quests)
+        met = p.__dict__.setdefault("_npc_met", set())
+        first = npc.npc not in met
+        met.add(npc.npc)
+        pages = dialogue.converse(self, npc, before, after, first, lines)
+        if not menu:
+            pages = pages if (first or before != after) else []
+        if not pages and lines and (menu or before != after):
+            pages = [(npc.name, "\n\n".join(ln.split(": ", 1)[1] if ln.startswith(npc.name + ":") or ": " in ln[:24]
+                                              else ln for ln in lines))]
+        if not pages and menu:
+            ln = NPC_LINES.get(npc.npc, "")
+            if ln:
+                pages = [(npc.name, ln.split(": ", 1)[1] if ": " in ln[:24] else ln)]
+        pages = [(s, t) for s, t in pages if t]
+        if pages:
+            self.dialog = list(pages)
+        elif lines:
+            for line in lines:
+                self.log(line, (220, 210, 170))
+        return pages
 
     def player_attack(self, target, skill="attack", ap_cost=None, mana_cost=0):
         """Attack (or use a melee skill on) a monster, walking next to it first if AP allows.
