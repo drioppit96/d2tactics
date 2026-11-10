@@ -1040,14 +1040,24 @@ class Scene:
         p = self.world.player
         tree = getattr(getattr(p, "skills", None), "tree", {})
         out = []
-        if u.is_player:
-            names = list(getattr(u, "buffs", {}).keys())
-            if getattr(u, "active_aura", None):
-                names.append(u.active_aura)
+        if u.is_player or getattr(u, "ally", False):
+            names = list(getattr(u, "buffs", {}).keys()) if u.is_player else []
+            try:
+                names += [n for n in self.world.auras_on(u) if n not in names]    # every aura reaching it
+            except Exception:
+                if getattr(u, "active_aura", None):
+                    names.append(u.active_aura)
+            trees = [tree]
+            for h in (getattr(self.world, "party", None) or ()):
+                t2 = getattr(getattr(h, "skills", None), "tree", None)
+                if t2 is not None and t2 is not tree:
+                    trees.append(t2)
             for n in names:
-                sk = tree.get(n)
+                sk = next((t_.get(n) for t_ in trees if t_.get(n) is not None), None)
                 if sk is not None and sk.data and sk.data.get("aurastate"):
-                    out.append(sk.data["aurastate"])
+                    st = sk.data["aurastate"]
+                    if st not in out:
+                        out.append(st)
         else:
             for n in getattr(u, "curses", {}) or {}:
                 sk = tree.get(n)

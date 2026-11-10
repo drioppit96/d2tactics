@@ -747,6 +747,8 @@ class D2Hud:
         # skills: left = normal attack, right = selected skill
         self._skill_box(surf, px0 + 153, py0 + 65, getattr(p, "left_skill", None), "left")
         self._skill_box(surf, px0 + 510, py0 + 65, p.right_skill, "right")
+        if getattr(p, "cls", "") == "pal":
+            self._aura_box(surf, px0 + 510, py0 + 22, p)
 
         # belt: 4 slots (keys 1-4), 2-4 rows (Siege on Harrogath adds rows); the bottom row sits in the
         # panel, the rows above open up while the mouse is over the belt - like D2
@@ -896,11 +898,56 @@ class D2Hud:
                         [(t, WHITE) for t in p.skills.describe(name)] + \
                         [("%d AP, %s mana" % (ap, _num(mana)), GREY), ("Click to change skill", GREY)]
 
+    def _aura_box(self, surf, x, y, p):
+        """The paladin's aura slot (above the right skill): the aura that is always on."""
+        name = getattr(p, "active_aura", None)
+        bg = pygame.Surface((int(38 * self.s), int(38 * self.s)), pygame.SRCALPHA)
+        bg.fill((0, 0, 0, 190))
+        surf.blit(bg, self.P(x - 1, y - 1))
+        icon = self._skill_icon(name) if name else None
+        if icon is not None:
+            surf.blit(self.S(icon, self.s * 36.0 / max(1, icon.get_width())), self.P(x, y))
+        else:
+            self.text(surf, self.f10, "AURA", GOLD, x, y + 13, "center", 36)
+        pygame.draw.rect(surf, (200, 170, 90), self.R(x - 1, y - 1, 38, 38), 1)
+        self.region(x, y, 36, 36, "skill_aura")
+        mx, my = self.mouse
+        if pygame.Rect(int(x), int(y), 36, 36).collidepoint((int(mx), int(my))):
+            sk = p.skills.tree.get(name) if name else None
+            self.hover_lines = ([(sk.title, GREEN), ("Level %d - always on" % p.skills.level(name), WHITE)] +
+                                [(t, WHITE) for t in p.skills.describe(name)] if sk else
+                                [("Aura slot", WHITE)]) + [("Reaches every ally near you", GREY),
+                                                            ("Click to choose an aura", GREY)]
+
     def _draw_skill_popup(self, surf, p):
-        """Choose the left / right click skill: learned active skills in rows above that button."""
+        """Choose the left / right click skill: learned active skills in rows above that button
+        (the paladin's auras have a slot of their own)."""
         px0, py0 = self.panel_origin
-        side = self.skill_popup if self.skill_popup in ("left", "right") else "right"
-        options = ["attack"] + (["throw"] if getattr(p, "throwing", False) else []) + [n for n in p.skills.actives()]
+        side = self.skill_popup if self.skill_popup in ("left", "right", "aura") else "right"
+        if side == "aura":
+            options = ["none"] + [n for n in p.skills.actives() if p.skills.tree[n].kind == "aura"]
+            current = getattr(p, "active_aura", None) or "none"
+            for i, name in enumerate(options):
+                row, col = divmod(i, 8)
+                x, y = px0 + 704 - 40 - col * 40, py0 - 22 - row * 40
+                bg = pygame.Surface((int(38 * self.s), int(38 * self.s)), pygame.SRCALPHA)
+                bg.fill((0, 0, 0, 200))
+                surf.blit(bg, self.P(x - 1, y - 1))
+                icon = self._skill_icon(name) if name != "none" else None
+                if icon is not None:
+                    surf.blit(self.S(icon, self.s * 36.0 / icon.get_width()), self.P(x, y))
+                else:
+                    self.text(surf, self.f10, "OFF" if name == "none" else name[:4].upper(), GOLD, x, y + 13, "center", 36)
+                if name == current:
+                    pygame.draw.rect(surf, GOLD, self.R(x - 1, y - 1, 38, 38), 1)
+                self.region(x, y, 36, 36, "pick_skill", ("aura", name))
+                mx, my = self.mouse
+                if pygame.Rect(int(x), int(y), 36, 36).collidepoint((int(mx), int(my))):
+                    sk = p.skills.tree.get(name)
+                    self.hover_lines = [(sk.title if sk else "No aura", GREEN)]
+            return
+        options = ["attack"] + (["throw"] if getattr(p, "throwing", False) else []) + \
+            [n for n in p.skills.actives() if not (getattr(p, "cls", "") == "pal" and p.skills.tree[n].kind == "aura")]
         current = (getattr(p, "left_skill", None) if side == "left" else p.right_skill) or "attack"
         per_row = 8
         for i, name in enumerate(options):

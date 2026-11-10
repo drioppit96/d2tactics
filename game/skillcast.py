@@ -1125,9 +1125,20 @@ class SkillCaster:
             self.emit("projectile", p, p.pos, m.pos, {"ltng": "ltng", "fire": "fireball", "cold": "cold"}.get(env.s.element, "spike"))
             self.skill_damage(env, m, 100, show=False)
 
-    def _auras(self):
-        """(name, env) of every aura on you: the one you chose plus the ones your items give."""
-        p = self.player
+    def _auras(self, giver=None):
+        """(name, env) of every aura a hero gives off (default: you): the one chosen in the aura slot
+        plus the ones the items give (and, for you, your hireling's)."""
+        p = giver if giver is not None else self.player
+        if p is not self.player:
+            from .skills import SkillEnv
+            out = []
+            name = getattr(p, "active_aura", None)
+            if name and name in p.skills.tree and p.skills.level(name):
+                out.append((name, SkillEnv(p.skills, p.skills.tree[name], max(1, p.skills.level(name)))))
+            for n, lvl in (getattr(p.skills, "item_auras", {}) or {}).items():
+                if n in p.skills.tree and n != name:
+                    out.append((n, SkillEnv(p.skills, p.skills.tree[n], lvl)))
+            return out
         out = []
         name = getattr(p, "active_aura", None)
         if name and name in p.skills.tree and p.skills.level(name):
@@ -1145,22 +1156,56 @@ class SkillCaster:
                 out.append((ma[0], SkillEnv(p.skills, s, ma[1])))
         return out
 
-    def aura_turn(self):
-        """Once per round: offensive auras damage, Prayer heals, Meditation restores mana."""
-        for name, env in self._auras():
-            self._aura_turn_one(name, env)
+    def aura_givers(self):
+        """[(hero, aura name, env, radius)] - every aura on the field from your heroes."""
+        from . import tactics
+        out = []
+        for h in tactics.living(self):
+            for name, env in self._auras(h):
+                out.append((h, name, env, max(2, min(8, env.radius() or 5))))
+        return out
 
-    def _aura_turn_one(self, name, env):
-        p = self.player
+    def aura_targets(self, giver, r):
+        """Who an aura reaches: every hero and ally (minions, hireling) within its radius."""
+        from . import tactics
+        out = [h for h in tactics.living(self) if self.udist(h, giver) <= r]
+        out += [a for a in self.allies() if a.alive and not getattr(a, "party_member", False)
+                and a.ai not in ("turret", "wall") and self.udist(a, giver) <= r]
+        return out
+
+    def auras_on(self, unit):
+        """The names of the auras reaching a unit (for its glow)."""
+        if not getattr(unit, "is_player", False) and not getattr(unit, "ally", False):
+            return []
+        cache = getattr(self, "_aura_cache", None)
+        if cache is None or cache[0] != self.round or cache[1] != id(self.player):
+            cache = self._aura_cache = (self.round, id(self.player), self.aura_givers())
+        return [n for (h, n, env, r) in cache[2] if self.udist(h, unit) <= r]
+
+    def aura_turn(self):
+        """Once per round: offensive auras damage, Prayer heals, Meditation restores mana - for
+        every hero and ally in reach of the hero giving the aura."""
+        self._aura_cache = None
+        for h, name, env, r in self.aura_givers():
+            self._aura_turn_one(name, env, h)
+        from . import tactics
+        for h in tactics.living(self):
+            h.recalc()                       # (the stat auras of whoever stands near them now)
+
+    def _aura_turn_one(self, name, env, giver=None):
+        p = giver if giver is not None else self.player
         r = max(2, min(8, env.radius() or 5))
         if name == "Prayer":
             heal = max(1, env.calc("calc1") or (env.lvl + 1))
             heal = env.elem_damage()[1] if env.elem_damage() else heal
-            if p.hp < p.max_hp:
-                p.hp = min(p.max_hp, p.hp + max(2, heal))
-                self.emit("heal", p, heal)
+            for u in self.aura_targets(p, r):
+                if u.hp < u.max_hp:
+                    u.hp = min(u.max_hp, u.hp + max(2, heal))
+                    self.emit("heal", u, heal)
         elif name == "Meditation":
-            p.mana = min(p.max_mana, p.mana + max(2, p.max_mana * (env.ln(1, 2) or 100) // 1000))
+            for u in self.aura_targets(p, r):
+                if getattr(u, "is_player", False):
+                    u.mana = min(u.max_mana, u.mana + max(2, u.max_mana * (env.ln(1, 2) or 100) // 1000))
         elif name in ("Holy Fire", "Holy Freeze", "Holy Shock", "Sanctuary"):
             foes = [m for m in self.enemies() if m.aware and self.udist(m, p) <= r]
             if name == "Sanctuary":
@@ -1182,7 +1227,8 @@ class SkillCaster:
                     m.curses = getattr(m, "curses", {})
                     m.curses["Conviction"] = {"turns": 2, "stats": stats, "flags": {"aura"}, "title": "Conviction"}
         elif name == "Cleansing":
-            p.effects.pop("poison", None)
+            for u in self.aura_targets(p, r):
+                u.effects.pop("poison", None)
         elif name == "Redemption":
             for c in list(self.corpses):
                 if self.udist(c, p) <= r and not getattr(c, "searched", False):
@@ -1194,10 +1240,21 @@ class SkillCaster:
                     self.emit("heal", p, gain)
                     break
 
-    def aura_stats(self):
-        """Player stat changes from the active aura (summed into Player.recalc)."""
+    def aura_stats(self, target=None):
+        """Stat changes from the auras reaching a hero (summed into Player.recalc): their own, and
+        those of the party's other heroes standing close enough."""
+        target = target if target is not None else self.player
         out = {}
-        for name, env in self._auras():
+        from . import tactics
+        items = []
+        for h in tactics.living(self) if len(tactics.party(self)) > 1 else [self.player]:
+            for name, env in self._auras(h):
+                r = max(2, min(8, env.radius() or 5))
+                if h is target or self.udist(h, target) <= r:
+                    items.append((name, env))
+        if target is not self.player and not items and target not in tactics.party(self):
+            return out
+        for name, env in items:
             for k, v in self._aura_stats_one(name, env).items():
                 if isinstance(v, tuple):
                     a = out.get(k, (0, 0))

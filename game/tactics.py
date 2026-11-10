@@ -33,6 +33,7 @@ def _as_follower(world, hero):
     hero.life_turns = None
     hero.hireling = False
     hero.summon_skill = None
+    hero.aura_source = world.aura_stats
     if hero not in world.monsters:
         world.monsters.append(hero)
 
@@ -131,6 +132,8 @@ def revive_fallen(world):
 def carry(old, new):
     """The party moves with you to another level (the followers go with the allies)."""
     new.party = getattr(old, "party", None)
+    for h in new.party or ():
+        h.aura_source = new.aura_stats
 
 
 def scale_monster(m):

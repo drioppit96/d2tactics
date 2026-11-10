@@ -1561,12 +1561,14 @@ class Game:
                 p = w.player
                 p.waypoints = set(getattr(p, "waypoints", {1})) | {l for lst in WAYPOINTS.values() for l in lst}
                 w.log("Test: every waypoint of Acts 1-5 is now active.", (199, 179, 119))
-            elif action in ("skill_right", "skill_left"):
+            elif action in ("skill_right", "skill_left", "skill_aura"):
                 side = action[6:]
                 h.skill_popup = False if h.skill_popup == side else side
             elif action == "pick_skill":
                 side, name = arg if isinstance(arg, tuple) else ("right", arg)
-                if side == "left":
+                if side == "aura":
+                    w.select_aura(None if name == "none" else name)
+                elif side == "left":
                     w.player.left_skill = None if name == "attack" else name
                 else:
                     w.select_right_skill(None if name == "attack" else name)

@@ -294,7 +294,11 @@ class Player(Unit):
             add(k, v)
         if self.aura_source is not None:
             try:
-                for k, v in self.aura_source().items():
+                try:
+                    got = self.aura_source(self)        # (the auras reaching this hero)
+                except TypeError:
+                    got = self.aura_source()
+                for k, v in got.items():
                     add(k, v)
             except Exception:
                 pass

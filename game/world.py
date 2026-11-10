@@ -1016,11 +1016,29 @@ class World(SkillCaster, ItemActions):
         self.emit("swap", p) if hasattr(self, "emit") else None
         return True
 
+    def select_aura(self, name):
+        """The paladin's aura slot: the chosen aura stays on all the time (reaching every ally near)."""
+        p = self.player
+        s = p.skills.tree.get(name) if name else None
+        aura = name if s is not None and s.kind == "aura" else None
+        if aura != getattr(p, "active_aura", None):
+            p.active_aura = aura
+            p.recalc()
+            self._aura_cache = None
+            self.log("%s aura active." % s.title if aura else "No aura.", YELLOW)
+
     def select_right_skill(self, name):
-        """The right mouse button skill; choosing an aura turns it on (D2), anything else turns it off."""
+        """The right mouse button skill; choosing an aura turns it on (D2), anything else turns it off.
+        (The paladin keeps his aura in its own slot: his right skill doesn't touch it.)"""
         p = self.player
         if name == "throw" and not getattr(p, "throwing", False):
             name = None
+        s0 = p.skills.tree.get(name) if name else None
+        if getattr(p, "cls", "") == "pal":
+            if s0 is not None and s0.kind == "aura":
+                return self.select_aura(name)
+            p.right_skill = name
+            return
         p.right_skill = name
         s = p.skills.tree.get(name) if name else None
         aura = name if s is not None and s.kind == "aura" else None
@@ -1814,6 +1832,14 @@ class World(SkillCaster, ItemActions):
                 hand = attacker.dmg_off
         dmg = self.rng.randint(*hand) if hand[1] > 0 else 0
         dmg = max(1, int(dmg * (100 + mods["dmg"]) / 100.0)) if attacker.dmg[1] > 0 else 0
+        if getattr(attacker, "ally", False) and not attacker.is_player and dmg > 0:
+            # a paladin's offensive aura (Might, Fanaticism, Concentration...) strengthens minions too
+            ed = 0
+            for h, name, env, r in self.aura_givers():
+                if self.udist(h, attacker) <= r:
+                    ed += self._aura_stats_one(name, env).get("ed", 0)
+            if ed:
+                dmg = dmg * (100 + ed) // 100
         from . import tactics
         if tactics.ACTIVE:
             cb, why = tactics.combo_bonus(self, attacker, target, "phys")
