@@ -1492,8 +1492,8 @@ class SkillCaster:
     # ------------------------------------------------------------ allies' turn
     def allies_turn(self):
         for a in list(self.allies()):
-            if not a.alive:
-                continue
+            if not a.alive or getattr(a, "party_member", False):
+                continue                     # (party heroes take their own turns)
             a.ap = a.max_ap
             self.tick_poison(a)
             if not a.alive:

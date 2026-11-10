@@ -175,6 +175,29 @@ def switch_difficulty(data, new):
     return d
 
 
+# what tactics mode keeps apart from the normal game: its own quests, waypoints, acts and difficulties
+# (the hero itself - level, skills, gear, gold, stash - is the same hero in both modes)
+PER_MODE = PER_DIFF + ("difficulty", "diff_state", "unlocked")
+
+
+def switch_mode(data, new):
+    """The save, set up to play game mode `new` ("normal" or "tactics"): the other mode's progress
+    is put aside (a fresh Act 1 in Normal difficulty the first time)."""
+    cur = data.get("mode") or "normal"
+    if new == cur:
+        return data
+    d = dict(data)
+    state = dict(d.get("mode_state") or {})
+    state[cur] = {k: d.get(k) for k in PER_MODE}
+    fresh = dict(quests={}, waypoints=[1], visited=[1], cain=False, act=1, quest_stats={}, boss_kills=[],
+                 map_explored={}, tracked_quest=None, cairn_order=None, difficulty="normal", diff_state={},
+                 unlocked=["normal"])
+    d.update(state.pop(new, None) or fresh)
+    d["mode_state"] = state
+    d["mode"] = new
+    return d
+
+
 def save_character(player, difficulty="normal"):
     """Write the hero to saves/<name>.json. Returns the path."""
     os.makedirs(SAVE_DIR, exist_ok=True)
@@ -206,6 +229,8 @@ def save_character(player, difficulty="normal"):
               if getattr(p, "merc", None) else None),
         stash=_stash_dict(getattr(p, "stash", None)),
         belt_unlocks=list(getattr(p, "belt_unlocks", None) or []),
+        mode=getattr(p, "mode", "normal") or "normal",
+        mode_state=dict(getattr(p, "mode_state", None) or {}),
     )
     path = os.path.join(SAVE_DIR, _safe(p.name) + ".json")
     tmp = path + ".tmp"
@@ -268,6 +293,8 @@ def build_player(data, content):
                                                 or data.get("right_skill") == "throw") else None
     p.quests = dict(data.get("quests", {}))
     p.difficulty = data.get("difficulty") or "normal"
+    p.mode = data.get("mode") or "normal"
+    p.mode_state = dict(data.get("mode_state") or {})
     p.diff_unlocked = unlocked(data)
     p.diff_state = dict(data.get("diff_state") or {})
     p.waypoints = set(data.get("waypoints", [1]))

@@ -131,6 +131,65 @@ class Game:
             self.world.log(self.asset_warning, (230, 160, 90))
 
     # ------------------------------------------------------------ Act 1 (D2 files)
+    def _on_hero_switch(self):
+        """Another hero of the party took the lead: their skills on the bar, the camera on them."""
+        p = self.world.player
+        self._party_seen = p
+        self.walk_queue, self.walk_action, self.walk_goal = [], None, None
+        self._path_cache = {}
+        if hasattr(self.hud, "use_class"):
+            try:
+                self.hud.use_class(p.cls)
+            except Exception:
+                pass
+        for k in ("skill_popup", "npc_menu", "store"):
+            if hasattr(self.hud, k):
+                setattr(self.hud, k, None)
+
+    def switch_hero(self, hero):
+        """A party portrait was clicked."""
+        from game import tactics
+        w = self.world
+        if w.game_over or hero is w.player or not hero.alive:
+            return
+        if w.mode == "combat":
+            if w.turn != "player" or getattr(hero, "_acted", -1) == w.round:
+                w.log("%s has already had their turn this round." % hero.name, (170, 170, 170))
+                return
+        tactics.switch_to(w, hero)
+
+    def start_party(self, saved_list, diff=None):
+        """Tactics mode: up to three heroes; the first leads (its progress is the party's)."""
+        from game import tactics
+        from game.save import switch_mode, switch_difficulty, build_player
+        tactics.ACTIVE = True
+        datas = [switch_mode(d, "tactics") for d in saved_list[:3]]
+        lead = datas[0]
+        if diff:
+            lead = switch_difficulty(lead, diff)
+        self.start_act(lead.get("cls", "bar"), lead.get("name", "Hero"), saved=lead)
+        heroes = [self.world.player]
+        for d in datas[1:]:
+            try:
+                h = build_player(d, self.assets.content)
+            except Exception:
+                import traceback
+                traceback.print_exc()
+                continue
+            h.mode = "tactics"
+            heroes.append(h)
+            if hasattr(self.assets, "warm"):
+                try:
+                    self.assets.warm(h, self.loading)
+                except Exception:
+                    pass
+        tactics.attach(self.world, heroes)
+        self._party_seen = self.world.player
+        if len(heroes) > 1:
+            self.world.log("Your party: %s. Click a portrait to lead with that hero; in combat, End Turn "
+                           "passes to the next one." % ", ".join(h.name for h in heroes), (170, 170, 170))
+        self.save()
+
     def start_act(self, cls, name, saved=None):
         """New (or loaded) character: build the whole outdoor act and start in the Rogue Encampment."""
         from game.actworld import make_world
@@ -170,7 +229,8 @@ class Game:
             ensure_cain(self.world)
             from game import quests
             quests.restore(self.world)
-            if getattr(player, "merc", None) is not None or getattr(player, "has_hireling", False):
+            from game import tactics as _tac
+            if not _tac.ACTIVE and (getattr(player, "merc", None) is not None or getattr(player, "has_hireling", False)):
                 from game import hireling
                 if getattr(player, "merc", None) is None:
                     kind = getattr(player, "hireling_kind", "") or "rogue"
@@ -216,7 +276,19 @@ class Game:
         d = switch_difficulty(d, diff)
         self.hud.npc_menu = None
         self.hud.store = None
-        self.start_act(d.get("cls", "bar"), d.get("name", "Hero"), saved=d)
+        from game import tactics
+        if tactics.ACTIVE:
+            others = []
+            for h in tactics.party(self.world)[1:] if self.world.player is tactics.party(self.world)[0] else \
+                    [h for h in tactics.party(self.world) if h is not self.world.player]:
+                try:
+                    with open(os.path.join(SAVE_DIR, _safe(h.name) + ".json")) as f:
+                        others.append(switch_difficulty(json.load(f), diff))
+                except Exception:
+                    pass
+            self.start_party([d] + others)
+        else:
+            self.start_act(d.get("cls", "bar"), d.get("name", "Hero"), saved=d)
         self.world.log("%s difficulty. Monsters are stronger - and your resistances are %s." %
                        (diff.title(), "40% lower" if diff == "nightmare" else "100% lower"), (255, 120, 80))
 
@@ -231,7 +303,10 @@ class Game:
             except Exception:
                 pass
             self.remember_maps()
-            save_character(self.world.player, getattr(self.world.player, "difficulty", "normal"))
+            from game import tactics
+            for h in tactics.party(self.world):          # (a tactics party: every hero's own file)
+                h.current_act = self.world.player.current_act
+                save_character(h, getattr(h, "difficulty", "normal"))
         except Exception:
             import traceback
             traceback.print_exc()
@@ -334,6 +409,8 @@ class Game:
         old = self.world
         old.pending_exit = None
         src_level = old.level_id
+        from game import tactics
+        tactics.revive_fallen(old)           # (a fallen hero gets up and comes along)
         player = old.player
         key = world_of(target)
         info = self.assets.act_info
@@ -355,6 +432,7 @@ class Game:
             m.aware = False
         old.mode = "explore"
         w.player = player
+        tactics.carry(old, w)
         w.relocate_player(spot)
         occ = w.occupied()
         for a in followers:
@@ -1321,6 +1399,11 @@ class Game:
                 h.show_minipanel = not h.show_minipanel
             elif action == "speed":
                 self.scene.speed = 1.0 if self.scene.speed > 1 else 2.5
+            elif action == "party":
+                from game import tactics
+                pt = tactics.party(w)
+                if arg is not None and 0 <= arg < len(pt):
+                    self.switch_hero(pt[arg])
             elif action == "menu":
                 h.show_inv = h.show_char = False
                 if hasattr(h, "show_skills"):
@@ -1925,6 +2008,8 @@ class Game:
             if not any(o.get("kind") == "stash" and _cheb(o["cell"], pp) <= 5 for o in self.world.objects):
                 h.show_cube = False         # walked away from the stash
         if getattr(self, "scene", None) is not None:
+            if self.world.player is not getattr(self, "_party_seen", None):
+                self._on_hero_switch()
             self.scene.walk_target = self.walk_goal if self.walk_queue and self.world.mode == "explore" else None
             self.scene.walk_ahead = list(self.walk_queue[:4]) if self.scene.walk_target is not None else None
         tp = time.perf_counter()

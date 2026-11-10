@@ -62,6 +62,7 @@ class CharSelect(FrontEnd):
         self.heroes.sort(key=lambda d: d.get("name", "").lower())
         self.selected = min(self.selected, max(0, len(self.heroes) - 1))
         self.players = {}
+        self.party = []
 
     def _player(self, d):
         """The hero as a game unit, for its standing animation in its own gear."""
@@ -102,6 +103,27 @@ class CharSelect(FrontEnd):
     def ok_rect(self):
         return pygame.Rect(627, 537, 128, 35)
 
+    def mode_rect(self):
+        return pygame.Rect(264, 537, 272, 35)
+
+    # ------------------------------------------------------------ game mode
+    @property
+    def tactics(self):
+        return getattr(self.game, "game_mode", "normal") == "tactics"
+
+    def toggle_mode(self):
+        self.game.game_mode = "normal" if self.tactics else "tactics"
+        self.party = [self.selected] if self.heroes and self.tactics else []
+
+    def toggle_member(self, i):
+        """Tactics: click a hero to add them to the party (up to 3) or take them out again."""
+        pt = getattr(self, "party", None) or []
+        if i in pt:
+            pt.remove(i)
+        elif len(pt) < 3:
+            pt.append(i)
+        self.party = pt
+
     def popup_rect(self):
         return pygame.Rect(230, 190, 340, 224)
 
@@ -121,8 +143,22 @@ class CharSelect(FrontEnd):
         """OK: a hero who has beaten Baal picks the difficulty first, like D2."""
         if not self.heroes:
             return
-        from game.save import unlocked, switch_difficulty
-        d = self.heroes[self.selected]
+        from game.save import unlocked, switch_difficulty, switch_mode
+        from game import tactics
+        if self.tactics:
+            pt = [i for i in (getattr(self, "party", None) or []) if 0 <= i < len(self.heroes)]
+            if not pt:
+                return
+            lead = switch_mode(self.heroes[pt[0]], "tactics")
+            got = unlocked(lead)
+            if diff is None and len(got) > 1:
+                self.choose_diff = got
+                return
+            self.choose_diff = None
+            self.game.start_party([self.heroes[i] for i in pt], diff or lead.get("difficulty") or "normal")
+            return
+        tactics.ACTIVE = False
+        d = switch_mode(self.heroes[self.selected], "normal")
         got = unlocked(d)
         if diff is None and len(got) > 1:
             self.choose_diff = got
@@ -189,6 +225,8 @@ class CharSelect(FrontEnd):
                 self.play()
             elif self.exit_rect().collidepoint(lp):
                 self.game.running = False
+            elif self.mode_rect().collidepoint(lp):
+                self.toggle_mode()
             elif self.create_rect().collidepoint(lp):
                 self.create()
             elif self.delete_rect().collidepoint(lp) and self.heroes:
@@ -199,6 +237,10 @@ class CharSelect(FrontEnd):
                     if r is not None and r.collidepoint(lp):
                         last_i, last_t = self._last_click
                         self.selected = i
+                        if self.tactics:
+                            self.toggle_member(i)        # (no double click to play: OK starts the party)
+                            self._last_click = (i, self.t)
+                            break
                         if last_i == i and self.t - last_t < 0.45:
                             self.play()        # double click
                             return
@@ -265,7 +307,11 @@ class CharSelect(FrontEnd):
                 canvas.blit(shade, (0, 0))
         lp = self._to_logical(pygame.mouse.get_pos())
         # name of the selected hero at the top, like D2
-        if self.heroes:
+        if self.heroes and self.tactics:
+            pt = [i for i in (getattr(self, "party", None) or []) if 0 <= i < len(self.heroes)]
+            title = " - ".join(self.heroes[i].get("name", "") for i in pt) or "Choose your party"
+            self._text(canvas, self.f30, title, GOLD, 400, 24, center=True)
+        elif self.heroes:
             title = self.heroes[self.selected].get("name", "")
             self._text(canvas, self.f42 or self.f30, title, GOLD, 400, 18, center=True)
         else:
@@ -276,7 +322,15 @@ class CharSelect(FrontEnd):
                 continue
             if self.fallback_bg or self.bg is None:
                 pygame.draw.rect(canvas, (70, 62, 44), r, 1)
-            if i == self.selected:
+            pt = getattr(self, "party", None) or []
+            if self.tactics:
+                if i in pt:
+                    # a box around each hero of the party, numbered in the order they lead
+                    if self.selbox is not None:
+                        canvas.blit(self.selbox, r.topleft)
+                    pygame.draw.rect(canvas, GOLD, r, 2)
+                    self._text(canvas, self.f16, str(pt.index(i) + 1), GOLD, r.right - 14, r.y + 6)
+            elif i == self.selected:
                 if self.selbox is not None:
                     canvas.blit(self.selbox, r.topleft)
                 else:
@@ -311,7 +365,13 @@ class CharSelect(FrontEnd):
         self._wide_button(canvas, self.create_rect(), "CREATE NEW CHARACTER")
         self._wide_button(canvas, self.delete_rect(), "DELETE CHARACTER", bool(self.heroes))
         self._button(canvas, self.medium, self.exit_rect(), "EXIT")
-        self._button(canvas, self.medium, self.ok_rect(), "OK", bool(self.heroes))
+        ok = bool(self.heroes) and (not self.tactics or bool(getattr(self, "party", None)))
+        self._button(canvas, self.medium, self.ok_rect(), "OK", ok)
+        self._wide_button(canvas, self.mode_rect(), "MODE: TACTICS" if self.tactics else "MODE: NORMAL")
+        if self.tactics:
+            n = len(getattr(self, "party", None) or [])
+            self._text(canvas, self.f16, "Tactics: click up to 3 heroes for your party (%d/3)" % n,
+                       GOLD, 400, 516, center=True)
         if getattr(self, "choose_diff", None) and self.heroes:
             shade = pygame.Surface((800, 600), pygame.SRCALPHA)
             shade.fill((0, 0, 0, 150))

@@ -511,6 +511,10 @@ class World(SkillCaster, ItemActions):
                 continue
             if self.udist(m, p) <= getattr(m, "sight", SIGHT) and self.grid.line_of_sight(m.pos, p.pos):
                 newly.append(m)
+        from . import tactics
+        if tactics.ACTIVE:
+            for m in newly:
+                tactics.scale_monster(m)
         for m in list(newly):
             m.aware = True
             for o in self.living_monsters():
@@ -523,12 +527,26 @@ class World(SkillCaster, ItemActions):
             self.player.ap = self.player.max_ap
             self.player.free_steps = getattr(self.player, "free_move", 0)
             self.emit("combat_start")
+            self._tactics_scale()
+            for h in (getattr(self, "party", None) or ()):
+                if h.alive:                       # every hero starts the fight rested
+                    h.ap = h.max_ap
+                    h.free_steps = getattr(h, "free_move", 0)
+                    h._acted = -1
             names = sorted({m.name for m in newly if not getattr(m, "hidden", False)})
             self.log(f"Combat! {', '.join(names)} spotted you." if names else "Combat! A trap!", RED)
         return newly
 
+    def _tactics_scale(self):
+        from . import tactics
+        if tactics.ACTIVE:
+            for m in self.aware_monsters():
+                tactics.scale_monster(m)          # 4-player life for everything in the fight
+
     def check_combat_end(self):
         if self.mode == "combat" and not self.aware_monsters():
+            from . import tactics
+            tactics.revive_fallen(self)
             from . import potions
             potions.combat_over(self.player)
             self.mode = "explore"
@@ -613,6 +631,12 @@ class World(SkillCaster, ItemActions):
                 self._regen_steps += 1
                 if self._regen_steps % 2 == 0 and p.hp < p.max_hp:
                     p.hp += 1
+                for h in (getattr(self, "party", None) or ()):
+                    if h is not p and h.alive:          # the party regenerates as it walks, too
+                        if self._regen_steps % 2 == 0 and h.hp < h.max_hp:
+                            h.hp += 1
+                        if h.mana < h.max_mana:
+                            h.mana = min(h.max_mana, h.mana + 0.5)
                 if p.mana < p.max_mana:
                     p.mana = min(p.max_mana, p.mana + self.mana_regen() / 2.0)
                 if self._regen_steps % 2 == 0:
@@ -1359,6 +1383,12 @@ class World(SkillCaster, ItemActions):
             self.player.ap = self.player.max_ap
             self.player.free_steps = getattr(self.player, "free_move", 0)
             self.emit("combat_start")
+            self._tactics_scale()
+            for h in (getattr(self, "party", None) or ()):
+                if h.alive:                       # every hero starts the fight rested
+                    h.ap = h.max_ap
+                    h.free_steps = getattr(h, "free_move", 0)
+                    h._acted = -1
             self.log("You strike first!", YELLOW)
 
     def use_inventory_potion(self, item):
@@ -1390,6 +1420,11 @@ class World(SkillCaster, ItemActions):
             return                  # a chance-to-cast spell never ends your turn
         if self.player.alive:
             self._auto_pickup_gold(self.player.pos)     # gold your blows dropped next to you
+        if getattr(self, "_party_turn_over", False):
+            self._party_turn_over = False
+            if self.mode == "combat" and self.turn == "player":
+                self.end_player_turn()
+            return
         if self.mode == "combat" and self.turn == "player" and self.player.ap <= 0 \
                 and getattr(self.player, "free_steps", 0) <= 0:      # (free tiles left: you may still step)
             self.end_player_turn()
@@ -1397,11 +1432,22 @@ class World(SkillCaster, ItemActions):
     def end_player_turn(self):
         if self.mode != "combat" or self.turn != "player" or self.game_over:
             return
+        from . import tactics
+        if len(tactics.party(self)) > 1:
+            # a party: the next hero who hasn't moved this round takes over; the monsters go after the last
+            self.player._acted = self.round
+            nxt = tactics.next_in_turn(self)
+            if nxt is not None:
+                tactics.switch_to(self, nxt)
+                self.log("%s's turn." % nxt.name, (199, 179, 119))
+                self.emit("turn", "player")
+                return
         self.turn = "monsters"
         self.emit("turn", "monsters")
         self.aura_turn()
         self.allies_turn()
         self.tick_hazards()
+        self._tactics_scale()
         for m in list(self.aware_monsters()):
             if self.game_over:
                 break
@@ -1418,8 +1464,29 @@ class World(SkillCaster, ItemActions):
         if self.game_over:
             return
         self.round += 1
-        p = self.player
         self._tick_buffs()
+        from . import tactics
+        heroes = tactics.living(self) if len(tactics.party(self)) > 1 else [self.player]
+        first = heroes[0] if heroes else self.player
+        for h in heroes:
+            if h is not self.player:
+                tactics.switch_to(self, h)       # (each hero's own buffs, potions, AP...)
+            self._hero_turn_start()
+            if self.game_over:
+                return
+        if first is not self.player and first.alive:
+            tactics.switch_to(self, first)       # the round starts with the first hero again
+        if len(heroes) > 1:
+            self.log("%s's turn." % self.player.name, (199, 179, 119))
+        if self.game_over:
+            return
+        self.turn = "player"
+        self.emit("turn", "player")
+        self.check_combat_end()
+
+    def _hero_turn_start(self):
+        """The start of the controlled hero's turn: buffs, potions, charges tick; AP and regen."""
+        p = self.player
         self.tick_player_buffs()
         from . import potions
         potions.tick(self)                   # potion regeneration, infusions, belt slot cooldowns
@@ -1436,11 +1503,6 @@ class World(SkillCaster, ItemActions):
         if getattr(p, "regen", 0):
             p.hp = min(p.max_hp, p.hp + p.regen)
         self.tick_poison(p)
-        if self.game_over:
-            return
-        self.turn = "player"
-        self.emit("turn", "player")
-        self.check_combat_end()
 
     # ------------------------------------------------------------ inventory
     def _inv_index(self, ref):
@@ -1871,6 +1933,20 @@ class World(SkillCaster, ItemActions):
         if getattr(unit, "special", None) == "tentacle_head":
             from .specialmon import limbs_die
             limbs_die(self, unit)
+        if unit.is_player and len(getattr(self, "party", None) or []) > 1:
+            from . import tactics
+            left = [h for h in tactics.living(self) if h is not unit]
+            if left:
+                self.log("%s has fallen!" % unit.name, RED)
+                if unit is self.player:
+                    nxt = tactics.next_in_turn(self) if self.turn == "player" else None
+                    tactics.switch_to(self, nxt or left[0])   # you go on with the next hero
+                    if self.turn == "player":
+                        if nxt is None:
+                            self._party_turn_over = True      # everyone has moved: the monsters' turn
+                        else:
+                            self.log("%s's turn." % self.player.name, (199, 179, 119))
+                return
         if getattr(unit, "ally", False):
             if getattr(unit, "hireling", False):
                 from . import hireling
@@ -1891,7 +1967,14 @@ class World(SkillCaster, ItemActions):
         from .units import kill_xp
         mlvl = getattr(unit, "level", None) or getattr(unit, "mlvl", None) or p.level
         base = kill_xp(unit.xp_value, p.level, mlvl)
-        gained = p.gain_xp(base * (100 + max(0, getattr(p, "xp_pct", 0))) // 100)
+        from . import tactics
+        xmul = tactics.XP_MULT if tactics.ACTIVE else 1.0
+        gained = p.gain_xp(int(base * xmul) * (100 + max(0, getattr(p, "xp_pct", 0))) // 100)
+        for h in tactics.living(self):
+            if h is not p and len(tactics.party(self)) > 1:     # every hero of the party gets it
+                hb = kill_xp(unit.xp_value, h.level, mlvl)
+                if h.gain_xp(int(hb * xmul) * (100 + max(0, getattr(h, "xp_pct", 0))) // 100):
+                    self.log("%s reached level %d!" % (h.name, h.level), (199, 179, 119))
         from . import hireling
         hireling.gain_xp(self, unit.xp_value)
         if getattr(p, "life_kill", 0) and p.alive:

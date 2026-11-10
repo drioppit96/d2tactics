@@ -266,6 +266,7 @@ class D2Hud:
         self.world = world
         p = world.player
         self._draw_log(surf, scene)
+        self._draw_party(surf, world, scene)
         self._draw_automap(surf, world)
         if self.store is not None:
             self._draw_store(surf, world)
@@ -480,9 +481,62 @@ class D2Hud:
         h = 34 + max(1, len(self.loot_list[:20])) * 16 + 22
         return (x0, 104, w, h)
 
+    def _party_shown(self):
+        w = getattr(self, "world", None)
+        pt = getattr(w, "party", None) if w is not None else None
+        return bool(pt) and len(pt) > 1 and not self._left_panel_open()
+
+    def _draw_party(self, surf, world, scene):
+        """Tactics mode: a portrait for each hero of the party, top left (click one to lead with it).
+        Gold frame: the hero you control. Dimmed: already had their turn this round. Red: fallen."""
+        if not self._party_shown():
+            return
+        from game import tactics
+        mx, my = self.mouse
+        combat = world.mode == "combat"
+        for i, h in enumerate(tactics.party(world)):
+            x, y, bw, bh = 6, 8 + i * 70, 50, 62
+            box = pygame.Rect(self.P(x, y), (int(bw * self.s), int(bh * self.s)))
+            bg = pygame.Surface(box.size, pygame.SRCALPHA)
+            bg.fill((10, 8, 6, 200))
+            surf.blit(bg, box.topleft)
+            if hasattr(self, "assets") and self.assets is not None and hasattr(self.assets, "draw_unit"):
+                clip = surf.get_clip()
+                surf.set_clip(box)
+                try:
+                    pose = {"mode": "NU" if h.alive else "DD", "phase": scene.clock if hasattr(scene, "clock") else 0,
+                            "facing": (1, 1), "flash": 0}
+                    self.assets.draw_unit(surf, h, pose, (box.centerx, box.y + int(52 * self.s)), self.s * 0.75, 1.0)
+                except Exception:
+                    pass
+                surf.set_clip(clip)
+            acted = combat and getattr(h, "_acted", -1) == world.round and h is not world.player
+            if acted or not h.alive:
+                sh = pygame.Surface(box.size, pygame.SRCALPHA)
+                sh.fill((60, 0, 0, 140) if not h.alive else (0, 0, 0, 130))
+                surf.blit(sh, box.topleft)
+            col = GOLD if h is world.player else ((150, 40, 30) if not h.alive else (90, 80, 60))
+            pygame.draw.rect(surf, col, box, 2 if h is world.player else 1)
+            # life and mana under the portrait
+            for k, (cur, mx_, c) in enumerate(((h.hp, h.max_hp, (190, 20, 20)), (h.mana, h.max_mana, (40, 60, 200)))):
+                fr = max(0.0, min(1.0, cur / float(max(1, mx_))))
+                by = y + bh - 7 + k * 4
+                pygame.draw.rect(surf, (20, 16, 12), pygame.Rect(self.P(x + 2, by), (int((bw - 4) * self.s), max(1, int(3 * self.s)))))
+                if fr > 0:
+                    pygame.draw.rect(surf, c, pygame.Rect(self.P(x + 2, by), (max(1, int((bw - 4) * self.s * fr)), max(1, int(3 * self.s)))))
+            if combat and h.alive:
+                self.text(surf, self.f10, "%d AP" % h.ap, WHITE if not acted else GREY, x + 2, y + 2, "left", bw - 4)
+            self.region(x, y, bw, bh, "party", i)
+            if pygame.Rect(x, y, bw, bh).collidepoint((int(mx), int(my))):
+                state = "fallen" if not h.alive else ("had their turn" if acted else
+                                                      ("leading" if h is world.player else "click to lead"))
+                self.hover_lines = [("%s - level %d %s" % (h.name, h.level, h.class_name), GOLD),
+                                    ("Life %d / %d   Mana %d / %d" % (max(0, h.hp), h.max_hp, int(h.mana), h.max_mana), WHITE),
+                                    ("(%s)" % state, GREY)]
+
     def _left_edge(self):
         """The message log starts right of whatever window is open on the left."""
-        x0 = 330 if self._left_panel_open() else 8
+        x0 = 330 if self._left_panel_open() else (62 if self._party_shown() else 8)
         lr = self._loot_rect()
         if lr is not None and lr[0] <= x0 + 10:
             x0 = lr[0] + lr[2] + 8

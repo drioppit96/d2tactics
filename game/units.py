@@ -62,6 +62,8 @@ CLASS_KIT = {"ama": ("jav", "buc"), "sor": ("sst", None), "nec": ("wnd", None), 
 
 class Player(Unit):
     is_player = True
+    ally = False                # (a tactics party's other heroes walk with you as allies)
+    party_member = False
 
     def __init__(self, x, y, cls="bar", name=None, tree=None):
         cs = CLASS_STATS.get(cls, CLASS_STATS["bar"])
