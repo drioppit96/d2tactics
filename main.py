@@ -1187,6 +1187,21 @@ class Game:
             self._path_cache[key] = pv
         return self._path_cache[key]
 
+    def loot_in_area(self):
+        """[(cell, item)] for every item lying on the ground in the area you are in (the whole
+        Blood Moor, say), nearest first."""
+        w = self.world
+        p = w.player
+        here = w.area_at(p.pos) if getattr(w, "areas", None) else None
+        out = []
+        for cell, items in w.ground.items():
+            if here is not None and w.area_at(cell) != here:
+                continue
+            for it in items:
+                out.append((cell, it))
+        out.sort(key=lambda ci: (chebyshev(ci[0], p.pos), ci[1].kind == "gold"))
+        return out
+
     def loot_on_screen(self):
         """[(cell, item)] for every item lying on the visible part of the map, nearest first."""
         w = self.world
@@ -1458,6 +1473,8 @@ class Game:
                     self._path_cache = {}
             elif action == "loot_close":
                 h.show_loot = False
+            elif action == "loot_page":
+                h.loot_page = max(0, getattr(h, "loot_page", 0) + (arg or 0))
             elif action == "loot_panel":
                 pass
             elif action == "potion":
@@ -1791,7 +1808,14 @@ class Game:
         elif key == pygame.K_F11:
             self.show_perf = not getattr(self, "show_perf", False)   # performance readout
         elif key == pygame.K_v:
-            h.show_loot = not getattr(h, "show_loot", False)        # loot window
+            h.show_loot = not getattr(h, "show_loot", False)        # loot window (a chest of the area's drops)
+            if h.show_loot:
+                h.show_char = h.show_quests = False
+                for k in ("show_cube", "show_merc", "show_waypoints"):
+                    if hasattr(h, k):
+                        setattr(h, k, False)
+                h.store = None
+                h.loot_page = 0
         elif key == pygame.K_x:
             self.scene.mark_enemies = not getattr(self.scene, "mark_enemies", False)   # red outlines on enemies
             self.world.log("Enemy outlines %s (X)." % ("on" if self.scene.mark_enemies else "off"), (170, 170, 170))
@@ -2096,7 +2120,7 @@ class Game:
         self.draw_world(cell, highlight, preview)
         self._perf_mark("world", t1)
         t1 = time.perf_counter()
-        self.hud.loot_list = self.loot_on_screen() if getattr(self.hud, "show_loot", False) else None
+        self.hud.loot_list = self.loot_in_area() if getattr(self.hud, "show_loot", False) else None
         if hasattr(self.hud, "covered_rects"):
             self.hud.lw = self.screen.get_width() / (self.screen.get_height() / 600.0)
             self.scene.covered = self.hud.covered_rects(*self.screen.get_size())

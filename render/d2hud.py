@@ -465,14 +465,17 @@ class D2Hud:
             self.text(surf, self.f10, "No quest under way", GREY, x + 6, y - 14)
 
     # ------------------------------------------------------------ message log
-    def _left_panel_open(self):
+    def _other_left_panel(self):
         return bool(self.show_char or self.show_quests or getattr(self, "show_cube", False)
                     or getattr(self, "show_merc", False) or self.store is not None
                     or getattr(self, "show_waypoints", False))
 
+    def _left_panel_open(self):
+        return self._other_left_panel() or (getattr(self, "loot_list", None) is not None)
+
     def _loot_rect(self):
-        """Where the 'Items on screen' window sits (logical px), or None."""
-        if getattr(self, "loot_list", None) is None:
+        """The ground loot window is a left-side panel now (covered by _left_panel_open)."""
+        if getattr(self, "loot_list", None) is None or True:
             return None
         w = 270
         x0 = 330 if self._left_panel_open() else 8
@@ -2009,8 +2012,108 @@ class D2Hud:
         return lines
 
     # ------------------------------------------------------------ loot window (V)
+    LOOT_GRID = (28, 96)
+    LOOT_W, LOOT_H = 12, 16
+
+    def _pack_loot(self, items):
+        """Lay the items out like a stash (largest first), page after page."""
+        key = tuple(id(it) for _, it in items)
+        cache = getattr(self, "_loot_pack", None)
+        if cache is not None and cache[0] == key:
+            return cache[1]
+        W, H = self.LOOT_W, self.LOOT_H
+        order = sorted(items, key=lambda ci: (-(ci[1].invw or 1) * (ci[1].invh or 1), ci[1].kind == "gold"))
+        pages = []
+        for cell, it in order:
+            w, h = max(1, it.invw or 1), max(1, it.invh or 1)
+            placed = False
+            for page in pages:
+                occ = page["occ"]
+                for y in range(H - h + 1):
+                    for x in range(W - w + 1):
+                        if all((x + i, y + j) not in occ for i in range(w) for j in range(h)):
+                            occ.update((x + i, y + j) for i in range(w) for j in range(h))
+                            page["items"].append((cell, it, x, y, w, h))
+                            placed = True
+                            break
+                    if placed:
+                        break
+                if placed:
+                    break
+            if not placed:
+                pages.append({"occ": {(i, j) for i in range(w) for j in range(h)}, "items": [(cell, it, 0, 0, w, h)]})
+        out = [pg["items"] for pg in pages] or [[]]
+        self._loot_pack = (key, out)
+        return out
+
     def _draw_loot(self, surf, world):
-        """Everything lying on the screen; click a line to pick it up."""
+        """V: every item lying on the ground in this area, laid out like a chest - click one to
+        take it (outside combat from anywhere; in combat only what lies next to you, 1 AP)."""
+        if self._other_left_panel():
+            return
+        p = world.player
+        self._stash_bg(surf)
+        name = getattr(world, "level_name", "") or "Ground"
+        try:
+            lid = world.area_at(p.pos) if getattr(world, "areas", None) else None
+            if lid is not None and getattr(world, "info", None) is not None:
+                name = world.info.name(lid) or name          # the area you are in (Blood Moor...)
+        except Exception:
+            pass
+        self.text(surf, self.f16, name, GOLD, 0, 51, "center", 320)
+        n = len(self.loot_list)
+        self.text(surf, self.f10, "%d item%s on the ground" % (n, "" if n == 1 else "s"), WHITE, 0, 25, "center", 320)
+        pages = self._pack_loot(self.loot_list)
+        pg = max(0, min(getattr(self, "loot_page", 0), len(pages) - 1))
+        self.loot_page = pg
+        gx, gy = self.LOOT_GRID
+        C = self.STASH_CELL
+        GW, GH = self.LOOT_W, self.LOOT_H
+        back = pygame.Surface((int(GW * C * self.s) + 2, int(GH * C * self.s) + 2), pygame.SRCALPHA)
+        back.fill((6, 6, 10, 255))
+        surf.blit(back, self.P(gx - 1, gy - 1))
+        for i in range(GW + 1):
+            pygame.draw.line(surf, (38, 36, 32), self.P(gx + i * C, gy), self.P(gx + i * C, gy + GH * C))
+        for j in range(GH + 1):
+            pygame.draw.line(surf, (38, 36, 32), self.P(gx, gy + j * C), self.P(gx + GW * C, gy + j * C))
+        pygame.draw.rect(surf, (120, 105, 70), self.R(gx - 2, gy - 2, GW * C + 4, GH * C + 4), 1)
+        mx, my = self.mouse
+        from game.grid import chebyshev
+        combat = world.mode == "combat"
+        for cell, it, x, y, w, h in pages[pg]:
+            rx, ry = gx + x * C, gy + y * C
+            far = combat and chebyshev(cell, p.pos) > 1
+            tint = pygame.Surface((int((w * C - 1) * self.s), int((h * C - 1) * self.s)), pygame.SRCALPHA)
+            tint.fill((40, 10, 10, 140) if far else (10, 10, 40, 120))
+            surf.blit(tint, self.P(rx + 1, ry + 1))
+            if it.kind == "gold":
+                self.text(surf, self.f10, str(it.amount), GOLD, rx, ry + 5, "center", w * C)
+            else:
+                self._icon(surf, it, rx + 1, ry + 1, w * C - 1, h * C - 1)
+            self.region(rx, ry, w * C, h * C, "loot_pick", (cell, it))
+            if pygame.Rect(int(rx), int(ry), w * C, h * C).collidepoint((int(mx), int(my))):
+                lines = list(it.describe_lines(p)) if it.kind != "gold" and hasattr(it, "describe_lines") \
+                    else [("%d Gold" % it.amount, GOLD)]
+                lines.append(("%d cells away" % chebyshev(cell, p.pos) +
+                              (" - too far in combat" if far else ""), GREY))
+                self.hover_lines = lines
+        # pages
+        if len(pages) > 1:
+            b = self.frames.get("buysellbtn") or []
+            for (x, d, fi) in ((14, -1, 12), (52, 1, 14)):
+                if len(b) > fi:
+                    self.put(surf, b[fi], x, 452)
+                else:
+                    pygame.draw.rect(surf, GOLD, self.R(x, 452, 32, 32), 1)
+                self.region(x, 452, 32, 32, "loot_page", d)
+            self.text(surf, self.f10, "%d / %d" % (pg + 1, len(pages)), WHITE, 90, 463, "center", 50)
+        hint = "Click: take   (V closes)" if not combat else "Combat: only next to you, 1 AP"
+        self.text(surf, self.f10, hint, GREY, 150, 463, "center", 120)
+        self._close_button(surf, self.STASH_CLOSE, 0, "loot_close")
+        self.region(0, 0, 320, self.STASH_H, "loot_panel")
+
+    def _draw_loot_small(self, surf, world):
+        """(the old 'Items on screen' list)"""
         rows = self.loot_list[:20]
         more = len(self.loot_list) - len(rows)
         p = world.player
