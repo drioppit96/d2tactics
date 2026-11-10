@@ -58,6 +58,9 @@ def imbue_ready(world):
 def npc_options(world, npc_id):
     """The NPC's menu, with what the story has unlocked (Charsi's Imbue)."""
     opts = list(NPC_OPTIONS.get(npc_id, ["Talk"]))
+    from . import tactics
+    if tactics.ACTIVE and "Hire" in opts:
+        opts.remove("Hire")              # (tactics mode: your party replaces the hireling)
     p = world.player
     if npc_id == "charsi" and (getattr(p, "quests", {}) or {}).get("malus") == "done" and \
             _difficulty(world) not in (getattr(p, "imbues", None) or {}):

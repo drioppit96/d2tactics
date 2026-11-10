@@ -361,6 +361,10 @@ def sand_codes(kit):
 
 
 def build_desert(kit, seed=None, content=None):
+    global SLOT, ST
+    from . import tactics
+    SLOT = 8 if tactics.ACTIVE else 10        # tactics mode: smaller desert areas (Lut Gholein needs 8)
+    ST = SLOT * BLOCK
     rng = random.Random(seed)
     towns = [(n, kit.ds1(A2 + "town\\%s.ds1" % n)) for n in ("lutw", "lutn")]
     towns = [(n, t) for n, t in towns if t is not None]

@@ -124,3 +124,86 @@ def scale_monster(m):
     frac = m.hp / float(max(1, m.max_hp))
     m.max_hp = int(m.max_hp * HP_MULT)
     m.hp = max(1, int(m.max_hp * frac))
+
+
+# ------------------------------------------------------------------ curated packs
+SUPPORT_AIS = {"FallenShaman", "FetishShaman", "GreaterMummy", "ZakarumPriest", "Shaman", "Unraveler"}
+
+
+def role_of(t):
+    """What a monster does in a fight: support (heals / raises / curses), ranged, brute, melee."""
+    kinds = set()
+    from .monskills import SKILLS
+    for name, _lvl in t.get("skills") or []:
+        if name in SKILLS:
+            kinds.add(SKILLS[name][0])
+    if t.get("ai") == "shaman" or t.get("d2ai") in SUPPORT_AIS or kinds & {"heal", "summon", "curse"}:
+        return "support"
+    if t.get("ai") == "ranged" or t.get("caster"):
+        return "ranged"
+    if t.get("size", 2) >= 3:
+        return "brute"
+    return "melee"
+
+
+def pack_plan(templates, mid, rng, depth):
+    """The members of one tactics pack (monster ids), built around `mid` from the area's own
+    monsters: a front line, something at range, sometimes a support, 3-6 in all."""
+    by_role = {}
+    for r, t in templates.items():
+        by_role.setdefault(role_of(t), []).append(r)
+    role = role_of(templates[mid])
+    out = []
+    front = [mid] if role in ("melee", "brute") else (by_role.get("melee") or by_role.get("brute") or [mid])[:1]
+    n_front = 2 + (1 if depth >= 2 else 0) + (1 if rng.random() < 0.35 else 0)
+    if role == "brute":
+        n_front = max(1, n_front - 2)           # a brute is worth two
+    out += [front[0]] * n_front
+    ranged = [mid] if role == "ranged" else by_role.get("ranged")
+    if ranged:
+        out += [ranged[0] if ranged[0] == mid else rng.choice(ranged)] * (1 + (1 if rng.random() < 0.5 else 0))
+    sup = [mid] if role == "support" else by_role.get("support")
+    if sup and (role == "support" or rng.random() < 0.45):
+        out.append(sup[0] if sup[0] == mid else rng.choice(sup))
+    return out[:6]
+
+
+def populate_pack(world, centre, roster, weights, lvl, taken, depth=1):
+    """One curated tactics pack at `centre` (called by the level populator in tactics mode)."""
+    from .actworld import _template, _scatter, _spawn, is_nest
+    from . import monmods
+    rng = world.rng
+    templates = {}
+    for r in roster:
+        if is_nest(r):
+            continue
+        t = _template(world, r, lvl)
+        if t is not None and not t.get("stationary"):
+            templates[r] = t
+    if not templates:
+        return
+    pool = [r for r in roster if r in templates]
+    wts = [weights[roster.index(r)] for r in pool]
+    mid = rng.choices(pool, weights=wts)[0]
+    members = pack_plan(templates, mid, rng, depth)
+    roll = rng.random()
+    spots = _scatter(world, centre, len(members), taken, radius=4 + len(members) // 2)
+    units = []
+    for m, cell in zip(members, spots):
+        u = _spawn(world, m, cell, lvl, taken)
+        if u is not None:
+            units.append(u)
+    if not units:
+        return
+    world.__dict__.setdefault("_tpacks", []).append(units)
+    # the special ones: a unique leading the pack (with an aura for its minions), or a champion
+    if roll < 0.12:
+        boss = units[0]
+        monmods.make_unique(world, boss)
+        for u in units[1:]:
+            u.minion_of = boss
+            u.color_shift = getattr(boss, "color_shift", 0)
+            monmods.pass_aura(boss, u)
+    elif roll < 0.42:
+        kinds = [monmods.CHAMPION, monmods.BERSERK, monmods.FANATIC, monmods.GHOSTLY]
+        monmods.make_champion(world, rng.choice(units), rng.choice(kinds))

@@ -774,6 +774,9 @@ def _populate(world, lid, rect, taken, safe, info):
     outdoor = lid in ALL_OUTDOOR
     per_pack = 1500 if outdoor else 330
     cap = 42 if outdoor else 40
+    from . import tactics
+    if tactics.ACTIVE:
+        per_pack, cap = (1700, 14) if outdoor else (450, 18)   # fewer, harder fights on the smaller maps
     if lid in DENSE:                    # this game's packed compounds: the armory, the scriptorium
         per_pack, cap = DENSE[lid]
     n_packs = min(int(walk / per_pack), cap)
@@ -806,7 +809,7 @@ def _populate(world, lid, rect, taken, safe, info):
             continue
         if town and town[0] - 30 <= c[0] <= town[2] + 30 and town[1] - 30 <= c[1] <= town[3] + 30:
             continue
-        if any(chebyshev(c, p) < (9 if outdoor else 6) for p in centres):
+        if any(chebyshev(c, p) < ((12 if outdoor else 9) if tactics.ACTIVE else (9 if outdoor else 6)) for p in centres):
             continue
         centres.append(c)
     weights = []
@@ -814,6 +817,11 @@ def _populate(world, lid, rect, taken, safe, info):
         t = _template(world, r, lvl)
         weights.append(t["rarity"] if t else 1)
     others = [(r, wt) for r, wt in zip(roster, weights) if not is_nest(r)]
+    if tactics.ACTIVE:
+        depth = 1 + (lvl >= 12) + (lvl >= 24)          # bigger packs further in
+        for c in centres:
+            tactics.populate_pack(world, c, roster, weights, lvl, taken, depth)
+        return
     for c in centres:
         mid = rng.choices(roster, weights=weights)[0]
         if is_nest(mid) and others and rng.random() > NEST_CHANCE:

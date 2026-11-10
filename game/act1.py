@@ -415,6 +415,9 @@ def _attach_barracks(b, kit, court, cx, cy, side, seed):
     their doorways lined up: one map, you walk from the cloister into the Barracks (D2)."""
     spec = dict(DUNGEONS[28])
     spec["role_exits"] = {"prev": side}
+    from . import tactics
+    if tactics.ACTIVE:
+        spec["rooms"] = 6                  # (tactics: a smaller Barracks, to fit the smaller map)
     bb, _g, _r = build_maze(kit, 28, spec, None if seed is None else hash((seed, "barracks")) & 0xffffffff)
     prev = getattr(bb, "role_rooms", {}).get("prev")
     if prev is None:
@@ -499,8 +502,15 @@ def plan_slots(exit_dir, rng):
     return pos
 
 
+TACTICS_SLOT = 7             # tactics mode: smaller outdoor areas (56x56 tiles), packed closer together
+
+
 def build_outdoors(kit, seed=None, content=None):
+    global SLOT
+    from . import tactics
+    SLOT = TACTICS_SLOT if tactics.ACTIVE else 10
     rng = random.Random(seed)
+    small = tactics.ACTIVE
     tname, town = rng.choice(kit.towns)
     exit_dir = _town_exit_dir(tname)
     pos = plan_slots(exit_dir, rng)
@@ -536,6 +546,7 @@ def build_outdoors(kit, seed=None, content=None):
             rows += 1 if not 0 <= ny < rows else 0
     ST = SLOT * BLOCK                                   # tiles per slot side
     b = Built(cols * ST + 1, rows * ST + 1)
+    b._small = small
     b.slot_of = {v: k for k, v in pos.items()}
     b.slot_tiles = ST
     for lid, (sx, sy) in pos.items():
@@ -723,7 +734,12 @@ def build_outdoors(kit, seed=None, content=None):
                 b.court_side = court_side
                 if barracks_side == court_side:
                     try:
-                        _attach_barracks(b, kit, court, cx, cy, court_side, seed)
+                        ok = _attach_barracks(b, kit, court, cx, cy, court_side, seed)
+                        for k in range(1, 8):               # (the smaller tactics map: try other layouts)
+                            if ok is not False or not getattr(b, "_small", False):
+                                break
+                            ok = _attach_barracks(b, kit, court, cx, cy, court_side,
+                                                  None if seed is None else seed * 31 + k)
                     except Exception:
                         import traceback
                         traceback.print_exc()
