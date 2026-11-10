@@ -248,8 +248,9 @@ levels, and your resistances get D2's penalty: -40% in Nightmare, -100% in Hell.
 ## Tactics mode
 
 Choose **MODE: TACTICS** on the character select screen, click up to three heroes (the numbers are
-the party order) and press OK. Each hero keeps their own save; tactics mode keeps its own quests,
-waypoints, act and difficulty, apart from the normal game.
+the party order) and press OK. Tactics mode has its own heroes (saves\tactics), made with Create New
+Character while the mode is on; the party shares quests, waypoints, act and difficulty, and all tactics
+heroes share one stash (gold and items) - anyone can take out or put in.
 
 - **Party:** the portraits top left show your heroes - click one to lead with it, the others follow.
   In combat each hero has their own AP; End Turn passes to the next hero, the monsters move after

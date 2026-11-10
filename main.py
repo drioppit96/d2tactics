@@ -158,12 +158,44 @@ class Game:
                 return
         tactics.switch_to(w, hero)
 
+    def create_tactics_hero(self, cls, name):
+        """Tactics mode's Create New Character: a fresh hero for the tactics roster (with D2's
+        starting kit), then back to the select screen to put the party together."""
+        import random as _rnd
+        import types
+        from game.save import set_mode, save_character, list_saves
+        from game.units import Player
+        from game.world import World
+        from game.skills import load_tree
+        set_mode("tactics")
+        c = self.assets.content
+        if any((d.get("name") or "").lower() == name.lower() for d in list_saves()):
+            name = name + str(_rnd.randrange(10, 99))
+        tree = load_tree(c.src, cls, getattr(c, "strings", None)) if c else None
+        p = Player(0, 0, cls=cls, name=name, tree=tree)
+        p.mode = "tactics"
+        try:
+            World._d2_starting_gear(types.SimpleNamespace(content=c, player=p, rng=_rnd.Random()))
+        except Exception:
+            import traceback
+            traceback.print_exc()
+        p.map_seed = _rnd.randrange(1 << 30)
+        save_character(p)
+        self.open_frontend(select=True)
+        cs = getattr(self, "creator", None)
+        if cs is not None and hasattr(cs, "heroes"):
+            idx = next((i for i, d in enumerate(cs.heroes) if d.get("name") == name), None)
+            if idx is not None:
+                cs.selected = idx
+                cs.party = [idx]
+
     def start_party(self, saved_list, diff=None):
         """Tactics mode: up to three heroes; the first leads (its progress is the party's)."""
         from game import tactics
-        from game.save import switch_mode, switch_difficulty, build_player
+        from game.save import switch_difficulty, build_player, set_mode, load_shared_stash
         tactics.ACTIVE = True
-        datas = [switch_mode(d, "tactics") for d in saved_list[:3]]
+        set_mode("tactics")                    # (tactics heroes have their own roster: saves/tactics)
+        datas = [dict(d, mode="tactics") for d in saved_list[:3]]
         lead = datas[0]
         if diff:
             lead = switch_difficulty(lead, diff)
@@ -184,6 +216,9 @@ class Game:
                 except Exception:
                     pass
         tactics.attach(self.world, heroes)
+        shared = load_shared_stash(self.assets.content)          # one stash for all tactics heroes
+        for h in heroes:
+            h.stash = shared
         self._party_seen = self.world.player
         if len(heroes) > 1:
             self.world.log("Your party: %s. Click a portrait to lead with that hero; in combat, End Turn "
@@ -307,6 +342,9 @@ class Game:
             for h in tactics.party(self.world):          # (a tactics party: every hero's own file)
                 h.current_act = self.world.player.current_act
                 save_character(h, getattr(h, "difficulty", "normal"))
+            if tactics.ACTIVE:
+                from game.save import save_shared_stash
+                save_shared_stash(self.world.player.stash)
         except Exception:
             import traceback
             traceback.print_exc()

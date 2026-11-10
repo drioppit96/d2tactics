@@ -47,6 +47,8 @@ class CharSelect(FrontEnd):
         self.heroes = []
         self.players = {}
         self.selected = 0
+        from game.save import set_mode
+        set_mode(getattr(game, "game_mode", "normal"))
         self.scroll = 0
         self.confirm_delete = False
         self._last_click = (-1, 0.0)
@@ -112,8 +114,12 @@ class CharSelect(FrontEnd):
         return getattr(self.game, "game_mode", "normal") == "tactics"
 
     def toggle_mode(self):
+        """Normal and tactics mode have separate heroes (saves / saves\\tactics)."""
         self.game.game_mode = "normal" if self.tactics else "tactics"
-        self.party = [self.selected] if self.heroes and self.tactics else []
+        from game.save import set_mode
+        set_mode(self.game.game_mode)
+        self.selected, self.scroll = 0, 0
+        self.reload()
 
     def toggle_member(self, i):
         """Tactics: click a hero to add them to the party (up to 3) or take them out again."""
@@ -149,7 +155,7 @@ class CharSelect(FrontEnd):
             pt = [i for i in (getattr(self, "party", None) or []) if 0 <= i < len(self.heroes)]
             if not pt:
                 return
-            lead = switch_mode(self.heroes[pt[0]], "tactics")
+            lead = self.heroes[pt[0]]
             got = unlocked(lead)
             if diff is None and len(got) > 1:
                 self.choose_diff = got

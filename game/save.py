@@ -8,6 +8,50 @@ import re
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SAVE_DIR = os.path.join(ROOT, "saves")
+NORMAL_DIR = SAVE_DIR
+
+
+def set_mode(mode):
+    """Normal and tactics mode have separate heroes: tactics heroes live in saves/tactics."""
+    global SAVE_DIR
+    base = NORMAL_DIR
+    SAVE_DIR = os.path.join(base, "tactics") if mode == "tactics" else base
+    return SAVE_DIR
+
+
+SHARED_STASH = "_stash.json"         # tactics mode: one stash for all the heroes
+
+
+def save_shared_stash(stash):
+    os.makedirs(SAVE_DIR, exist_ok=True)
+    path = os.path.join(SAVE_DIR, SHARED_STASH)
+    with open(path + ".tmp", "w") as f:
+        json.dump(_stash_dict(stash), f, indent=1)
+    os.replace(path + ".tmp", path)
+
+
+def load_shared_stash(content):
+    """The tactics heroes' shared stash (a new, empty one the first time)."""
+    from .cube import make_stash, cube_add, stash_tab
+    st = make_stash()
+    try:
+        with open(os.path.join(SAVE_DIR, SHARED_STASH)) as f:
+            sd = json.load(f)
+    except Exception:
+        return st
+    st.gold = sd.get("gold", 0) or 0
+    st.bank = {k: int(v) for k, v in (sd.get("bank") or {}).items() if int(v) > 0}
+    for i, page in enumerate((sd.get("pages") or [])[:len(st.pages)]):
+        stash_tab(st, i + 1)
+        for d in page or []:
+            it = _item_from(d, content)
+            if it is not None:
+                if getattr(it, "cube_pos", None) is not None:
+                    st.contents.append(it)
+                else:
+                    cube_add(st, it)
+    stash_tab(st, 1)
+    return st
 
 
 def _safe(name):
@@ -261,7 +305,7 @@ def list_saves():
     if not os.path.isdir(SAVE_DIR):
         return out
     for fn in sorted(os.listdir(SAVE_DIR)):
-        if not fn.endswith(".json"):
+        if not fn.endswith(".json") or fn.startswith("_"):
             continue
         try:
             with open(os.path.join(SAVE_DIR, fn)) as f:
