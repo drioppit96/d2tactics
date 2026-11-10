@@ -159,21 +159,25 @@ class Game:
         tactics.switch_to(w, hero)
 
     def create_tactics_hero(self, cls, name):
-        """Tactics mode's Create New Character: a fresh hero for the tactics roster (with D2's
-        starting kit), then back to the select screen to put the party together."""
+        return self.create_hero(cls, name)
+
+    def create_hero(self, cls, name):
+        """Create New Character: a fresh hero (with D2's starting kit) saved to this mode's roster,
+        then back to the select screen with them selected - you start the game from there."""
         import random as _rnd
         import types
         from game.save import set_mode, save_character, list_saves
         from game.units import Player
         from game.world import World
         from game.skills import load_tree
-        set_mode("tactics")
+        mode = getattr(self, "game_mode", "normal") or "normal"
+        set_mode(mode)
         c = self.assets.content
         if any((d.get("name") or "").lower() == name.lower() for d in list_saves()):
             name = name + str(_rnd.randrange(10, 99))
         tree = load_tree(c.src, cls, getattr(c, "strings", None)) if c else None
         p = Player(0, 0, cls=cls, name=name, tree=tree)
-        p.mode = "tactics"
+        p.mode = mode
         try:
             World._d2_starting_gear(types.SimpleNamespace(content=c, player=p, rng=_rnd.Random()))
         except Exception:
@@ -187,7 +191,8 @@ class Game:
             idx = next((i for i, d in enumerate(cs.heroes) if d.get("name") == name), None)
             if idx is not None:
                 cs.selected = idx
-                cs.party = [idx]
+                cs.party = [idx] if mode == "tactics" else []
+                cs._keep_visible()
 
     def start_party(self, saved_list, diff=None):
         """Tactics mode: up to three heroes; the first leads (its progress is the party's)."""
@@ -279,7 +284,7 @@ class Game:
                     a._sprites_for(npc).frames("NU", npc.facing)
                 except Exception:
                     pass
-        if saved is None:
+        if saved is None or (not saved.get("xp") and not saved.get("quests") and int(saved.get("level", 1) or 1) == 1):
             self.world.log("Welcome to the Rogue Encampment, %s. Talk to Akara and Kashya." % name, (199, 179, 119))
         else:
             self.world.log("Welcome back, %s (level %d %s)." % (name, self.world.player.level,

@@ -280,12 +280,7 @@ class CharCreate(FrontEnd):
             return
         name = self.name.strip() or NAMES[self.selected]
         name = name[:1].upper() + name[1:]
-        if getattr(self.game, "game_mode", "normal") == "tactics":
-            self.game.create_tactics_hero(self.selected, name)   # (back to the select screen)
-            return
-        from game import tactics
-        tactics.ACTIVE = False
-        self.game.start_act(self.selected, name)
+        self.game.create_hero(self.selected, name)      # saved, then back to the select screen
 
     # ------------------------------------------------------------ drawing
     def update(self, dt):
