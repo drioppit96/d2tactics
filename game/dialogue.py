@@ -153,7 +153,7 @@ def converse(world, npc, before, after, first, fallback):
     if first:
         k = intro_key(nid, getattr(p, "cls", ""))
         if k:
-            pages.append((name, get(k)))
+            pages.append((name, get(k), k, nid))
             seen.add(k)
     # what this talk changed
     for qid in QUEST_NUM:
@@ -161,7 +161,7 @@ def converse(world, npc, before, after, first, fallback):
         if b != a:
             for k in _event_keys(qid, b, a, qname):
                 if k not in seen:
-                    pages.append((name, get(k)))
+                    pages.append((name, get(k), k, nid))
                     seen.add(k)
                     break
     if pages:
@@ -174,14 +174,15 @@ def converse(world, npc, before, after, first, fallback):
         for k in _standing_keys(qid, after.get(qid, "none"), qname):
             if k not in seen:
                 seen.add(k)
-                return [(name, get(k))]
+                return [(name, get(k), k, nid)]
     # gossip, in turn
     gk = gossip_keys(nid)
     if gk:
         idx = p.__dict__.setdefault("_gossip", {})
         i = idx.get(nid, 0)
         idx[nid] = i + 1
-        return [(name, get(gk[i % len(gk)]))]
+        k = gk[i % len(gk)]
+        return [(name, get(k), k, nid)]
     return []
 
 
@@ -254,3 +255,67 @@ def qid_of(title):
         if t == title:
             return q
     return None
+
+
+# ------------------------------------------------------------------ voices (D2's speech files)
+_VOICE = {"Akara": ("akara", 1), "Charsi": ("charsi", 1), "Gheed": ("gheed", 1), "Kashya": ("kashya", 1),
+          "Warriv": ("warriv", 1), "Cain": ("cain", 1), "Atma": ("atma", 2), "Drognan": ("drognan", 2),
+          "Fara": ("fara", 2), "Greiz": ("greiz", 2), "Griez": ("greiz", 2), "Elzix": ("elzix", 2),
+          "Lysander": ("lysander", 2), "Meshif": ("meshif", 2), "Geglash": ("geglash", 2), "Jerhyn": ("jerhyn", 2),
+          "Ormus": ("ormus", 3), "Alkor": ("alkor", 3), "Asheara": ("asheara", 3), "Hratli": ("hratli", 3),
+          "Natalya": ("natalya", 3), "Tyrael": ("tyrael", 4), "Larzuk": ("larzuk", 5), "Malah": ("malah", 5),
+          "QualKehk": ("qualkehk", 5), "Anya": ("anya", 5), "Nihlathak": ("nihlathak", 5)}
+_NPC_ACT = {"cain2": 2, "cain3": 3, "cain4": 4, "cain6": 5, "warriv2": 2, "meshif2": 3, "tyrael1": 2,
+            "tyrael2": 4, "tyrael3": 5}
+_EV = {"Init": "init", "Init1": "init", "AfterInit": "after", "AfterInitScroll": "after_scroll",
+       "EarlyReturn": "early", "EarlyReturnS": "early_scroll", "EarlyReturn2": "early2", "Successful": "success",
+       "QuestSuccessful": "success", "SuccessfulScroll": "success_scroll", "Instructions": "instructions",
+       "RescuedByHero": "rescued_hero", "SuccessfulStaff": "success_staff"}
+
+
+def greeting_name(npc_id):
+    pre = NPCS.get(npc_id, ([], ""))[1]
+    for k, (sp, _) in _VOICE.items():
+        if pre.startswith(k):
+            return sp + "_greeting"
+    return None
+
+
+def voice_names(key, npc_id=None, cls=""):
+    """D2's speech sound names for a string key (A1Q1InitAkara -> akara_act1_q1_init ...), best first."""
+    if not key:
+        return []
+    m = re.match(r"A(\d)Q(\d)(.+)$", key)
+    pres = sorted(_VOICE, key=len, reverse=True)
+    if m:
+        a, q, rest = m.group(1), m.group(2), m.group(3)
+        rest = re.sub(r"(Act\d)$", "", rest)
+        for pre in pres:
+            if rest.endswith(pre):
+                ev = rest[:-len(pre)]
+                sp = _VOICE[pre][0]
+                e = _EV.get(ev, ev.lower())
+                return ["%s_act%s_q%s_%s" % (sp, a, q, e)]
+        return []
+    for pre in pres:
+        if key.startswith(pre):
+            sp, act = _VOICE[pre]
+            act = _NPC_ACT.get(npc_id, act)
+            rest = key[len(pre):]
+            ma = re.match(r"Act(\d)(.*)$", rest)
+            if ma:
+                act, rest = int(ma.group(1)), ma.group(2)
+            rest = re.sub(r"^Act", "", rest)
+            mi = re.match(r"Intro(Ama|Sor|Nec|Pal|Bar|Dru|Ass)?(More)?Gossip1$", rest)
+            if mi:
+                base = "%s_act%d_intro" % (sp, act)
+                if mi.group(1):
+                    return [base + "_" + mi.group(1).lower(), base]
+                if mi.group(2):
+                    return [base + "_more", base]
+                return [base]
+            mg = re.match(r"Gossip(\d+)$", rest)
+            if mg:
+                return ["%s_act%d_gossip_%s" % (sp, act, mg.group(1))]
+            return []
+    return []

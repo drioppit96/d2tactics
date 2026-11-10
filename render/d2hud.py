@@ -1243,7 +1243,7 @@ class D2Hud:
         """D2's NPC speech: the text in a dark box over the town, scrolling up slowly when it is long.
         A click (or Space / Enter) goes on, Esc stops the speech."""
         import time as _t
-        speaker, text = world.dialog[0]
+        speaker, text = world.dialog[0][:2]
         key = (speaker, text)
         if getattr(self, "dialog_key", None) != key or getattr(self, "dialog_t0", None) is None:
             self.dialog_key, self.dialog_t0 = key, _t.time()

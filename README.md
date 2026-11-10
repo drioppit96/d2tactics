@@ -217,6 +217,15 @@ tools/extract_monsters.py every monster's animations + a report and picture shee
 tools/extract_act.py      one act's layouts (DS1), tile libraries (DT1), palette, objects (for building an act)
 ```
 
+## Sound and music
+
+D2's own sounds, NPC voices and music, read from your MPQs (d2sfx, d2speech, d2xtalk, d2music,
+d2xmusic) through D2's tables: each area plays its D2 song and ambience, weapons, spells, monsters,
+items, chests, doors, waypoints and the interface make their D2 sounds, and NPCs speak their
+introductions, quest lines and gossip. D2 packs its wav files (Huffman + ADPCM), so a background
+process unpacks each one the first time it is needed and the game keeps it in `cache` - the very
+first time a sound or song is heard it can come a moment late. Volumes: Esc > Options > Sound / Music.
+
 ## Potions
 
 Healing and mana potions restore part of your maximum life / mana at once, then more every turn for

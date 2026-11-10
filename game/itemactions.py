@@ -620,6 +620,7 @@ class ItemActions:
         self.objects = [o for o in self.objects if o["kind"] != "tp"]
         self.objects.append(dict(kind="tp", cell=cell, level=self.level_id, oid=0, used=False, target=1))
         p.portal = (self.level_key, cell, self.level_id)
+        self.emit("sound", "player_townportal_cast")
         self.emit("nova", p, cell, 1, "mag")
         self.log("A Town Portal opens.", (120, 160, 255))
         return True

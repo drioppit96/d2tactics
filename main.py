@@ -50,6 +50,10 @@ class Game:
             _gu.ATTACK_AP_OFFSET = max(-4, min(4, self.cfg.getint("game", "attack_ap_offset")))
         except Exception:
             pass
+        try:
+            pygame.mixer.pre_init(44100, -16, 2, 1024)
+        except Exception:
+            pass
         pygame.init()
         w = self.cfg.getint("display", "width")
         h = self.cfg.getint("display", "height")
@@ -78,6 +82,14 @@ class Game:
         from render.gamemenu import load_options
         self.opts = load_options()
         self.menu = None
+        from render import sound as _snd
+        try:
+            _snd.SOUND = _snd.SoundSystem(self.assets, self.opts) if getattr(self.assets, "src", None) else None
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            _snd.SOUND = None
+        self._snd_t = 0.0
         if getattr(self.assets, "act_kit", None) is not None:
             # D2 files: start at D2's character select screen (creation when there are no heroes yet)
             self.hud = self.make_hud()
@@ -1366,6 +1378,12 @@ class Game:
             h.npc_menu = None
         if ui:
             action, arg = ui
+            act_s = str(action)
+            if act_s in ("npc_opt", "q_pick", "q_dialogue", "respec", "wp_page", "track_pick") or act_s.endswith(
+                    ("_tab", "close", "_btn", "_button")) or act_s.startswith(("wp", "close", "btn")):
+                from render import sound as _snd
+                if _snd.SOUND is not None:
+                    _snd.SOUND.play("cursor_button_click")
             if action != "pick_skill" and not str(action).startswith("skill_"):
                 h.skill_popup = False if hasattr(h, "skill_popup") else None
             if action == "npc_opt":
@@ -1590,7 +1608,7 @@ class Game:
                 from game import dialogue
                 k = dialogue.init_text_key(dialogue.qid_of(title))
                 if k and dialogue.get(k):
-                    w.dialog = [(title, dialogue.get(k))]
+                    w.dialog = [(title, dialogue.get(k), k, None)]
                     w.dialog_npc = None
                 else:
                     w.log("%s: %s" % (title, text if status != "done" else "Quest completed."), (220, 210, 170))
@@ -2114,8 +2132,58 @@ class Game:
         return cell, highlight, preview, tip
 
     # ------------------------------------------------------------ main loop
+    def _sound_frame(self, dt):
+        from render import sound as _snd
+        s = _snd.SOUND
+        if s is None or not s.ok:
+            return
+        s.update()
+        if self.state == "create":
+            s.set_music("music_options")
+            s.set_ambient(None)
+            return
+        w = getattr(self, "world", None)
+        if w is None:
+            return
+        self._snd_t = getattr(self, "_snd_t", 0.0) - dt
+        if self._snd_t <= 0:
+            self._snd_t = 0.5
+            try:
+                lid = w.area_at(w.player.pos) if hasattr(w, "area_at") else None
+            except Exception:
+                lid = None
+            s.area(lid or getattr(w, "level_id", None))
+        # D2: an item you take on the cursor or put down makes its sound
+        held = getattr(w, "held", None)
+        last = getattr(self, "_snd_held", None)
+        if held is not last:
+            it = held if held is not None else last
+            if it is not None and getattr(it, "kind", "") != "gold":
+                s.play(s.item_snd.get(getattr(it, "code", ""), ("", ""))[1] or "item_flippy")
+            self._snd_held = held
+        # NPC voices: the dialogue box's page
+        dlg = getattr(w, "dialog", None)
+        page = dlg[0] if dlg else None
+        if page is not getattr(self, "_snd_page", None):
+            self._snd_page = page
+            if page is None:
+                s.stop_voice()
+            elif len(page) > 2 and page[2]:
+                from game import dialogue
+                for name in dialogue.voice_names(page[2], page[3] if len(page) > 3 else None,
+                                                 getattr(w.player, "cls", "")):
+                    if s.by_name.get(name) is not None:
+                        s.speak(name)
+                        break
+                else:
+                    s.stop_voice()
+
     def frame(self, dt):
         mouse = pygame.mouse.get_pos()
+        try:
+            self._sound_frame(dt)
+        except Exception:
+            pass
         if self.state == "create":
             for ev in pygame.event.get():
                 if ev.type == pygame.QUIT:

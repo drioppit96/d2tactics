@@ -328,6 +328,7 @@ def drink(world, c, row=None):
             pot.cd = SLOT_COOLDOWN
     if not permanent(pot):
         belt_remove(p, pot)                  # rejuvenations are used up
+    world.emit("sound", "item_potion_drink")
     apply(world, pot)
     world._maybe_auto_end()
     return True

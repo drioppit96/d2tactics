@@ -14,7 +14,9 @@ HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OPTIONS_FILE = os.path.join(HERE, "options.ini")
 
 DEFAULTS = {"light_radius": 100, "highlight_monster": True, "highlight_tile": True,
-            "show_move_range": True, "show_skill_area": True, "monster_names": True, "fixed_maps": False}
+            "show_move_range": True, "show_skill_area": True, "monster_names": True, "fixed_maps": False,
+            "sound_volume": 80, "music_volume": 70}
+VOLUME_KEYS = ("sound_volume", "music_volume")
 LIGHT_STEPS = [50, 75, 100, 125, 150, 200, 250, 300]
 
 
@@ -30,6 +32,8 @@ def load_options():
                     continue
                 if isinstance(v, bool):
                     o[k] = s.getboolean(k)
+                elif k in VOLUME_KEYS:
+                    o[k] = max(0, min(100, s.getint(k)))
                 else:
                     o[k] = max(25, min(400, s.getint(k)))
     except Exception:
@@ -90,11 +94,16 @@ class GameMenu:
                 ("SHOW MOVE RANGE: " + onoff("show_move_range"), "range"),
                 ("SHOW SKILL AREA: " + onoff("show_skill_area"), "area"),
                 ("SAME MAPS EVERY GAME: " + onoff("fixed_maps"), "fixed"),
+                ("SOUND: %d%%" % o["sound_volume"], "snd_vol"),
+                ("MUSIC: %d%%" % o["music_volume"], "mus_vol"),
                 ("PREVIOUS MENU", "back")]
 
     def activate(self, action, step=1):
         g = self.game
         o = g.opts
+        from . import sound as _snd
+        if _snd.SOUND is not None:
+            _snd.SOUND.play("cursor_select")
         if action == "options":
             self.page, self.sel = "options", 0
         elif action == "qol":
@@ -123,11 +132,17 @@ class GameMenu:
             o["show_skill_area"] = not o["show_skill_area"]
         elif action == "range":
             o["show_move_range"] = not o["show_move_range"]
+        elif action in ("snd_vol", "mus_vol"):
+            k = "sound_volume" if action == "snd_vol" else "music_volume"
+            o[k] = (o[k] + 10 * step) % 110 if step > 0 else (o[k] - 10) % 110
+            if _snd.SOUND is not None:
+                _snd.SOUND.opts = o
+                _snd.SOUND.apply_volumes()
         elif action == "fixed":
             o["fixed_maps"] = not o["fixed_maps"]
             g.world.log("Maps: %s (from your next game on)." % ("the same every game - monsters still change"
                         if o["fixed_maps"] else "new every game"), (199, 179, 119))
-        if action in ("light", "hl_mon", "hl_tile", "range", "area", "fixed"):
+        if action in ("light", "hl_mon", "hl_tile", "range", "area", "fixed", "snd_vol", "mus_vol"):
             save_options(o)
             g.apply_options()
 

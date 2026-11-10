@@ -832,6 +832,10 @@ class World(SkillCaster, ItemActions):
             self.dialog_npc = npc if npc.npc in NPC_OPTIONS else None     # (the menu comes after the speech)
         elif npc.npc in NPC_OPTIONS:
             self.open_npc = npc
+            from .dialogue import greeting_name
+            g = greeting_name(npc.npc)
+            if g:
+                self.emit("sound", g, npc)            # D2: "Hello" / "Greetings" as the menu opens
         return True
 
     def team_mf(self):
@@ -866,7 +870,7 @@ class World(SkillCaster, ItemActions):
             ln = NPC_LINES.get(npc.npc, "")
             if ln:
                 pages = [(npc.name, ln.split(": ", 1)[1] if ": " in ln[:24] else ln)]
-        pages = [(s, t) for s, t in pages if t]
+        pages = [pg for pg in pages if pg[1]]
         if pages:
             self.dialog = list(pages)
         elif lines:
@@ -1115,7 +1119,11 @@ class World(SkillCaster, ItemActions):
                             p.right_skill = None
                     p.recalc()
             return ok
-        return self._use_skill(name, target, cell)
+        n0 = len(self.events)
+        ok = self._use_skill(name, target, cell)
+        if ok and name and name not in ("attack", "throw"):
+            self.events.insert(n0, ("skill_sound", name, p))      # D2's cast sound, as the cast starts
+        return ok
 
     def _use_skill(self, name, target=None, cell=None):
         p = self.player

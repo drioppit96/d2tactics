@@ -162,6 +162,9 @@ class Scene:
     def _start(self, ev):
         """Begin playing one event. Returns seconds to wait before the next one."""
         kind = ev[0]
+        from . import sound as _snd
+        if _snd.SOUND is not None:
+            _snd.SOUND.event(self.world, ev)
         if kind == "log":
             self.log.append([ev[1], ev[2], 0.0])
             self.log = self.log[-60:]
