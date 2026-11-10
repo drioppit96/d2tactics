@@ -54,6 +54,9 @@ WORLD_OF = {i: i for i in DUNGEONS}
 
 def build_level(kit, level_id, seed=None):
     spec = dict(DUNGEONS[level_id])
+    from . import tactics
+    if tactics.ACTIVE and spec["kit"] == "ice":
+        spec["rooms"] = spec["rooms"] // 2     # (tactics: smaller ice caves; the maze keeps a room per exit)
     if spec["kit"] == "temple":
         return build_temple(kit, level_id, spec, seed)
     if spec["kit"] == "preset":

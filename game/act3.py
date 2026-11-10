@@ -66,6 +66,9 @@ WORLD_OF = {i: i for i in DUNGEONS}
 # ---------------------------------------------------------------- dungeons
 def build_level(kit, level_id, seed=None):
     spec = dict(DUNGEONS[level_id])
+    from . import tactics
+    if tactics.ACTIVE and spec["kit"] == "meph":
+        spec["rooms"] = spec["rooms"] // 2     # (tactics: a smaller Durance of Hate)
     if spec["kit"] == "ring":
         return build_ring(kit, level_id, spec, seed)
     if spec["kit"] == "preset":
