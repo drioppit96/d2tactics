@@ -565,6 +565,8 @@ class SkillBook:
         k = s.kind
         if k == "aura":
             return 1
+        if name == "Leap":
+            return 3                          # (the barbarian's leap: 3 AP, twice D2's distance)
         if k in self.SUMMON_KINDS or (s.extra or {}).get("trap") or "Sentry" in name or name.startswith("Wake of"):
             return 2
         lv = int(s.reqlevel or 1)               # the row, from the level it needs (1/6/12/18/24/30)
@@ -744,7 +746,7 @@ def describe_skill(name, lv):
         "Bash": ["Powerful blow that knocks the target back", "+%d%% damage, +%d%% attack rating" % (50 + 5 * L, 20 + 5 * L)],
         "Double Swing": ["Two attacks in one action", "+%d%% attack rating" % (15 + 5 * L)],
         "Stun": ["The target loses its next %d turn(s)" % (1 + L // 6), "+%d%% attack rating" % (5 + 5 * L)],
-        "Leap": ["Jump up to %d cells, knocking nearby enemies back" % (4 + L // 3)],
+        "Leap": ["Jump up to %d cells, knocking nearby enemies back" % (2 * (4 + L // 3))],
         "Leap Attack": ["Leap to a monster and strike", "+%d%% damage, +%d%% attack rating" % (100 + 30 * L, 50 + 15 * L)],
         "Concentrate": ["Uninterruptible attack, +%d%% defense this turn" % (100 + 10 * L), "+%d%% damage" % (70 + 5 * L)],
         "Frenzy": ["Two hits; each hit gives +1 AP next turn (max 3)", "+%d%% damage" % (90 + 5 * L)],

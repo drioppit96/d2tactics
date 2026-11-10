@@ -1137,6 +1137,8 @@ class World(SkillCaster, ItemActions):
     def _leap(self, cell, target, ap, mana, lv):
         p = self.player
         reach = 4 + (lv - 1) // 3
+        if target is None:
+            reach *= 2                       # Leap goes twice as far (Leap Attack keeps its reach)
         if target is not None:
             spots = [(target.x + dx, target.y + dy) for dx, dy in DIRS8]
             spots = [c for c in spots if self.grid.walkable(*c) and c not in self.occupied(p)

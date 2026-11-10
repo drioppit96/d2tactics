@@ -1210,9 +1210,12 @@ class SkillCaster:
             foes = [m for m in self.enemies() if m.aware and self.udist(m, p) <= r]
             if name == "Sanctuary":
                 foes = [m for m in foes if getattr(m, "undead", False)]
-            if foes:
-                self.emit("nova", p, p.pos, r, {"Holy Fire": "fire", "Holy Freeze": "cold", "Holy Shock": "ltng"}.get(name, "mag"))
+            # D2 draws no ring: the aura's own flames / sparks / wind stay on the paladin (its state
+            # overlay), and each enemy it reaches burns, crackles or frosts over where it stands
+            hit_fx = {"Holy Fire": "fireexplode", "Holy Shock": "lightninghit", "Holy Freeze": "iceexplode"}.get(name)
             for m in foes:
+                if hit_fx:
+                    self.emit("explosion", m.pos, hit_fx)
                 self.skill_damage(env, m, 100, show=False)
                 if name == "Sanctuary" and m.alive:
                     self._knockback(p, m)
