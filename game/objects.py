@@ -513,7 +513,7 @@ def _loot(world, o):
     rng = world.rng
     lvl = _area_level(world, o)
     p = world.player
-    mf, gf = getattr(p, "mf", 0), getattr(p, "gf", 0)
+    mf, gf = world.team_mf() if hasattr(world, "team_mf") else getattr(p, "mf", 0), getattr(p, "gf", 0)
     drops = []
     if kind == "xbarrel":
         _explode(world, o, lvl)

@@ -834,6 +834,15 @@ class World(SkillCaster, ItemActions):
             self.open_npc = npc
         return True
 
+    def team_mf(self):
+        """Magic find for drops: in tactics mode the whole party's MF adds up (10 + 10 + 10 = 30 for everyone)."""
+        from . import tactics
+        if tactics.ACTIVE:
+            heroes = tactics.party(self)
+            if len(heroes) > 1:
+                return sum(getattr(h, "mf", 0) for h in heroes)
+        return getattr(self.player, "mf", 0)
+
     def talk_to(self, npc, menu=True):
         """Talk to an NPC: the quest logic, then what they say - D2's own introductions, quest speech
         and gossip from the string tables, shown in the dialogue box (self.dialog: [(speaker, text)]).
@@ -2108,11 +2117,11 @@ class World(SkillCaster, ItemActions):
                 self.content._q_bonus = 1.05 if boss == "duriel" else 1.0
                 try:
                     drops = self.content.roll_tc(tc, getattr(unit, "drop_level", None) or unit.level, self.rng,
-                                                 mf=p.mf, gf=p.gf)
+                                                 mf=self.team_mf(), gf=p.gf)
                 finally:
                     self.content._q_bonus = 1.0
             else:
-                drops = self.content.roll_drop(unit.level, unit.unique, self.rng, mf=p.mf, gf=p.gf)
+                drops = self.content.roll_drop(unit.level, unit.unique, self.rng, mf=self.team_mf(), gf=p.gf)
         else:
             drops = roll_drop(unit.level, unit.unique, self.rng)
         for it in drops:
