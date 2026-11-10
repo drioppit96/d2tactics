@@ -85,6 +85,23 @@ def switch_to(world, hero):
     return True
 
 
+class acting_as:
+    """Run world code as if another hero were the one you control (equipping a party member from
+    the inventory screens): world.player is that hero inside the with-block."""
+
+    def __init__(self, world, hero):
+        self.world, self.hero = world, hero
+
+    def __enter__(self):
+        self.old = self.world.player
+        self.world.player = self.hero
+        return self.hero
+
+    def __exit__(self, *exc):
+        self.world.player = self.old
+        return False
+
+
 def next_in_turn(world):
     """The next hero who has not had their turn this round (party order), or None."""
     for h in party(world):
@@ -148,14 +165,14 @@ def role_of(t):
 
 def pack_plan(templates, mid, rng, depth):
     """The members of one tactics pack (monster ids), built around `mid` from the area's own
-    monsters: a front line, something at range, sometimes a support, 3-6 in all."""
+    monsters: a front line, something at range, sometimes a support, 4-8 in all."""
     by_role = {}
     for r, t in templates.items():
         by_role.setdefault(role_of(t), []).append(r)
     role = role_of(templates[mid])
     out = []
     front = [mid] if role in ("melee", "brute") else (by_role.get("melee") or by_role.get("brute") or [mid])[:1]
-    n_front = 2 + (1 if depth >= 2 else 0) + (1 if rng.random() < 0.35 else 0)
+    n_front = 3 + (1 if depth >= 2 else 0) + (1 if depth >= 3 else 0) + (1 if rng.random() < 0.4 else 0)
     if role == "brute":
         n_front = max(1, n_front - 2)           # a brute is worth two
     out += [front[0]] * n_front
@@ -163,9 +180,28 @@ def pack_plan(templates, mid, rng, depth):
     if ranged:
         out += [ranged[0] if ranged[0] == mid else rng.choice(ranged)] * (1 + (1 if rng.random() < 0.5 else 0))
     sup = [mid] if role == "support" else by_role.get("support")
-    if sup and (role == "support" or rng.random() < 0.45):
+    if sup and (role == "support" or rng.random() < 0.5):
         out.append(sup[0] if sup[0] == mid else rng.choice(sup))
-    return out[:6]
+    return out[:8]
+
+
+SHAMANS = {"FallenShaman", "FetishShaman"}
+
+
+def guard_shamans(members, templates, content):
+    """A shaman (Fallen / Fetish Shaman) never stands alone: at least 3 of its own kind of minion
+    (the Fallen it raises) guard it."""
+    out = list(members)
+    for r in set(members):
+        t = templates.get(r)
+        if t is None or not (t.get("ai") == "shaman" or t.get("d2ai") in SHAMANS):
+            continue
+        mn = t.get("minion") or ""
+        if not mn or content is None or mn not in content.monstats:
+            continue
+        have = sum(1 for x in out if x == mn)
+        out += [mn] * max(0, 3 * out.count(r) - have)
+    return out
 
 
 def populate_pack(world, centre, roster, weights, lvl, taken, depth=1):
@@ -185,7 +221,7 @@ def populate_pack(world, centre, roster, weights, lvl, taken, depth=1):
     pool = [r for r in roster if r in templates]
     wts = [weights[roster.index(r)] for r in pool]
     mid = rng.choices(pool, weights=wts)[0]
-    members = pack_plan(templates, mid, rng, depth)
+    members = guard_shamans(pack_plan(templates, mid, rng, depth), templates, world.content)
     roll = rng.random()
     spots = _scatter(world, centre, len(members), taken, radius=4 + len(members) // 2)
     units = []

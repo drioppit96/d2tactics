@@ -1461,7 +1461,52 @@ class Game:
                 from game import tactics
                 pt = tactics.party(w)
                 if arg is not None and 0 <= arg < len(pt):
-                    self.switch_hero(pt[arg])
+                    if button == 3 and pt[arg] is not w.player:
+                        # right click: that hero's inventory on the left, yours on the right - trade and equip
+                        h.mate = None if getattr(h, "mate", None) is pt[arg] else pt[arg]
+                        if h.mate is not None:
+                            h.show_inv = True
+                            h.show_char = h.show_quests = False
+                            for k in ("show_cube", "show_merc", "show_waypoints", "show_loot", "show_skills"):
+                                if hasattr(h, k):
+                                    setattr(h, k, False)
+                            h.store = None
+                            h.mate_page = 0
+                    else:
+                        self.switch_hero(pt[arg])
+            elif action == "mate_close":
+                h.mate = None
+            elif action == "mate_page":
+                h.mate_page = arg or 0
+            elif action in ("mate_slot", "mate_grid"):
+                from game import tactics
+                mate = getattr(h, "mate", None)
+                if mate is None:
+                    return
+                with tactics.acting_as(w, mate):
+                    if action == "mate_slot":
+                        if w.held is not None:
+                            if w.held.mod_list is not None and not w.held.requirements_ok(mate):
+                                w.log("%s can't use that yet (requirements)." % mate.name, (230, 80, 70))
+                            else:
+                                w.equip_held(arg)
+                        elif button == 3:
+                            w.unequip(arg)
+                        else:
+                            w.pick_from_slot(arg)
+                    else:
+                        cell = h.grid_cell_at(pos, 0)
+                        if cell is not None:
+                            target = mate.inv_at(*cell)
+                            if w.held is not None:
+                                gx, gy = h._held_anchor(cell, w.held, 0, getattr(h, "mate_page", 0))
+                                w.place_held(gx, gy)
+                            elif target is not None:
+                                if button == 3:
+                                    w.equip(target)          # right click: they put it on
+                                else:
+                                    w.pick_from_inventory(target)
+                    mate.recalc()
             elif action == "menu":
                 h.show_inv = h.show_char = False
                 if hasattr(h, "show_skills"):

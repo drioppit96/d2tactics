@@ -236,15 +236,16 @@ class D2Hud:
     def over_ui(self, pos):
         return self.hit(pos) is not None
 
-    def grid_cell_at(self, pos):
-        """Backpack cell under the mouse, or None."""
-        if not self.show_inv:
+    def grid_cell_at(self, pos, ox=None):
+        """Backpack cell under the mouse, or None (ox: a party member's panel on the left)."""
+        if ox is None and not self.show_inv:
             return None
         lx, ly = self.logical(pos)
-        ox = self.lw - 320
+        mate = ox is not None
+        ox = (self.lw - 320) if ox is None else ox
         cx, cy = int((lx - ox - GRID_X) // CELL), int((ly - GRID_Y) // CELL)
         if 0 <= cx < 10 and 0 <= cy < 4:
-            return cx, cy + 4 * self._inv_page()
+            return cx, cy + 4 * (getattr(self, "mate_page", 0) if mate else self._inv_page())
         return None
 
     def _inv_page(self):
@@ -284,6 +285,12 @@ class D2Hud:
             self._draw_inventory(surf, world)
         elif self.show_skills:
             self._draw_skill_tree(surf, p)
+        mate = getattr(self, "mate", None)
+        if mate is not None:
+            if mate is world.player or mate not in (getattr(world, "party", None) or []) or self._other_left_panel():
+                self.mate = None
+            else:
+                self._draw_inventory(surf, world, hero=mate, ox=0, pre="mate_")
         if getattr(self, "loot_list", None) is not None:
             self._draw_loot(surf, world)
         self._draw_control_panel(surf, world, scene)
@@ -471,7 +478,8 @@ class D2Hud:
                     or getattr(self, "show_waypoints", False))
 
     def _left_panel_open(self):
-        return self._other_left_panel() or (getattr(self, "loot_list", None) is not None)
+        return self._other_left_panel() or (getattr(self, "loot_list", None) is not None) or \
+            getattr(self, "mate", None) is not None
 
     def _loot_rect(self):
         """The ground loot window is a left-side panel now (covered by _left_panel_open)."""
@@ -1710,13 +1718,17 @@ class D2Hud:
         else:
             self.assets.draw_item_icon(surf, item, self.R(x, y, w, h))
 
-    def _draw_inventory(self, surf, world):
-        p = world.player
-        ox = self.lw - 320
+    def _draw_inventory(self, surf, world, hero=None, ox=None, pre=""):
+        """The inventory panel: yours on the right, or (tactics) another hero's on the left -
+        regions then start with 'mate_' and only the slots and the backpack work."""
+        p = hero if hero is not None else world.player
+        ox = (self.lw - 320) if ox is None else ox
+        mate = bool(pre)
         self._panel_bg(surf, ox, self.frames["invchar6"], 4)
         mx, my = self.mouse
         held = getattr(world, "held", None)
-        self._weapon_tabs(surf, p, ox)
+        if not mate:
+            self._weapon_tabs(surf, p, ox)
         for slot, (x, y, w, h) in INV_SLOTS.items():
             it = p.equipment.get(slot)
             box = pygame.Rect(int(ox + x), int(y), w, h)
@@ -1737,9 +1749,9 @@ class D2Hud:
                     self._draw_sockets(surf, it, ox + x, y, w, h)
                 elif hot and held is not None and getattr(held, "gem", None) and getattr(it, "sockets", 0):
                     self._draw_sockets(surf, it, ox + x, y, w, h)
-            self.region(ox + x, y, w, h, "slot", slot)
+            self.region(ox + x, y, w, h, pre + "slot", slot)
         # backpack grid (one page of 4 rows; two pages with the Bigger Inventory option)
-        page = self._inv_page()
+        page = self._inv_page() if not mate else getattr(self, "mate_page", 0)
         for it in p.inventory:
             if getattr(it, "inv_pos", None) is None:
                 continue
@@ -1773,16 +1785,28 @@ class D2Hud:
                         lines.append(("Sell value: %d (Ctrl + right click, or drag it to the shop)" % sell_price(it), GOLD))
                 self.hover_lines = lines + self._socket_cost_lines(it)
         if held is not None:
-            cell = self.grid_cell_at((mx * self.s, my * self.s))
+            cell = self.grid_cell_at((mx * self.s, my * self.s), ox if mate else None)
             if cell:
                 hw, hh = p._size(held)
-                gx, gy = self._held_anchor(cell, held)
+                gx, gy = self._held_anchor(cell, held, ox if mate else None, page)
                 ok, over = p.inv_fits(held, gx, gy)
                 good = ok and len(over) <= 1
                 tint = pygame.Surface((int((hw * CELL) * self.s), int((hh * CELL) * self.s)), pygame.SRCALPHA)
                 tint.fill((0, 120, 0, 70) if good else (140, 0, 0, 70))
                 surf.blit(tint, self.P(ox + GRID_X + gx * CELL, GRID_Y + (gy - page * 4) * CELL))
-        self.region(ox + GRID_X, GRID_Y, 10 * CELL, 4 * CELL, "grid")
+        self.region(ox + GRID_X, GRID_Y, 10 * CELL, 4 * CELL, pre + "grid")
+        if mate:
+            if p.INV_H > 4:
+                for k in range(2):
+                    r = (ox + GRID_X + k * 30, GRID_Y - 18, 28, 16)
+                    pygame.draw.rect(surf, GOLD if k == page else (90, 80, 60), self.R(*r), 1)
+                    self.text(surf, self.f10, "I" if k == 0 else "II", WHITE, r[0], r[1] + 3, "center", 28)
+                    self.region(*r, "mate_page", k)
+            self.text(surf, self.f16, str(p.gold), WHITE, ox + GOLD_BOX[0] + 4, GOLD_BOX[1] + 2)
+            self.text(surf, self.f16, "%s (level %d)" % (p.name, p.level), GOLD,
+                      ox + GOLD_BOX[0] + GOLD_BOX[2] + 6, GOLD_BOX[1] + 2)
+            self._close_button(surf, INV_CLOSE, ox, "mate_close")
+            return
         if p.INV_H > 4:
             self._inv_page_tabs(surf, ox, page)
         self.text(surf, self.f16, str(p.gold), WHITE, ox + GOLD_BOX[0] + 4, GOLD_BOX[1] + 2)
@@ -1795,17 +1819,17 @@ class D2Hud:
                                     ("Right click: put 1000 gold in the stash", WHITE)]
         self._close_button(surf, INV_CLOSE, ox, "inv")
 
-    def _held_anchor(self, cell, item):
+    def _held_anchor(self, cell, item, ox=None, page=None):
         """Top-left grid cell for the held item so that it is centred on the mouse (D2 behaviour)."""
         p = self.world.player
         w, h = p._size(item)
         mx, my = self.mouse
-        ox = self.lw - 320
+        ox = (self.lw - 320) if ox is None else ox
         fx = (mx - ox - GRID_X) / CELL - w / 2.0
         fy = (my - GRID_Y) / CELL - h / 2.0
         gx = int(round(fx))
         gy = int(round(fy))
-        page = self._inv_page()
+        page = self._inv_page() if page is None else page
         return max(0, min(10 - w, gx)), max(0, min(4 - h, gy)) + 4 * page
 
     # the I / II tabs above the weapon and shield slots (D2's art shows set I as the active one)
@@ -2049,10 +2073,11 @@ class D2Hud:
     def _draw_loot(self, surf, world):
         """V: every item lying on the ground in this area, laid out like a chest - click one to
         take it (outside combat from anywhere; in combat only what lies next to you, 1 AP)."""
-        if self._other_left_panel():
+        if self._other_left_panel() or getattr(self, "mate", None) is not None:
             return
         p = world.player
         self._stash_bg(surf)
+        self.region(0, 0, 320, self.STASH_H, "loot_panel")
         name = getattr(world, "level_name", "") or "Ground"
         try:
             lid = world.area_at(p.pos) if getattr(world, "areas", None) else None
@@ -2110,7 +2135,6 @@ class D2Hud:
         hint = "Click: take   (V closes)" if not combat else "Combat: only next to you, 1 AP"
         self.text(surf, self.f10, hint, GREY, 150, 463, "center", 120)
         self._close_button(surf, self.STASH_CLOSE, 0, "loot_close")
-        self.region(0, 0, 320, self.STASH_H, "loot_panel")
 
     def _draw_loot_small(self, surf, world):
         """(the old 'Items on screen' list)"""

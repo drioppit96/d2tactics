@@ -552,7 +552,14 @@ def _spawn_preset(world, name, cell, owner, taken, info):
         base = "fallenshaman" if name.endswith("shaman") else "fallen"
         mid = next((m for m in roster if m.startswith(base) and (base != "fallen" or not m.startswith("fallenshaman"))),
                    base + "1")
-        _spawn(world, mid, _free_near(world.grid, cell, 8), lvl, taken)
+        u = _spawn(world, mid, _free_near(world.grid, cell, 8), lvl, taken)
+        if u is not None and base == "fallenshaman":
+            # a Fallen Shaman is never alone: at least 3 of its Fallen guard it
+            t = _template(world, mid, lvl)
+            mn = (t or {}).get("minion") or next((m for m in roster if m.startswith("fallen")
+                                                  and not m.startswith("fallenshaman")), "fallen1")
+            for c2 in _scatter(world, u.pos, 3, taken, radius=3):
+                _spawn(world, mn, c2, lvl, taken)
         return
     if name == "place_bloodraven":
         m = _spawn(world, "bloodraven", _free_near(world.grid, cell, 8), lvl + 2, taken, unique=True, name="Blood Raven")
@@ -673,8 +680,11 @@ def _pack(world, centre, mid, lvl, taken, champion=False, unique=False):
     members = [mid] * n
     if t["minion"] and t["minion"] in c.monstats:
         plo, phi = t["party"] if t["party"][1] else (2, 4)
-        members += [t["minion"]] * rng.randint(max(1, plo), max(1, phi))
-    members = members[:7]
+        k = rng.randint(max(1, plo), max(1, phi))
+        if t.get("ai") == "shaman" or t.get("d2ai") in ("FallenShaman", "FetishShaman"):
+            k = max(k, 3 * n)               # a shaman is always guarded by at least 3 of its minions
+        members += [t["minion"]] * k
+    members = members[:7 if not (t.get("ai") == "shaman") else 12]
     from . import monmods
     if champion:                 # D2: a champion pack is 2-4 champions of one kind
         members = [mid] * rng.randint(2, 4)
@@ -776,7 +786,7 @@ def _populate(world, lid, rect, taken, safe, info):
     cap = 42 if outdoor else 40
     from . import tactics
     if tactics.ACTIVE:
-        per_pack, cap = (1700, 14) if outdoor else (450, 18)   # fewer, harder fights on the smaller maps
+        per_pack, cap = (1100, 20) if outdoor else (360, 24)   # dense, hard fights on the smaller maps
     if lid in DENSE:                    # this game's packed compounds: the armory, the scriptorium
         per_pack, cap = DENSE[lid]
     n_packs = min(int(walk / per_pack), cap)
@@ -904,7 +914,33 @@ def make_world(kit, info, content, level_key, seed=None, player=None, char_class
     w = World(built=(b, grid, rng), content=content, level_key=level_key, info=info, player=player,
               char_class=char_class, char_name=char_name)
     settle_big_monsters(w)
+    guard_shamans(w)
     return w
+
+
+def guard_shamans(world):
+    """No shaman stands alone: every Fallen / Fetish Shaman gets at least 3 of its minions (the
+    Fallen it raises) around it - topped up wherever the map's presets and packs left it short."""
+    c = world.content
+    if c is None:
+        return
+    taken = {m.pos for m in world.monsters}
+    shamans = [m for m in world.monsters if m.alive and not m.ally and m.ai == "shaman"]
+    for s in shamans:
+        t = _template(world, s.d2id, s.level) if getattr(s, "d2id", None) else None
+        mn = (t or {}).get("minion") or ""
+        if not mn or mn not in c.monstats:
+            continue
+        mt = _template(world, mn, s.level)
+        mname = (mt or {}).get("name")
+        near = sum(1 for o in world.monsters if o.alive and o is not s and o.ai != "shaman"
+                   and (o.name == mname or o.ai == "fallen") and chebyshev(o.pos, s.pos) <= 6)
+        if near >= 3:
+            continue
+        for cell in _scatter(world, s.pos, 3 - near, taken, radius=3):
+            u = _spawn(world, mn, cell, s.level, taken)
+            if u is not None and getattr(s, "minion_of", None) is not None:
+                u.minion_of = s.minion_of
 
 
 def settle_big_monsters(w):
