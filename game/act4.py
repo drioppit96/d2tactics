@@ -128,6 +128,9 @@ def block_lava(tm, grid):
                     solid = hits >= 3
                 if not solid:
                     grid.cells[y][x] = WALL
+                    if not hasattr(grid, "lava"):
+                        grid.lava = set()
+                    grid.lava.add((x, y))          # (tactics: knock a monster in here and it burns)
 
 
 def build_lava(kit, seed=None, content=None):

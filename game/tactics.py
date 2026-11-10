@@ -207,3 +207,110 @@ def populate_pack(world, centre, roster, weights, lvl, taken, depth=1):
     elif roll < 0.42:
         kinds = [monmods.CHAMPION, monmods.BERSERK, monmods.FANATIC, monmods.GHOSTLY]
         monmods.make_champion(world, rng.choice(units), rng.choice(kinds))
+
+
+# ------------------------------------------------------------------ tactics rules
+YELLOW = (240, 220, 90)
+
+
+def _hero(u):
+    return getattr(u, "is_player", False)
+
+
+def combo_bonus(world, attacker, target, kind):
+    """Combo states (tactics mode): % extra damage for this hit, and what it was.
+    kind: "phys" for weapon hits, else the element."""
+    if not ACTIVE or target is None or not target.alive:
+        return 0, None
+    eff = getattr(target, "effects", None) or {}
+    pct, why = 0, None
+    if eff.get("freeze") and kind in ("phys", "fire"):
+        pct, why = 50, "Shatter!"                        # a frozen target breaks
+        eff.pop("freeze", None)
+    elif eff.get("poison") and kind == "fire":
+        per, turns = eff["poison"]
+        eff.pop("poison", None)                          # the poison flares up all at once
+        world._damage(target, per * turns, attacker)
+        why = "Ignite!"
+    if _hero(attacker) and not _hero(target) and kind == "phys" and len(getattr(world, "party", None) or []) > 1:
+        # flanking: two or more heroes next to the target
+        near = [h for h in party(world) if h.alive and max(abs(h.x - target.x), abs(h.y - target.y)) <= 1]
+        if len(near) >= 2:
+            pct += 20                                     # (flanked: quietly, every hit)
+    return pct, why
+
+
+def stunned_discount(target):
+    """Attacks on a stunned / knocked-down target cost 1 AP less and always hit (tactics)."""
+    eff = getattr(target, "effects", None) or {}
+    return ACTIVE and bool(eff.get("stun") or eff.get("freeze"))
+
+
+def knock_collide(world, src_unit, target, dest):
+    """A knockback the ground doesn't allow (tactics): slammed into a wall or another body: damage
+    and a stun; pushed into lava: small monsters burn up; into water: stuck for a turn."""
+    if not ACTIVE or not target.alive:
+        return
+    g = world.grid
+    lava = getattr(g, "lava", None)
+    if lava and dest in lava and not getattr(target, "unique", False) and not getattr(target, "boss", None) \
+            and not _hero(target):
+        world.log("%s is pushed into the lava!" % target.name, YELLOW)
+        world._damage(target, target.hp + 1, src_unit)
+        return
+    if dest in getattr(g, "water", ()):
+        target.effects["stun"] = max(target.effects.get("stun", 0), 1)
+        world.log("%s stumbles into the water." % target.name, YELLOW)
+        return
+    dmg = max(1, target.max_hp // 10)
+    world._damage(target, dmg, src_unit)
+    if target.alive:
+        target.effects["stun"] = max(target.effects.get("stun", 0), 1)
+    world.log("%s is slammed into %s! (stunned)" % (target.name, "a wall" if not g.walkable(*dest) else "another"),
+              YELLOW)
+
+
+def opportunity(world, mover, frm, to):
+    """Attacks of opportunity (tactics): stepping away from an enemy next to you gives it a free
+    blow (once per round each). Melee units only; stunned, frozen or chilled ones can't."""
+    if not ACTIVE or world.mode != "combat" or not mover.alive:
+        return
+    if _hero(mover) or getattr(mover, "ally", False):
+        foes = [m for m in world.living_monsters() if m.aware and m.ai != "npc"]
+    else:
+        foes = [h for h in party(world) if h.alive] + [a for a in world.allies() if not _hero(a)
+                                                     and a.ai not in ("turret", "wall")]
+    for f in foes:
+        if f is mover or not f.alive:
+            continue
+        if max(abs(f.x - frm[0]), abs(f.y - frm[1])) != 1 or max(abs(f.x - to[0]), abs(f.y - to[1])) <= 1:
+            continue
+        if getattr(f, "range", 1) > 1 and not _hero(f):
+            continue
+        eff = getattr(f, "effects", None) or {}
+        if eff.get("stun") or eff.get("freeze") or eff.get("chill") or getattr(f, "stationary", False):
+            continue
+        if _hero(f) and getattr(f, "range", 1) > 1:
+            continue                              # (bows, javelins thrown and spells don't)
+        if getattr(f, "_aoo_round", -1) == world.round:
+            continue
+        f._aoo_round = world.round
+        mover_was = (mover.x, mover.y)
+        mover.x, mover.y = frm                    # the blow lands as you leave
+        world.log("%s strikes %s as they leave!" % (f.name, mover.name), YELLOW)
+        try:
+            world._resolve_attack(f, mover)
+        finally:
+            if mover.alive:
+                mover.x, mover.y = mover_was
+        if not mover.alive:
+            return
+
+
+def threatened(world, cell, mover):
+    """Cells next to an enemy who could hit you as you leave (for the move preview)."""
+    return any(m.aware and getattr(m, "range", 1) <= 1 and max(abs(m.x - cell[0]), abs(m.y - cell[1])) <= 1
+               for m in world.living_monsters())
+
+# melee skills that knock the target back a tile in tactics mode (D2's own Bash and Smite already do)
+PUSHERS = {"Bash", "Smite", "Charge", "Leap Attack", "Concentrate", "Maul", "Dragon Tail"}

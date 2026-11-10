@@ -616,9 +616,17 @@ class World(SkillCaster, ItemActions):
                 return False
         walked = []
         p = self.player
+        from . import tactics as _tac
         for step in path:
             p.face(*step)
             prev = p.pos
+            if _tac.ACTIVE and self.mode == "combat":
+                if walked:
+                    self.emit("move", p, walked)
+                    walked = []
+                _tac.opportunity(self, p, prev, step)
+                if not p.alive or p is not self.player:
+                    return True
             p.x, p.y = step
             walked.append(step)
             self.blaze_step(prev)
@@ -848,6 +856,9 @@ class World(SkillCaster, ItemActions):
             self.log("Not enough mana.", GREY)
             return False
         cost = ap_cost if ap_cost is not None else self.attack_cost(skill)
+        from . import tactics
+        if tactics.stunned_discount(target):
+            cost = max(1, cost - 1)          # (tactics: a stunned / frozen target is easy to hit)
         throw = skill in ("throw", "Double Throw") and getattr(p, "throwing", False)
         shoot = (skill == "attack" and getattr(p, "ranged", False)) or throw
         reach = p.throw_range if throw else p.range
@@ -1716,6 +1727,15 @@ class World(SkillCaster, ItemActions):
             if skill == "bash":                       # monsters / placeholder Bash
                 m.update(dmg=50, ar=20, knock=True)
             return m
+        from . import tactics
+        if tactics.ACTIVE and skill in tactics.PUSHERS:
+            out = self._skill_mods_base(attacker, skill)
+            out["knock"] = True                  # (tactics: these skills shove the target a tile back)
+            return out
+        return self._skill_mods_base(attacker, skill)
+
+    def _skill_mods_base(self, attacker, skill):
+        m = {"dmg": 0, "ar": 0, "knock": False, "stun": 0, "magic": False, "elem": None, "always": False, "leech": 0}
         sk = attacker.skills.tree.get(skill)
         if sk is not None and sk.data is not None and skill not in GENERIC_EXCLUDED:
             return self.melee_mods(attacker, skill)
@@ -1758,7 +1778,9 @@ class World(SkillCaster, ItemActions):
             self.emit("attack", attacker, target.pos, anim)
         if getattr(target, "invulnerable", False):
             return False
-        if not mods.get("always") and self.rng.random() > hit_chance(attacker, target, mods["ar"]):
+        from . import tactics as _tac
+        if not mods.get("always") and not _tac.stunned_discount(target) and \
+                self.rng.random() > hit_chance(attacker, target, mods["ar"]):
             self.emit("miss", target)
             return False
         if target.is_player:
@@ -1779,6 +1801,15 @@ class World(SkillCaster, ItemActions):
                 hand = attacker.dmg_off
         dmg = self.rng.randint(*hand) if hand[1] > 0 else 0
         dmg = max(1, int(dmg * (100 + mods["dmg"]) / 100.0)) if attacker.dmg[1] > 0 else 0
+        from . import tactics
+        if tactics.ACTIVE:
+            cb, why = tactics.combo_bonus(self, attacker, target, "phys")
+            if cb:
+                dmg = dmg * (100 + cb) // 100
+            if why:
+                self.log(why, (240, 220, 90))
+            if not target.alive:
+                return True
         weapon_pois = None
         aeff = getattr(attacker, "effects", {})
         if aeff.get("bc"):
@@ -1893,6 +1924,8 @@ class World(SkillCaster, ItemActions):
             dy = (target.y > src_unit.y) - (target.y < src_unit.y)
             dest = (target.x + dx, target.y + dy)
             if not (self.grid.walkable(*dest) and dest not in self.occupied()):
+                from . import tactics
+                tactics.knock_collide(self, src_unit, target, dest)
                 return
             src = target.pos
             target.x, target.y = dest
@@ -2279,6 +2312,14 @@ class World(SkillCaster, ItemActions):
 
     def _path_to_adjacent(self, m, target):
         blocked = self.occupied(m, near=m.pos)
+        from . import tactics
+        if tactics.ACTIVE and getattr(self, "hazards", None) and not getattr(m, "ally", False):
+            # (tactics: monsters walk around burning / frozen / poisoned ground when they can)
+            fire = set().union(*[h["cells"] for h in self.hazards]) - {m.pos}
+            if fire:
+                safe = self.grid.find_path(m.pos, target, blocked=blocked | fire, allow_goal_blocked=True, limit=2500)
+                if safe and len(safe) > 1:
+                    return safe[:-1]
         tu = self.unit_at(target)
         tr = getattr(tu, "radius", 0) if tu is not None else 0
         if getattr(m, "radius", 0) or tr:
@@ -2320,8 +2361,18 @@ class World(SkillCaster, ItemActions):
             m.ap = 0                       # it can't move
             return
         walked = []
+        from . import tactics as _tac
         for c in steps:
             m.face(*c)
+            if _tac.ACTIVE and self.mode == "combat" and not getattr(m, "ally", False):
+                prev = m.pos
+                if any(max(abs(h.x - prev[0]), abs(h.y - prev[1])) == 1 for h in _tac.living(self)):
+                    if walked:
+                        self.emit("move", m, walked)
+                        walked = []
+                    _tac.opportunity(self, m, prev, c)
+                    if not m.alive:
+                        return
             m.x, m.y = c
             m.ap -= 1
             walked.append(c)

@@ -202,6 +202,15 @@ class SkillCaster:
         dmg = self.rng.randint(int(lo), int(max(lo, hi)))
         if src is self.player:
             dmg = dmg * (100 + self._mastery(et)) // 100
+        from . import tactics
+        if tactics.ACTIVE and src is not None and getattr(src, "is_player", False):
+            cb, why = tactics.combo_bonus(self, src, target, et)
+            if cb:
+                dmg = dmg * (100 + cb) // 100
+            if why and show:
+                self.log(why, (240, 220, 90))
+            if not target.alive:
+                return 0
         res = self._resist(target, et)
         if res >= 100:
             if show:
@@ -811,6 +820,14 @@ class SkillCaster:
         self._wake(foes)
         for m in foes:
             self.skill_damage(env, m)
+        from . import tactics
+        if tactics.ACTIVE:
+            if s.key == "Shock Wave":
+                for m in foes:
+                    if m.alive:
+                        self._knockback(p, m)       # (tactics: the shock wave throws them back)
+            if s.key == "Poison Nova":
+                self._add_hazard(p.pos, r, env, 2, "poisonnova")   # (tactics: a poison cloud lingers)
         if not foes:
             self.log("%s hits nothing." % s.title, GREY)
         return True
@@ -878,6 +895,9 @@ class SkillCaster:
         return self.GROUND_MISSILES.get(s.key) or self.vis_missile(s, area=True)
 
     def _add_hazard(self, centre, r, env, turns, vis=None):
+        from . import tactics
+        if tactics.ACTIVE:
+            turns += 1                         # (tactics: ground effects last a turn longer)
         cells = {(centre[0] + dx, centre[1] + dy) for dx in range(-r, r + 1) for dy in range(-r, r + 1)}
         cells = {c for c in cells if self.grid.walkable(*c)}
         self.hazards.append({"cells": cells, "env": env, "turns": turns, "vis": vis,

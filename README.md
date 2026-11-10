@@ -244,3 +244,27 @@ and when you pick a hero who has unlocked more than Normal you choose the diffic
 Each difficulty has its own quests, waypoints and progress (a new difficulty starts in the Rogue
 Encampment); your character, items and skills carry over. Monsters use D2's Nightmare / Hell stats and
 levels, and your resistances get D2's penalty: -40% in Nightmare, -100% in Hell.
+
+## Tactics mode
+
+Choose **MODE: TACTICS** on the character select screen, click up to three heroes (the numbers are
+the party order) and press OK. Each hero keeps their own save; tactics mode keeps its own quests,
+waypoints, act and difficulty, apart from the normal game.
+
+- **Party:** the portraits top left show your heroes - click one to lead with it, the others follow.
+  In combat each hero has their own AP; End Turn passes to the next hero, the monsters move after
+  the last one. A fallen hero gets up with 1/4 life when the fight is over; if all fall, you die.
+- **World:** smaller Act 1 and Act 2 maps; fewer, harder fights: packs built from the area's own
+  monsters by role (front line, ranged, support), often led by a champion or a unique with its aura.
+  Monsters have 4-player life (x2.5); every hero gets x3 experience per kill. No hirelings.
+- **Rules:**
+  - *Attacks of opportunity:* stepping away from an enemy next to you gives it a free blow (once per
+    round; ranged, stunned, frozen and chilled units don't). Your melee heroes do the same to monsters.
+  - *Knockback:* Bash, Smite, Charge, Leap Attack, Concentrate, Maul, Dragon Tail, Shock Wave,
+    Telekinesis push the target back; into a wall or another body: damage and a stun; into lava:
+    small monsters burn up; into water: stuck for a turn.
+  - *Ground effects:* Fire Wall, Blizzard, Meteor, Poison Nova and the like last a turn longer, and
+    monsters walk around them when they can.
+  - *Combos:* a frozen target hit by a weapon or fire shatters (+50%); fire on a poisoned target
+    ignites the rest of the poison at once; two heroes next to a target flank it (+20% melee);
+    stunned or frozen targets are always hit and cost 1 AP less to attack.
