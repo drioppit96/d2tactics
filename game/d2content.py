@@ -908,9 +908,17 @@ class D2Content:
         return it
 
     def make_potion(self, mlvl, rng):
-        code = "hp1" if mlvl < 6 else "hp2"
-        if rng.random() < 0.3:
-            code = "mp1" if mlvl < 8 else "mp2"
+        """D2's potion drops: the tier follows the monster's level (Minor in the Blood Moor, Super in
+        Hell), mostly healing, some mana, now and then a rejuvenation."""
+        tier = 1 if mlvl < 6 else 2 if mlvl < 14 else 3 if mlvl < 24 else 4 if mlvl < 40 else 5
+        tier = max(1, min(5, tier - (rng.random() < 0.3)))        # (sometimes one tier lower)
+        r = rng.random()
+        if r < 0.06:
+            code = "rvl" if mlvl >= 40 and rng.random() < 0.25 else "rvs"
+        elif r < 0.40:
+            code = "mp%d" % tier
+        else:
+            code = "hp%d" % tier
         return self.make_item(self.base_by_code[code], mlvl, rng) if code in self.base_by_code else None
 
     # ------------------------------------------------------------ D2 treasure classes
@@ -998,8 +1006,8 @@ class D2Content:
                 b = rng.choice(cands)
                 return [self.make_item(b, mlvl, rng, self.roll_quality(b, mlvl, rng, mf, boss_q))]
         b = self.base_by_code.get(code)
-        if b is None or "potion" in b:
-            return []                          # potions don't drop: only vendors sell them
+        if b is None:
+            return []
         q = self.roll_quality(b, mlvl, rng, mf, boss_q) if b.get("slot") and b["kind"] in ("weapon", "armor") else "normal"
         it = self.make_item(b, mlvl, rng, q)
         return [it] if it is not None else []
@@ -1012,10 +1020,12 @@ class D2Content:
             r = rng.random()
             if not is_boss and r < 0.62:
                 continue
-            if r < 0.80 and not is_boss:
+            if r < 0.76 and not is_boss:
                 out.append(self.make_gold(mlvl, rng, gf))
             elif r < 0.875 and not is_boss:
-                out.append(self.make_gold(mlvl, rng, gf))    # (potions only come from vendors now)
+                pot = self.make_potion(mlvl, rng)              # D2's "Junk": potions
+                if pot:
+                    out.append(pot)
             elif r < 0.935 and not is_boss:
                 # D2's "Good" drop (gems, runes, jewelry). D2 rolls it on ~1.3% of kills, but you kill
                 # far fewer monsters here than in D2, so it comes about four times as often
