@@ -170,6 +170,9 @@ class D2Content:
             "invw": _int(r.get("invwidth"), 1), "invh": _int(r.get("invheight"), 1),
             "rarity": max(1, _int(r.get("rarity"), 1)), "class": cls,
             "magic_only": bool(self.types.get(tcode, {}).get("magic") == "1"),
+            "auto_prefix": r.get("auto prefix", "") or "",
+            "staffmods": next((self.types[c].get("staffmods") for c in anc if self.types.get(c, {}).get("staffmods")),
+                              "ass" if "h2h" in anc else ""),        # (katars: the assassin's skills)
             "normal_only": bool(self.types.get(tcode, {}).get("normal") == "1"),
         }
         b["cost"] = _int(r.get("cost"))
@@ -329,6 +332,45 @@ class D2Content:
                 return a
         return cands[-1]
 
+    # ------------------------------------------------------------ class items
+    def _class_skills(self, cls):
+        cache = self.__dict__.setdefault("_cls_skills", {})
+        if cls not in cache:
+            cache[cls] = [(r.get("skill"), _int(r.get("reqlevel"), 1)) for r in read_table(self.src, "Skills")
+                          if r.get("charclass") == cls and r.get("skilldesc") and r.get("skill")]
+        return cache[cls]
+
+    def _automagic(self):
+        if not hasattr(self, "_auto_rows"):
+            try:
+                self._auto_rows = [dict(self._affix_row(r), grp=r.get("group", ""))
+                                   for r in read_table(self.src, "AutoMagic")
+                                   if r.get("spawnable") == "1" and r.get("name")]
+            except Exception:
+                self._auto_rows = []
+        return self._auto_rows
+
+    def _class_item_mods(self, base, ilvl, rng, quality):
+        """D2's class items: wands, staves, orbs, voodoo heads, scepters, barbarian helms, druid pelts
+        and katars get up to three +1-3 bonuses to their class's skills (ItemTypes StaffMods) on normal
+        and magic items; Amazon bows / javelins / spears, Paladin shields, Necromancer heads and orbs
+        also get their AutoMagic mod (+skill tab, life...) on every quality."""
+        sm = base.get("staffmods")
+        if sm and quality in ("normal", "magic", "superior", "low"):
+            pool = [(n, lv) for n, lv in self._class_skills(sm) if lv <= max(1, ilvl)]
+            k = rng.choices((0, 1, 2, 3), weights=(25, 40, 25, 10))[0]
+            for name, lv in rng.sample(pool, min(k, len(pool))):
+                v = 1 + (rng.random() < min(0.6, ilvl / 60.0)) + (rng.random() < min(0.4, ilvl / 120.0))
+                self._late.append(("skill", name, v, v))
+        grp = base.get("auto_prefix")
+        if grp and quality not in ("unique", "set"):
+            rows = [a for a in self._automagic() if a["grp"] == grp and a["level"] <= ilvl
+                    and (not a["maxlevel"] or ilvl <= a["maxlevel"])]
+            if rows:
+                a = rng.choices(rows, weights=[max(1, a["freq"]) for a in rows])[0]
+                for code, param, lo, hi in a["mods"]:
+                    self._late.append((code, param, lo, hi))
+
     def set_difficulty(self, difficulty):
         """Normal / Nightmare / Hell: monster stats, levels, treasure classes all read the matching
         columns (D2's "(N)" / "(H)" ones)."""
@@ -408,6 +450,8 @@ class D2Content:
         affixes = []
         if base["magic_only"] and quality == "normal" and not plain:
             quality = "magic"
+        if not plain and base.get("kind") in ("weapon", "armor"):
+            self._class_item_mods(base, ilvl, rng, quality)
         if base["normal_only"]:
             quality = "normal"
         name = base["name"]

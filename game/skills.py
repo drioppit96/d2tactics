@@ -567,6 +567,10 @@ class SkillBook:
             return 1
         if name == "Leap":
             return 3                          # (the barbarian's leap: 3 AP, twice D2's distance)
+        if name == "Poison Dagger":
+            return 2
+        if (k == "attack" and name != "Taunt") or name == "Whirlwind" or s.weapon and k in ("melee", "missile", "charge"):
+            return weapon_ap                  # (attack skills: what a normal attack costs with the weapon)
         if k in self.SUMMON_KINDS or (s.extra or {}).get("trap") or "Sentry" in name or name.startswith("Wake of"):
             return 2
         lv = int(s.reqlevel or 1)               # the row, from the level it needs (1/6/12/18/24/30)
