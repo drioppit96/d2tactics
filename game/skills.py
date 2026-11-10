@@ -573,6 +573,8 @@ class SkillBook:
 
     # ------------------------------------------------------------ text
     def describe(self, name):
+        if name not in self.tree:
+            return []                        # (attack / throw: no skill page)
         lv = max(1, self.level(name))
         s = self.tree[name]
         if s.data is None:

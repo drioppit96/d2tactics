@@ -890,6 +890,9 @@ class D2Hud:
             if True:
                 if name in (None, "attack"):
                     self.hover_lines = [("%s click: Attack" % side.title(), WHITE), ("Click here to choose a skill", GREY)]
+                elif name not in p.skills.tree:
+                    self.hover_lines = [("%s click: %s" % (side.title(), "Throw" if name == "throw" else name), WHITE),
+                                        ("Click here to choose a skill", GREY)]
                 else:
                     ap, mana = self.world.skill_cost(name)
                     sk = p.skills.tree.get(name)
