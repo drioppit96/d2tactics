@@ -221,12 +221,14 @@ tools/extract_act.py      one act's layouts (DS1), tile libraries (DT1), palette
 
 Healing and mana potions restore part of your maximum life / mana at once, then more every turn for
 5 turns: Minor 60% + 2%/turn, Light 70% + 3%, standard 80% + 4%, Greater 90% + 5%, Super 100% + 6%.
-Full Rejuvenation: 100% life and mana + 6%/turn (Siege on Harrogath in Hell gives 4 - the only way to
-get them). You drink only from the belt, and in combat the belt is locked (no refilling it). The belt
-has 4 slots (keys 1-4) and 2 rows of potions; killing Shenk adds a 3rd row in Normal and a 4th in
-Nightmare. You drink the bottom potion of a slot; hover over the belt to open the rows above, like D2.
+Full Rejuvenation: 100% life and mana + 6%/turn. You drink only from the belt, and in combat the belt
+is locked (no refilling it). The belt has 4 slots (keys 1-4); its rows come from the belt you wear,
+like D2: none 1, Sash / Light Belt 2, Belt / Heavy Belt 3, Plated Belt 4 (and their exceptional and
+elite versions). You drink the bottom potion of a slot; hover over the belt to open the rows above.
 Healing and mana potions are permanent: drinking one in combat puts it on an 8-turn cooldown
 instead of using it up (out of combat they are always ready). Rejuvenation potions are used up.
+Quality of Life > Used-Up Potions switches to D2's potions (every potion used up, no cooldown).
+Siege on Harrogath (Shenk): Larzuk sockets an item and gives you a skill point, in each difficulty.
 
 Potions don't drop from monsters or chests: the potion sellers stock them, the two best tiers for
 their act and difficulty (Normal: Minor/Light in Acts 1-2, Light/Healing in Acts 3-5; Nightmare:

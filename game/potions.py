@@ -152,10 +152,21 @@ def belt_slots(p):
     return MAX_SLOTS
 
 
+# D2's Belts.txt: the rows of potions each belt holds (no belt: 1 row of 4)
+BELT_ROWS = {}
+for _codes, _rows in ((("lbl", "zlb", "ulc"), 2), (("vbl", "zvb", "uvc"), 2), (("mbl", "zmb", "umc"), 3),
+                      (("tbl", "ztb", "utc"), 3), (("hbl", "zhb", "uhc"), 4)):
+    for _c in _codes:
+        BELT_ROWS[_c] = _rows
+
+
 def belt_rows(p):
-    """Rows of potions: 2 at first, +1 for Shenk in Normal, +1 for Shenk in Nightmare (4 at most)."""
-    got = set(getattr(p, "belt_unlocks", None) or ())
-    return min(MAX_ROWS, 2 + len(got & {"normal", "nightmare"}))
+    """Rows of potions, from the belt you wear (D2): none 1, Sash / Light Belt 2, Belt / Heavy Belt 3,
+    Plated Belt 4 (and their exceptional and elite versions)."""
+    belt = (getattr(p, "equipment", None) or {}).get("belt")
+    if belt is None:
+        return 1
+    return min(MAX_ROWS, BELT_ROWS.get(getattr(belt, "code", ""), 2))
 
 
 def column(p, c):
@@ -445,24 +456,11 @@ def cube_infuse(items):
 
 
 def shenk_reward(world, difficulty):
-    """Siege on Harrogath in each difficulty: a belt slot (Normal, Nightmare) or 4 Full Rejuvenations (Hell)."""
+    """Siege on Harrogath in each difficulty: Larzuk's socketing - and a skill point."""
     p = world.player
     got = p.__dict__.setdefault("belt_unlocks", [])
     if difficulty in got:
         return
     got.append(difficulty)
-    if difficulty in ("normal", "nightmare"):
-        world.log("Your belt has %d rows now (%d potions)." % (belt_rows(p), belt_rows(p) * MAX_SLOTS),
-                  (199, 179, 119))
-        normalize(p)
-    elif difficulty == "hell" and world.content is not None and FULL_REJUV in world.content.base_by_code:
-        c = world.content
-        for _ in range(4):
-            c.allow_full_rejuv = True
-            try:
-                it = c.make_item(c.base_by_code[FULL_REJUV], 1, world.rng)
-            finally:
-                c.allow_full_rejuv = False
-            if not belt_add(p, it) and not p.inv_add(it):
-                world.ground.setdefault(p.pos, []).append(it)
-        world.log("You receive 4 Full Rejuvenation Potions.", (199, 179, 119))
+    p.skills.points += 1
+    world.log("Larzuk gives you a skill point.", (199, 179, 119))

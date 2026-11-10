@@ -205,7 +205,11 @@ def talk(world, npc):
             _start(world, "shenk")
             lines = ["Larzuk: Shenk the Overseer drives Baal's army against our walls. Kill him in the foothills."]
         elif q["shenk"] == "cleared":
-            lines = ["Larzuk: Shenk's dead! Choose Imbue Sockets and I'll put sockets in one of your items."]
+            lines = ["Larzuk: Shenk's dead! Choose Imbue Sockets and I'll put sockets in one of your items - "
+                     "and here, take this: what I know of battle is yours."]
+            from . import potions              # Siege on Harrogath: a skill point (once per difficulty)
+            diff = {"": "normal", "(n)": "nightmare", "(h)": "hell"}.get(getattr(world.content, "sfx", ""), "normal")
+            potions.shenk_reward(world, diff)
     elif who == "qual-kehk":
         if q["barbs"] == "none":
             _start(world, "barbs")
@@ -688,9 +692,6 @@ def on_killed(world, unit):
         if q["shenk"] in ("none", "active"):
             q["shenk"] = "cleared"
             world.log("Shenk the Overseer is dead! Talk to Larzuk.", QUEST_COLOR)
-        from . import potions                # each difficulty: a belt slot, or (Hell) Full Rejuvenations
-        diff = {"": "normal", "(n)": "nightmare", "(h)": "hell"}.get(getattr(world.content, "sfx", ""), "normal")
-        potions.shenk_reward(world, diff)
     elif boss == "nihlathak":
         q["nihl"] = "cleared"
         world.log("Nihlathak is dead! Tell Anya.", QUEST_COLOR)

@@ -318,6 +318,14 @@ class Player(Unit):
 
     def recalc(self):
         """Derived stats with D2's formulas for the character's class (CharStats.txt)."""
+        self._recalc()
+        from . import potions
+        rows = potions.belt_rows(self)
+        if getattr(self, "_belt_rows_seen", rows) > rows:
+            potions.normalize(self)          # a smaller belt: the potions that don't fit go to the backpack
+        self._belt_rows_seen = rows
+
+    def _recalc(self):
         cs = self.cs
         self._skill_stats = {}
         from .skills import passive_bonuses
