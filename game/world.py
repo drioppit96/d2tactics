@@ -1428,6 +1428,7 @@ class World(SkillCaster, ItemActions):
             p.waypoints.add(lid)
             self.log("Waypoint activated: %s." % (self.info.name(lid) if getattr(self, "info", None) else lid), YELLOW)
         self.open_waypoint = lid
+        self.emit("sound", "object_waypoint_open")
         return True
 
     def _adjacent_reachable(self, a, b):

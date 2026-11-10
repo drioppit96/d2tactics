@@ -92,8 +92,9 @@ class SoundSystem:
         self.ambient_now = None
         self.last = {}            # name -> time it last played (no machine-gun repeats)
         self.failed = set()
+        self.late = []            # sounds asked for while still being unpacked: played if ready in time
+        self._warmed = set()
         self._tables(read_table)
-        self._worker = None
         self._start_worker(assets)
         self.ok = True
         for n in PRELOAD:
@@ -118,11 +119,14 @@ class SoundSystem:
         self.mon_snd_id = {}
         for r in rows("MonStats"):
             self.mon_snd_id[(r.get("id") or "").lower()] = r.get("monsound", "")
+        self.state_snd = {r.get("state", ""): r.get("onsound") or "" for r in rows("States") if r.get("state")}
         self.skill_snd = {}
+        self.skill_row = {}
         for r in rows("Skills"):
             n = r.get("skill", "")
             if n:
-                self.skill_snd[n] = (r.get("stsound") or "", r.get("dosound") or "")
+                self.skill_snd[n] = (r.get("stsound") or r.get("stsoundclass") or "", r.get("dosound") or "")
+                self.skill_row[n] = r
         self.missile_snd = {}
         for r in rows("Missiles"):
             n = (r.get("missile") or "").lower()
@@ -166,39 +170,85 @@ class SoundSystem:
         return self.rows[i] if i is not None else {}
 
     # ------------------------------------------------------------ loading
+    def _sweep_lists(self):
+        """Every sound file of the game, most likely first: (music + speech, sound effects)."""
+        music, speech, sfx = [], [], []
+        first = ("cursor\\", "item\\", "combat\\", "object\\", "skill\\", "misc\\")
+        seen = set()
+        for r in self.rows:
+            f = (r.get("filename") or "").strip()
+            n = r.get("sound", "")
+            if not f or f.lower() == "none.wav":
+                continue
+            path = self._path(n, f)
+            if not path or path in seen:
+                continue
+            seen.add(path)
+            if path.startswith(MUSIC_DIR):
+                music.append(path)
+            elif path.startswith(SFX_DIRS[1]):
+                speech.append(path)
+            else:
+                sfx.append(path)
+        sfx.sort(key=lambda q: (0 if q[len(SFX_DIRS[0]):].lower().startswith(first) else 1))
+        music.sort(key=lambda q: (0 if ("town" in q.lower() or "wild" in q.lower()) else 1))
+        return music + speech, sfx
+
     def _start_worker(self, assets):
+        """Two unpackers: one for music and voices (you hear them start), one for sound effects."""
         from d2.mpq import MPQSet
+        self._workers = {}
         if not isinstance(self.src, MPQSet) or not getattr(self.src, "cache_dir", None):
             return
         try:
             import multiprocessing
             from d2 import soundworker
             ctx = multiprocessing.get_context("spawn")
-            self._inq, self._outq = ctx.Queue(), ctx.Queue()
-            self._worker = ctx.Process(target=soundworker.worker_main,
-                                       args=(assets.d2_path, self.src.cache_dir, self.music_dir, self._inq, self._outq),
-                                       daemon=True)
-            self._worker.start()
+            self._outq = ctx.Queue()
+            hi_sweep, lo_sweep = self._sweep_lists()
+            for key, sweep in (("hi", hi_sweep), ("lo", lo_sweep)):
+                inq = ctx.Queue()
+                proc = ctx.Process(target=soundworker.worker_main,
+                                   args=(assets.d2_path, self.src.cache_dir, self.music_dir, inq, self._outq, sweep),
+                                   daemon=True)
+                proc.start()
+                self._workers[key] = (proc, inq)
         except Exception as e:
             print("  sound worker:", e)
-            self._worker = None
+            self._workers = {}
+
+    @property
+    def _worker(self):
+        return self._workers.get("lo", (None,))[0] if getattr(self, "_workers", None) else None
 
     def _music_file(self, path):
         from d2.soundworker import music_file
         return music_file(self.music_dir, path)
 
-    def request(self, path):
-        if not self.ok and not hasattr(self, "loaded"):
+    def _quick(self, path):
+        """Can this file be read without unpacking (cached, or an extracted folder)?"""
+        if path.startswith(MUSIC_DIR):
+            return os.path.exists(self._music_file(path))
+        cached = getattr(self.src, "cached", None)
+        return cached(path) if cached is not None else True
+
+    def request(self, path, hi=False):
+        if not hasattr(self, "loaded"):
             return
         if path in self.loaded or path in self.pending:
             return
-        if path.startswith(MUSIC_DIR) and os.path.exists(self._music_file(path)):
-            self.loaded[path] = True
+        if self._quick(path):
+            if path.startswith(MUSIC_DIR):
+                self.loaded[path] = True
+            else:
+                self._load_now(path)
             return
-        if self._worker is not None and self._worker.is_alive():
+        key = "hi" if (hi or path.startswith(MUSIC_DIR) or path.startswith(SFX_DIRS[1])) else "lo"
+        w = getattr(self, "_workers", {}).get(key)
+        if w is not None and w[0].is_alive():
             self.pending.add(path)
-            self._inq.put(path)
-        else:
+            w[1].put(path)
+        elif not path.startswith(MUSIC_DIR) or not self._workers:
             self._load_now(path)
 
     def _load_now(self, path):
@@ -221,12 +271,12 @@ class SoundSystem:
             self.loaded[path] = None
 
     def update(self):
-        """Every frame: take what the background process has unpacked; start wanted voices / music."""
+        """Every frame: take what the unpackers have done; start wanted voices / music / late sounds."""
         if not self.ok:
             return
-        if self._worker is not None:
+        if getattr(self, "_workers", None):
             n = 0
-            while n < 6:
+            while n < 8:
                 try:
                     path, good = self._outq.get_nowait()
                 except Exception:
@@ -239,15 +289,36 @@ class SoundSystem:
                     self.loaded[path] = True
                 else:
                     self._load_now(path)          # (now a quick read from the MPQ cache)
+        if self.late:
+            now = time.time()
+            keep = []
+            for path, name, vol, t0 in self.late:
+                snd = self.loaded.get(path)
+                if snd and snd is not True:
+                    if now - t0 < 0.9:
+                        self._start(snd, name, vol)
+                elif path in self.pending and now - t0 < 0.9:
+                    keep.append((path, name, vol, t0))
+            self.late = keep
         if self.voice_want:
             path, t0 = self.voice_want
-            if time.time() - t0 > 20:
+            if time.time() - t0 > 60:
                 self.voice_want = None
             elif self.loaded.get(path):
                 self.voice_want = None
                 self._play_voice(self.loaded[path], path)
         if self.music_want and self.music_want != self.music_now:
             self._try_music(self.music_want)
+
+    def warm(self, names):
+        """Unpack these sounds now, before they are needed (an area's monsters, the party's skills)."""
+        if not self.ok:
+            return
+        for n in names:
+            if n and n not in self._warmed:
+                self._warmed.add(n)
+                for path in self._variants(n):
+                    self.request(path)
 
     # ------------------------------------------------------------ playing
     def _vol(self):
@@ -264,12 +335,6 @@ class SoundSystem:
         if not paths:
             return
         path = random.choice(paths)
-        snd = self.loaded.get(path)
-        if snd is None:
-            self.request(path)
-            return
-        if snd is True:
-            return
         v = vol * self._vol() * _int(self._row(name).get("volume"), 255) / 255.0
         if unit is not None and world is not None and getattr(world, "player", None) is not None:
             try:
@@ -282,6 +347,18 @@ class SoundSystem:
         if v <= 0.01:
             return
         self.last[name] = now
+        snd = self.loaded.get(path)
+        if snd is None or snd is True:
+            if path not in self.loaded:
+                self.request(path)
+            if path in self.pending or (self.loaded.get(path) and self.loaded[path] is not True):
+                self.late.append((path, name, v, now))
+                if self.loaded.get(path):
+                    self.update()
+            return
+        self._start(snd, name, v)
+
+    def _start(self, snd, name, v):
         try:
             ch = snd.play()
             if ch is not None:
@@ -504,13 +581,59 @@ class SoundSystem:
             elif kind == "sound":
                 self.play(ev[1], ev[2] if len(ev) > 2 else None, world)
             elif kind == "skill_sound":
-                st, do = self.skill_snd.get(ev[1], ("", ""))
-                self.play(st or do, ev[2] if len(ev) > 2 else None, world)
+                for nm in self.skill_names(ev[1]):
+                    self.play(nm, ev[2] if len(ev) > 2 else None, world)
             elif kind == "log":
                 if str(ev[1]).startswith("Quest completed"):
                     self.play("cursor_questdone")
         except Exception:
             pass
+
+    def skill_names(self, skill):
+        """A skill's D2 sounds: the cast (stsound), the target's (tgtsound: Corpse Explosion's blast)
+        and the state it puts on (a curse's own sound: Amplify Damage, Iron Maiden...)."""
+        r = self.skill_row.get(skill) or {}
+        out = []
+        for k in ("stsound", "stsoundclass"):
+            if r.get(k):
+                out.append(r[k])
+                break
+        if not out and r.get("dosound"):
+            out.append(r["dosound"])
+        if r.get("tgtsound"):
+            out.append(r["tgtsound"])
+        st = r.get("auratargetstate") or ""
+        if st and self.state_snd.get(st) and (r.get("auratargetstate") != r.get("aurastate")):
+            out.append(self.state_snd[st])
+        elif r.get("aurastate") and self.state_snd.get(r["aurastate"]) and r.get("aura") != "1":
+            out.append(self.state_snd[r["aurastate"]])
+        for mk in ("srvmissile", "cltmissile", "srvmissilea", "cltmissilea"):
+            m = (r.get(mk) or "").lower()
+            if m and m in self.missile_snd:
+                if self.missile_snd[m][0]:
+                    out.append(self.missile_snd[m][0])     # (its hit sound plays where it lands)
+                break
+        return out
+
+    def warm_world(self, world):
+        """Unpack what this area will need first: its monsters' sounds and the party's skills."""
+        names = []
+        try:
+            for m in list(getattr(world, "monsters", []))[:400]:
+                r = self._mon_row(m)
+                if r:
+                    names += [r.get("attack1"), r.get("weapon1"), r.get("hitsound"), r.get("deathsound")]
+            heroes = list(getattr(world, "party", None) or [world.player])
+            for h in heroes:
+                cs = CLASS_SND.get(getattr(h, "cls", ""), "")
+                names += [cs + "_hit", cs + "_death"]
+                for sk, lv in getattr(getattr(h, "skills", None), "levels", {}).items():
+                    if lv:
+                        names += self.skill_names(sk)
+        except Exception:
+            pass
+        # (the skill's own cast sound is played by name; a missile's sounds are names too)
+        self.warm([n for n in names if n])
 
     @staticmethod
     def _object_sound(o):
@@ -543,8 +666,8 @@ class SoundSystem:
         return "object_chest_small" if k in ("chest", "container") else ""
 
     def quit(self):
-        try:
-            if self._worker is not None:
-                self._inq.put(None)
-        except Exception:
-            pass
+        for proc, inq in getattr(self, "_workers", {}).values():
+            try:
+                inq.put(None)
+            except Exception:
+                pass

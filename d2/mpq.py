@@ -261,6 +261,26 @@ class MPQSet:
     def has(self, name):
         return self.locate(name)[1] is not None
 
+    def _cache_path(self, an, a, name):
+        import hashlib
+        import os
+        info = a.block_info(name)
+        stamp = "%s|%s|%d|%d|%d" % (an, name.lower().replace("/", "\\"), info["offset"], info["csize"], info["fsize"])
+        return os.path.join(self.cache_dir, hashlib.md5(stamp.encode("latin-1")).hexdigest() + ".z")
+
+    def cached(self, name):
+        """True when reading the file is quick (its unpacked copy is in the cache)."""
+        import os
+        if not self.cache_dir:
+            return False
+        an, a = self.locate(name)
+        if a is None:
+            return False
+        try:
+            return os.path.exists(self._cache_path(an, a, name))
+        except Exception:
+            return False
+
     def read(self, name):
         an, a = self.locate(name)
         if a is None:
@@ -268,11 +288,8 @@ class MPQSet:
         if not self.cache_dir:
             return a.read(name)
         # decompressing in Python is slow: keep a zlib copy of every file we have read once
-        import hashlib
         import os
-        info = a.block_info(name)
-        stamp = "%s|%s|%d|%d|%d" % (an, name.lower().replace("/", "\\"), info["offset"], info["csize"], info["fsize"])
-        path = os.path.join(self.cache_dir, hashlib.md5(stamp.encode("latin-1")).hexdigest() + ".z")
+        path = self._cache_path(an, a, name)
         try:
             with open(path, "rb") as f:
                 return zlib.decompress(f.read())

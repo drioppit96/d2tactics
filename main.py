@@ -517,6 +517,9 @@ class Game:
 
     def travel_waypoint(self, lid):
         """Waypoint travel to any activated waypoint of the act."""
+        from render import sound as _snd
+        if _snd.SOUND is not None:
+            _snd.SOUND.play("player_townportal_enter")
         from game.acts import world_of
         key = world_of(lid)
         info = self.assets.act_info
@@ -2145,6 +2148,9 @@ class Game:
         w = getattr(self, "world", None)
         if w is None:
             return
+        if id(w) != getattr(self, "_snd_world", None):
+            self._snd_world = id(w)
+            s.warm_world(w)
         self._snd_t = getattr(self, "_snd_t", 0.0) - dt
         if self._snd_t <= 0:
             self._snd_t = 0.5
