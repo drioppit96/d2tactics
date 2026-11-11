@@ -257,7 +257,8 @@ def player_res_penalty(world, p):
     for m in world.monsters:
         if m.alive and getattr(m, "aura", None) == "Conviction" and m.aware and chebyshev(m.pos, p.pos) <= 6:
             pen = max(pen, 25 + m.level // 2)
-    return pen
+    from . import riftmap
+    return max(pen, riftmap.res_penalty(world))      # Sapping: a rift map saps you all floor long
 
 
 def thorns(world, m, attacker, dmg):

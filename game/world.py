@@ -857,6 +857,9 @@ class World(SkillCaster, ItemActions):
     def _boss_waypoint(self, unit):
         if getattr(unit, "ally", False) or unit.is_player:
             return
+        from . import rift
+        if rift.is_rift(getattr(self, "level_id", None)):
+            return                               # a rift's copy of an act boss unlocks nothing
         lid = self.BOSS_WP_BY_ID.get((getattr(unit, "d2id", "") or "").lower()) or \
             (self.BOSS_WP_BY_NAME.get(unit.name) if getattr(unit, "unique", False) else None)
         if not lid:
@@ -2109,6 +2112,7 @@ class World(SkillCaster, ItemActions):
         if getattr(unit, "invulnerable", False):
             return
         if amount > 0:
+            self._rift_fought = True             # (a rift map must be read before the first blood)
             from . import tactics
             mult = self.monster_damage_mult(unit, source)
             if tactics.ACTIVE:
@@ -2130,8 +2134,9 @@ class World(SkillCaster, ItemActions):
             return 1.0
         if not (getattr(unit, "is_player", False) or getattr(unit, "ally", False)):
             return 1.0
+        from . import riftmap
         diff = getattr(getattr(self, "content", None), "difficulty", "normal") or "normal"
-        return NORMAL_MON_DAMAGE if diff == "normal" else 1.0
+        return (NORMAL_MON_DAMAGE if diff == "normal" else 1.0) * riftmap.damage_mult(self)
 
     def _absorb(self, p, amount):
         for name, b in list(getattr(p, "buffs", {}).items()):
@@ -2190,8 +2195,8 @@ class World(SkillCaster, ItemActions):
         from .units import kill_xp
         mlvl = getattr(unit, "level", None) or getattr(unit, "mlvl", None) or p.level
         base = kill_xp(unit.xp_value, p.level, mlvl)
-        from . import tactics
-        xmul = tactics.XP_MULT if tactics.ACTIVE else 1.0
+        from . import tactics, riftmap
+        xmul = (tactics.XP_MULT if tactics.ACTIVE else 1.0) * riftmap.xp_mult(self)
         gained = p.gain_xp(int(base * xmul) * (100 + max(0, getattr(p, "xp_pct", 0))) // 100)
         for h in tactics.living(self):
             if h is not p and len(tactics.party(self)) > 1:     # every hero of the party gets it
@@ -2218,16 +2223,23 @@ class World(SkillCaster, ItemActions):
                 if boss not in done:
                     tc = unit.tc_quest
                     done.append(boss)
+            # a rift map pays the floor out: deeper item levels, more rolls, better odds, more gold
+            dl = (getattr(unit, "drop_level", None) or unit.level) + riftmap.ilvl_bonus(self)
+            mf, gf = self.team_mf() + riftmap.mf_bonus(self), p.gf + riftmap.gold_bonus(self)
+            rolls = 1 + riftmap.extra_picks(self, unit)
+            drops = []
             if tc and hasattr(self.content, "roll_tc"):
                 # Duriel: rares, sets and uniques 5% more often than Andariel's (same boss odds x 1.05)
-                self.content._q_bonus = 1.05 if boss == "duriel" else 1.0
+                self.content._q_bonus = (1.05 if boss == "duriel" else 1.0) * riftmap.quality_bonus(self)
                 try:
-                    drops = self.content.roll_tc(tc, getattr(unit, "drop_level", None) or unit.level, self.rng,
-                                                 mf=self.team_mf(), gf=p.gf)
+                    for _ in range(rolls):
+                        drops += self.content.roll_tc(tc, dl, self.rng, mf=mf, gf=gf)
                 finally:
                     self.content._q_bonus = 1.0
             else:
-                drops = self.content.roll_drop(unit.level, unit.unique, self.rng, mf=self.team_mf(), gf=p.gf)
+                for _ in range(rolls):
+                    drops += self.content.roll_drop(dl, unit.unique, self.rng, mf=mf, gf=gf)
+            drops = riftmap.filter_drops(self, drops, unit)
         else:
             drops = roll_drop(unit.level, unit.unique, self.rng)
         for it in drops:

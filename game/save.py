@@ -261,6 +261,8 @@ def save_character(player, difficulty="normal"):
         imbues=dict(getattr(p, "imbues", None) or {}),
         weapon_set=getattr(p, "weapon_set", 0),
         rift_seed=getattr(p, "rift_seed", None),
+        rift_mods=getattr(p, "rift_mods", None),
+        rift_map_depth=getattr(p, "rift_map_depth", None),
         swap_gear={k: _item_dict(v) for k, v in (getattr(p, "swap_gear", None) or {}).items()},
         set_skills={str(k): list(v) for k, v in (getattr(p, "set_skills", None) or {}).items()},
         quests=dict(getattr(p, "quests", {})), waypoints=sorted(getattr(p, "waypoints", {1})),
@@ -361,6 +363,8 @@ def build_player(data, content):
     p.imbues = dict(data.get("imbues") or {})
     p.weapon_set = int(data.get("weapon_set", 0) or 0)
     p.rift_seed = data.get("rift_seed")
+    p.rift_mods = data.get("rift_mods")
+    p.rift_map_depth = data.get("rift_map_depth")
     p.swap_gear = {k: _item_from(v, content) for k, v in (data.get("swap_gear") or {}).items()}
     p.swap_gear.setdefault("weapon", None)
     p.swap_gear.setdefault("shield", None)

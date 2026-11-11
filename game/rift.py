@@ -19,8 +19,10 @@ from collections import deque
 from .grid import chebyshev
 
 BASE = 900                 # level id of rift floor 1
-MAX_FLOORS = 400
+MAX_FLOORS = 666           # Infernal Rift 1 .. 666
 KINDS = 6                  # kinds of monster on one floor
+BOSS_EVERY = 10            # every tenth floor is guarded by one of D2's act bosses
+ACT_BOSSES = ["andariel", "duriel", "mephisto", "diablo", "baalcrab"]
 FIELD = "@field"           # the open-plain floor (no maze kit)
 
 # where a floor can be built from: maze kit (act1.MAZES) or FIELD, the act whose palette it wears,
@@ -70,8 +72,7 @@ def act_of(lid):
 
 
 def name(lid):
-    p = plan(lid)
-    return "%s (Rift %d)" % (p["flavour"], p["depth"])
+    return "Infernal Rift %d" % plan(lid)["depth"]
 
 
 # ------------------------------------------------------------------ the plan of one floor
@@ -96,7 +97,8 @@ def plan(lid, player=None):
     random.Random(seed ^ ((depth - 1) // len(PLACES))).shuffle(order)
     kit, act, flavour = order[(depth - 1) % len(PLACES)]
     p = dict(depth=depth, seed=rng.randrange(1 << 30), kit=kit, act=act, flavour=flavour,
-             rooms=rng.randint(4, 6), mlvl=None, roster=None, boss=None, start=None, boss_cell=None)
+             rooms=rng.randint(4, 6), mlvl=None, roster=None, boss=None, start=None, boss_cell=None,
+             actboss=rng.choice(ACT_BOSSES) if depth % BOSS_EVERY == 0 else None)
     PLANS[lid] = p
     return p
 
@@ -326,6 +328,16 @@ def after_build(world):
             if not getattr(m, "ally", False) and m.ai != "npc" and chebyshev(m.pos, start) < 14:
                 world.monsters.remove(m)
     spot = world._free_cell_near(cell, 8) or cell
+    if p.get("actboss"):
+        # every tenth floor: one of D2's act bosses, brought down (or up) to the hero's own level
+        boss = actworld._spawn(world, p["actboss"], spot, lvl, taken)
+        if boss is not None:
+            scale_to_level(world, boss, lvl)
+            boss.rift_boss = True
+            boss.max_hp = int(boss.max_hp * 1.5)
+            boss.hp = boss.max_hp
+            world.log("%s guards this floor." % boss.name, RED)
+            return
     boss = actworld._spawn(world, mid, spot, lvl, taken)
     if boss is None:
         return
@@ -342,6 +354,37 @@ def after_build(world):
             monmods.pass_aura(boss, u)
 
 
+def _mlval(content, lvl, col):
+    """One column of D2's MonLvl table at `lvl` (the difficulty's own column)."""
+    row = content.monlvl.get(max(1, int(lvl))) or content.monlvl.get(1) or {}
+    sfx = getattr(content, "sfx", "") or ""
+    try:
+        return max(1, int((row.get(col + sfx) or row.get(col) or "1").strip() or 1))
+    except (ValueError, AttributeError):
+        return 1
+
+
+def scale_to_level(world, u, target):
+    """D2 pins an act boss's stats to its own level; in a rift it follows the hero's level instead,
+    by the same MonLvl ratios every other monster is built from."""
+    c = world.content
+    native = max(1, getattr(u, "level", 1))
+    if c is None or native == int(target):
+        return
+    def ratio(col):
+        return _mlval(c, target, col) / float(_mlval(c, native, col))
+    hp, dm, th, ac, xp = (ratio(k) for k in ("hp", "dm", "th", "ac", "xp"))
+    u.max_hp = max(1, int(u.max_hp * hp))
+    u.hp = u.max_hp
+    lo, hi = u.dmg
+    u.dmg = (max(1, int(lo * dm)), max(2, int(hi * dm)))
+    u.ar = max(5, int(u.ar * th))
+    u.defense = max(0, int(getattr(u, "defense", 0) * ac))
+    u.xp_value = max(1, int(getattr(u, "xp_value", 1) * xp))
+    u.level = int(target)
+    u.drop_level = int(target)
+
+
 # ------------------------------------------------------------------ the portals
 def available(player):
     """Andariel is dead: the red portal can open."""
@@ -354,13 +397,23 @@ def ensure_portal(world):
     p = world.player
     if world.level_id != 1 or not available(p):
         return
+    depth = 1                                   # leaving the rift resets the count: town always opens Rift 1
+    if int(getattr(p, "rift_depth", 0) or 0) or getattr(p, "_in_rift", False):
+        from . import riftmap                   # back in town: that run is over, the next one is new
+        p._in_rift = False
+        p.rift_depth = 0
+        p.rift_seed = None
+        riftmap.clear(p)
+        PLANS.clear()
+        world.objects[:] = [o for o in world.objects
+                            if not (o.get("kind") == "portal" and is_rift(o.get("target")))]
     if any(o.get("kind") == "portal" and is_rift(o.get("target")) for o in world.objects):
         return
-    depth = max(1, int(getattr(p, "rift_depth", 0) or 0) + 1)
     plan(level_id(depth), p)                    # (the floor is the hero's own, from his rift seed)
     gheed = next((n for n in world.npcs if getattr(n, "npc", "") == "gheed"), None)
-    near = (gheed.x + 3, gheed.y + 2) if gheed is not None else (p.x + 3, p.y + 2)
-    cell = world._free_cell_near(near, 8)
+    # down-screen is +x +y: two portal heights clear of Gheed, so it no longer covers him
+    near = (gheed.x + 7, gheed.y + 6) if gheed is not None else (p.x + 7, p.y + 6)
+    cell = world._free_cell_near(near, 4) or world._free_cell_near(near, 8)
     if cell is None:
         return
     world.objects.append(dict(kind="portal", cell=cell, level=1, oid=0, used=False,
@@ -371,8 +424,13 @@ def on_killed(world, unit):
     """The floor's keeper is dead: a red portal opens, one floor deeper."""
     if unit is None or not getattr(unit, "rift_boss", False) or not is_rift(world.level_id):
         return
+    if any(getattr(m, "rift_boss", False) and m.alive for m in world.monsters):
+        return                                   # (Crowned: the keeper has a twin - both must fall)
     p = world.player
     depth = depth_of(world.level_id) + 1
+    if depth > MAX_FLOORS:
+        world.log("Infernal Rift %d was the last. Nothing deeper answers." % MAX_FLOORS, RED)
+        return
     p.rift_depth = depth - 1                     # (the deepest floor beaten)
     if any(o.get("kind") == "portal" and is_rift(o.get("target")) for o in world.objects):
         return
@@ -383,9 +441,26 @@ def on_killed(world, unit):
     world.objects.append(dict(kind="portal", cell=cell, level=world.level_id, oid=0, used=False,
                               target=level_id(depth)))
     world.emit("nova", p, cell, 3, "fire")
-    world.log("A red portal tears open. Rift %d awaits." % depth, RED)
+    world.log("A red portal tears open. Infernal Rift %d awaits." % depth, RED)
 
 
 def on_enter(world, lid):
+    """A rift floor starts clean, and leaving the rift ends the run: the count starts at 1 again."""
+    from . import riftmap
+    p = world.player
     if is_rift(lid):
-        world.log("Rift %d: everything here is your equal." % depth_of(lid), YELLOW)
+        p._in_rift = True
+        world._rift_fought = False
+        if getattr(p, "rift_map_depth", None) != depth_of(lid):
+            riftmap.clear(p)                     # a new floor carries no modifiers of its own
+        world.log("%s: everything here is your equal." % name(lid), YELLOW)
+        if plan(lid).get("actboss"):
+            world.log("Something out of the old world waits at the far end.", RED)
+        return
+    if getattr(p, "_in_rift", False):
+        p._in_rift = False
+        p.rift_depth = 0                         # left the rift: the next red portal is Infernal Rift 1
+        p.rift_seed = None                       # and a new run is built from a new seed
+        riftmap.clear(p)
+        PLANS.clear()
+        world.log("The rift collapses behind you.", RED)

@@ -242,7 +242,8 @@ def on_enter(world, lid):
         _start(world, "malus")
     if lid in (34, 35, 36, 37) and q["andariel"] == "none":
         _start(world, "andariel")
-    from . import quests2, quests345
+    from . import quests2, quests345, rift
+    rift.on_enter(world, lid)
     quests2.on_enter(world, lid)
     quests345.on_enter(world, lid)
 
@@ -392,6 +393,9 @@ def on_monster_killed(world, unit=None):
     boss = getattr(unit, "boss", None) if unit is not None else None
     if unit is not None:
         from . import quests2, quests345, rift
+        if rift.is_rift(getattr(world, "level_id", None)):
+            rift.on_killed(world, unit)          # in a rift nothing counts towards the acts' own quests
+            return
         quests2.on_killed(world, unit)
         quests345.on_killed(world, unit)
         rift.on_killed(world, unit)

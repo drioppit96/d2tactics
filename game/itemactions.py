@@ -37,7 +37,7 @@ NPC_OPTIONS = {
     "qual-kehk": ["Talk", "Hire"], "nihlathak": ["Talk"], "tyrael3": ["Talk"], "cain6": ["Talk", "Identify Items"],
 }
 STORE_W, STORE_H = 10, 10
-TAB_NAMES = {"armo": "Armor", "weap": "Weapons", "misc": "Misc", "gamble": "Gamble"}
+TAB_NAMES = {"armo": "Armor", "weap": "Weapons", "misc": "Misc", "gamble": "Gamble", "maps": "Maps"}
 
 def _difficulty(world):
     return {"": "normal", "(n)": "nightmare", "(h)": "hell"}.get(getattr(world.content, "sfx", ""), "normal")
@@ -199,6 +199,11 @@ class ItemActions:
                 for _ in range(m):
                     pages[page].append(c.make_item(b, max(ilvl, mlvl), rng, "magic", identified=True))
             tabs = [(pg, _pack(pages[pg])) for pg in ("armo", "weap", "misc") if pages[pg]]
+            if npc_id == "gheed":
+                from . import riftmap
+                maps = riftmap.stock(c, rng, p)     # Gheed's own trade: scrolls that twist a rift floor
+                if maps:
+                    tabs.append(("maps", _pack(maps)))
             store = Store(npc_id, tabs)
         cache[key] = (store, getattr(p, "_town_visit", 0))
         from .qol import stock
@@ -391,6 +396,12 @@ class ItemActions:
             if self._consume(it):
                 return self.town_portal()
             return False
+        if it.use == "rift_map":
+            from . import riftmap
+            if not riftmap.use(self, it):
+                return False
+            self._consume(it)
+            return True
         if it.kind == "quest":
             return self.read_quest_item(it)
         if it.use == "id":

@@ -202,6 +202,9 @@ class Item:
                     "stamina": "+%d AP next turn"}
             return [(self.name, WHITE), (what.get(self.potion, "%d") % self.amount, WHITE),
                     ("2 AP to drink (keys 1-4 in the belt, right click in the backpack)", (170, 170, 170))]
+        if self.use == "rift_map":
+            from .riftmap import describe
+            return describe(self)
         if self.use == "goblin":
             from .qol import describe
             return describe(self)

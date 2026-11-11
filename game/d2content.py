@@ -111,6 +111,8 @@ class D2Content:
             self.superuniques = {}
         from .d2items import SocketRules
         self.sockets = SocketRules(self, read_table)
+        from . import riftmap
+        riftmap.register_bases(self)             # Gheed's rift map scrolls (ours, not D2's)
 
     # ------------------------------------------------------------ item types
     def ancestors(self, code):
