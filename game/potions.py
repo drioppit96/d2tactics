@@ -463,5 +463,7 @@ def shenk_reward(world, difficulty):
     if difficulty in got:
         return
     got.append(difficulty)
-    p.skills.points += 1
-    world.log("Larzuk gives you a skill point.", (199, 179, 119))
+    from . import tactics
+    for h in tactics.everyone(world):                # one skill point each
+        h.skills.points += 1
+    world.log("Larzuk gives every hero a skill point.", (199, 179, 119))

@@ -363,12 +363,20 @@ class ItemActions:
         return True
 
     def identify_all(self, free=True, quiet=False):
-        """Deckard Cain identifies everything you own: backpack, equipment, the other weapon set,
-        what's in your Horadric Cube and in the stash."""
+        """Deckard Cain identifies everything you own, on every character: each hero's backpack,
+        equipment and other weapon set, what's in the Horadric Cube, the shared stash - and the
+        heroes who are not here, in their own saves."""
+        from . import tactics
         p = self.player
         n = 0
-        items = list(p.inventory) + [x for x in p.equipment.values() if x] + \
-            [x for x in (getattr(p, "swap_gear", None) or {}).values() if x]
+        heroes = tactics.party(self) if tactics.ACTIVE else [p]
+        heroes = [h for h in (heroes or [p]) if h is not None]
+        if p not in heroes:
+            heroes.append(p)
+        items = []
+        for h in heroes:
+            items += list(h.inventory) + [x for x in h.equipment.values() if x] + \
+                [x for x in (getattr(h, "swap_gear", None) or {}).values() if x]
         for it in list(items):
             items += list(getattr(it, "contents", None) or [])          # the cube
         st = getattr(p, "stash", None)
@@ -378,7 +386,13 @@ class ItemActions:
         for it in items:
             if d2items.identify(it):
                 n += 1
-        p.recalc()
+        for h in heroes:
+            h.recalc()
+        try:
+            from .save import identify_all_characters
+            n += identify_all_characters(self.content, skip=[h.name for h in heroes])
+        except Exception:
+            pass
         if n or not quiet:
             self.log("Deckard Cain identifies %d item%s." % (n, "" if n == 1 else "s") if n else
                      "Deckard Cain: You have nothing I need to look at.", YELLOW)
@@ -418,10 +432,12 @@ class ItemActions:
         p = self.player
         from . import quests
         if it.use == "book_skill":
+            from . import tactics
             p.inventory.remove(it)
             it.inv_pos = None
-            p.skills.points += 1
-            self.log("You read the Book of Skill. +1 skill point!", (0, 220, 0))
+            for h in tactics.everyone(self):        # the whole party learns from it
+                h.skills.points += 1
+            self.log("You read the Book of Skill. +1 skill point for every hero!", (0, 220, 0))
             return True
         if it.use == "horadric_scroll":
             quests.read_horadric_scroll(self, it)

@@ -384,7 +384,9 @@ def on_object(world, obj):
             if q["staff"] == "none":
                 _start(world, "staff")
         else:
-            world.log("The chest is empty.", GREY)
+            world.log("The chest is empty - you already carry the Horadric Cube.", GREY)
+            if q["staff"] == "none":
+                _start(world, "staff")
         return True
     if k == "staff_chest":
         if obj["used"]:

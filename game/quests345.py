@@ -142,9 +142,11 @@ def talk(world, npc):
             q["bird"] = "potion"
             lines = ["Alkor: The golden bird of the Kurast emperors! I've made you a Potion of Life from its ashes."]
         elif has_item(p, "bbb", world):
+            from . import tactics
             take_item(world, "bbb")
-            p.stat_points += 5
-            _done(world, "lamesen", "+5 stat points.")
+            for h in tactics.everyone(world):        # Alkor reads the tome out to the whole party
+                h.stat_points += 5
+            _done(world, "lamesen", "+5 stat points for every hero.")
             lines = ["Alkor: Lam Esen's Tome! Let me read some of it to you - you'll feel the knowledge in your bones."]
         elif q["lamesen"] == "none":
             _start(world, "lamesen")
@@ -184,8 +186,10 @@ def talk(world, npc):
             _start(world, "izual")
             lines = ["Tyrael: Izual, my lieutenant, fell to Hell. Free his soul - he lurks on the Plains of Despair."]
         elif q["izual"] == "cleared":
-            p.skills.points += 2
-            _done(world, "izual", "+2 skill points.")
+            from . import tactics
+            for h in tactics.everyone(world):        # Tyrael's gift is for all of you
+                h.skills.points += 2
+            _done(world, "izual", "+2 skill points for every hero.")
             lines = ["Tyrael: Izual is at peace. Take this gift of knowledge."]
         elif q["diablo"] in ("cleared", "done"):
             lines = ["Tyrael: Diablo is no more. Baal marches on Harrogath - I can send you there."]
@@ -736,18 +740,24 @@ def read_item(world, it):
     p = world.player
     q = p.quests
     if it.use == "potion_of_life":
+        from . import tactics
         p.inventory.remove(it)
         it.inv_pos = None
-        p.quest_stats["life"] = p.quest_stats.get("life", 0) + 20
-        p.recalc()
+        for h in tactics.everyone(world):           # Alkor brews enough for the whole party
+            h.quest_stats = getattr(h, "quest_stats", None) or {}
+            h.quest_stats["life"] = h.quest_stats.get("life", 0) + 20
+            h.recalc()
         if q["bird"] != "done":
             _done(world, "bird", "+20 Life.")
         return True
     if it.use == "scroll_resist":
+        from . import tactics
         p.inventory.remove(it)
         it.inv_pos = None
-        p.quest_stats["res_all"] = p.quest_stats.get("res_all", 0) + 10
-        p.recalc()
-        world.log("You read the scroll: +10 to all resistances.", DONE_COLOR)
+        for h in tactics.everyone(world):           # Malah's scroll is read out to everyone
+            h.quest_stats = getattr(h, "quest_stats", None) or {}
+            h.quest_stats["res_all"] = h.quest_stats.get("res_all", 0) + 10
+            h.recalc()
+        world.log("You read the scroll: +10 to all resistances for every hero.", DONE_COLOR)
         return True
     return False

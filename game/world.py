@@ -102,7 +102,11 @@ PLAYER_HIT_FLOOR = 0.60
 MONSTER_HIT_FLOOR = 0.50
 # Normal is gentle in D2 and gentler still turn-based: its monsters hit harder here
 # (settings.ini [game] normal_monster_damage)
-NORMAL_MON_DAMAGE = 1.20
+NORMAL_MON_DAMAGE = 1.50
+# and they land their blows more often on Normal, where D2's own odds are at their kindest
+# (settings.ini [game] normal_monster_hit_bonus, in percentage points)
+NORMAL_MON_HIT = 0.15
+DIFFICULTY = "normal"           # the difficulty the world being played is on
 POIS_FRAMES = 150   # weapon / charm poison: its total damage spread over ~3 turns, like D2's poison length
 
 
@@ -122,8 +126,16 @@ def hit_chance(attacker, defender, ar_bonus_pct=0):
     elif not getattr(attacker, "ally", False):
         # a plain floor: a monster that matches you keeps D2's odds, one you have outgrown
         # no longer flails at you harmlessly
+        if DIFFICULTY == "normal":
+            chance = min(0.95, chance + NORMAL_MON_HIT)
         chance = max(chance, MONSTER_HIT_FLOOR)
     return chance
+
+
+def set_difficulty(name):
+    """Remember which difficulty is being played: hit_chance() has no world to ask."""
+    global DIFFICULTY
+    DIFFICULTY = (name or "normal").lower()
 
 
 class World(SkillCaster, ItemActions):
@@ -153,6 +165,7 @@ class World(SkillCaster, ItemActions):
         else:
             self.grid, self.rng = generate_cave(seed=self.seed)
         self.content = content
+        set_difficulty(getattr(content, "difficulty", None))
         self.npcs = []
         self.exits = {}              # cell -> target level id
         self.pending_exit = None
@@ -204,6 +217,7 @@ class World(SkillCaster, ItemActions):
         """An Act 1 level made from D2 presets (see game/act1.py and game/actworld.py)."""
         from .actworld import setup
         self.content = content
+        set_difficulty(getattr(content, "difficulty", None))
         self.level_id, self.level_name, self.town = None, "", False
         self.pending_exit = None
         self.hazards = []
@@ -371,6 +385,8 @@ class World(SkillCaster, ItemActions):
         for code in ("tsc", "isc"):           # D2: a Scroll of Town Portal and one of Identify
             if code in c.base_by_code:
                 p.inv_add(c.make_item(c.base_by_code[code], 1, self.rng))
+        if "box" in c.base_by_code:           # and the Horadric Cube, from the first step out of town
+            p.inv_add(c.make_item(c.base_by_code["box"], 1, self.rng))
         p.recalc()
         p.hp, p.mana = p.max_hp, p.max_mana
 
@@ -910,6 +926,8 @@ class World(SkillCaster, ItemActions):
             if ln:
                 pages = [(npc.name, ln.split(": ", 1)[1] if ": " in ln[:24] else ln)]
         pages = [pg for pg in pages if pg[1]]
+        # an NPC says each line aloud once; choosing "Talk" asks them to say it again
+        self.dialog_replay = bool(menu)
         if pages:
             self.dialog = list(pages)
         elif lines:

@@ -108,11 +108,13 @@ def talk(world, npc):
         elif q["den"] == "active":
             lines = ["Akara: The Den still breathes evil. Clear out every creature in it."]
         elif q["den"] == "cleared":
+            from . import tactics
             q["den"] = "done"
-            p.skills.points += 1
+            for h in tactics.everyone(world):        # Akara teaches the whole party
+                h.skills.points += 1
             lines = ["Akara: The Den is quiet at last. You have our thanks.",
                      "Akara: Take this knowledge as your reward."]
-            world.log("Quest completed: Den of Evil. +1 skill point!", DONE_COLOR)
+            world.log("Quest completed: Den of Evil. +1 skill point for every hero!", DONE_COLOR)
         elif q["cain"] == "none":
             _start(world, "cain")
             lines = ["Akara: Deckard Cain, the last of the Horadrim, is held in Tristram.",

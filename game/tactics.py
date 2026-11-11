@@ -27,6 +27,15 @@ def living(world):
     return [h for h in party(world) if h.alive]
 
 
+def everyone(world):
+    """Every hero the quest rewards belong to: the whole party shares what one of them earns."""
+    hs = [h for h in party(world) if h is not None]
+    p = getattr(world, "player", None)
+    if p is not None and p not in hs:
+        hs.append(p)
+    return hs or ([p] if p is not None else [])
+
+
 def _as_follower(world, hero):
     """A hero you are not controlling right now: walks with you and fights beside you."""
     hero.ally = True
@@ -163,14 +172,14 @@ def scale_monster(m, world=None):
 
 
 # ------------------------------------------------------------------ who monsters go for
-SQUISHY = {"sor", "nec", "ama", "ass", "dru"}       # the back line: casters, archers
-FAST_AP = 8                                         # D2 velocity 5+ (Fallen, dolls, leapers...)
+FAST_AP = 8          # D2 velocity 5+ (Fallen, dolls, skeletons, Act 2 huntresses, leapers...)
 
 
 def pick_target(world, m):
     """Tactics targeting, decided once per monster per round:
-    * fast melee monsters (Fallen, dolls...) rush the back line - the most hurt sorceress,
-      necromancer, amazon, assassin or druid they can reach - instead of whoever stands in front;
+    * fast melee monsters (Fallen, dolls, skeletons, Act 2 huntresses...) spread themselves over
+      the party - every hero they can reach is as likely as any other, so the back line is not
+      singled out and the front line is not ignored;
     * ranged monsters and casters: half the time the nearest, half the time any hero in range.
     Everyone else (and when nothing fits): the nearest, as before (None)."""
     memo = getattr(m, "_tpick", None)
@@ -189,9 +198,10 @@ def pick_target(world, m):
                 if near:
                     pick = near[int(roll * 2 * len(near)) % len(near)]
         elif getattr(m, "max_ap", 0) >= FAST_AP:
-            soft = [h for h in heroes if getattr(h, "cls", "") in SQUISHY and world.udist(m, h) <= m.max_ap * 2 + 4]
-            if soft:
-                pick = min(soft, key=lambda h: (h.hp / float(max(1, h.max_hp)), world.udist(m, h)))
+            # a fast monster can reach anyone, so it picks evenly: one hero in three, not the squishiest
+            reach = [h for h in heroes if world.udist(m, h) <= m.max_ap * 2 + 4]
+            if reach:
+                pick = reach[int(roll * len(reach)) % len(reach)]
     m._tpick = (world.round, pick)
     return pick
 

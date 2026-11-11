@@ -23,7 +23,8 @@ def load_settings():
     cfg = configparser.ConfigParser()
     cfg.read_dict({"display": {"width": "1280", "height": "720", "fullscreen": "no", "scale": "auto"},
                    "diablo2": {"path": ""}, "game": {"difficulty": "normal", "min_hit_chance": "60", "attack_ap_offset": "0",
-                             "monster_hit_chance": "50", "normal_monster_damage": "120"}})
+                             "monster_hit_chance": "50", "normal_monster_damage": "150",
+                             "normal_monster_hit_bonus": "15"}})
     cfg.read(os.path.join(HERE, "settings.ini"))
     return cfg
 
@@ -49,6 +50,7 @@ class Game:
             _gw.PLAYER_HIT_FLOOR = max(5, min(95, self.cfg.getint("game", "min_hit_chance"))) / 100.0
             _gw.MONSTER_HIT_FLOOR = max(5, min(95, self.cfg.getint("game", "monster_hit_chance"))) / 100.0
             _gw.NORMAL_MON_DAMAGE = max(50, min(300, self.cfg.getint("game", "normal_monster_damage"))) / 100.0
+            _gw.NORMAL_MON_HIT = max(0, min(50, self.cfg.getint("game", "normal_monster_hit_bonus"))) / 100.0
             import game.units as _gu
             _gu.ATTACK_AP_OFFSET = max(-4, min(4, self.cfg.getint("game", "attack_ap_offset")))
         except Exception:
@@ -236,9 +238,8 @@ class Game:
                 except Exception:
                     pass
         tactics.attach(self.world, heroes)
-        shared = load_shared_stash(self.assets.content)          # one stash for all tactics heroes
-        for h in heroes:
-            h.stash = shared
+        from game.save import attach_shared_stash
+        attach_shared_stash(self.assets.content, heroes)         # the one chest every character shares
         self._party_seen = self.world.player
         if len(heroes) > 1:
             self.world.log("Your party: %s. Click a portrait to lead with that hero; in combat, End Turn "
@@ -277,6 +278,8 @@ class Game:
         self.world = make_world(a.act_kit, a.act_info, a.content, "wild", char_class=cls, char_name=name, player=player,
                                 seed=self._map_seed("wild", _Seed))
         self.world.player.map_seed = base
+        from game.save import attach_shared_stash
+        attach_shared_stash(a.content, [self.world.player])   # one chest, shared by every character
         self.levels["wild"] = self.world
         self.restore_map("wild", self.world)
         if player is not None:
@@ -362,9 +365,8 @@ class Game:
             for h in tactics.party(self.world):          # (a tactics party: every hero's own file)
                 h.current_act = self.world.player.current_act
                 save_character(h, getattr(h, "difficulty", "normal"))
-            if tactics.ACTIVE:
-                from game.save import save_shared_stash
-                save_shared_stash(self.world.player.stash)
+            from game.save import save_shared_stash
+            save_shared_stash(self.world.player.stash)           # the chest is account wide
         except Exception:
             import traceback
             traceback.print_exc()
@@ -2185,6 +2187,13 @@ class Game:
                 s.stop_voice()
             elif len(page) > 2 and page[2]:
                 from game import dialogue
+                # each line is spoken once; the Talk option asks for it again
+                heard = w.player.__dict__.setdefault("heard", set())
+                again = getattr(w, "dialog_replay", False)
+                if page[2] in heard and not again:
+                    s.stop_voice()
+                    return
+                heard.add(page[2])
                 for name in dialogue.voice_names(page[2], page[3] if len(page) > 3 else None,
                                                  getattr(w.player, "cls", "")):
                     if s.by_name.get(name) is not None:

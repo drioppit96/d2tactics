@@ -19,23 +19,28 @@ def set_mode(mode):
     return SAVE_DIR
 
 
-SHARED_STASH = "_stash.json"         # tactics mode: one stash for all the heroes
+SHARED_STASH = "_stash.json"         # one stash for every character on this install
+
+
+def shared_stash_path():
+    """The chest is account wide: it sits beside the saves, not inside a mode's folder."""
+    return os.path.join(NORMAL_DIR, SHARED_STASH)
 
 
 def save_shared_stash(stash):
-    os.makedirs(SAVE_DIR, exist_ok=True)
-    path = os.path.join(SAVE_DIR, SHARED_STASH)
+    os.makedirs(NORMAL_DIR, exist_ok=True)
+    path = shared_stash_path()
     with open(path + ".tmp", "w") as f:
         json.dump(_stash_dict(stash), f, indent=1)
     os.replace(path + ".tmp", path)
 
 
 def load_shared_stash(content):
-    """The tactics heroes' shared stash (a new, empty one the first time)."""
+    """The chest every character shares (a new, empty one the first time)."""
     from .cube import make_stash, cube_add, stash_tab
     st = make_stash()
     try:
-        with open(os.path.join(SAVE_DIR, SHARED_STASH)) as f:
+        with open(shared_stash_path()) as f:
             sd = json.load(f)
     except Exception:
         return st
@@ -261,6 +266,8 @@ def save_character(player, difficulty="normal"):
         imbues=dict(getattr(p, "imbues", None) or {}),
         weapon_set=getattr(p, "weapon_set", 0),
         rift_seed=getattr(p, "rift_seed", None),
+        stash_merged=bool(getattr(p, "stash_merged", False)),
+        heard=sorted(getattr(p, "heard", None) or ()),
         rift_mods=getattr(p, "rift_mods", None),
         rift_map_depth=getattr(p, "rift_map_depth", None),
         swap_gear={k: _item_dict(v) for k, v in (getattr(p, "swap_gear", None) or {}).items()},
@@ -363,6 +370,8 @@ def build_player(data, content):
     p.imbues = dict(data.get("imbues") or {})
     p.weapon_set = int(data.get("weapon_set", 0) or 0)
     p.rift_seed = data.get("rift_seed")
+    p.stash_merged = bool(data.get("stash_merged", False))
+    p.heard = set(data.get("heard") or ())
     p.rift_mods = data.get("rift_mods")
     p.rift_map_depth = data.get("rift_map_depth")
     p.swap_gear = {k: _item_from(v, content) for k, v in (data.get("swap_gear") or {}).items()}
@@ -422,3 +431,67 @@ def build_player(data, content):
     if a and a in p.skills.tree and p.skills.tree[a].kind == "aura":
         p.active_aura = a
     return p
+
+
+def attach_shared_stash(content, heroes, stash=None):
+    """Give every hero the one account-wide chest, carrying over whatever each of them had in a
+    stash of their own the first time (so nothing stored before this is lost)."""
+    from .cube import cube_add
+    st = stash if stash is not None else load_shared_stash(content)
+    for h in heroes:
+        own = getattr(h, "stash", None)
+        if own is not None and own is not st and not getattr(h, "stash_merged", False):
+            for page in (getattr(own, "pages", None) or [getattr(own, "contents", None) or []]):
+                for it in list(page):
+                    try:
+                        cube_add(st, it)
+                    except Exception:
+                        pass
+            st.gold = getattr(st, "gold", 0) + (getattr(own, "gold", 0) or 0)
+            for k, v in (getattr(own, "bank", {}) or {}).items():
+                st.bank[k] = st.bank.get(k, 0) + int(v)
+        h.stash_merged = True
+        h.stash = st
+    return st
+
+
+def _hero_items(p):
+    """Everything a hero carries: backpack, both weapon sets, and whatever is in the cube."""
+    items = list(p.inventory) + [x for x in p.equipment.values() if x] + \
+        [x for x in (getattr(p, "swap_gear", None) or {}).values() if x]
+    for it in list(items):
+        items += list(getattr(it, "contents", None) or [])
+    return items
+
+
+def identify_all_characters(content, skip=()):
+    """Deckard Cain's eye reaches every character on this install, not only the one standing in
+    front of him: their saves are read, identified and written back. Returns how many items."""
+    from . import d2items
+    global SAVE_DIR
+    was, total = SAVE_DIR, 0
+    skip = {(s or "").lower() for s in skip}
+    try:
+        for folder in (NORMAL_DIR, os.path.join(NORMAL_DIR, "tactics")):
+            if not os.path.isdir(folder):
+                continue
+            SAVE_DIR = folder
+            for fn in sorted(os.listdir(folder)):
+                if not fn.endswith(".json") or fn.startswith("_"):
+                    continue
+                try:
+                    with open(os.path.join(folder, fn)) as f:
+                        data = json.load(f)
+                    if (data.get("name", "") or "").lower() in skip:
+                        continue             # (a hero in the party: identified where he stands)
+                    p = build_player(data, content)
+                    n = sum(1 for it in _hero_items(p) if d2items.identify(it))
+                    if n:
+                        p.recalc()
+                        save_character(p, data.get("difficulty", "normal"))
+                        total += n
+                except Exception:
+                    continue
+    finally:
+        SAVE_DIR = was
+    return total
