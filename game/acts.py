@@ -37,7 +37,7 @@ WAYPOINTS = {
 }
 # extra waypoints of this game at the boss floors (farming): the Countess, Andariel; Radament, Duriel;
 # Mephisto; Diablo; Pindleskin, Baal
-BOSS_WAYPOINTS = {1: [25, 37], 2: [49, 73], 3: [102], 4: [108], 5: [121, 124, 131]}
+BOSS_WAYPOINTS = {1: [25, 37], 2: [49, 73], 3: [102], 4: [108], 5: [121, 131]}
 for _a, _l in BOSS_WAYPOINTS.items():
     WAYPOINTS[_a] = WAYPOINTS[_a] + _l
 # Objects.txt tokens of each waypoint (a different look per act / area)

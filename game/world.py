@@ -840,7 +840,7 @@ class World(SkillCaster, ItemActions):
 
     # a boss slain: the waypoint of its level opens for the whole party (no walking back down for it)
     BOSS_WP_BY_ID = {"andariel": 37, "duriel": 73, "mephisto": 102, "diablo": 108, "baalcrab": 131,
-                     "radament": 49, "summoner": 74, "nihlathakboss": 124, "izual": 106, "bloodraven": 3}
+                     "radament": 49, "summoner": 74, "nihlathakboss": 123, "izual": 106, "bloodraven": 3}
     BOSS_WP_BY_NAME = {"The Countess": 25, "Shenk the Overseer": 111, "Toorc Icefist": 83,
                        "Geleb Flamefinger": 83, "Ismail Vilehand": 83, "Pindleskin": 121, "Griswold": 4}
 

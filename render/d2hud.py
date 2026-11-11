@@ -1407,7 +1407,7 @@ class D2Hud:
             cur = act_of(here) if here else 1
             self.wp_act = cur if cur in acts else acts[-1]
         bosses = BOSS_WAYPOINTS.get(self.wp_act, [])
-        rows = list(WAYPOINTS[self.wp_act])[:12]
+        rows = list(WAYPOINTS[self.wp_act])[:11]
         extra = max(0, len(rows) - 9)
         self._waygate_bg(surf, bg, extra)
         self._act_tabs(surf, acts, self.wp_act, "wp_tab", "expwaygatetabs")
