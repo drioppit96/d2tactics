@@ -217,6 +217,19 @@ tools/extract_monsters.py every monster's animations + a report and picture shee
 tools/extract_act.py      one act's layouts (DS1), tile libraries (DT1), palette, objects (for building an act)
 ```
 
+## Red portals (this game's own)
+
+Kill Andariel and a red portal opens beside Gheed in the Rogue Encampment. It leads into a rift:
+one randomly built floor made from the tiles of any act - a cave, a crypt, a jail, a tomb, a sewer,
+Baal's halls, an open plain - never bigger than the shrunken-map rule allows. Each floor holds up
+to six kinds of monster drawn from the whole game and a keeper waiting at the far end. Kill the
+keeper and another red portal tears open one floor deeper; it never ends, and how deep you got is
+kept in the save (per difficulty).
+
+Everything down there is at your own level: D2's MonLvl table gives each monster the life, damage,
+attack rating, defense and experience of that level, so a Fallen is as dangerous as a Pit Lord and
+neither is a pushover or a joke. `game/rift.py`.
+
 ## Sound and music
 
 D2's own sounds, NPC voices and music, read from your MPQs (d2sfx, d2speech, d2xtalk, d2music,

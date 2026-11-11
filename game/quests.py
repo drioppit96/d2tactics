@@ -249,9 +249,10 @@ def on_enter(world, lid):
 
 def restore(world):
     init(world.player)
-    from . import quests2, quests345
+    from . import quests2, quests345, rift
     quests2.restore(world)
     quests345.restore(world)
+    rift.ensure_portal(world)
 
 
 def read_horadric_scroll(world, it):
@@ -390,9 +391,10 @@ def on_monster_killed(world, unit=None):
     q = p.quests
     boss = getattr(unit, "boss", None) if unit is not None else None
     if unit is not None:
-        from . import quests2, quests345
+        from . import quests2, quests345, rift
         quests2.on_killed(world, unit)
         quests345.on_killed(world, unit)
+        rift.on_killed(world, unit)
     if boss == "blood_raven" and q["blood_raven"] in ("none", "active"):
         q["blood_raven"] = "cleared"
         world.log("Blood Raven is slain! Return to Kashya.", QUEST_COLOR)

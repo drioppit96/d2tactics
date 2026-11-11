@@ -476,6 +476,9 @@ class Game:
             w = old
         else:
             w = self._get_world(key, info.name(target))
+        from game.rift import is_rift
+        for k in [k for k in self.levels if is_rift(k) and k != key]:
+            self.levels.pop(k)
         self.levels[key] = w
         self.restore_map(key, w)
         if arrive is not None and (not w.grid.walkable(*arrive) or arrive in w.occupied()):
@@ -733,7 +736,10 @@ class Game:
     def _start_scene(self):
         if hasattr(self.assets, "set_act"):
             try:
-                self.assets.set_act(self.current_act())
+                from game import rift
+                lid = getattr(self.world, "level_id", None)
+                # a rift floor is drawn with the palette of the act its tiles come from
+                self.assets.set_act(rift.act_of(lid) if rift.is_rift(lid) else self.current_act())
             except Exception:
                 pass
         self._path_cache = {}

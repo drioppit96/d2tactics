@@ -53,6 +53,9 @@ class ActInfo:
         return SIDE_AREAS.get(lid) or EXTRA_LEVELS.get(lid)
 
     def name(self, lid):
+        from . import rift
+        if rift.is_rift(lid):
+            return rift.name(lid)
         sa = self._side(lid)
         if sa:
             return sa["name"]
@@ -64,6 +67,9 @@ class ActInfo:
         return LEVEL_NAMES.get(lid, "Level %s" % lid)
 
     def monster_level(self, lid):
+        from . import rift
+        if rift.is_rift(lid):
+            return rift.monster_level(lid)      # a rift is always at the hero's own level
         sa = self._side(lid)
         if sa:
             return self.monster_level(sa["like"]) + sa.get("plus", 1)
@@ -73,6 +79,9 @@ class ActInfo:
         return max(1, _int(r.get(col)) or _int(r.get("monlvl1"), 1))
 
     def roster(self, lid):
+        from . import rift
+        if rift.is_rift(lid):
+            return rift.roster(lid, self.content, self.kit)
         sa = self._side(lid)
         if sa and sa.get("roster"):
             return [m for m in sa["roster"] if self.content is not None and m in self.content.monstats]
@@ -781,12 +790,15 @@ def _populate(world, lid, rect, taken, safe, info):
     hits = sum(1 for _ in range(samples) if g.walkable(rng.randrange(x0, x1), rng.randrange(y0, y1)))
     walk = area * hits / float(samples)
     from .acts import OUTDOOR_IDS as ALL_OUTDOOR
-    outdoor = lid in ALL_OUTDOOR
+    from . import rift
+    outdoor = lid in ALL_OUTDOOR or rift.is_field(lid)
     per_pack = 1500 if outdoor else 330
     cap = 42 if outdoor else 40
     from . import tactics
     if tactics.ACTIVE:
         per_pack, cap = (1100, 20) if outdoor else (360, 24)   # dense, hard fights on the smaller maps
+    if rift.is_rift(lid):
+        cap = min(cap, 12 if tactics.ACTIVE else 16)   # a rift floor is a fight, not a march
     if lid in DENSE:                    # this game's packed compounds: the armory, the scriptorium
         per_pack, cap = DENSE[lid]
     n_packs = min(int(walk / per_pack), cap)
@@ -887,7 +899,15 @@ def make_world(kit, info, content, level_key, seed=None, player=None, char_class
     act2.KIT = kit
     if unique_level(level_key):
         seed = 7919 * level_key + 17          # fixed: unique areas look the same every game
-    from . import custommap
+    from . import custommap, rift
+    if rift.is_rift(level_key):
+        b, grid, rng = rift.build_level(kit, level_key, seed, player)
+        w = World(built=(b, grid, rng), content=content, level_key=level_key, info=info, player=player,
+                  char_class=char_class, char_name=char_name)
+        rift.after_build(w)
+        settle_big_monsters(w)
+        guard_shamans(w)
+        return w
     custom = custommap.for_level(level_key)
     if custom is not None:
         b, grid, rng = custommap.compose(kit, custom, level_key, seed)   # a map from the map editor

@@ -186,7 +186,7 @@ def _item_from(d, content):
 
 # what D2 keeps separately for each difficulty (quests, waypoints, Cain, the act you are in...)
 PER_DIFF = ("quests", "waypoints", "visited", "cain", "act", "quest_stats", "boss_kills", "map_explored",
-            "tracked_quest", "cairn_order")
+            "tracked_quest", "cairn_order", "rift_depth")
 DIFFICULTIES = ("normal", "nightmare", "hell")
 
 
@@ -211,7 +211,7 @@ def switch_difficulty(data, new):
     state = dict(d.get("diff_state") or {})
     state[cur] = {k: d.get(k) for k in PER_DIFF}
     fresh = dict(quests={}, waypoints=[1], visited=[1], cain=False, act=1, quest_stats={}, boss_kills=[],
-                 map_explored={}, tracked_quest=None, cairn_order=None)
+                 map_explored={}, tracked_quest=None, cairn_order=None, rift_depth=0)
     d.update(state.pop(new, None) or fresh)
     d["diff_state"] = state
     d["difficulty"] = new
@@ -234,8 +234,8 @@ def switch_mode(data, new):
     state = dict(d.get("mode_state") or {})
     state[cur] = {k: d.get(k) for k in PER_MODE}
     fresh = dict(quests={}, waypoints=[1], visited=[1], cain=False, act=1, quest_stats={}, boss_kills=[],
-                 map_explored={}, tracked_quest=None, cairn_order=None, difficulty="normal", diff_state={},
-                 unlocked=["normal"])
+                 map_explored={}, tracked_quest=None, cairn_order=None, rift_depth=0, difficulty="normal",
+                 diff_state={}, unlocked=["normal"])
     d.update(state.pop(new, None) or fresh)
     d["mode_state"] = state
     d["mode"] = new
@@ -260,12 +260,14 @@ def save_character(player, difficulty="normal"):
         qol=dict(getattr(p, "qol", None) or {}),
         imbues=dict(getattr(p, "imbues", None) or {}),
         weapon_set=getattr(p, "weapon_set", 0),
+        rift_seed=getattr(p, "rift_seed", None),
         swap_gear={k: _item_dict(v) for k, v in (getattr(p, "swap_gear", None) or {}).items()},
         set_skills={str(k): list(v) for k, v in (getattr(p, "set_skills", None) or {}).items()},
         quests=dict(getattr(p, "quests", {})), waypoints=sorted(getattr(p, "waypoints", {1})),
         visited=sorted(getattr(p, "visited", {1})), cain=bool(getattr(p, "cain_rescued", False)),
         hireling=bool(getattr(p, "has_hireling", False)),
         hireling_kind=getattr(p, "hireling_kind", ""), map_seed=getattr(p, "map_seed", None),
+        rift_depth=int(getattr(p, "rift_depth", 0) or 0),
         cairn_order=getattr(p, "cairn_order", None), map_explored=dict(getattr(p, "map_explored", None) or {}), quest_stats=dict(getattr(p, "quest_stats", {}) or {}), act=int(getattr(p, "current_act", 1) or 1),
         equipment={k: _item_dict(v) for k, v in p.equipment.items()},
         inventory=[_item_dict(it) for it in p.inventory], belt=[_item_dict(it) for it in p.belt],
@@ -358,12 +360,14 @@ def build_player(data, content):
     p.qol = dict(data.get("qol") or {})
     p.imbues = dict(data.get("imbues") or {})
     p.weapon_set = int(data.get("weapon_set", 0) or 0)
+    p.rift_seed = data.get("rift_seed")
     p.swap_gear = {k: _item_from(v, content) for k, v in (data.get("swap_gear") or {}).items()}
     p.swap_gear.setdefault("weapon", None)
     p.swap_gear.setdefault("shield", None)
     p.set_skills = {int(k): tuple(v) for k, v in (data.get("set_skills") or {}).items()}
     p.map_explored = dict(data.get("map_explored") or {})      # the automap ("same maps every game")
     p.cairn_order = data.get("cairn_order")
+    p.rift_depth = int(data.get("rift_depth", 0) or 0)
     p.quest_stats = dict(data.get("quest_stats", {}) or {})
     p.current_act = data.get("act", 1)
     for k in p.equipment:
