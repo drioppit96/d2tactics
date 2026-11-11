@@ -312,6 +312,9 @@ def list_saves():
         try:
             with open(os.path.join(SAVE_DIR, fn)) as f:
                 d = json.load(f)
+            from .units import CLASS_STATS
+            if d.get("cls", "bar") not in CLASS_STATS:
+                continue                 # (a hero of a class this version doesn't have)
             out.append(d)
         except Exception:
             continue
