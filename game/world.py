@@ -21,6 +21,7 @@ from .items import roll_drop, SLOTS
 from .mapgen import generate_cave, populate
 from .units import Player, Monster, CLASS_KIT
 from .skillcast import SkillCaster
+from .warlock import WarlockCaster
 from .itemactions import ItemActions
 from . import potions
 
@@ -116,7 +117,7 @@ def hit_chance(attacker, defender, ar_bonus_pct=0):
     return chance
 
 
-class World(SkillCaster, ItemActions):
+class World(SkillCaster, WarlockCaster, ItemActions):
     def __init__(self, seed=None, depth_level=1, level_builder=None, content=None,
                  level_id="den", level_name="Den of Evil", town=False, player=None, exit_to=None,
                  char_class="bar", char_name=None, built=None, level_key=None, info=None):

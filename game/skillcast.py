@@ -289,6 +289,10 @@ class SkillCaster:
         if p.mana < mana:
             self.log("Not enough mana.", GREY)
             return False
+        life = self.life_cost(name) if s.extra.get("life_cost") else 0
+        if life and p.hp <= life:
+            self.log("Not enough life.", GREY)      # (blood magic never kills its caster)
+            return False
         if self.mode == "combat" and p.ap < ap:
             self.log("Need %d AP for %s." % (ap, s.title), GREY)
             return False
@@ -315,6 +319,8 @@ class SkillCaster:
         self._casting = s
         ok = handler(s, env, target, cell, ap, mana)
         self._casting = None
+        if ok and life and p.alive:
+            p.hp = max(1, p.hp - life)             # the blood price
         if ok:
             self._maybe_auto_end()
         return ok
@@ -416,6 +422,10 @@ class SkillCaster:
         if ed:
             m["elem"] = ed
         x = s.extra
+        for k in ("dmg", "ar", "leech"):           # (the Warlock's strikes: (base, per level) in the skill itself)
+            v = x.get(k)
+            if isinstance(v, tuple):
+                m[k] += v[0] + v[1] * (env.lvl - 1)
         hits = x.get("hits", 1)
         if hits == "calc1":
             hits = max(1, env.calc("calc1"))
@@ -463,6 +473,8 @@ class SkillCaster:
             self.log("%s: %d charge%s." % (s.title, ch[skill], "" if ch[skill] == 1 else "s"), YELLOW)
         if x.get("finisher") and getattr(p, "charges", None):
             self._release_charges(target, dealt)
+        if x.get("execute") and dealt and target.alive and target.hp * 2 <= target.max_hp:
+            self._damage(target, max(1, dealt * x["execute"] // 100), p)      # (Execute: the wounded die faster)
         if x.get("self_damage"):
             hurt = max(1, dealt * x["self_damage"] // 100)
             p.hp = max(1, p.hp - hurt)
@@ -1098,7 +1110,7 @@ class SkillCaster:
         key = s.key
         if key == "Energy Shield":
             extra["eshield"] = env.ln(1, 2) if env.par(1) else 20 + 2 * env.lvl
-        if key in ("Bone Armor", "Cyclone Armor"):
+        if key in ("Bone Armor", "Cyclone Armor") or s.extra.get("absorb"):
             extra["absorb"] = max(10, env.calc("calc1") or env.ln(1, 2))
             turns = 99
         if key in ("Frozen Armor", "Shiver Armor", "Chilling Armor"):

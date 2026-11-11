@@ -750,6 +750,8 @@ class Game:
         p = w.player
         plan = {"player": None, "monsters": [], "missiles": []}
         try:
+            if getattr(p, "cls", "") == "war":
+                raise ValueError("the Warlock is drawn from a monster sprite")
             arms, hide, wclass = a.player_look(p)
             plan["player"] = (getattr(p, "token", "BA") or "BA", [wclass, "HTH"] if wclass != "HTH" else ["HTH"],
                               {k: list(v) for k, v in arms.items()})

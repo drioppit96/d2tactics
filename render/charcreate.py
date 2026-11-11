@@ -19,9 +19,10 @@ HEROES = [
     ("pal", "paladin", "pa", (521, 338)),
     ("sor", "sorceress", "so", (626, 352)),
     ("dru", "druid", "dz", (720, 370)),
+    ("war", None, None, (522, 440)),          # this game's own class: no front-end art, his game sprite
 ]
 NAMES = {"ama": "Amazon", "ass": "Assassin", "nec": "Necromancer", "bar": "Barbarian", "pal": "Paladin",
-         "sor": "Sorceress", "dru": "Druid"}
+         "sor": "Sorceress", "dru": "Druid", "war": "Warlock"}
 BLURB = {
     "ama": "Skilled with the spear and the bow, she is a very versatile fighter.",
     "ass": "Schooled in the Martial Arts, her mind and body are deadly weapons.",
@@ -30,6 +31,7 @@ BLURB = {
     "pal": "He is a natural party leader, holy man, and blessed warrior.",
     "sor": "She has mastered the elemental magicks - fire, lightning, and ice.",
     "dru": "Commanding the forces of nature, he summons wild beasts and raging storms to his side.",
+    "war": "A blood knight: he pays for his sorcery with his own life and binds demons to his will.",
 }
 GOLD = (199, 179, 119)
 WHITE = (255, 255, 255)
@@ -184,6 +186,9 @@ class CharCreate(FrontEnd):
         self.fire = self._anim(FE + "fire.dc6")
         self.anims = {}
         for code, folder, pre, pos in HEROES:
+            if folder is None:
+                self.anims[code] = self._game_sprite_anims(code)
+                continue
             base = FE + folder + "\\" + pre
             a = {k: self._anim(base + suffix + ".dc6")
                  for k, suffix in (("idle", "nu1"), ("hover", "nu2"), ("forward", "fw"), ("selected", "nu3"),
@@ -203,6 +208,31 @@ class CharCreate(FrontEnd):
         self.name = ""
         self.buttons = self._frames(FE + "mediumbuttonblank.dc6", pal=self.unit_palette) or \
             self._frames("data\\global\\ui\\PANEL\\mediumbuttonblank.dc6", pal=self.unit_palette)
+
+    def _game_sprite_anims(self, code, k=2.5):
+        """A hero without D2 front-end art (the Warlock): his in-game sprite, enlarged."""
+        out = {}
+        try:
+            a = self.game.assets
+            sp = a._warlock_sprites()
+        except Exception:
+            return out
+
+        def conv(mode, facing=(1, 1), fps=12):
+            frames = []
+            for img, x0, y0 in (sp.frames(mode, facing) or []):
+                if img is None:
+                    continue
+                w, h = img.get_size()
+                big = pygame.transform.smoothscale(img, (int(w * k), int(h * k)))
+                frames.append((big, int(x0 * k), int(y0 * k) + big.get_height()))
+            return Anim(frames, fps) if frames else None
+        out["idle"] = conv("NU", fps=9)
+        out["hover"] = conv("NU", fps=14)
+        out["forward"] = conv("SC", fps=16)
+        out["selected"] = conv("NU", fps=12)
+        out["back"] = conv("GH", fps=14)
+        return {m: an for m, an in out.items() if an is not None}
 
     def _background(self):
         return self._tiled([FE + n for n in ("charactercreationscreenEXP.dc6", "charactercreate.dc6",

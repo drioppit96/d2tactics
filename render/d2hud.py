@@ -158,9 +158,65 @@ class D2Hud:
             prefix, letter = info[3], info[4]
             icons = self._load(SPELLS + prefix.title() + "Skillicon.DC6") or self._load(SPELLS + prefix + "skillicon.dc6")
             back = self._load(SPELLS + "skltree_%s_back.DC6" % letter)
+            if cls == "war":
+                icons = self._warlock_icons() or icons
             self._class_art[cls] = (icons, back)
         self.skill_icons, self.tree_back = self._class_art[cls]
         self._art_class = cls
+
+    def _warlock_icons(self):
+        """The Warlock's skill icons: D2 icons of the other classes (the skill each of his is built
+        from), steeped in blood red so they read as one set."""
+        from d2.dc6 import DC6
+        try:
+            p = self.world.player if getattr(self, "world", None) is not None else None
+            tree = p.skills.tree if p is not None and getattr(p, "cls", "") == "war" else None
+            if tree is None:
+                from game.skills import load_tree
+                tree = load_tree(self.src, "war", getattr(self.assets.content, "strings", None))
+        except Exception:
+            return None
+        pal = getattr(self.assets, "ui_palette", None) or self.assets.palette
+        cols = [tuple(c[:3]) for c in pal[:256]]
+        table = bytearray(range(256))
+        for i in range(1, 256):
+            r, g, b = cols[i]
+            l = (r * 30 + g * 59 + b * 11) / 100.0
+            t = (min(255, l * 1.25 + 18), l * 0.30, l * 0.26)
+            best, bd = i, 1e9
+            for j in range(1, 256):
+                pr, pg, pb = cols[j]
+                d = (pr - t[0]) ** 2 + (pg - t[1]) ** 2 + (pb - t[2]) ** 2
+                if d < bd:
+                    best, bd = j, d
+            table[i] = best
+        table = bytes(table)
+        sheets = {}
+        out = [None] * (2 * len(tree) + 2)
+        for s in tree.values():
+            src = getattr(s, "icon_src", None)
+            if not src or not src[0]:
+                continue
+            prefix, cel = src
+            if prefix not in sheets:
+                dc = None
+                for path in (SPELLS + prefix.title() + "Skillicon.DC6", SPELLS + prefix + "skillicon.dc6"):
+                    if self.src.has(path):
+                        try:
+                            dc = DC6(self.src.read(path))
+                        except Exception:
+                            dc = None
+                        break
+                sheets[prefix] = dc
+            dc = sheets[prefix]
+            if dc is None:
+                continue
+            for k in (0, 1):
+                if cel + k < len(dc.frames) and s.icon + k < len(out):
+                    f = dc.frames[cel + k]
+                    if f.width and f.height:
+                        out[s.icon + k] = self.ind(f.width, f.height, bytes(f.pixels).translate(table))
+        return out if any(o is not None for o in out) else None
 
     # ------------------------------------------------------------ loading / scaling helpers
     def _load(self, path, required=False):
@@ -899,7 +955,9 @@ class D2Hud:
                     title = sk.title if sk is not None else name
                     self.hover_lines = [(title, GREEN), ("Level %d" % p.skills.level(name), WHITE)] + \
                         [(t, WHITE) for t in p.skills.describe(name)] + \
-                        [("%d AP, %s mana" % (ap, _num(mana)), GREY), ("Click to change skill", GREY)]
+                        [(("%d AP, %s life" % (ap, _num(self.world.life_cost(name)))) if sk is not None and
+                          sk.extra.get("life_cost") else ("%d AP, %s mana" % (ap, _num(mana))), GREY),
+                         ("Click to change skill", GREY)]
 
     def _aura_box(self, surf, x, y, p):
         """The paladin's aura slot (above the right skill): the aura that is always on."""
