@@ -838,6 +838,32 @@ class World(SkillCaster, ItemActions):
                 self.emit("sound", g, npc)            # D2: "Hello" / "Greetings" as the menu opens
         return True
 
+    # a boss slain: the waypoint of its level opens for the whole party (no walking back down for it)
+    BOSS_WP_BY_ID = {"andariel": 37, "duriel": 73, "mephisto": 102, "diablo": 108, "baalcrab": 131,
+                     "radament": 49, "summoner": 74, "nihlathakboss": 124, "izual": 106, "bloodraven": 3}
+    BOSS_WP_BY_NAME = {"The Countess": 25, "Shenk the Overseer": 111, "Toorc Icefist": 83,
+                       "Geleb Flamefinger": 83, "Ismail Vilehand": 83, "Pindleskin": 121, "Griswold": 4}
+
+    def _boss_waypoint(self, unit):
+        if getattr(unit, "ally", False) or unit.is_player:
+            return
+        lid = self.BOSS_WP_BY_ID.get((getattr(unit, "d2id", "") or "").lower()) or \
+            (self.BOSS_WP_BY_NAME.get(unit.name) if getattr(unit, "unique", False) else None)
+        if not lid:
+            return
+        from . import tactics
+        heroes = tactics.party(self) if tactics.ACTIVE else [self.player]
+        new = False
+        for h in heroes or [self.player]:
+            if not hasattr(h, "waypoints"):
+                h.waypoints = {1}
+            if lid not in h.waypoints:
+                h.waypoints.add(lid)
+                new = True
+        if new:
+            name = self.info.name(lid) if getattr(self, "info", None) else str(lid)
+            self.log("Waypoint unlocked: %s." % name, YELLOW)
+
     def team_mf(self):
         """Magic find for drops: in tactics mode the whole party's MF adds up (10 + 10 + 10 = 30 for everyone)."""
         from . import tactics
@@ -2195,6 +2221,7 @@ class World(SkillCaster, ItemActions):
             else:
                 self.log("%s is slain!" % unit.name, (199, 179, 119))
         from . import quests, itemfx
+        self._boss_waypoint(unit)
         quests.on_monster_killed(self, unit)
         if source is p:
             itemfx.on_kill(self, unit)
