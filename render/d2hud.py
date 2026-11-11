@@ -865,12 +865,10 @@ class D2Hud:
         p = self.world.player
         if getattr(self, "_art_class", None) != getattr(p, "cls", "bar"):
             self.use_class(getattr(p, "cls", "bar"))
+        gi = self.generic_icons
         if name is None or name == "attack":
-            if self.generic_icons:
-                return self.generic_icons[0]
-            return None
+            return gi[2] if gi and len(gi) > 2 else None       # (SkillDesc: attack's IconCel is 2)
         if name == "throw":
-            gi = self.generic_icons
             return gi[6] if gi and len(gi) > 6 and gi[6] is not None else None
         s = p.skills.tree.get(name)
         if s and self.skill_icons and s.icon < len(self.skill_icons):
