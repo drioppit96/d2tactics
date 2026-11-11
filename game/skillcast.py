@@ -1464,6 +1464,7 @@ class SkillCaster:
         if s.key == "Dopplezon":
             a.decoy = True
             a.dmg = (0, 0)
+            a.mirror = p                      # (drawn as a copy of the Amazon)
         self.log("%s summoned." % s.title, YELLOW)
         return True
 

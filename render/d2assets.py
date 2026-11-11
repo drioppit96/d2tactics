@@ -520,6 +520,8 @@ class D2Assets(AssetProvider):
                      "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8"):
             v = ms2.get(comp.lower() + "v", "").replace('"', "")
             opts = [x.strip().upper() for x in v.split(",") if x.strip() and x.strip() != "0"]
+            if not opts and str(ms2.get(comp.lower(), "")).strip() == "1":
+                opts = ["LIT"]                # (a part with no variant list: D2 draws its "lit" one - the Valkyrie)
             if unique and len(opts) > 1:
                 opts = opts[1:] + opts[:1]    # a different look for the boss
             arms[comp] = opts
@@ -536,6 +538,18 @@ class D2Assets(AssetProvider):
         return self.sprites[key]
 
     def _sprites_for(self, unit):
+        mirror = getattr(unit, "mirror", None)
+        if mirror is not None:
+            return self._sprites_for_human(mirror)   # the Amazon's Decoy: a copy of her, as in D2
+        if (getattr(unit, "d2id", "") or "").lower() == "valkyrie" or getattr(unit, "summon_skill", "") == "Valkyrie":
+            # D2 draws the Valkyrie with the Amazon's own graphics in heavy armour with a spear
+            # (her monster folder only holds empty placeholder frames)
+            key = ("valkyrie",)
+            if key not in self.sprites:
+                arms = {c: ["HVY", "MED", "LIT"] for c in ("HD", "TR", "LG", "RA", "LA", "S1", "S2")}
+                arms["RH"] = ["SPR", "PIK"]
+                self.sprites[key] = UnitSprites(self, "chars", "AM", arms, "2HT", hide=("LH", "SH"))
+            return self.sprites[key]
         if unit.is_player:
             shp = self._shape_sprites(unit)
             if shp is not None:
@@ -1083,6 +1097,12 @@ class D2Assets(AssetProvider):
                     e = self.missile_explosion(r[col], depth + 1)
                     if e:
                         return e
+            for col in ("clthitsubmissile1", "hitsubmissile1"):
+                # what it turns into on hit is itself the burst (Plague Javelin's cloud, Lightning Fury's bolts)
+                if r.get(col) and self.missile_anim(r[col]) is not None:
+                    return r[col]
+        if depth == 0 and str(r.get("pclthitfunc", "")) in ("10", "16"):
+            return "lightninghit"               # (D2's client hit function: the lightning flash)
         return None
 
     def missile_flies(self, name):
