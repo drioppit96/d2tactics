@@ -97,6 +97,12 @@ GREY = (170, 170, 170)
 # D2's melee hit chance is very low early on; in a turn-based game every miss costs a whole
 # action, so the player's attacks get a floor (settings.ini [game] min_hit_chance)
 PLAYER_HIT_FLOOR = 0.60
+# a monster's miss costs it a whole turn too, and D2's level term makes an outlevelled monster
+# almost harmless: its odds get a floor as well (settings.ini [game] monster_hit_chance)
+MONSTER_HIT_FLOOR = 0.50
+# Normal is gentle in D2 and gentler still turn-based: its monsters hit harder here
+# (settings.ini [game] normal_monster_damage)
+NORMAL_MON_DAMAGE = 1.20
 POIS_FRAMES = 150   # weapon / charm poison: its total damage spread over ~3 turns, like D2's poison length
 
 
@@ -113,6 +119,10 @@ def hit_chance(attacker, defender, ar_bonus_pct=0):
     if getattr(attacker, "is_player", False) and PLAYER_HIT_FLOOR > 0.05:
         # map D2's 5..95% onto floor..95%
         chance = PLAYER_HIT_FLOOR + (chance - 0.05) / 0.90 * (0.95 - PLAYER_HIT_FLOOR)
+    elif not getattr(attacker, "ally", False):
+        # a plain floor: a monster that matches you keeps D2's odds, one you have outgrown
+        # no longer flails at you harmlessly
+        chance = max(chance, MONSTER_HIT_FLOOR)
     return chance
 
 
@@ -2098,9 +2108,11 @@ class World(SkillCaster, ItemActions):
     def _damage(self, unit, amount, source):
         if getattr(unit, "invulnerable", False):
             return
-        from . import tactics
-        if tactics.ACTIVE and amount > 0:
-            mult = tactics.damage_mult(self, unit, source)
+        if amount > 0:
+            from . import tactics
+            mult = self.monster_damage_mult(unit, source)
+            if tactics.ACTIVE:
+                mult *= tactics.damage_mult(self, unit, source)
             if mult != 1.0:
                 amount = max(1, int(amount * mult + 0.5))
         if unit.is_player and amount > 0:
@@ -2111,6 +2123,15 @@ class World(SkillCaster, ItemActions):
         self.emit("damage", unit, amount, max(0, unit.hp))
         if unit.hp <= 0:
             self._kill(unit, source)
+
+    def monster_damage_mult(self, unit, source):
+        """How much harder a monster's blow lands on a hero or his minions, by difficulty."""
+        if source is None or getattr(source, "is_player", False) or getattr(source, "ally", False):
+            return 1.0
+        if not (getattr(unit, "is_player", False) or getattr(unit, "ally", False)):
+            return 1.0
+        diff = getattr(getattr(self, "content", None), "difficulty", "normal") or "normal"
+        return NORMAL_MON_DAMAGE if diff == "normal" else 1.0
 
     def _absorb(self, p, amount):
         for name, b in list(getattr(p, "buffs", {}).items()):

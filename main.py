@@ -22,7 +22,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 def load_settings():
     cfg = configparser.ConfigParser()
     cfg.read_dict({"display": {"width": "1280", "height": "720", "fullscreen": "no", "scale": "auto"},
-                   "diablo2": {"path": ""}, "game": {"difficulty": "normal", "min_hit_chance": "60", "attack_ap_offset": "0"}})
+                   "diablo2": {"path": ""}, "game": {"difficulty": "normal", "min_hit_chance": "60", "attack_ap_offset": "0",
+                             "monster_hit_chance": "50", "normal_monster_damage": "120"}})
     cfg.read(os.path.join(HERE, "settings.ini"))
     return cfg
 
@@ -46,6 +47,8 @@ class Game:
         try:
             import game.world as _gw
             _gw.PLAYER_HIT_FLOOR = max(5, min(95, self.cfg.getint("game", "min_hit_chance"))) / 100.0
+            _gw.MONSTER_HIT_FLOOR = max(5, min(95, self.cfg.getint("game", "monster_hit_chance"))) / 100.0
+            _gw.NORMAL_MON_DAMAGE = max(50, min(300, self.cfg.getint("game", "normal_monster_damage"))) / 100.0
             import game.units as _gu
             _gu.ATTACK_AP_OFFSET = max(-4, min(4, self.cfg.getint("game", "attack_ap_offset")))
         except Exception:
