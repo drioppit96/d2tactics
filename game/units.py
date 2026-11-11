@@ -53,12 +53,10 @@ CLASS_STATS = {
     "bar": dict(name="Barbarian", token="BA", stats=(30, 20, 10, 25), hpadd=30, thf=20, lpl=8, mpl=4, lpv=16, mpm=4, block=25),
     "dru": dict(name="Druid", token="DZ", stats=(15, 20, 20, 25), hpadd=30, thf=5, lpl=6, mpl=8, lpv=8, mpm=8, block=20),
     "ass": dict(name="Assassin", token="AI", stats=(20, 20, 25, 20), hpadd=30, thf=15, lpl=8, mpl=6, lpv=12, mpm=7, block=25),
-    # this game's own class: a blood knight - a fighter's body (his spells are paid for in life), little mana
-    "war": dict(name="Warlock", token="IW", stats=(20, 20, 15, 30), hpadd=30, thf=10, lpl=8, mpl=5, lpv=12, mpm=5, block=25),
 }
 # starting gear (CharStats item1..: right hand, left hand) - codes of Weapons/Armor.txt
 CLASS_KIT = {"ama": ("jav", "buc"), "sor": ("sst", None), "nec": ("wnd", None), "pal": ("ssd", "buc"),
-             "bar": ("hax", "buc"), "dru": ("clb", "buc"), "ass": ("ktr", "buc"), "war": ("ssd", "buc")}
+             "bar": ("hax", "buc"), "dru": ("clb", "buc"), "ass": ("ktr", "buc")}
 # the skill every class starts with points in? (D2 gives none; this game gives one free point)
 
 

@@ -24,7 +24,6 @@ CLASSES = [
     ("pal", "Paladin", "PA", "pa", "p"),
     ("sor", "Sorceress", "SO", "so", "s"),
     ("dru", "Druid", "DZ", "dr", "d"),
-    ("war", "Warlock", "IW", "ne", "n"),      # this game's own class (game/warlock.py); the Necromancer's tree art
 ]
 CLASS_BY_CODE = {c[0]: c for c in CLASSES}
 CLASS_CODE_BY_NAME = {c[1]: c[0] for c in CLASSES}
@@ -36,7 +35,6 @@ DEFAULT_PAGE_NAMES = {
     "pal": {1: "Combat Skills", 2: "Offensive Auras", 3: "Defensive Auras"},
     "dru": {1: "Summoning", 2: "Shape Shifting", 3: "Elemental"},
     "ass": {1: "Traps", 2: "Shadow Disciplines", 3: "Martial Arts"},
-    "war": {1: "Dark Arms", 2: "Blood Magic", 3: "Demonology"},
 }
 PAGE_NAMES = DEFAULT_PAGE_NAMES["bar"]
 
@@ -213,8 +211,7 @@ def load_all(src, strings=None):
     from d2.source import read_table
     descs = {r["skilldesc"]: r for r in read_table(src, "SkillDesc") if r.get("skilldesc")}
     trees = {c[0]: {} for c in CLASSES}
-    rows = read_table(src, "Skills")
-    for r in rows:
+    for r in read_table(src, "Skills"):
         cls = r.get("charclass")
         if cls not in trees or not r.get("skill"):
             continue
@@ -238,12 +235,6 @@ def load_all(src, strings=None):
             or (s.kind == "missile" and r.get("srcdam") not in ("", "0") and bool(s.itype))
         s.strings = strings
         trees[cls][key] = s
-    try:
-        from . import warlock
-        trees["war"] = warlock.build(rows, descs, trees, strings)      # the Warlock: built from D2's rows
-    except Exception:
-        import traceback
-        traceback.print_exc()
     return trees
 
 
@@ -559,8 +550,6 @@ class SkillBook:
             if name == "War Cry":
                 return 10 + (lv - 1) // 4
             return s.mana
-        if (s.extra or {}).get("life_cost"):
-            return 0                           # (blood magic is paid in life: World.life_cost)
         m = SkillEnv(self, s, lv).mana()
         return round(m, 1) if m != int(m) else int(m)
 
@@ -635,9 +624,6 @@ def _seconds(frames):
 
 def describe_d2(book, s, lv):
     """The per-level lines of a D2 tooltip (dsc2 + descline1-6 of SkillDesc), plus damage and mana."""
-    if getattr(s, "lines", None):
-        from . import warlock
-        return warlock.describe(book, s, lv)
     env = SkillEnv(book, s, lv)
     d = s.desc or {}
     lines = []

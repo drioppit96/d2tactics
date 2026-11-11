@@ -21,7 +21,7 @@ import pygame
 SFX_DIRS = ("data\\global\\sfx\\", "data\\local\\sfx\\")
 MUSIC_DIR = "data\\global\\music\\"
 CLASS_SND = {"ama": "amazon", "sor": "sorceress", "nec": "necromancer", "pal": "paladin", "bar": "barbarian",
-             "dru": "druid", "ass": "assassin", "war": "paladin"}       # (the Warlock borrows a man's voice)
+             "dru": "druid", "ass": "assassin"}
 # weapon class -> swing sound / what it sounds like when it lands
 SWING = {"1hs": "weapon_1hs_large", "2hs": "weapon_2hs_large", "1ht": "weapon_1ht", "2ht": "weapon_2ht",
          "stf": "weapon_staff", "bow": "weapon_bow", "xbw": "weapon_xbow", "hth": "weapon_punch",
@@ -592,10 +592,7 @@ class SoundSystem:
     def skill_names(self, skill):
         """A skill's D2 sounds: the cast (stsound), the target's (tgtsound: Corpse Explosion's blast)
         and the state it puts on (a curse's own sound: Amplify Damage, Iron Maiden...)."""
-        r = self.skill_row.get(skill)
-        if r is None:
-            from game.warlock import SOUND_BASE       # the Warlock's skills sound like the D2 skill they are built from
-            r = self.skill_row.get(SOUND_BASE.get(skill) or "") or {}
+        r = self.skill_row.get(skill) or {}
         out = []
         for k in ("stsound", "stsoundclass"):
             if r.get(k):

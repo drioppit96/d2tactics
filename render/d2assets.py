@@ -53,7 +53,6 @@ class DccAnim:
 
     def __init__(self, assets, dcc, trans=False, fps=25.0):
         self.a, self.dcc, self.trans, self.fps = assets, dcc, trans, fps
-        self.remap = None              # a 256-byte palette table (the Warlock's blood-red spells)
         self.cache = {}
         self.n_dirs = dcc.n_dirs
         self.length = dcc.frames_per_dir
@@ -66,8 +65,7 @@ class DccAnim:
                 if not fr.width or not fr.height:
                     out.append((None, 0, 0))
                     continue
-                px = fr.pixels if self.remap is None else bytes(fr.pixels).translate(self.remap)
-                img = self.a.indexed_surface(fr.width, fr.height, px)
+                img = self.a.indexed_surface(fr.width, fr.height, fr.pixels)
                 out.append((img, fr.xmin, fr.ymin))
             self.cache[d] = out
         return self.cache[d]
@@ -556,8 +554,6 @@ class D2Assets(AssetProvider):
             shp = self._shape_sprites(unit)
             if shp is not None:
                 return shp
-            if getattr(unit, "cls", "") == "war":
-                return self._warlock_sprites()        # this game's own class: D2's Iron Wolf, in blood and soot
             arms, hide, wclass = self.player_look(unit)
             key = ("player", getattr(unit, "token", "BA"), wclass, hide, tuple(sorted((k, tuple(v)) for k, v in arms.items())))
             if key not in self.sprites:
@@ -607,50 +603,6 @@ class D2Assets(AssetProvider):
             table = self._hue_table(n)
         self.item_cache[key] = table
         return table
-
-    def tint_table(self, tag):
-        """Palette tables by name: "blood" - everything in blood red by its brightness."""
-        if tag == "blood":
-            return self._tint_table((255, 30, 24), 0)
-        return None
-
-    def _warlock_table(self):
-        """The Warlock's look, from D2's Iron Wolf: his reds deepened to blood, the steel and
-        leather burnt almost black - a blood knight, not a town guard."""
-        key = ("warlocktab",)
-        if key in self.item_cache:
-            return self.item_cache[key]
-        import colorsys
-        pal = [tuple(c[:3]) for c in self.palette[:256]]
-        out = bytearray(range(256))
-        for i in range(1, 256):
-            r, g, b = pal[i]
-            h, s, v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
-            if (h < 0.06 or h > 0.94) and s > 0.45:
-                tr, tg, tb = colorsys.hsv_to_rgb(0.985, min(1.0, s * 1.15), v * 0.92)       # the cape: blood
-            elif s < 0.25:
-                tr, tg, tb = colorsys.hsv_to_rgb(0.72, 0.16, v * 0.72)                      # steel: blackened
-            else:
-                tr, tg, tb = colorsys.hsv_to_rgb(h, s * 0.65, v * 0.75)                     # leather, skin: darker
-            tr, tg, tb = tr * 255, tg * 255, tb * 255
-            best, bd = i, 1e9
-            for j in range(1, 256):
-                pr, pg, pb = pal[j]
-                d = (pr - tr) ** 2 + (pg - tg) ** 2 + (pb - tb) ** 2
-                if d < bd:
-                    best, bd = j, d
-            out[i] = best
-        table = bytes(out)
-        self.item_cache[key] = table
-        return table
-
-    def _warlock_sprites(self):
-        key = ("warlock",)
-        if key not in self.sprites:
-            sp = self._monster_sprites("IW", "act3hire", False)
-            sp.remap = self._warlock_table()
-            self.sprites[key] = sp
-        return self.sprites[key]
 
     def _tint_table(self, rgb, lift=0):
         """Every colour turned to one hue by its brightness (a pale blue frost giant smith...)."""
@@ -1071,16 +1023,6 @@ class D2Assets(AssetProvider):
         key = ("mis", name.lower())
         if key in self.item_cache:
             return self.item_cache[key]
-        if "@" in name:
-            # "firebolt@blood": D2's missile in another colour (this game's own class, the Warlock)
-            base, tag = name.split("@", 1)
-            src = self.missile_anim(base)
-            anim = None
-            if src is not None:
-                anim = DccAnim(self, src.dcc, trans=src.trans, fps=src.fps)
-                anim.remap = self.tint_table(tag)
-            self.item_cache[key] = anim
-            return anim
         anim = None
         r = self._missile_rows().get(name.lower())
         if r is not None:
@@ -1144,10 +1086,6 @@ class D2Assets(AssetProvider):
     def missile_explosion(self, name, depth=0):
         """What D2 shows where a missile ends: its ExplosionMissile, or that of what it turns into on
         hit (Fire Blast: bomb in air -> bomb on ground -> bomb explosion)."""
-        if name and "@" in name:
-            base, tag = name.split("@", 1)
-            e = self.missile_explosion(base, depth)
-            return "%s@%s" % (e, tag) if e else None
         r = self._missile_rows().get((name or "").lower())
         if not r:
             return None
@@ -1168,7 +1106,7 @@ class D2Assets(AssetProvider):
         return None
 
     def missile_flies(self, name):
-        r = self._missile_rows().get((name or "").split("@")[0].lower())
+        r = self._missile_rows().get((name or "").lower())
         try:
             return int((r or {}).get("vel") or 0) > 0
         except ValueError:

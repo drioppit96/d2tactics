@@ -217,25 +217,6 @@ tools/extract_monsters.py every monster's animations + a report and picture shee
 tools/extract_act.py      one act's layouts (DS1), tile libraries (DT1), palette, objects (for building an act)
 ```
 
-## The Warlock (this game's own class)
-
-An eighth hero that is not in D2: a blood knight who pays for his spells with his own life, binds
-demons and fights in the front line. Thirty skills in three trees, laid out like the Necromancer's:
-
-- **Dark Arms** - melee: Blood Strike, Siphon Strike, Cleave, Shadow Charge, Execute, Dark Tempest,
-  the Dark Blade weapon mastery, Blood Thirst, and the Hellforged / Bloodlust battle spells.
-- **Blood Magic** - spells that cost *life* instead of mana and deal magic damage: Blood Bolt,
-  Blood Lance, Blood Nova, Blood Storm, Soul Rend, Boiling Blood; Drain Life and Consume Corpse win
-  life back; Blood Ward absorbs blows; Transfusion heals the party.
-- **Demonology** - imps and succubi in numbers, one greater demon at a time (Death Mauler, Blood
-  Lord, Pit Lord), three masteries, Enslave (an enemy fights for you) and Demonic Sacrifice.
-
-Nothing is drawn by hand and nothing of Blizzard's ships: every skill is built at load time from
-D2's own tables (`game/warlock.py`) - its numbers from a D2 skill of the same tier, its graphics
-and sounds from D2 missiles and skills, tinted blood red at runtime. The hero is D2's Iron Wolf
-sprite in a blood-and-soot palette (so his look does not change with his gear), and his skill
-icons are D2 icons steeped in red.
-
 ## Sound and music
 
 D2's own sounds, NPC voices and music, read from your MPQs (d2sfx, d2speech, d2xtalk, d2music,
