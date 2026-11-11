@@ -784,6 +784,16 @@ class SkillCaster:
                 return True
         hit, end = self._first_hit_on_line(p.pos, cell, pierce=bool(x.get("pierce")), max_len=R)
         self.emit("projectile", p, p.pos, hit[-1].pos if hit else end, kind, vm)
+        trail = self.TRAIL_MISSILES.get(s.key)
+        if trail and x.get("linger"):
+            # D2: the javelin leaves poison clouds hanging along its whole flight
+            stop = hit[-1].pos if hit else end
+            path = [c for c in self._line_cells(p.pos, stop) if c != p.pos and self.grid.walkable(*c)]
+            if path:
+                from . import tactics
+                self.hazards.append({"cells": set(path), "env": env,
+                                     "turns": x["linger"] + (1 if tactics.ACTIVE else 0),
+                                     "vis": trail, "elem": s.element, "hit": set()})
         if hit:
             self._wake(hit)
         for m in hit:
@@ -889,7 +899,19 @@ class SkillCaster:
     GROUND_MISSILES = {"Fire Wall": "firewall", "Meteor": "meteorfire", "Blizzard": "blizzard1",
                        "Blaze": "blaze", "Immolation Arrow": "immolationfire", "Fire Ball": "meteorfire",
                        "Firestorm": "firestorm", "Poison Nova": "poisonnova", "Volcano": "meteorfire",
-                       "Armageddon": "meteorfire", "Wake of Fire Sentry": "firewall"}
+                       "Armageddon": "meteorfire", "Wake of Fire Sentry": "firewall",
+                       "Plague Javelin": "plaguejavcloud", "Poison Javelin": "poisonjavcloud"}
+
+    TRAIL_MISSILES = {"Poison Javelin": "poisonjavcloud", "Plague Javelin": "plaguejavcloud"}
+
+    @staticmethod
+    def _line_cells(a, b):
+        """The cells of a straight line from a to b (both ends included)."""
+        (x0, y0), (x1, y1) = a, b
+        n = max(abs(x1 - x0), abs(y1 - y0))
+        if n == 0:
+            return [a]
+        return [(int(round(x0 + (x1 - x0) * i / float(n))), int(round(y0 + (y1 - y0) * i / float(n)))) for i in range(n + 1)]
 
     def ground_missile(self, s):
         """The Missiles.txt animation that keeps burning / freezing on the ground for a skill."""
