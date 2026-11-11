@@ -1122,8 +1122,58 @@ class World(SkillCaster, ItemActions):
         n0 = len(self.events)
         ok = self._use_skill(name, target, cell)
         if ok and name and name not in ("attack", "throw"):
+            self._skill_visuals(name, n0, target, cell)
             self.events.insert(n0, ("skill_sound", name, p))      # D2's cast sound, as the cast starts
         return ok
+
+    # D2 skills whose own graphics the cast code doesn't show itself: the client missiles of
+    # Skills.txt (curse areas, warcries, Sacrifice's blood, martial-arts finishers...) and the
+    # cast / target overlays
+    FX_SELF_KINDS = ("cry", "buff", "aura", "move", "summon", "golem", "turret", "wall", "passive")
+
+    def _skill_visuals(self, name, n0, target, cell):
+        p = self.player
+        s = p.skills.tree.get(name) if getattr(p, "skills", None) else None
+        d = getattr(s, "data", None) or {}
+        if not d:
+            return
+        evs = self.events[n0:]
+        shown = set()
+        ovls = set()
+        for ev in evs:
+            for x in ev[1:]:
+                if isinstance(x, str):
+                    shown.add(x.lower())
+            if ev[0] == "overlay":
+                ovls.add(ev[2])
+        add = []
+        here = p.pos if (s.kind in self.FX_SELF_KINDS or cell is None) else cell
+        if target is not None and getattr(target, "pos", None) and s.kind not in self.FX_SELF_KINDS:
+            here = target.pos
+        miss = []
+        for k in ("cltmissile", "cltmissilea", "cltmissileb", "cltmissilec", "cltmissiled", "srvmissile",
+                  "srvmissilea"):
+            m = (d.get(k) or "").strip()
+            if m and m.lower() not in shown and m.lower() not in [x.lower() for x in miss]:
+                miss.append(m)
+        if miss and not (shown & {x.lower() for x in miss}):
+            if not any(ev[0] in ("projectile",) for ev in evs):        # (missile skills show their own)
+                add.append(("explosion", here, miss[0]))
+        co = (d.get("castoverlay") or "").strip()
+        if co and co not in ovls:
+            add.insert(0, ("overlay", p, co))
+        to = (d.get("tgtoverlay") or "").strip()
+        if to and to not in ovls and target is not None and getattr(target, "pos", None) is not None:
+            add.append(("overlay", target, to))
+        if not add:
+            return
+        # right after the caster's swing / cast, before the hits
+        at = n0
+        for i in range(n0, len(self.events)):
+            if self.events[i][0] in ("attack",):
+                at = i + 1
+                break
+        self.events[at:at] = add
 
     def _use_skill(self, name, target=None, cell=None):
         p = self.player

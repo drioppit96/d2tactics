@@ -443,8 +443,9 @@ class SkillCaster:
             if ed:
                 foes = sorted([m for m in self.enemies() if m is not target and self.udist(m, target) <= 4],
                               key=lambda m: self.udist(m, target))[:n]
+                vm = self.vis_missile(s)          # (Charged Strike's bolts, Lightning Strike's chain)
                 for m in foes:
-                    self.emit("projectile", p, target.pos, m.pos, "ltng")
+                    self.emit("projectile", p, target.pos, m.pos, "ltng", vm)
                     self.elem_hit(m, ed[0], ed[1], ed[2], p, ed[3])
         if x.get("sweep"):
             pass
@@ -1031,7 +1032,11 @@ class SkillCaster:
         if not foes and target is not None:
             foes = [target]
         self._spend(ap, mana, cell, "cast")
-        self.emit("nova", p, cell, r, "curse")
+        fx = (s.data or {}).get("cltmissilea") or (s.data or {}).get("cltmissile")
+        if fx:
+            self.emit("explosion", cell, fx)            # D2's curse graphic over the cursed spot
+        else:
+            self.emit("nova", p, cell, r, "curse")
         for m in foes:
             if m.unique and "terror" in flags:
                 continue
@@ -1129,8 +1134,13 @@ class SkillCaster:
             return
         if key == "Thunder Storm":
             foes = [self.rng.choice(foes)]
+        fx = {"Thunder Storm": "thunderstorm1", "Armageddon": "armageddonrock", "Hurricane": "hurricaneswoosh",
+              "Blaze": "firesmall"}.get(key)
         for m in foes[:4]:
-            self.emit("projectile", p, p.pos, m.pos, {"ltng": "ltng", "fire": "fireball", "cold": "cold"}.get(env.s.element, "spike"))
+            if fx:
+                self.emit("explosion", m.pos, fx)      # D2's own: the bolt from the sky, the falling rock...
+            else:
+                self.emit("projectile", p, p.pos, m.pos, {"ltng": "ltng", "fire": "fireball", "cold": "cold"}.get(env.s.element, "spike"))
             self.skill_damage(env, m, 100, show=False)
 
     def _auras(self, giver=None):
