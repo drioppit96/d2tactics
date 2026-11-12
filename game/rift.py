@@ -102,10 +102,7 @@ def plan(lid, player=None):
     depth = depth_of(lid)
     seed = rift_seed(player)
     rng = random.Random((seed * 1000003) ^ (depth * 7919))
-    # every kind of place is seen once before any of them comes round again
-    order = list(PLACES)
-    random.Random(seed ^ ((depth - 1) // len(PLACES))).shuffle(order)
-    kit, act, flavour = order[(depth - 1) % len(PLACES)]
+    kit, act, flavour = rng.choice(PLACES)      # each floor picks its own place, independently
     p = dict(depth=depth, seed=rng.randrange(1 << 30), kit=kit, act=act, flavour=flavour,
              rooms=rng.randint(4, 6), mlvl=None, roster=None, boss=None, start=None, boss_cell=None,
              actboss=rng.choice(ACT_BOSSES) if depth % BOSS_EVERY == 0 else None)
