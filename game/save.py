@@ -414,10 +414,12 @@ def build_player(data, content):
             elif not cube_add(st, it):
                 p.inventory.append(it)              # re-packed below
     stash_tab(st, 1)
-    # anything without a valid backpack spot gets re-packed (including a row that no longer exists)
+    # anything without a valid backpack spot gets re-packed. The biggest the grid can ever be is
+    # the measure here: the party's options are only merged after every hero is built, so judging
+    # by this hero's own INV_H would tear up a backpack that is about to be seven rows tall again.
     for it in p.inventory:
         pos = getattr(it, "inv_pos", None)
-        if pos and (pos[1] + max(1, getattr(it, "invh", 1) or 1) > p.INV_H or pos[0] >= p.INV_W):
+        if pos and (pos[1] + max(1, getattr(it, "invh", 1) or 1) > 7 or pos[0] >= p.INV_W):
             it.inv_pos = None
     loose = [it for it in p.inventory if getattr(it, "inv_pos", None) is None]
     for it in loose:
@@ -499,3 +501,17 @@ def identify_all_characters(content, skip=()):
     finally:
         SAVE_DIR = was
     return total
+
+
+def repack_inventory(p):
+    """Put back anything sitting in a row this hero's backpack does not have (after the party's
+    quality of life options are settled, which is what decides how many rows that is)."""
+    moved = 0
+    for it in list(p.inventory):
+        pos = getattr(it, "inv_pos", None)
+        if pos and (pos[1] + max(1, getattr(it, "invh", 1) or 1) > p.INV_H or pos[0] >= p.INV_W):
+            it.inv_pos = None
+            p.inventory.remove(it)
+            p.inv_add(it)
+            moved += 1
+    return moved
