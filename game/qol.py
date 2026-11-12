@@ -1,5 +1,5 @@
 """Quality of life options (Game Menu > Quality of Life). They belong to the character and are
-saved with it.
+saved with it; in tactics mode they are the party's, so every hero has them.
 
   big_inv  - a second backpack page: twice the inventory (10 x 8, shown 10 x 4 at a time)
   goblin   - vendors sell the Loot Goblin: a 1x1 item, never used up; right click it to sell your
@@ -33,20 +33,44 @@ def get(player, key):
     return bool((getattr(player, "qol", None) or {}).get(key, False))
 
 
+def heroes(world):
+    """Everyone the options apply to: the whole party in tactics mode, otherwise the one hero."""
+    from . import tactics
+    return [h for h in tactics.everyone(world) if h is not None]
+
+
 def toggle(world, key):
-    """Turn an option on / off. Returns the message for the log."""
-    p = world.player
-    q = getattr(p, "qol", None)
-    if q is None:
-        q = p.qol = {}
-    on = not q.get(key, False)
+    """Turn an option on / off for every hero. Returns the message for the log."""
+    hs = heroes(world)
+    on = not get(world.player, key)
     if key == "big_inv" and not on:
-        if any(getattr(it, "inv_pos", None) and it.inv_pos[1] >= 4 for it in p.inventory):
-            return "Empty your second backpack page first."
-    q[key] = on
+        for h in hs:
+            if any(getattr(it, "inv_pos", None) and it.inv_pos[1] >= 4 for it in h.inventory):
+                return "Empty %s's lower backpack rows first." % h.name
+    for h in hs:
+        q = getattr(h, "qol", None)
+        if q is None:
+            q = h.qol = {}
+        q[key] = on
     if key == "goblin":
         ensure_pet(world)
     return "%s: %s." % (dict(OPTIONS)[key].title(), "on" if on else "off")
+
+
+def sync(party):
+    """One hero having an option on means the party has it (loading a party put together before
+    the options were shared)."""
+    party = [h for h in party if h is not None]
+    on = set()
+    for h in party:
+        on |= {k for k, v in (getattr(h, "qol", None) or {}).items() if v}
+    for h in party:
+        q = getattr(h, "qol", None)
+        if q is None:
+            q = h.qol = {}
+        for k in on:
+            q[k] = True
+    return on
 
 
 # ------------------------------------------------------------------ the loot goblin

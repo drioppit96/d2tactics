@@ -239,7 +239,9 @@ class Game:
                     pass
         tactics.attach(self.world, heroes)
         from game.save import attach_shared_stash
+        from game import qol as _qol
         attach_shared_stash(self.assets.content, heroes)         # the one chest every character shares
+        _qol.sync(heroes)                                        # and the same QoL options
         self._party_seen = self.world.player
         if len(heroes) > 1:
             self.world.log("Your party: %s. Click a portrait to lead with that hero; in combat, End Turn "
