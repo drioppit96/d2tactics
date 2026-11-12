@@ -327,6 +327,9 @@ class ItemActions:
             new = self.content.make_item(it.base, it.base.get("qlvl", 1) or 1, self.rng, sockets=0)
         else:
             new = it
+        if (new.base or {}).get("tome"):
+            from .items import TOME_MAX
+            new.quantity = TOME_MAX              # a tome off the shelf comes full
         from . import potions
         if new.kind == "potion" and potions.belt_add(p, new, self):
             pass

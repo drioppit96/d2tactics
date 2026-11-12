@@ -1393,7 +1393,7 @@ class Game:
         if ui:
             action, arg = ui
             act_s = str(action)
-            if act_s in ("npc_opt", "q_pick", "q_dialogue", "respec", "wp_page", "track_pick") or act_s.endswith(
+            if act_s in ("npc_opt", "q_pick", "q_dialogue", "reset_stats", "wp_page", "track_pick") or act_s.endswith(
                     ("_tab", "close", "_btn", "_button")) or act_s.startswith(("wp", "close", "btn")):
                 from render import sound as _snd
                 if _snd.SOUND is not None:
@@ -1436,9 +1436,6 @@ class Game:
                     w.buy(h.store, arg)
                 return
             if action == "store_grid":
-                return
-            if action == "inv_page":
-                h.inv_page = arg
                 return
             if action == "weapon_swap":
                 w.swap_weapons()
@@ -1520,8 +1517,6 @@ class Game:
                         self.switch_hero(pt[arg])
             elif action == "mate_close":
                 h.mate = None
-            elif action == "mate_page":
-                h.mate_page = arg or 0
             elif action in ("mate_slot", "mate_grid"):
                 from game import tactics
                 mate = getattr(h, "mate", None)
@@ -1543,7 +1538,7 @@ class Game:
                         if cell is not None:
                             target = mate.inv_at(*cell)
                             if w.held is not None:
-                                gx, gy = h._held_anchor(cell, w.held, 0, getattr(h, "mate_page", 0))
+                                gx, gy = h._held_anchor(cell, w.held, 0)
                                 w.place_held(gx, gy)
                             elif target is not None:
                                 if button == 3:
@@ -1630,23 +1625,18 @@ class Game:
                 h.wp_page = arg
             elif action == "q_pick":
                 h.q_sel[arg[0]] = arg[1]
-            elif action == "respec":
+            elif action == "reset_stats":
+                # stats and skills are reset apart: this is the character panel's button
                 p = w.player
                 s0, d0, e0, v0 = p.start_stats
                 back = (p.base_str - s0) + (p.base_dex - d0) + (p.base_vit - v0) + (p.base_eng - e0)
                 p.base_str, p.base_dex, p.base_vit, p.base_eng = s0, d0, v0, e0
                 p.stat_points += max(0, back)
-                n = p.skills.reset()
-                p.right_skill = None
-                p.left_skill = None
-                for b in ("Wearwolf", "Wearbear"):
-                    p.buffs.pop(b, None)
-                p.shape = None
                 p.recalc()
                 p.hp = min(p.hp, p.max_hp)
                 p.mana = min(p.mana, p.max_mana)
-                w.log("Respec: %d stat point%s and %d skill point%s back to spend." %
-                      (back, "" if back == 1 else "s", n, "" if n == 1 else "s"), (199, 179, 119))
+                w.log("Stats reset: %d point%s back to spend." % (back, "" if back == 1 else "s"),
+                      (199, 179, 119))
             elif action == "reset_skills":
                 p = w.player
                 n = p.skills.reset()

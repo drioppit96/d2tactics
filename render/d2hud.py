@@ -244,17 +244,15 @@ class D2Hud:
         mate = ox is not None
         ox = (self.lw - 320) if ox is None else ox
         cx, cy = int((lx - ox - GRID_X) // CELL), int((ly - GRID_Y) // CELL)
-        if 0 <= cx < 10 and 0 <= cy < 4:
-            return cx, cy + 4 * (getattr(self, "mate_page", 0) if mate else self._inv_page())
+        rows = self._inv_rows()
+        if 0 <= cx < 10 and 0 <= cy < rows:
+            return cx, cy
         return None
 
-    def _inv_page(self):
-        """Which backpack page is shown (the second only with the Bigger Inventory option)."""
-        w = getattr(self, "world", None)
-        p = getattr(w, "player", None)
-        if p is None or p.INV_H <= 4:
-            self.inv_page = 0
-        return getattr(self, "inv_page", 0)
+    def _inv_rows(self):
+        """How many backpack rows are shown: 4, or 8 in one tall grid with Bigger Inventory."""
+        p = getattr(getattr(self, "world", None), "player", None)
+        return min(8, max(4, getattr(p, "INV_H", 4) if p is not None else 4))
 
     # ------------------------------------------------------------ drawing
     def draw(self, surf, world, scene, mouse):
@@ -990,24 +988,27 @@ class D2Hud:
                                     ("Press Num 0-9 to bind it to that key", GREY)]
 
     # ------------------------------------------------------------ panels
-    def _panel_bg(self, surf, ox, frames, base=0):
+    def _panel_bg(self, surf, ox, frames, base=0, dy=0, region=True):
         for i, (x, y) in zip(range(base, base + 4), [(0, 0), (256, 0), (0, 256), (256, 256)]):
             if i < len(frames) and frames[i] is not None:
-                self.put(surf, frames[i], ox + x, y)
-        self.region(ox, 0, 320, 432, "panel")
+                self.put(surf, frames[i], ox + x, y + dy)
+        if region:
+            self.region(ox, 0, 320, 432 + dy, "panel")
 
     def _respec_button(self, surf):
+        """The character panel resets stats only - skills have their own button on the skill tree."""
         bx, by = 14, 394
         hot = pygame.Rect(bx, by, 104, 22).collidepoint((int(self.mouse[0]), int(self.mouse[1])))
         bg = pygame.Surface((int(104 * self.s), int(22 * self.s)), pygame.SRCALPHA)
         bg.fill((80, 60, 30, 240) if hot else (40, 30, 20, 230))
         surf.blit(bg, self.P(bx, by))
         pygame.draw.rect(surf, GOLD, self.R(bx, by, 104, 22), 1)
-        self.text(surf, self.f10, "RESPEC", GOLD if hot else WHITE, bx, by + 5, "center", 104)
-        self.region(bx, by, 104, 22, "respec")
+        self.text(surf, self.f10, "RESET STATS", GOLD if hot else WHITE, bx, by + 5, "center", 104)
+        self.region(bx, by, 104, 22, "reset_stats")
         if hot:
-            self.hover_lines = [("Respec (free)", WHITE), ("Every stat and skill point you spent", GREY),
-                                ("goes back, like Akara's reset in D2", GREY)]
+            self.hover_lines = [("Reset stats (free)", WHITE),
+                                ("Every stat point you spent goes back", GREY),
+                                ("Skills are reset on the skill tree panel", GREY)]
 
     def _draw_char(self, surf, p):
         self._panel_bg(surf, 0, self.frames["invchar6"], 0)
@@ -1836,7 +1837,19 @@ class D2Hud:
         p = hero if hero is not None else world.player
         ox = (self.lw - 320) if ox is None else ox
         mate = bool(pre)
-        self._panel_bg(surf, ox, self.frames["invchar6"], 4)
+        rows = self._inv_rows()
+        extra = (rows - 4) * CELL
+        self._panel_bg(surf, ox, self.frames["invchar6"], 4, region=not extra)
+        if extra:
+            # the taller backpack: the panel's own grid texture carries on, then its bottom edge
+            art = self.frames["invchar6"]
+            clip = surf.get_clip()
+            surf.set_clip(self.R(ox, GRID_Y + 4 * CELL, 320, extra))
+            self._panel_bg(surf, ox, art, 4, dy=extra, region=False)
+            surf.set_clip(self.R(ox, GRID_Y + rows * CELL, 320, 18))
+            self._panel_bg(surf, ox, art, 4, dy=GRID_Y + rows * CELL - 414, region=False)
+            surf.set_clip(clip)
+            self.region(ox, 0, 320, GRID_Y + rows * CELL + 18, "panel")
         mx, my = self.mouse
         held = getattr(world, "held", None)
         if not mate:
@@ -1862,15 +1875,14 @@ class D2Hud:
                 elif hot and held is not None and getattr(held, "gem", None) and getattr(it, "sockets", 0):
                     self._draw_sockets(surf, it, ox + x, y, w, h)
             self.region(ox + x, y, w, h, pre + "slot", slot)
-        # backpack grid (one page of 4 rows; two pages with the Bigger Inventory option)
-        page = self._inv_page() if not mate else getattr(self, "mate_page", 0)
+        # backpack grid: one grid of 4 rows, or 8 with the Bigger Inventory option
+        page = 0
         for it in p.inventory:
             if getattr(it, "inv_pos", None) is None:
                 continue
             cx, cy = it.inv_pos
-            if not page * 4 <= cy < page * 4 + 4:
+            if not 0 <= cy < rows:
                 continue
-            cy -= page * 4
             w, h = p._size(it)
             x, y = ox + GRID_X + cx * CELL, GRID_Y + cy * CELL
             if it.mod_list is not None and not it.requirements_ok(p):
@@ -1905,31 +1917,25 @@ class D2Hud:
                 good = ok and len(over) <= 1
                 tint = pygame.Surface((int((hw * CELL) * self.s), int((hh * CELL) * self.s)), pygame.SRCALPHA)
                 tint.fill((0, 120, 0, 70) if good else (140, 0, 0, 70))
-                surf.blit(tint, self.P(ox + GRID_X + gx * CELL, GRID_Y + (gy - page * 4) * CELL))
-        self.region(ox + GRID_X, GRID_Y, 10 * CELL, 4 * CELL, pre + "grid")
+                surf.blit(tint, self.P(ox + GRID_X + gx * CELL, GRID_Y + gy * CELL))
+        self.region(ox + GRID_X, GRID_Y, 10 * CELL, rows * CELL, pre + "grid")
+        gold_box = GOLD_BOX if not extra else (GRID_X + 4, GRID_Y - 18, 120, 17)
+        close = INV_CLOSE if not extra else (280, 2, 32, 32)
         if mate:
-            if p.INV_H > 4:
-                for k in range(2):
-                    r = (ox + GRID_X + k * 30, GRID_Y - 18, 28, 16)
-                    pygame.draw.rect(surf, GOLD if k == page else (90, 80, 60), self.R(*r), 1)
-                    self.text(surf, self.f10, "I" if k == 0 else "II", WHITE, r[0], r[1] + 3, "center", 28)
-                    self.region(*r, "mate_page", k)
-            self.text(surf, self.f16, str(p.gold), WHITE, ox + GOLD_BOX[0] + 4, GOLD_BOX[1] + 2)
+            self.text(surf, self.f16, str(p.gold), WHITE, ox + gold_box[0] + 4, gold_box[1] + 1)
             self.text(surf, self.f16, "%s (level %d)" % (p.name, p.level), GOLD,
-                      ox + GOLD_BOX[0] + GOLD_BOX[2] + 6, GOLD_BOX[1] + 2)
-            self._close_button(surf, INV_CLOSE, ox, "mate_close")
+                      ox + gold_box[0] + gold_box[2] + 6, gold_box[1] + 1)
+            self._close_button(surf, close, ox, "mate_close")
             return
-        if p.INV_H > 4:
-            self._inv_page_tabs(surf, ox, page)
-        self.text(surf, self.f16, str(p.gold), WHITE, ox + GOLD_BOX[0] + 4, GOLD_BOX[1] + 2)
+        self.text(surf, self.f16, str(p.gold), WHITE, ox + gold_box[0] + 4, gold_box[1] + 1)
         if self._is_stash() and getattr(self, "cube_item", None) is not None:
             # with the stash open, your gold goes into it with a click (right click: 1000)
-            self.region(ox + GOLD_BOX[0], GOLD_BOX[1], GOLD_BOX[2], GOLD_BOX[3], "stash_gold", True)
-            if pygame.Rect(ox + GOLD_BOX[0], GOLD_BOX[1], GOLD_BOX[2], GOLD_BOX[3]).collidepoint(
+            self.region(ox + gold_box[0], gold_box[1], gold_box[2], gold_box[3], "stash_gold", True)
+            if pygame.Rect(ox + gold_box[0], gold_box[1], gold_box[2], gold_box[3]).collidepoint(
                     (int(self.mouse[0]), int(self.mouse[1]))):
                 self.hover_lines = [("Click: put all your gold in the stash", WHITE),
                                     ("Right click: put 1000 gold in the stash", WHITE)]
-        self._close_button(surf, INV_CLOSE, ox, "inv")
+        self._close_button(surf, close, ox, "inv")
 
     def _held_anchor(self, cell, item, ox=None, page=None):
         """Top-left grid cell for the held item so that it is centred on the mouse (D2 behaviour)."""
@@ -1941,8 +1947,7 @@ class D2Hud:
         fy = (my - GRID_Y) / CELL - h / 2.0
         gx = int(round(fx))
         gy = int(round(fy))
-        page = self._inv_page() if page is None else page
-        return max(0, min(10 - w, gx)), max(0, min(4 - h, gy)) + 4 * page
+        return max(0, min(10 - w, gx)), max(0, min(self._inv_rows() - h, gy))
 
     # the I / II tabs above the weapon and shield slots (D2's art shows set I as the active one)
     WEAPON_TABS = [(17, 24, 30, 19), (51, 24, 30, 19), (247, 24, 31, 19), (282, 24, 31, 19)]
@@ -1967,22 +1972,6 @@ class D2Hud:
                 self.hover_lines = [("Weapon set %s%s" % ("I" * (tab + 1), " (in use)" if tab == cur else ""), WHITE),
                                     (other.shown_name if other is not None else "No weapon", GREY),
                                     ("W: swap weapons", GREY)]
-
-    def _inv_page_tabs(self, surf, ox, page):
-        """Bigger Inventory: the two backpack pages (I / II) beside the gold box."""
-        b = self.frames.get("buysellbtn") or []
-        mx, my = self.mouse
-        for i in (0, 1):
-            x, y = ox + 228 + i * 36, 385
-            on = i == page
-            if len(b) > 1:
-                self.put(surf, b[1 if on else 0], x, y)
-            else:
-                pygame.draw.rect(surf, GOLD, self.R(x, y, 32, 32), 1)
-            self.text(surf, self.f16, "I" * (i + 1), GOLD if on else WHITE, x, y + 9, "center", 32)
-            self.region(x, y, 32, 32, "inv_page", i)
-            if pygame.Rect(int(x), int(y), 32, 32).collidepoint((int(mx), int(my))):
-                self.hover_lines = [("Backpack page %s" % ("I" * (i + 1)), WHITE)]
 
     def _draw_held(self, surf, it):
         p = self.world.player
@@ -2043,18 +2032,19 @@ class D2Hud:
         t(surf, self.f16, str(book.points), WHITE if book.points else GREY, ox + 252, 62, "center", 50)
         t(surf, self.f10, "Skill Choices", GOLD, ox + 236, 28, "center", 80)
         t(surf, self.f10, "Remaining", GOLD, ox + 236, 42, "center", 80)
-        # unlearn every skill (all points back)
-        rbx, rby = ox + 12, 408
-        hot = pygame.Rect(int(rbx), int(rby), 96, 18).collidepoint((int(self.mouse[0]), int(self.mouse[1])))
-        bg = pygame.Surface((int(96 * self.s), int(18 * self.s)), pygame.SRCALPHA)
+        # unlearn every skill (all points back), at the top beside Skill Choices Remaining
+        rbx, rby = ox + 232, 5
+        hot = pygame.Rect(int(rbx), int(rby), 84, 18).collidepoint((int(self.mouse[0]), int(self.mouse[1])))
+        bg = pygame.Surface((int(84 * self.s), int(18 * self.s)), pygame.SRCALPHA)
         bg.fill((40, 30, 20, 230) if not hot else (80, 60, 30, 240))
         surf.blit(bg, self.P(rbx, rby))
-        pygame.draw.rect(surf, GOLD, self.R(rbx, rby, 96, 18), 1)
-        t(surf, self.f10, "RESET SKILLS", GOLD if hot else WHITE, rbx, rby + 3, "center", 96)
-        self.region(rbx, rby, 96, 18, "reset_skills")
+        pygame.draw.rect(surf, GOLD, self.R(rbx, rby, 84, 18), 1)
+        t(surf, self.f10, "RESET SKILLS", GOLD if hot else WHITE, rbx, rby + 3, "center", 84)
+        self.region(rbx, rby, 84, 18, "reset_skills")
         if hot:
-            self.hover_lines = [("Reset skills", WHITE), ("Every point you spent goes back", GREY),
-                                ("to Skill Choices Remaining", GREY)]
+            self.hover_lines = [("Reset skills", WHITE), ("Every skill point you spent goes back", GREY),
+                                ("to Skill Choices Remaining", GREY),
+                                ("Stats are reset on the character panel", GREY)]
         tab_y = {3: 110, 2: 218, 1: 325}
         for page in (1, 2, 3):
             ty = tab_y[page]

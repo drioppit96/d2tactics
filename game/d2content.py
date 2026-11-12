@@ -443,7 +443,8 @@ class D2Content:
             it.mod_list = []
             if "use" in base:
                 it.use = base["use"]
-                it.quantity = 20 if base.get("tome") else 0
+                from .items import TOME_MAX
+                it.quantity = TOME_MAX if base.get("tome") else 0   # tomes come full
             else:
                 it.gem = base["gem"]
                 rules = self.sockets
