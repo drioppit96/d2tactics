@@ -13,9 +13,16 @@ GOLD = (226, 190, 110)
 DARK = (25, 18, 8)
 
 
+# Which glyph each tomb wears, read off the stone marker beside its own entrance in D2's art:
+# talcor (66) a pinwheel, talleft1-3 (67-69) a square, a crescent and a ring, talrght1-3 (70-72)
+# a chevron, a triangle and a bullseye. Each preset always leads to the same tomb (its warp main
+# is 1..7 in the DS1), so this is fixed, not a property of where the canyon happens to put it.
+BY_LEVEL = (3, 2, 1, 0, 4, 5, 6)
+
+
 def symbol_of(level_id):
-    """Tomb level 66..72 -> symbol index 0..6."""
-    return (int(level_id) - 66) % 7
+    """Tomb level 66..72 -> symbol index 0..6, matching the marker carved by that entrance."""
+    return BY_LEVEL[(int(level_id) - 66) % 7]
 
 
 def _arc(cx, cy, r, a0, a1, step=10):
