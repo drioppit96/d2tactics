@@ -635,7 +635,7 @@ class Scene:
                 continue
             sx, sy = cam.cell_to_screen(mx, my)
             if -60 < sx < surf.get_width() + 60 and -60 < sy < surf.get_height() + 200:
-                tombsymbols.draw(surf, tombsymbols.symbol_of(t), sx, sy - 120 * cam.scale, 19 * cam.scale, glow=True)
+                tombsymbols.draw(surf, tombsymbols.symbol_of(t), sx, sy - 124 * cam.scale, 22 * cam.scale, glow=True)
 
     def draw(self, surf, cam, hover_cell=None, highlight=None, path_preview=None):
         """World pass. Drawn at 1:1 into an offscreen buffer that main.py scales to the window."""

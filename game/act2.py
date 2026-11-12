@@ -25,7 +25,7 @@ from .grid import FLOOR, WALL
 BLOCK = 8
 SLOT = 10                         # blocks per desert area (80 tiles, Levels.txt sizex/sizey)
 ST = SLOT * BLOCK
-CANYON_SLOT = 12          # D2's canyon, with room to ring it with all seven tombs
+CANYON_SLOT = 14          # room for all seven tombs down the canyon's two north walls
 A2 = "act2\\"
 DESERT = "Act 2 - Desert"
 
@@ -652,26 +652,26 @@ def build_canyon(kit, seed=None, content=None):
                 taken.update(cells)
                 return True
         return False
-    # The seven tombs: their warp number (1-7) is the tomb they lead to (Levels.txt vis1-7). D2
-    # rings the canyon with them - the "left" entrances face east off the west wall, the "right"
-    # ones face south off the north wall, and the corner tomb sits in the far corner - so they are
-    # placed against those walls here too instead of anywhere they happen to fit.
-    # D2 rings the canyon with them: three down each long wall, the corner tomb in a corner, and
-    # the waypoint in the middle of the open ground between them.
+    # The seven tombs: their warp number (1-7) is the tomb they lead to (Levels.txt vis1-7). In D2
+    # all seven stand along the canyon's two northern walls, which are the two upper edges on an
+    # isometric screen: the corner tomb at the top corner, the three "left" entrances (they face
+    # east) down the west wall, the three "right" ones (they face south) along the north wall.
+    # The waypoint sits on the open ground below them.
     lo, hi = 1, size - 2
-    span = [lo + 1 + k * max(2, (hi - lo - 3) // 3) for k in range(3)]
-    west = [[(lo, y)] + [(lo + 1, y)] + [(lo, y + d) for d in (-1, 1, 2)] for y in span]
-    east = [[(hi - 1, y)] + [(hi - 2, y)] + [(hi - 1, y + d) for d in (-1, 1, 2)] for y in span]
-    north = [[(x, lo)] + [(x, lo + 1)] + [(x + d, lo) for d in (-1, 1, 2)] for x in span]
-    south = [[(x, hi - 1)] + [(x, hi - 2)] + [(x + d, hi - 1) for d in (-1, 1, 2)] for x in span]
-    corner = [(hi - 2, hi - 2), (lo, hi - 2), (hi - 2, lo)]
-    # the tall entrances stand against the side walls, the wide ones against the top and bottom
+    span = [lo + 3 + k * 3 for k in range(3)]       # clear of the corner tomb, one block apart
+    span = [min(y, hi - 1) for y in span]
+    west = [[(lo, y)] + [(lo + 1, y)] + [(lo, y + d) for d in (-1, 1)] for y in span]
+    north = [[(x, lo)] + [(x, lo + 1)] + [(x + d, lo) for d in (-1, 1)] for x in span]
+    corner = [(lo, lo), (lo, lo + 1), (lo + 1, lo)]
+    # the tall entrances stand against the west wall, the wide ones against the north wall
     tombs = [("bigcliff\\talcor.ds1", 2, 2, corner)] + \
-            [("bigcliff\\talleft%d.ds1" % i, 1, 2, (west[k] + east[k])) for k, i in enumerate((1, 2, 3))] + \
-            [("bigcliff\\talrght%d.ds1" % i, 2, 1, (north[k] + south[k])) for k, i in enumerate((1, 2, 3))]
+            [("bigcliff\\talleft%d.ds1" % i, 1, 2, west[k]) for k, i in enumerate((1, 2, 3))] + \
+            [("bigcliff\\talrght%d.ds1" % i, 2, 1, north[k]) for k, i in enumerate((1, 2, 3))]
     for name, w, h, prefer in tombs:
         place(name, w, h, prefer)
-    spot = next(((bx, by) for bx, by in inner if (bx, by) not in taken), None)
+    mid = (size - 1) / 2.0                          # D2 puts the waypoint on the open middle ground
+    spot = next((c for c in sorted(inner, key=lambda c: abs(c[0] - mid) + abs(c[1] - mid))
+                 if c not in taken), None)
     if spot is not None:
         taken.add(spot)
         # D2's waypoint block (Act 2 - Desert Valley Warp): the raised waypoint between four pits
