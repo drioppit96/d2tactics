@@ -538,14 +538,8 @@ def build_desert(kit, seed=None, content=None):
         for sx in range(cols):
             if (sx, sy) in used:
                 continue
-            near = any((sx + dx, sy + dy) in used for dx in (-1, 0, 1) for dy in (-1, 0, 1))
-            if not near:
+            if not any((sx + dx, sy + dy) in used for dx in (-1, 0, 1) for dy in (-1, 0, 1)):
                 continue                      # only the slots you can actually see from an area
-            for by in range(SLOT):
-                for bx in range(SLOT):
-                    X, Y = sx * ST + bx * BLOCK, sy * ST + by * BLOCK
-                    if rng.random() < 0.7:
-                        put(rng.choice(rocks), X, Y, None)
             rim.append((sx * ST, sy * ST, (sx + 1) * ST, (sy + 1) * ST))
     b.__dict__.setdefault("moat", []).extend(rim)      # rock, not ground: nothing walks there
 
@@ -560,12 +554,35 @@ def build_desert(kit, seed=None, content=None):
     act1._connect(b, grid, pos, links, _SandKit(kit, sds, scodes), rng, openings)
     act1.seal_world(b, grid, stiles, scodes, rng, (41, 42, 43))
     from .grid import WALL
-    for (x0, y0, x1, y1) in getattr(b, "moat", ()):      # (tactics: the strip between the two rings)
+    for (x0, y0, x1, y1) in getattr(b, "moat", ()):      # the slots the desert does not use
         for y in range(y0 * SUB, min(grid.h, y1 * SUB)):
             row = grid.cells[y]
             for x in range(x0 * SUB, min(grid.w, x1 * SUB)):
                 row[x] = WALL
+    _rock_over_blanks(b, grid, rng, put, rocks)
     return b, grid, rng
+
+
+def _rock_over_blanks(b, grid, rng, put, rocks):
+    """Ground you cannot walk on, with nothing on it, is an invisible wall: it reads as more desert
+    and stops you for no reason. Every block with no walkable cell in it and nothing standing on it
+    is filled with D2's berms and mesas, so the edge of the world looks like rock."""
+    tw, th = b.tm.tw, b.tm.th
+    walls = b.tm.walls
+    for by in range(0, th - BLOCK + 1, BLOCK):
+        for bx in range(0, tw - BLOCK + 1, BLOCK):
+            if any(walls.get((bx + x, by + y)) for y in range(BLOCK) for x in range(BLOCK)):
+                continue                      # already has something standing on it
+            open_cell = False
+            for y in range(by * SUB, min(grid.h, (by + BLOCK) * SUB)):
+                row = grid.cells[y]
+                if any(row[x] != 1 for x in range(bx * SUB, min(grid.w, (bx + BLOCK) * SUB))):
+                    open_cell = True
+                    break
+            if open_cell:
+                continue
+            put(rng.choice(rocks), bx, by, None)
+    b.tm.drawn = (b.tm.drawn or set()) | set(b.tm.floor) | set(b.tm.walls) | set(b.tm.floor2)
 
 
 class _SandKit:

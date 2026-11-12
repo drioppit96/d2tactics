@@ -1067,12 +1067,26 @@ def seal_world(b, grid, stiles, scodes, rng, start_areas, margin=14, skip=None):
                         inside = True
                 else:
                     inside = False
+    blocked_tiles = set()
     for y in range(H):
         row = cells[y]
         base = y * W
         for x in range(W):
             if row[x] == FLOOR and not seen[base + x]:
                 row[x] = WALL
+                blocked_tiles.add((x // SUB, y // SUB))
+    # ground laid outside the map that nobody can reach is taken up again: left there it reads as
+    # desert that carries on, and walking into it feels like an invisible wall. The presets' own
+    # ground beyond their cliffs stays - that is D2's art, and the cliff stands in front of it.
+    keep = {t for t in blocked_tiles
+            if any(cells[y][x] == FLOOR
+                   for y in range(t[1] * SUB, min(H, (t[1] + 1) * SUB))
+                   for x in range(t[0] * SUB, min(W, (t[0] + 1) * SUB)))}
+    for t in getattr(b, "filler_tiles", ()) or ():
+        if t in blocked_tiles and t not in keep:
+            tm.floor.pop(t, None)
+            tm.floor2.pop(t, None)
+            tm.drawn.discard(t)
 
 
 def _connect(b, grid, pos, links, kit, rng, openings):
