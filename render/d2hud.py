@@ -1920,9 +1920,11 @@ class D2Hud:
                 tint.fill((0, 120, 0, 70) if good else (140, 0, 0, 70))
                 surf.blit(tint, self.P(ox + GRID_X + gx * CELL, GRID_Y + gy * CELL))
         self.region(ox + GRID_X, GRID_Y, 10 * CELL, rows * CELL, pre + "grid")
-        # the taller grid pushes the panel's bottom row down with it
-        gold_box = GOLD_BOX if not extra else (GOLD_BOX[0], GRID_Y + rows * CELL + 12, GOLD_BOX[2], GOLD_BOX[3])
-        close = INV_CLOSE if not extra else (INV_CLOSE[0], GRID_Y + rows * CELL + 4, 32, 32)
+        # the taller grid pushes the panel's bottom row down with it, art and all, so the gold box
+        # and the close button move by exactly the same amount and stay in their brackets
+        dy = GRID_Y + rows * CELL - 371
+        gold_box = GOLD_BOX if not extra else (GOLD_BOX[0], GOLD_BOX[1] + dy, GOLD_BOX[2], GOLD_BOX[3])
+        close = INV_CLOSE if not extra else (INV_CLOSE[0], INV_CLOSE[1] + dy, INV_CLOSE[2], INV_CLOSE[3])
         if mate:
             self.text(surf, self.f16, str(p.gold), WHITE, ox + gold_box[0] + 4, gold_box[1] + 1)
             self.text(surf, self.f16, "%s (level %d)" % (p.name, p.level), GOLD,
