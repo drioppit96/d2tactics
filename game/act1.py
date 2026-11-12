@@ -1281,6 +1281,17 @@ def build_maze(kit, level_id, spec, seed=None):
         if role == "prev" and spec["kit"] == "barracks":
             # the court connection has no warp tile: its open side leads back to the cloister
             b.court_room = (rx * mk.rw, ry * mk.rh, mk.rw, mk.rh)
+    # A special room's own preset can carry an editor warp marker of its own - the Tainted Sun
+    # altar (Serpent1) has one back to the level above - and the level would then have two
+    # staircases to the same place. Where the level has a room put there for that warp, that room's
+    # is the one that counts.
+    rr = b.__dict__.get("role_rooms", {})
+    def _in(box, t):
+        return box is not None and box[0] <= t[0] < box[0] + box[2] and box[1] <= t[1] < box[1] + box[3]
+    owned = {m: rr.get(r) for m, r in ((0, "prev"), (1, "next")) if rr.get(r) is not None}
+    owned = {m: box for m, box in owned.items() if any(w[1] == m and _in(box, w[0]) for w in b.warps)}
+    if owned:
+        b.warps = [w for w in b.warps if w[1] not in owned or _in(owned[w[1]], w[0])]
     b.areas[level_id] = (0, 0, b.tm.tw * SUB, b.tm.th * SUB)
     grid = make_grid(b.tm)
     used = set()
