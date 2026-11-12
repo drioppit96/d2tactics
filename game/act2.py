@@ -639,8 +639,8 @@ def build_canyon(kit, seed=None, content=None):
     inner = [(bx, by) for bx in range(1, size - 1) for by in range(1, size - 1)]
     rng.shuffle(inner)
 
-    def place(name, w, h):
-        for bx, by in inner:
+    def place(name, w, h, prefer=None):
+        for bx, by in (prefer or []) + inner:
             cells = [(bx + i, by + j) for i in range(w) for j in range(h)]
             if all(1 <= c[0] < size - 1 and 1 <= c[1] < size - 1 and c not in taken for c in cells):
                 # keep a free ring around each tomb so every entrance can be reached
@@ -652,11 +652,19 @@ def build_canyon(kit, seed=None, content=None):
                 taken.update(cells)
                 return True
         return False
-    # the seven tombs: their warp number (1-7) is the tomb they lead to (Levels.txt vis1-7)
-    tombs = [("bigcliff\\talcor.ds1", 2, 2)] + [("bigcliff\\talleft%d.ds1" % i, 1, 2) for i in (1, 2, 3)] + \
-            [("bigcliff\\talrght%d.ds1" % i, 2, 1) for i in (1, 2, 3)]
-    for name, w, h in tombs:
-        place(name, w, h)
+    # The seven tombs: their warp number (1-7) is the tomb they lead to (Levels.txt vis1-7). D2
+    # rings the canyon with them - the "left" entrances face east off the west wall, the "right"
+    # ones face south off the north wall, and the corner tomb sits in the far corner - so they are
+    # placed against those walls here too instead of anywhere they happen to fit.
+    lo, hi = 1, size - 2
+    west = [(lo, y) for y in range(lo + 1, hi - 2, 3)] + [(lo + 1, y) for y in range(lo + 1, hi - 2, 3)]
+    north = [(x, lo) for x in range(lo + 1, hi - 2, 3)] + [(x, lo + 1) for x in range(lo + 1, hi - 2, 3)]
+    corner = [(hi - 2, hi - 2), (hi - 2, lo), (lo, hi - 2)]
+    tombs = [("bigcliff\\talcor.ds1", 2, 2, corner)] + \
+            [("bigcliff\\talleft%d.ds1" % i, 1, 2, west[k:] + west[:k]) for k, i in enumerate((1, 2, 3))] + \
+            [("bigcliff\\talrght%d.ds1" % i, 2, 1, north[k:] + north[:k]) for k, i in enumerate((1, 2, 3))]
+    for name, w, h, prefer in tombs:
+        place(name, w, h, prefer)
     spot = next(((bx, by) for bx, by in inner if (bx, by) not in taken), None)
     if spot is not None:
         taken.add(spot)
