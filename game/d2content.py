@@ -368,7 +368,9 @@ class D2Content:
         and magic items; Amazon bows / javelins / spears, Paladin shields, Necromancer heads and orbs
         also get their AutoMagic mod (+skill tab, life...) on every quality."""
         sm = base.get("staffmods")
-        if sm and quality in ("normal", "magic", "superior", "low"):
+        # D2 rolls a class item's own skills (Barbarian helms, Druid pelts, orbs, claws, wands...)
+        # on magic, rare and crafted items alike - a rare barbarian helm gets them too
+        if sm and quality in ("normal", "magic", "superior", "low", "rare", "craft", "crafted"):
             pool = [(n, lv) for n, lv in self._class_skills(sm) if lv <= max(1, ilvl)]
             k = rng.choices((0, 1, 2, 3), weights=(25, 40, 25, 10))[0]
             for name, lv in rng.sample(pool, min(k, len(pool))):

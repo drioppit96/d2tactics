@@ -244,14 +244,15 @@ class D2Hud:
         mate = ox is not None
         ox = (self.lw - 320) if ox is None else ox
         cx, cy = int((lx - ox - GRID_X) // CELL), int((ly - GRID_Y) // CELL)
-        rows = self._inv_rows()
+        rows = self._inv_rows(getattr(self, "mate", None) if mate else None)
         if 0 <= cx < 10 and 0 <= cy < rows:
             return cx, cy
         return None
 
-    def _inv_rows(self):
-        """How many backpack rows are shown: 4, or 8 in one tall grid with Bigger Inventory."""
-        p = getattr(getattr(self, "world", None), "player", None)
+    def _inv_rows(self, hero=None):
+        """How many backpack rows that hero's panel shows: 4, or 7 with Bigger Inventory. It is the
+        panel's own hero that decides, so a party member's grid never shows rows he cannot use."""
+        p = hero if hero is not None else getattr(getattr(self, "world", None), "player", None)
         return min(7, max(4, getattr(p, "INV_H", 4) if p is not None else 4))
 
     # ------------------------------------------------------------ drawing
@@ -1837,7 +1838,7 @@ class D2Hud:
         p = hero if hero is not None else world.player
         ox = (self.lw - 320) if ox is None else ox
         mate = bool(pre)
-        rows = self._inv_rows()
+        rows = self._inv_rows(p)
         extra = (rows - 4) * CELL
         self._panel_bg(surf, ox, self.frames["invchar6"], 4, region=not extra)
         if extra:
@@ -1943,7 +1944,7 @@ class D2Hud:
 
     def _held_anchor(self, cell, item, ox=None, page=None):
         """Top-left grid cell for the held item so that it is centred on the mouse (D2 behaviour)."""
-        p = self.world.player
+        p = (getattr(self, "mate", None) or self.world.player) if ox is not None else self.world.player
         w, h = p._size(item)
         mx, my = self.mouse
         ox = (self.lw - 320) if ox is None else ox
@@ -1951,7 +1952,7 @@ class D2Hud:
         fy = (my - GRID_Y) / CELL - h / 2.0
         gx = int(round(fx))
         gy = int(round(fy))
-        return max(0, min(10 - w, gx)), max(0, min(self._inv_rows() - h, gy))
+        return max(0, min(10 - w, gx)), max(0, min(self._inv_rows(p) - h, gy))
 
     # the I / II tabs above the weapon and shield slots (D2's art shows set I as the active one)
     WEAPON_TABS = [(17, 24, 30, 19), (51, 24, 30, 19), (247, 24, 31, 19), (282, 24, 31, 19)]
