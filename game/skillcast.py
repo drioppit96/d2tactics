@@ -159,6 +159,9 @@ class SkillCaster:
     def _resist(self, m, et):
         res = getattr(m, "res", {}).get(et, 0)
         res += self.mstat(m, "res_" + et) + self.mstat(m, "res_all")
+        if getattr(m, "ally", False) and not getattr(m, "is_player", False):
+            # Resist Fire / Cold / Lightning and Salvation shelter your minions too
+            res += self.aura_bonus(m, "res_" + et) + self.aura_bonus(m, "res_all")
         if getattr(m, "is_player", False):
             from .monmods import player_res_penalty
             if et == "pois" and m.mod("pois_immune"):
@@ -1222,10 +1225,34 @@ class SkillCaster:
             cache = self._aura_cache = (self.round, id(self.player), self.aura_givers())
         return [n for (h, n, env, r) in cache[2] if self.udist(h, unit) <= r]
 
+    def refresh_auras(self):
+        """Work out every hero's stats again: an aura only counts while its giver is near, so the
+        party's bonuses change as they walk. Cheap enough to do whenever anyone moves."""
+        from . import tactics
+        if not tactics.ACTIVE:
+            return
+        self._aura_cache = None
+        for h in tactics.party(self):
+            if h.alive:
+                hp, mana = h.hp, h.mana
+                h.recalc()
+                h.hp, h.mana = min(hp, h.max_hp), min(mana, h.max_mana)
+
+    def aura_bonus(self, unit, key):
+        """What the auras reaching an ally (a minion, the hireling) add to one stat."""
+        if getattr(unit, "is_player", False):
+            return 0
+        total = 0
+        for h, name, env, r in self.aura_givers():
+            if self.udist(h, unit) <= r:
+                total += self._aura_stats_one(name, env).get(key, 0)
+        return total
+
     def aura_turn(self):
         """Once per round: offensive auras damage, Prayer heals, Meditation restores mana - for
         every hero and ally in reach of the hero giving the aura."""
         self._aura_cache = None
+        self.refresh_auras()
         for h, name, env, r in self.aura_givers():
             self._aura_turn_one(name, env, h)
         from . import tactics

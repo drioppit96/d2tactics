@@ -110,11 +110,11 @@ DIFFICULTY = "normal"           # the difficulty the world being played is on
 POIS_FRAMES = 150   # weapon / charm poison: its total damage spread over ~3 turns, like D2's poison length
 
 
-def hit_chance(attacker, defender, ar_bonus_pct=0):
+def hit_chance(attacker, defender, ar_bonus_pct=0, def_bonus_pct=0):
     """D2's to-hit formula: 200% * AR/(AR+DEF) * alvl/(alvl+dlvl), clamped 5..95.
     Player attacks are rescaled to PLAYER_HIT_FLOOR..95%."""
     ar = attacker.ar * (100 + ar_bonus_pct) / 100
-    df = max(0, defender.defense)
+    df = max(0, defender.defense) * (100 + def_bonus_pct) / 100.0
     eff = getattr(defender, "effects", {})
     if eff.get("bc"):
         df = df * (100 - eff.get("bc_def", 50)) / 100.0
@@ -657,6 +657,7 @@ class World(SkillCaster, ItemActions):
                     return True
             p.x, p.y = step
             walked.append(step)
+            self.refresh_auras()          # the party's auras reach as far as they stand
             self.blaze_step(prev)
             if self.mode == "combat":
                 if getattr(p, "free_steps", 0) > 0:
@@ -1966,8 +1967,12 @@ class World(SkillCaster, ItemActions):
         if getattr(target, "invulnerable", False):
             return False
         from . import tactics as _tac
+        ar_bonus = mods["ar"]
+        if getattr(attacker, "ally", False) and not attacker.is_player:
+            ar_bonus += self.aura_bonus(attacker, "ar_pct")          # Blessed Aim
+        def_bonus = self.aura_bonus(target, "def_pct") if getattr(target, "ally", False) else 0
         if not mods.get("always") and not _tac.stunned_discount(target) and \
-                self.rng.random() > hit_chance(attacker, target, mods["ar"]):
+                self.rng.random() > hit_chance(attacker, target, ar_bonus, def_bonus):
             self.emit("miss", target)
             return False
         if target.is_player:
@@ -1990,10 +1995,7 @@ class World(SkillCaster, ItemActions):
         dmg = max(1, int(dmg * (100 + mods["dmg"]) / 100.0)) if attacker.dmg[1] > 0 else 0
         if getattr(attacker, "ally", False) and not attacker.is_player and dmg > 0:
             # a paladin's offensive aura (Might, Fanaticism, Concentration...) strengthens minions too
-            ed = 0
-            for h, name, env, r in self.aura_givers():
-                if self.udist(h, attacker) <= r:
-                    ed += self._aura_stats_one(name, env).get("ed", 0)
+            ed = self.aura_bonus(attacker, "ed")
             if ed:
                 dmg = dmg * (100 + ed) // 100
         from . import tactics

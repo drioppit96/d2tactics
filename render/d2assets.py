@@ -175,10 +175,23 @@ class UnitSprites:
                     main = [L for L in comps if L.component == "TR"] or comps[:1]
                     if not main or not self._dcc(main[0].component, mode, main[0].weapon_class or wc):
                         cof = None
+                    elif len(chain) > 2 and wc == chain[0] and not self._carries_gear(comps, mode, wc):
+                        cof = None        # dual wield with no art for it: use the one-handed class
                 self.cofs[key] = (cof, wc) if cof else None
             if self.cofs[key]:
                 return self.cofs[key]
         return None
+
+    def _carries_gear(self, comps, mode, wc):
+        """Does this weapon class have graphics for the weapons and shield actually held? A class
+        whose COF exists but has no art for them would leave the hero empty handed."""
+        want = {c for c in ("RH", "LH", "SH") if self.arms.get(c) and c not in self.hide}
+        have = {L.component for L in comps}
+        for c in want & have:
+            L = next(x for x in comps if x.component == c)
+            if not self._dcc(c, mode, L.weapon_class or wc):
+                return False
+        return True
 
     def _dcc(self, comp, mode, wc):
         key = (comp, mode, wc)
@@ -489,10 +502,12 @@ class D2Assets(AssetProvider):
                 arms["LH"] = [shield.gfx]
                 hide.discard("LH")
         elif shield and shield.gfx:
-            # a shield is drawn on SH, a necromancer's shrunken head on S3 (Armor.txt's component)
-            comp = (getattr(shield, "comp", "") or "SH").upper()
-            arms[comp] = [shield.gfx]
-            hide.discard(comp)
+            # a shield is drawn on SH, a necromancer's shrunken head on S3 (Armor.txt's component).
+            # The graphic goes on both: whichever layer the class's COF has the file for is the one
+            # that draws, and the other finds nothing and stays empty.
+            for comp in {(getattr(shield, "comp", "") or "SH").upper(), "SH"}:
+                arms[comp] = [shield.gfx]
+                hide.discard(comp)
         return arms, tuple(sorted(hide)), wclass
 
     def warm(self, unit, progress=None):
