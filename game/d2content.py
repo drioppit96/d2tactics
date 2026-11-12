@@ -58,6 +58,10 @@ POTIONS = {"yps": ("antidote", 50), "wms": ("thawing", 50), "vps": ("stamina", 2
            "mp4": ("mana", 150), "mp5": ("mana", 250), "rvs": ("rejuv", 35), "rvl": ("rejuv", 100)}
 
 
+COMPOSIT = ["HD", "TR", "LG", "RA", "LA", "RH", "LH", "SH",
+            "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8"]
+
+
 def _int(v, default=0):
     try:
         return int(v)
@@ -222,7 +226,11 @@ class D2Content:
                      strbonus=_int(r.get("strbonus")), dexbonus=_int(r.get("dexbonus")),
                      ranged=bool({"miss", "bow", "xbow"} & anc))
         elif kind == "armor":
+            # Armor.txt's component is an index into D2's composite layers: a shield is drawn on SH,
+            # but a necromancer's shrunken head is drawn on S3
+            comp = COMPOSIT[_int(r.get("component"))] if _int(r.get("component")) < len(COMPOSIT) else ""
             b.update(defense=(_int(r.get("minac")), _int(r.get("maxac"))), block=_int(r.get("block")),
+                     comp=comp,
                      gfx=(r.get("alternategfx") or r["code"]).upper(),
                      look={k: _int(r.get(k)) for k in ("torso", "legs", "rarm", "larm", "rspad", "lspad")})
         else:
@@ -529,6 +537,7 @@ class D2Content:
         it.two_handed = base.get("two_handed", False)
         it.block = base.get("block", 0)
         it.gfx = base.get("gfx", "")
+        it.comp = base.get("comp", "")          # which composite layer it is drawn on
         it.wclass = base.get("wclass", "")
         it.look = base.get("look")
         it.strbonus, it.dexbonus = base.get("strbonus", 0), base.get("dexbonus", 0)

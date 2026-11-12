@@ -159,8 +159,13 @@ class UnitSprites:
         self.dccs = {}
 
     def _cof(self, mode):
-        """First weapon class whose COF exists and whose torso graphics exist too."""
-        for wc in (self.wclass, "HTH"):
+        """First weapon class whose COF exists and whose torso graphics exist too. Dual wielding
+        falls back on the one-handed animation before bare hands, so the main weapon still shows."""
+        chain = [self.wclass]
+        if self.wclass in ("1SS", "1SJ", "1JS", "1JJ", "HT2"):
+            chain += ["1HS", "1HT"]
+        chain.append("HTH")
+        for wc in chain:
             key = (mode, wc)
             if key not in self.cofs:
                 name = "data\\global\\%s\\%s\\COF\\%s%s%s.cof" % (self.folder, self.token, self.token, mode, wc)
@@ -180,7 +185,10 @@ class UnitSprites:
         if key in self.dccs:
             return self.dccs[key]
         found = None
-        for arm in self.arms.get(comp, []) + ["LIT", "MED", "HVY"]:
+        # a layer we were given a graphic for (a shield, a shrunken head, a weapon) has no LIT /
+        # MED / HVY version to fall back on - trying them only finds the wrong thing
+        arms = self.arms.get(comp, [])
+        for arm in arms if comp in ("SH", "RH", "LH") or comp.startswith("S") and arms else arms + ["LIT", "MED", "HVY"]:
             name = "data\\global\\%s\\%s\\%s\\%s%s%s%s%s.dcc" % (
                 self.folder, self.token, comp, self.token, comp, arm.upper(), mode, wc)
             if self.a.src.has(name):
@@ -481,8 +489,10 @@ class D2Assets(AssetProvider):
                 arms["LH"] = [shield.gfx]
                 hide.discard("LH")
         elif shield and shield.gfx:
-            arms["SH"] = [shield.gfx]
-            hide.discard("SH")
+            # a shield is drawn on SH, a necromancer's shrunken head on S3 (Armor.txt's component)
+            comp = (getattr(shield, "comp", "") or "SH").upper()
+            arms[comp] = [shield.gfx]
+            hide.discard(comp)
         return arms, tuple(sorted(hide)), wclass
 
     def warm(self, unit, progress=None):
