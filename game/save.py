@@ -414,7 +414,11 @@ def build_player(data, content):
             elif not cube_add(st, it):
                 p.inventory.append(it)              # re-packed below
     stash_tab(st, 1)
-    # anything without a valid backpack spot gets re-packed
+    # anything without a valid backpack spot gets re-packed (including a row that no longer exists)
+    for it in p.inventory:
+        pos = getattr(it, "inv_pos", None)
+        if pos and (pos[1] + max(1, getattr(it, "invh", 1) or 1) > p.INV_H or pos[0] >= p.INV_W):
+            it.inv_pos = None
     loose = [it for it in p.inventory if getattr(it, "inv_pos", None) is None]
     for it in loose:
         p.inventory.remove(it)

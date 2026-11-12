@@ -252,7 +252,7 @@ class D2Hud:
     def _inv_rows(self):
         """How many backpack rows are shown: 4, or 8 in one tall grid with Bigger Inventory."""
         p = getattr(getattr(self, "world", None), "player", None)
-        return min(8, max(4, getattr(p, "INV_H", 4) if p is not None else 4))
+        return min(7, max(4, getattr(p, "INV_H", 4) if p is not None else 4))
 
     # ------------------------------------------------------------ drawing
     def draw(self, surf, world, scene, mouse):
@@ -1846,10 +1846,11 @@ class D2Hud:
             clip = surf.get_clip()
             surf.set_clip(self.R(ox, GRID_Y + 4 * CELL, 320, extra))
             self._panel_bg(surf, ox, art, 4, dy=extra, region=False)
-            surf.set_clip(self.R(ox, GRID_Y + rows * CELL, 320, 18))
-            self._panel_bg(surf, ox, art, 4, dy=GRID_Y + rows * CELL - 414, region=False)
+            # the panel's own bottom section follows the grid: its border, gold box and buttons
+            surf.set_clip(self.R(ox, GRID_Y + rows * CELL, 320, 600))
+            self._panel_bg(surf, ox, art, 4, dy=GRID_Y + rows * CELL - 371, region=False)
             surf.set_clip(clip)
-            self.region(ox, 0, 320, GRID_Y + rows * CELL + 18, "panel")
+            self.region(ox, 0, 320, GRID_Y + rows * CELL + 61, "panel")
         mx, my = self.mouse
         held = getattr(world, "held", None)
         if not mate:
@@ -1919,8 +1920,9 @@ class D2Hud:
                 tint.fill((0, 120, 0, 70) if good else (140, 0, 0, 70))
                 surf.blit(tint, self.P(ox + GRID_X + gx * CELL, GRID_Y + gy * CELL))
         self.region(ox + GRID_X, GRID_Y, 10 * CELL, rows * CELL, pre + "grid")
-        gold_box = GOLD_BOX if not extra else (GRID_X + 4, GRID_Y - 18, 120, 17)
-        close = INV_CLOSE if not extra else (0, 0, 32, 22)   # top left corner, above the weapon tabs
+        # the taller grid pushes the panel's bottom row down with it
+        gold_box = GOLD_BOX if not extra else (GOLD_BOX[0], GRID_Y + rows * CELL + 12, GOLD_BOX[2], GOLD_BOX[3])
+        close = INV_CLOSE if not extra else (INV_CLOSE[0], GRID_Y + rows * CELL + 4, 32, 32)
         if mate:
             self.text(surf, self.f16, str(p.gold), WHITE, ox + gold_box[0] + 4, gold_box[1] + 1)
             self.text(surf, self.f16, "%s (level %d)" % (p.name, p.level), GOLD,

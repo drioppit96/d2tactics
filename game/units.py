@@ -115,8 +115,9 @@ class Player(Unit):
 
     @property
     def INV_H(self):
-        """4 rows - 8 (two pages of 4) with the Bigger Inventory option."""
-        return 8 if (getattr(self, "qol", None) or {}).get("big_inv") else 4
+        """4 rows - 7 with the Bigger Inventory option (the tallest grid that still leaves the
+        panel its bottom row, with the gold count and the close button, above the control bar)."""
+        return 7 if (getattr(self, "qol", None) or {}).get("big_inv") else 4
 
     def _size(self, it):
         return max(1, getattr(it, "invw", 1) or 1), max(1, getattr(it, "invh", 1) or 1)
