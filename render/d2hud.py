@@ -1920,7 +1920,7 @@ class D2Hud:
                 surf.blit(tint, self.P(ox + GRID_X + gx * CELL, GRID_Y + gy * CELL))
         self.region(ox + GRID_X, GRID_Y, 10 * CELL, rows * CELL, pre + "grid")
         gold_box = GOLD_BOX if not extra else (GRID_X + 4, GRID_Y - 18, 120, 17)
-        close = INV_CLOSE if not extra else (280, 2, 32, 32)
+        close = INV_CLOSE if not extra else (0, 0, 32, 22)   # top left corner, above the weapon tabs
         if mate:
             self.text(surf, self.f16, str(p.gold), WHITE, ox + gold_box[0] + 4, gold_box[1] + 1)
             self.text(surf, self.f16, "%s (level %d)" % (p.name, p.level), GOLD,

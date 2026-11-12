@@ -44,6 +44,7 @@ PLACES = [
     ("baal", 5, "Worldstone Halls"),
 ]
 PLANS = {}                 # level id -> the floor's plan
+_SEED = None               # the seed of the run being played (the hero's, once one is known)
 _POOL = []                 # every monster kind the game spawns, across all acts
 
 YELLOW = (255, 230, 90)
@@ -76,12 +77,21 @@ def name(lid):
 
 
 # ------------------------------------------------------------------ the plan of one floor
-def rift_seed(player):
-    s = getattr(player, "rift_seed", None)
-    if not s:
-        s = random.randrange(1, 1 << 30)
-        player.rift_seed = s
-    return s
+def rift_seed(player=None):
+    """The seed this run's floors are built from. Plenty of callers (the level's name, its act, its
+    monster level) have no player to hand, so the run's seed is remembered here too - without that
+    they would all fall back on the same fixed seed and every run would open on the same floor."""
+    global _SEED
+    if player is not None:
+        s = getattr(player, "rift_seed", None)
+        if not s:
+            s = random.randrange(1, 1 << 30)
+            player.rift_seed = s
+        _SEED = s
+        return s
+    if not _SEED:
+        _SEED = random.randrange(1, 1 << 30)
+    return _SEED
 
 
 def plan(lid, player=None):
@@ -90,7 +100,7 @@ def plan(lid, player=None):
     if p is not None:
         return p
     depth = depth_of(lid)
-    seed = rift_seed(player) if player is not None else 1
+    seed = rift_seed(player)
     rng = random.Random((seed * 1000003) ^ (depth * 7919))
     # every kind of place is seen once before any of them comes round again
     order = list(PLACES)
@@ -105,6 +115,8 @@ def plan(lid, player=None):
 
 def forget(player):
     """A new hero (or a new game): nothing of the old rift is kept."""
+    global _SEED
+    _SEED = None
     PLANS.clear()
 
 
@@ -404,7 +416,7 @@ def ensure_portal(world):
         p.rift_depth = 0
         p.rift_seed = None
         riftmap.clear(p)
-        PLANS.clear()
+        forget(p)
         world.objects[:] = [o for o in world.objects
                             if not (o.get("kind") == "portal" and is_rift(o.get("target")))]
     if any(o.get("kind") == "portal" and is_rift(o.get("target")) for o in world.objects):
@@ -462,5 +474,5 @@ def on_enter(world, lid):
         p.rift_depth = 0                         # left the rift: the next red portal is Infernal Rift 1
         p.rift_seed = None                       # and a new run is built from a new seed
         riftmap.clear(p)
-        PLANS.clear()
+        forget(p)
         world.log("The rift collapses behind you.", RED)
