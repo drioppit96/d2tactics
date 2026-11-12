@@ -1284,6 +1284,8 @@ class SkillCaster:
                 if hit_fx:
                     self.emit("explosion", m.pos, hit_fx)
                 self.skill_damage(env, m, 100, show=False)
+                if name == "Holy Freeze" and m.alive:
+                    m.effects["chill"] = max(m.effects.get("chill", 0), 2)   # the aura's own chill
                 if name == "Sanctuary" and m.alive:
                     self._knockback(p, m)
         elif name == "Conviction":
@@ -1333,12 +1335,18 @@ class SkillCaster:
                     out[k] = out.get(k, 0) + v
         return out
 
+    # these auras' aurastat block describes what they do to the monsters around the paladin, not
+    # what they give his party: Holy Freeze's -42% speed is the chill it puts on enemies, and
+    # Conviction's -70% defence and -50 resistances are the enemies' loss, not yours
+    ENEMY_AURAS = ("Holy Fire", "Holy Freeze", "Holy Shock", "Conviction")
+
     def _aura_stats_one(self, name, env):
         out = {}
-        for st, v in env.stats("aurastat", 6):
-            ours = STAT_MAP.get(st)
-            if ours:
-                out[ours] = out.get(ours, 0) + v
+        if name not in self.ENEMY_AURAS:
+            for st, v in env.stats("aurastat", 6):
+                ours = STAT_MAP.get(st)
+                if ours:
+                    out[ours] = out.get(ours, 0) + v
         # Holy Fire / Freeze / Shock also add elemental damage to your attacks
         ed = env.elem_damage()
         if ed and name in ("Holy Fire", "Holy Freeze", "Holy Shock"):

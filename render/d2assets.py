@@ -1072,6 +1072,21 @@ class D2Assets(AssetProvider):
         self.item_cache[key] = anim
         return anim
 
+    def missile_trail(self, name):
+        """The client sub-missile a missile leaves behind as it flies - Bone Spear's rippling wake,
+        Bone Spirit's wisps. D2 spawns it every few frames along the path (Missiles.txt)."""
+        key = ("trail", (name or "").lower())
+        if key in self.item_cache:
+            return self.item_cache[key]
+        out = None
+        r = self._missile_rows().get((name or "").lower())
+        if r is not None:
+            sub = (r.get("cltsubmissile1") or "").strip()
+            if sub and sub.lower() != (name or "").lower() and self.missile_anim(sub) is not None:
+                out = sub
+        self.item_cache[key] = out
+        return out
+
     # ---------------------------------------------------------------- warming up animations
     def warm_missile(self, name, overlay=False):
         """Queue a missile / overlay animation to be decoded a little at a time in spare frame time

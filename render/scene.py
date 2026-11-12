@@ -233,7 +233,10 @@ class Scene:
             v.facing = (max(-1, min(1, dst[0] - src[0])), max(-1, min(1, dst[1] - src[1])))
             v.mode = "A1" if pk in ("arrow", "spike") else "SC"
             v.t, v.dur = 0.0, 0.2
-            self.projectiles.append(Projectile(pk, cell_to_world(*src), cell_to_world(*dst), missile))
+            pr = Projectile(pk, cell_to_world(*src), cell_to_world(*dst), missile)
+            if missile and hasattr(self.assets, "missile_trail"):
+                pr.trail = self.assets.missile_trail(missile)
+            self.projectiles.append(pr)
             return None
         if kind == "overlay":
             unit, name = ev[1], ev[2]
@@ -383,6 +386,11 @@ class Scene:
             self._update_view(v, dt)
         for p in list(self.projectiles):
             p.t += dt
+            trail = getattr(p, "trail", None)
+            if trail and p.t < p.dur and p.t - getattr(p, "_trail_t", -9.0) >= 0.03:
+                p._trail_t = p.t
+                a = self.assets.missile_anim(trail)
+                self.effects.append(["missile_air", trail, p.pos(), 0.0, (a.duration() if a else 0.3) or 0.3])
             if p.t >= p.dur:
                 self.projectiles.remove(p)
                 expl = self.assets.missile_explosion(p.missile) if p.missile and hasattr(self.assets, "missile_explosion") else None
@@ -883,8 +891,10 @@ class Scene:
             kind, name, where, t, dur = e
             if t < 0:
                 continue
-            if kind == "missile":
+            if kind in ("missile", "missile_air"):
                 sp = cam.to_screen(*where)
+                if kind == "missile_air":
+                    sp = (sp[0], sp[1] - 12)       # a trail hangs where the missile flew, not on the floor
                 if hasattr(assets, "draw_missile"):
                     assets.draw_missile(surf, name, sp, (0, 1), t, loop=False)
             elif kind == "overlay" and hasattr(assets, "draw_overlay"):
