@@ -448,6 +448,10 @@ def build_desert(kit, seed=None, content=None):
     # ---- the desert areas
     for lid in (41, 42, 43, 44, 45):
         sx, sy = pos[lid]
+        # Every area fills its slot, with ONE ring of D2's edge presets around it, in tactics mode
+        # too: a smaller area inside the slot leaves bands of flat sand between the areas, and the
+        # old second ring left such a band between the two cliff lines - ground you can see, can't
+        # walk, and that has no wall on it.
         size = 4 if lid == 45 else SLOT
         # the small Valley of Snakes sits against the Lost City side of its slot
         off = [0, 0]
@@ -460,8 +464,7 @@ def build_desert(kit, seed=None, content=None):
         b.areas[lid] = (bx0 * SUB, by0 * SUB, (bx0 + size * BLOCK) * SUB, (by0 + size * BLOCK) * SUB)
         nb = nbr.get(lid, {})
         taken = set()
-        from . import tactics
-        ring = 1 if tactics.ACTIVE and size >= 7 else 0      # (tactics: a second ring of cliffs inside)
+        ring = 0
         for bx in range(size):
             for by in range(size):
                 k = min(bx, by, size - 1 - bx, size - 1 - by)
@@ -470,13 +473,6 @@ def build_desert(kit, seed=None, content=None):
                 en, es, ew, ee = by == k, by == size - 1 - k, bx == k, bx == size - 1 - k
                 taken.add((bx, by))
                 X, Y = bx0 + bx * BLOCK, by0 + by * BLOCK
-                if ring and k == 0:
-                    sd_ = ("n" if en else "s") if (en or es) else ("w" if ew else "e")
-                    al_ = (bx + off[0]) if (en or es) else (by + off[1])
-                    o_ = nb.get(sd_)
-                    corner_ = (en or es) and (ew or ee)
-                    if corner_ or o_ is None or abs(al_ - openings[(lid, o_)]) > (3 if o_ == 40 else 1):
-                        b.__dict__.setdefault("moat", []).append((X, Y, X + BLOCK, Y + BLOCK))
                 vert = "n" if en else ("s" if es else None)
                 hor = "w" if ew else ("e" if ee else None)
                 if vert and hor:
@@ -532,6 +528,27 @@ def build_desert(kit, seed=None, content=None):
             if (bx, by) not in taken:
                 sand(bx0 + bx * BLOCK, by0 + by * BLOCK)
                 taken.add((bx, by))
+    # The slots the desert's bend does not use are filled with D2's berms and mesas, not left as
+    # flat sand: you should never look out of an area over ground you cannot walk with nothing
+    # between you and it.
+    used = set(pos.values())
+    rocks = ["outdoors\\burm%d.ds1" % i for i in range(1, 8)] + ["outdoors\\mesarm.ds1"]
+    rim = []
+    for sy in range(rows):
+        for sx in range(cols):
+            if (sx, sy) in used:
+                continue
+            near = any((sx + dx, sy + dy) in used for dx in (-1, 0, 1) for dy in (-1, 0, 1))
+            if not near:
+                continue                      # only the slots you can actually see from an area
+            for by in range(SLOT):
+                for bx in range(SLOT):
+                    X, Y = sx * ST + bx * BLOCK, sy * ST + by * BLOCK
+                    if rng.random() < 0.7:
+                        put(rng.choice(rocks), X, Y, None)
+            rim.append((sx * ST, sy * ST, (sx + 1) * ST, (sy + 1) * ST))
+    b.__dict__.setdefault("moat", []).extend(rim)      # rock, not ground: nothing walks there
+
     # Lut Gholein's waypoint (obj.txt would also find the DS1's own)
     b.tm.drawn = set(b.tm.floor) | set(b.tm.walls) | set(b.tm.floor2)
     grid = make_grid(b.tm)
