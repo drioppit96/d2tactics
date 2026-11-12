@@ -109,8 +109,10 @@ class Scene:
         self.skill_area = None    # (cells, hit cells, out of range) of the right skill under the mouse
         self.opts = {}
         self._sel_draw = None
-        self.mark_enemies = False  # X: every enemy in view gets a red outline, drawn over the walls
+        self.mark_enemies = False  # X: enemies get a red outline and your heroes a green one
+        self._hero_marks = []
         self._marks = []
+        self._hero_marks = []
         self.flags = set()       # game_over / victory
         self.clock = 0.0
         self.drop_time = {}
@@ -750,6 +752,7 @@ class Scene:
                     self._diamond(surf, cam, x, y, (120, 120, 120, 70) if far else (235, 60, 30, 105))
         sel = self.selected if self.selected is not None and self.selected.alive else None
         self._marks = []
+        self._hero_marks = []
         # enemies the right-click skill would hit get the red outline too
         aoe_cells = set(self.skill_area[1]) if self.skill_area and self.skill_area[1] else set()
         self._sel_draw = None
@@ -848,6 +851,8 @@ class Scene:
                     pose["tint"] = tint
                 feet = cam.cell_to_screen(v.rx, v.ry)
                 rect = assets.draw_unit(surf, u, pose, feet, s, max(0.35, b))
+                if self.mark_enemies and u.alive and not v.dead and u.is_player:
+                    self._hero_marks.append((u, dict(pose), feet))   # X: your heroes, in green
                 if u is sel and not v.dead:
                     self._sel_draw = (u, dict(pose), feet)
                 elif u.alive and not v.dead and not u.is_player and not getattr(u, "ally", False) \
@@ -922,6 +927,11 @@ class Scene:
         for u, pose, feet in self._marks:
             try:
                 self.assets.draw_unit(surf, u, dict(pose, outline=(255, 40, 30), no_shadow=True), feet, cam.scale, 1.0)
+            except Exception:
+                pass
+        for u, pose, feet in self._hero_marks:
+            try:
+                self.assets.draw_unit(surf, u, dict(pose, outline=(60, 255, 90), no_shadow=True), feet, cam.scale, 1.0)
             except Exception:
                 pass
         if sel is not None:

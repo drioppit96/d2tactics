@@ -1959,8 +1959,9 @@ class Game:
                 h.store = None
                 h.loot_page = 0
         elif key == pygame.K_x:
-            self.scene.mark_enemies = not getattr(self.scene, "mark_enemies", False)   # red outlines on enemies
-            self.world.log("Enemy outlines %s (X)." % ("on" if self.scene.mark_enemies else "off"), (170, 170, 170))
+            self.scene.mark_enemies = not getattr(self.scene, "mark_enemies", False)
+            self.world.log("Outlines %s (X): enemies red, your heroes green." %
+                           ("on" if self.scene.mark_enemies else "off"), (170, 170, 170))
         elif key == pygame.K_l:
             self.scene.show_labels = not self.scene.show_labels    # keep item names on
         elif key == pygame.K_o:
