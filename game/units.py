@@ -139,8 +139,6 @@ class Player(Unit):
         w, h = self._size(it)
         if x0 < 0 or y0 < 0 or x0 + w > self.INV_W or y0 + h > self.INV_H:
             return False, []
-        if y0 < 4 < y0 + h:
-            return False, []                  # an item can't lie across the two backpack pages
         taken = self.inv_cells(ignore)
         over = []
         for y in range(y0, y0 + h):
