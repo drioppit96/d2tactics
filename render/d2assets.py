@@ -13,6 +13,15 @@ from d2.palette import load_palette
 from d2.source import open_source, read_table
 from game.d2level import CaveKit, build_cave
 from .assets import AssetProvider, PlaceholderAssets
+from . import upscale
+
+
+def _pil_scale(img, size):
+    """Headless (the PIL-backed Surface shim): resize through PIL."""
+    from PIL import Image
+    out = pygame.Surface(size, pygame.SRCALPHA)
+    out.img = img.img.resize(size, Image.LANCZOS)
+    return out
 
 # D2 sprite direction index for each screen direction, clockwise from south (every 22.5 deg)
 _DIR16 = [4, 8, 0, 9, 5, 10, 1, 11, 6, 12, 2, 13, 7, 14, 3, 15]
@@ -231,8 +240,21 @@ class UnitSprites:
             key = (mode, d)
             if key not in self.cache:
                 self.cache[key] = self._build(cof, mode, wc, d)
-            return self.cache[key]
+            k = getattr(self.a, "render_scale", 1.0)
+            return self.cache[key] if k == 1.0 else self._hd(key, k)
         return None
+
+    def _hd(self, key, k):
+        """The same frames at the window's own resolution, enlarged by the net (render/upscale)."""
+        cache = self.__dict__.setdefault("_hd_frames", {})
+        ck = (key, k, upscale.quality())
+        got = cache.get(ck)
+        if got is None:
+            got = []
+            for img, x0, y0 in self.cache[key]:
+                got.append((None, 0, 0) if img is None else (upscale.scale_surface(img, k), x0 * k, y0 * k))
+            cache[ck] = got
+        return got
 
     def _build(self, cof, mode, wc, d):
         layers = {}
@@ -461,8 +483,33 @@ class D2Assets(AssetProvider):
                     faded.fill((255, 255, 255, alpha), special_flags=pygame.BLEND_RGBA_MULT)
                 self.tile_cache[key] = faded
             img = self.tile_cache[key]
+        k = getattr(self, "render_scale", 1.0)
+        if k != 1.0:
+            img = self._scaled_tile(img, k, ref, lit, alpha)
         sx, sy = cam.to_screen((tx - ty) * 80 - 80 + x0, (tx + ty) * 40 - 8 + y0 - self._roof_lift(ref))
         surf.blit(img, (int(sx), int(sy)))
+
+    def _scaled_tile(self, img, k, ref, lit, alpha):
+        """The tile at the window's own resolution (HD rendering). Ground has no hard edges to
+        keep, so a smooth resize is right here - the net is for the sprites."""
+        cache = self.__dict__.setdefault("_hd_tiles", {})
+        key = (id(img), k, bool(lit), alpha)
+        got = cache.get(key)
+        if got is not None and got[0] is img:
+            return got[1]
+        if len(cache) > 3000:
+            cache.clear()
+        w, h = img.get_size()
+        size = (max(1, int(round(w * k))), max(1, int(round(h * k))))
+        try:
+            big = pygame.transform.smoothscale(img.convert_alpha(), size) \
+                if not hasattr(img, "img") else _pil_scale(img, size)
+        except Exception:
+            big = pygame.transform.scale(img, size)
+        if alpha is not None and not hasattr(img, "img"):
+            big.set_alpha(alpha)
+        cache[key] = (img, big)
+        return big
 
     def player_look(self, p):
         """Barbarian armour/weapon graphics from what is equipped (D2's component system)."""
@@ -781,13 +828,15 @@ class D2Assets(AssetProvider):
                     img, (int(img.get_width() * k), int(img.get_height() * k))))
             img, x0, y0 = ent[1], x0 * k, y0 * k
         cx, cy = pos
+        rs = getattr(self, "render_scale", 1.0)
         if mode not in ("DD", "DT") and not pose.get("no_shadow"):
-            sh = self.placeholder._shadow(1, 16 if unit.token != "SI" else 20)
+            sh = self.placeholder._shadow(rs, 16 if unit.token != "SI" else 20)
             surf.blit(sh, (cx - sh.get_width() / 2, cy - sh.get_height() / 2))
         if unit.unique and mode not in ("DD", "DT"):
-            glow = pygame.Surface((70, 30), pygame.SRCALPHA)
+            gw, gh = int(70 * rs), int(30 * rs)
+            glow = pygame.Surface((gw, gh), pygame.SRCALPHA)
             pygame.draw.ellipse(glow, (255, 220, 120, 55), glow.get_rect())
-            surf.blit(glow, (cx - 35, cy - 15))
+            surf.blit(glow, (cx - gw // 2, cy - gh // 2))
         flash = pose.get("flash", 0)
         if flash > 0.05:
             k = (id(img), int(flash * 4))

@@ -15,7 +15,7 @@ OPTIONS_FILE = os.path.join(HERE, "options.ini")
 
 DEFAULTS = {"light_radius": 100, "highlight_monster": True, "highlight_tile": True,
             "show_move_range": True, "show_skill_area": True, "monster_names": True, "fixed_maps": False,
-            "sound_volume": 80, "music_volume": 70}
+            "sound_volume": 80, "music_volume": 70, "hd_sprites": "off"}
 VOLUME_KEYS = ("sound_volume", "music_volume")
 LIGHT_STEPS = [50, 75, 100, 125, 150, 200, 250, 300]
 
@@ -32,6 +32,8 @@ def load_options():
                     continue
                 if isinstance(v, bool):
                     o[k] = s.getboolean(k)
+                elif isinstance(v, str):
+                    o[k] = s.get(k)
                 elif k in VOLUME_KEYS:
                     o[k] = max(0, min(100, s.getint(k)))
                 else:
@@ -94,6 +96,8 @@ class GameMenu:
                 ("SHOW MOVE RANGE: " + onoff("show_move_range"), "range"),
                 ("SHOW SKILL AREA: " + onoff("show_skill_area"), "area"),
                 ("SAME MAPS EVERY GAME: " + onoff("fixed_maps"), "fixed"),
+                ("HD SPRITES: " + {"off": "OFF", "fast": "ON (FAST)", "best": "ON (BEST)"}.get(
+                    o.get("hd_sprites", "off"), "OFF"), "hd"),
                 ("SOUND: %d%%" % o["sound_volume"], "snd_vol"),
                 ("MUSIC: %d%%" % o["music_volume"], "mus_vol"),
                 ("PREVIOUS MENU", "back")]
@@ -124,6 +128,10 @@ class GameMenu:
             steps = LIGHT_STEPS
             i = min(range(len(steps)), key=lambda j: abs(steps[j] - cur))
             o["light_radius"] = steps[(i + step) % len(steps)]
+        elif action == "hd":
+            steps = ["off", "fast", "best"]
+            i = steps.index(o.get("hd_sprites", "off")) if o.get("hd_sprites") in steps else 0
+            o["hd_sprites"] = steps[(i + step) % len(steps)]
         elif action == "hl_mon":
             o["highlight_monster"] = not o["highlight_monster"]
         elif action == "hl_tile":

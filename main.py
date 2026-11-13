@@ -2398,9 +2398,25 @@ class Game:
             y += img.get_height()
 
     def draw_world(self, cell, highlight, preview):
-        """Draw the world 1:1 into a smaller buffer, then scale it up to the window (zoom)."""
+        """Draw the world 1:1 into a smaller buffer, then scale it up to the window (zoom).
+
+        With HD sprites on there is no buffer: the world goes straight onto the screen and every
+        tile and sprite is enlarged from its own picture instead, so nothing is drawn small and
+        stretched afterwards. That is what makes the upscaled monster art worth having."""
         W, H = self.screen.get_size()
         z = self.cam.scale
+        if self.opts.get("hd_sprites", "off") != "off" and z != 1.0:
+            from render import upscale
+            upscale.quality(self.opts.get("hd_sprites"))
+            self.assets.render_scale = z
+            try:
+                self.screen.fill((0, 0, 0))
+                self.scene.draw(self.screen, self.cam, cell, highlight, preview)
+            finally:
+                self.assets.render_scale = 1.0
+            return
+        if getattr(self.assets, "render_scale", 1.0) != 1.0:
+            self.assets.render_scale = 1.0
         ow, oh = max(1, int(W / z + 0.5)), max(1, int(H / z + 0.5))
         if self._offscreen is None or self._offscreen.get_size() != (ow, oh):
             self._offscreen = pygame.Surface((ow, oh))
