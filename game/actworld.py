@@ -410,7 +410,27 @@ def setup(world, built, grid, rng, info, level_key):
         # Duriel's chamber: Duriel alone, nothing else (D2)
         world.monsters = [m for m in world.monsters
                           if m.ai == "npc" or getattr(m, "ally", False) or getattr(m, "boss", None) == "duriel"]
+    _clear_boss_room(world, level_key)
     _drop_unreachable(world, [c for c in safe if c] + ([world._default_start()] if world.npcs else []))
+
+
+def _clear_boss_room(world, level_key):
+    """Empty the boss's own chamber. D2 leaves Mephisto alone on his platform: the council and
+    their blood lords are the fight on the way in, and he is the fight at the end. Without this
+    the level's ordinary packs settle in his room as well and the two fights become one."""
+    who = BOSS_ALONE.get(level_key)
+    if not who:
+        return
+    name, r = who
+    # by name: the level's lesser bosses (Mephisto's council) are "boss" units too
+    boss = next((m for m in world.monsters if getattr(m, "boss", None) == name), None)
+    if boss is None:
+        return
+    home = getattr(boss, "home", None) or boss.pos
+    world.monsters = [m for m in world.monsters
+                      if m is boss or m.ai == "npc" or getattr(m, "ally", False)
+                      or getattr(m, "boss", None)
+                      or chebyshev(m.pos, home) > r]
 
 
 def _drop_unreachable(world, seeds):
@@ -756,7 +776,10 @@ def _reachable(world, c):
 
 
 # (cells of walkable ground per monster pack, most packs) for areas that are crowded
-DENSE = {76: (480, 70)}
+DENSE = {76: (480, 70), 102: (900, 12)}      # 102: the Durance of Hate 3 - the council, not an army
+# a boss whose own chamber is his alone: ordinary monsters within this many cells of him are
+# cleared away after the level is filled, so the walk in is the fight and he is the next one
+BOSS_ALONE = {102: ("mephisto", 26)}         # Mephisto, across his moat
 # areas whose packs are spread evenly over the whole map: how many
 SPREAD = {77: 48, 86: 24, 110: 90}       # (110: the Bloody Foothills - Baal's siege army, packed like D2's)
 
