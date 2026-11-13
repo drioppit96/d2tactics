@@ -267,6 +267,7 @@ class D2Hud:
         p = world.player
         self._draw_log(surf, scene)
         self._draw_party(surf, world, scene)
+        self._draw_minions(surf, world, scene)
         self._draw_automap(surf, world)
         if self.store is not None:
             self._draw_store(surf, world)
@@ -546,9 +547,85 @@ class D2Hud:
                                     ("Life %d / %d   Mana %d / %d" % (max(0, h.hp), h.max_hp, int(h.mana), h.max_mana), WHITE),
                                     ("(%s)" % state, GREY)]
 
+    MINION_H = 44                 # one row of the minion column, under the party portraits
+
+    def _minion_groups(self, world):
+        """Your summons, one row per kind: (a unit to draw, how many, share of their life left).
+        Skeletons stand together, wolves stand together, the way the game's own minion bar does."""
+        out, order = {}, []
+        for m in (world.allies() if hasattr(world, "allies") else []):
+            if getattr(m, "is_player", False) or getattr(m, "ai", "") == "npc":
+                continue
+            key = getattr(m, "summon_skill", None) or m.name
+            if key not in out:
+                out[key] = [m, 0, 0.0, 0.0]
+                order.append(key)
+            g = out[key]
+            g[1] += 1
+            g[2] += max(0, m.hp)
+            g[3] += max(1, m.max_hp)
+        return [(out[k][0], out[k][1], out[k][2] / out[k][3], int(out[k][2]), int(out[k][3])) for k in order]
+
+    def _minion_top(self, world):
+        """Where the minion column starts: under the party portraits, or at the top without one."""
+        if not self._party_shown():
+            return 8
+        from game import tactics
+        return 8 + len(tactics.party(world)) * 70
+
+    def _minions_shown(self):
+        w = getattr(self, "world", None)
+        return bool(w is not None and not self._left_panel_open() and self._minion_groups(w))
+
+    def _draw_minions(self, surf, world, scene):
+        """The summons you have out, listed under the party with a count on each kind."""
+        if self._left_panel_open():
+            return
+        groups = self._minion_groups(world)
+        if not groups:
+            return
+        mx, my = self.mouse
+        x, bw, bh = 6, 50, self.MINION_H
+        y0 = self._minion_top(world)
+        room = max(1, int((560 - y0) // (bh + 4)))
+        shown = groups[:room]
+        for i, (unit, n, frac, hp, hp_max) in enumerate(shown):
+            y = y0 + i * (bh + 4)
+            box = pygame.Rect(self.P(x, y), (int(bw * self.s), int(bh * self.s)))
+            bg = pygame.Surface(box.size, pygame.SRCALPHA)
+            bg.fill((10, 8, 6, 200))
+            surf.blit(bg, box.topleft)
+            if getattr(self, "assets", None) is not None and hasattr(self.assets, "draw_unit"):
+                clip = surf.get_clip()
+                surf.set_clip(box)
+                try:
+                    pose = {"mode": "NU", "phase": getattr(scene, "clock", 0), "facing": (1, 1), "flash": 0}
+                    self.assets.draw_unit(surf, unit, pose, (box.centerx, box.y + int(37 * self.s)),
+                                          self.s * 0.38, 1.0)
+                except Exception:
+                    pass
+                surf.set_clip(clip)
+            pygame.draw.rect(surf, (70, 95, 70), box, 1)
+            if n > 1:                                  # how many of this kind are standing
+                self.text(surf, self.f10, "x%d" % n, WHITE, x + 2, y + bh - 17, "right", bw - 4)
+            by = y + bh - 6
+            pygame.draw.rect(surf, (20, 16, 12),
+                             pygame.Rect(self.P(x + 2, by), (int((bw - 4) * self.s), max(1, int(3 * self.s)))))
+            if frac > 0:
+                pygame.draw.rect(surf, (60, 190, 70),
+                                 pygame.Rect(self.P(x + 2, by), (max(1, int((bw - 4) * self.s * frac)),
+                                                                 max(1, int(3 * self.s)))))
+            if pygame.Rect(x, y, bw, bh).collidepoint((int(mx), int(my))):
+                self.hover_lines = [("%s%s" % (unit.name, " x%d" % n if n > 1 else ""), (150, 230, 150)),
+                                    ("Life %d / %d" % (hp, hp_max), WHITE),
+                                    ("(summoned)", GREY)]
+        if len(groups) > len(shown):
+            self.text(surf, self.f10, "+%d more" % (len(groups) - len(shown)), GREY,
+                      x, y0 + len(shown) * (bh + 4) + 2, "center", bw)
+
     def _left_edge(self):
         """The message log starts right of whatever window is open on the left."""
-        x0 = 330 if self._left_panel_open() else (62 if self._party_shown() else 8)
+        x0 = 330 if self._left_panel_open() else (62 if self._party_shown() or self._minions_shown() else 8)
         lr = self._loot_rect()
         if lr is not None and lr[0] <= x0 + 10:
             x0 = lr[0] + lr[2] + 8
