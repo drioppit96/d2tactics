@@ -131,7 +131,31 @@ def _cache_path(img, k):
     except Exception:
         return None
     h = hashlib.md5(raw).hexdigest()
-    return os.path.join(CACHE, _state["quality"], "%.3f" % k, h[:2], h[2:] + ".png")
+    return os.path.join(CACHE, _state["quality"], h[:2], h[2:] + ".png")
+
+
+def enhanced(img):
+    """img run through the net at the net's own factor (2x or 4x), or None if it can't be done.
+
+    Deliberately not at the size the screen wants: the mouse wheel zooms between 1.0 and 3.5, and
+    a picture kept per zoom step would send the net off again on every notch of the wheel and fill
+    the disk with near-copies. One enlarged picture per sprite serves every zoom; the last short
+    step to the exact size is a cheap resize."""
+    w, h = img.get_size()
+    if not w or not h or max(w, h) > MAX_SIDE or not available():
+        return None
+    path = _cache_path(img, 0)
+    if path and os.path.exists(path):
+        got = _load(path)
+        if got is not None:
+            return got
+    try:
+        out = _to_surface(_net_upscale(img))
+    except Exception:
+        _state["fails"] += 1
+        return None
+    _save(out, path)
+    return out
 
 
 def scale_surface(img, k):
@@ -140,23 +164,12 @@ def scale_surface(img, k):
     size = (max(1, int(round(w * k))), max(1, int(round(h * k))))
     if size == (w, h) or not w or not h:
         return img
-    if k <= 1.0 or max(w, h) > MAX_SIDE or not available():
+    if k <= 1.0:
         return _plain(img, size)
-    path = _cache_path(img, k)
-    if path and os.path.exists(path):
-        got = _load(path)
-        if got is not None:
-            return got
-    try:
-        big = _net_upscale(img)
-        out = _to_surface(big)
-        if out.get_size() != size:                 # the net's factor is 2 or 4: fit to what we need
-            out = _plain(out, size)
-    except Exception:
-        _state["fails"] += 1
+    big = enhanced(img)
+    if big is None:
         return _plain(img, size)
-    _save(out, path)
-    return out
+    return big if big.get_size() == size else _plain(big, size)
 
 
 def _load(path):

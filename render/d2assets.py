@@ -247,6 +247,10 @@ class UnitSprites:
     def _hd(self, key, k):
         """The same frames at the window's own resolution, enlarged by the net (render/upscale)."""
         cache = self.__dict__.setdefault("_hd_frames", {})
+        tag = (k, upscale.quality())
+        if self.__dict__.get("_hd_tag") != tag:        # zoomed, or the quality changed: start over
+            cache.clear()
+            self._hd_tag = tag
         ck = (key, k, upscale.quality())
         got = cache.get(ck)
         if got is None:
@@ -503,6 +507,9 @@ class D2Assets(AssetProvider):
         seams. So a keyed tile is enlarged without blending, which leaves its colours untouched.
         Tiles tessellate edge to edge, and feathering those edges any other way shows as a grid."""
         cache = self.__dict__.setdefault("_hd_tiles", {})
+        if self.__dict__.get("_hd_tile_k") != k:      # the wheel moved: these are all the wrong size
+            cache.clear()
+            self._hd_tile_k = k
         key = (id(img), k, bool(lit), alpha)
         got = cache.get(key)
         if got is not None and got[0] is img:
