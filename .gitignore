@@ -25,6 +25,7 @@ d2samples4.zip
 
 # your characters
 saves/
+saves_test/        # scratch characters the test harness writes
 options.ini
 d2samples5/
 d2samples5.zip
