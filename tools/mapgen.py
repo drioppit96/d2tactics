@@ -5,8 +5,9 @@ or any you pick), packs / champions / uniques / a super unique boss, and how man
 chests, breakables, bodies, racks, bookshelves and lights. Generate shows the map from above; every
 room is checked to be reachable (a layout that fails is thrown away and made again).
 
-Map type switches between dungeons (D2's maze rooms) and open worlds (D2's outdoor areas built block by
-block from their border and landmark presets). Save writes maps/<name>.json; the map editor opens it
+Map type switches between dungeons (D2's maze rooms), open worlds (D2's outdoor areas built block by
+block from their border and landmark presets) and towns (D2's five towns taken apart into their
+buildings and wall runs, then laid out on a fresh plot - see game/townmap.py). Save writes maps/<name>.json; the map editor opens it
 ("Open"). The maps are not put into the game.
 """
 import os
@@ -37,11 +38,17 @@ ROW_H = 25
 # rows only for dungeons / only for open worlds
 DUNGEON_ONLY = {"rooms", "loops", "theme_rooms", "packs"}
 OPEN_ONLY = {"width", "height", "fill", "open_packs"}
+TOWN_ONLY = {"buildings", "roads"}
+# a town is laid out from D2's own town buildings, so the dungeon and wilderness knobs do not apply
+TOWN_SKIP = (DUNGEON_ONLY | OPEN_ONLY | {"monsters", "champions", "uniques", "boss", "monster_level",
+             "shrines", "wells", "chests", "breakables", "bodies", "racks", "bookshelves", "lights",
+             "room_objects"}) - {"width", "height"}
 ROWS = [("name", "Name", "text"), ("kind", "Map type", "kind"), ("theme", "Theme", "theme"),
         ("rooms", "Rooms", "num", 2, 60, 1),
         ("loops", "Extra links (loops)", "num", 0, 30, 1), ("theme_rooms", "Special rooms %", "num", 0, 100, 10),
         ("width", "Width (8-tile blocks)", "num", 4, 30, 1), ("height", "Height (8-tile blocks)", "num", 4, 30, 1),
         ("fill", "Landmarks / props %", "num", 0, 100, 10),
+        ("buildings", "Buildings", "num", 0, 60, 1), ("roads", "Paved streets", "toggle"),
         ("monsters", "Enemy types", "pick"), ("packs", "Packs per room", "num", 0, 8, 1),
         ("open_packs", "Monster packs", "num", 0, 200, 5),
         ("champions", "Champion packs", "num", 0, 30, 1), ("uniques", "Unique packs", "num", 0, 30, 1),
@@ -117,11 +124,15 @@ class Generator:
     def value_text(self, key):
         v = self.opts.get(key)
         if key == "theme":
-            if self.opts.get("kind") == "open":
+            k = self.opts.get("kind")
+            if k == "town":
+                from game import townmap
+                return townmap.TOWN_NAMES.get(self.opts["town_theme"], self.opts["town_theme"])
+            if k == "open":
                 return randmap.OPEN_NAMES.get(self.opts["open_theme"], self.opts["open_theme"])
             return randmap.THEME_NAMES.get(v, v)
         if key == "kind":
-            return "Open world" if v == "open" else "Dungeon"
+            return {"open": "Open world", "town": "Town"}.get(v, "Dungeon")
         if key == "monsters":
             if not v:
                 return "the theme's own"
@@ -199,17 +210,27 @@ class Generator:
             lo, hi, step = row[3], row[4], row[5]
             self.opts[key] = max(lo, min(hi, int(self.opts.get(key) or 0) + d * step))
         elif kind == "theme":
-            opn = self.opts.get("kind") == "open"
+            k = self.opts.get("kind")
+            if k == "town":
+                from game import townmap
+                keys = [t for t, _n, _a in townmap.themes()]
+                i = keys.index(self.opts["town_theme"]) if self.opts["town_theme"] in keys else 0
+                self.opts["town_theme"] = keys[(i + d) % len(keys)]
+                return
+            opn = k == "open"
             key = "open_theme" if opn else "theme"
-            keys = [k for k, _n, _a in (randmap.OPEN_THEMES if opn else randmap.THEMES)]
+            keys = [k2 for k2, _n, _a in (randmap.OPEN_THEMES if opn else randmap.THEMES)]
             i = keys.index(self.opts[key]) if self.opts[key] in keys else 0
             self.opts[key] = keys[(i + d) % len(keys)]
             self.opts["monsters"] = []
         elif kind == "kind":
-            self.opts["kind"] = "dungeon" if self.opts.get("kind") == "open" else "open"
+            order = ["dungeon", "open", "town"]
+            i = order.index(self.opts.get("kind")) if self.opts.get("kind") in order else 0
+            self.opts["kind"] = order[(i + (d or 1)) % len(order)]
             self.opts["monsters"] = []
-            if self.opts["name"] in ("random_dungeon", "random_world"):
-                self.opts["name"] = "random_world" if self.opts["kind"] == "open" else "random_dungeon"
+            if self.opts["name"] in ("random_dungeon", "random_world", "random_town"):
+                self.opts["name"] = {"open": "random_world", "town": "random_town"}.get(
+                    self.opts["kind"], "random_dungeon")
         elif kind == "toggle":
             self.opts[key] = not self.opts.get(key)
         elif kind == "seed":
@@ -241,7 +262,9 @@ class Generator:
 
     # ------------------------------------------------------------------ layout
     def rows(self):
-        skip = DUNGEON_ONLY if self.opts.get("kind") == "open" else OPEN_ONLY
+        k = self.opts.get("kind")
+        skip = TOWN_SKIP if k == "town" else (DUNGEON_ONLY | TOWN_ONLY if k == "open"
+                                              else OPEN_ONLY | TOWN_ONLY)
         return [r for r in ROWS if r[0] not in skip]
 
     def row_rects(self):

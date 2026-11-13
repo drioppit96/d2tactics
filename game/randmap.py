@@ -49,7 +49,8 @@ OBJECT_OPTIONS = [("shrines", ("shrine",)), ("wells", ("well",)), ("chests", ("c
                   ("breakables", ("barrel", "urn", "xbarrel")), ("bodies", ("corpse",)),
                   ("racks", ("armor_rack", "weapon_rack")), ("bookshelves", ("bookshelf",))]
 
-DEFAULTS = dict(kind="dungeon", name="random_dungeon", theme="catacombs", open_theme="wild", width=10, height=10,
+DEFAULTS = dict(kind="dungeon", name="random_dungeon", theme="catacombs", open_theme="wild",
+                town_theme="rogue", buildings=10, roads=True, width=10, height=10,
                 fill=60, open_packs=30, rooms=12, loops=2, theme_rooms=20,
                 monsters=[], packs=2, champions=2, uniques=1, boss="", monster_level=0,
                 shrines=3, wells=1, chests=4, breakables=6, bodies=3, racks=1, bookshelves=0, lights=6,
@@ -251,9 +252,15 @@ def _near_walkable(grid, c, r=10):
 
 
 def generate(kit, content, objdata, opts, log=None):
-    """A random map as a custom map (dict): a dungeon, or an open world (opts["kind"] == "open")."""
+    """A random map as a custom map (dict): a dungeon, an open world (opts["kind"] == "open") or a
+    town built from D2's own town buildings (opts["kind"] == "town", see game/townmap.py)."""
     o = dict(DEFAULTS)
     o.update(opts or {})
+    if o.get("kind") == "town":
+        from . import townmap
+        doc = townmap.generate(kit, o)
+        doc.pop("_placed", None)
+        return doc
     if o.get("kind") == "open":
         return _generate_open(kit, content, objdata, o, log)
     return _generate_dungeon(kit, content, objdata, o, log)

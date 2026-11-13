@@ -20,6 +20,9 @@ e.g. a cave or a tomb).
   Ctrl+F floor layer 1 / 2 (layer 2 lies on top: roads, rugs, decals)
   Ctrl+K monster placement: normal / pack / champion / unique
   Ctrl+[ / Ctrl+]  tileset (level type)      PageUp / PageDown  act
+  The town tilesets (Act 1 - Town ... Act 5 - Town) are in that list like any other, so every
+  town floor, wall, roof and building tile can be placed by hand - start from a generated town
+  (Map Generator, Map type: Town) if you want its buildings already standing.
   Ctrl+Arrows    map size (4 tiles a step)
 """
 import json
