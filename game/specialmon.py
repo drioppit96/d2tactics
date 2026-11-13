@@ -13,6 +13,11 @@ TRAPS = {"trap-firebolt": ("fire", "firebolt"), "trap-lightning": ("ltng", "chai
          "trap-nova": ("ltng", "nova"), "trap-poisoncloud": ("pois", "trappoisonjavcloud"),
          "trap-horzmissile": ("phys", "arrow"), "trap-vertmissile": ("phys", "arrow"),
          "trap-melee": ("phys", None)}
+# The water watchers (Act 3's Water Watcher, Act 5's Stygian Watcher): a head and its limbs,
+# rooted in water. They sit where nothing can reach them and shoot, which on a turn-based grid is
+# a wall rather than a fight, so they are switched off. Set this back to True to have them again.
+WATCHERS = False
+
 TURRETS = {"firetower": ("fire", "firebolt", 7), "lightningspire": ("ltng", "arcanelightningbolt", 8),
            "gargoyletrap": ("phys", "gargoyletrapmissile", 7), "trappedsoul1": ("fire", "firebolt", 5),
            "trappedsoul2": ("fire", "firebolt", 5), "catapult": ("ltng", "catapultchargedball on", 13)}
@@ -134,6 +139,8 @@ def spawn_preset(world, name, cell, owner, lvl, taken):
         return True                     # D2's invisible helpers that aim the catapults
     if low.startswith(("place_tentacle",)):
         # D2's water watchers: a head and its limbs, all in the water (none where there is no water)
+        if not WATCHERS:
+            return True                 # switched off: the marker is used up and nothing is placed
         water = getattr(g, "water", None) or set()
         head = _variant(world, "tentaclehead", lvl, 3)
         if head is None or not water:
