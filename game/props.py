@@ -105,6 +105,7 @@ TEXT = {
 }
 _skill_names = None
 SRC = None              # the D2 data source (set by D2Content)
+STRINGS = None          # the string table (set by D2Content), for readable skill names
 LEVEL = 1               # character level the "per level" lines are shown for (set by the tooltip)
 
 
@@ -118,10 +119,17 @@ def skill_name(param):
         _skill_names = {}
         try:
             from d2.source import read_table
+            # the readable name ("Iron Golem"), not the table's key ("IronGolem")
+            titles = {}
+            for d in read_table(SRC, "SkillDesc"):
+                key, s = d.get("skilldesc"), d.get("str name")
+                if key and s and STRINGS is not None:
+                    titles[key] = STRINGS.get(s, None) or ""
             for r in read_table(SRC, "Skills"):
                 if r.get("skill"):
-                    _skill_names[r.get("id", "")] = r["skill"]
-                    _skill_names[r["skill"].lower()] = r["skill"]
+                    nice = titles.get(r.get("skilldesc", "")) or r["skill"]
+                    _skill_names[r.get("id", "")] = nice
+                    _skill_names[r["skill"].lower()] = nice
         except Exception:
             pass
     return _skill_names.get(p, _skill_names.get(p.lower(), p))

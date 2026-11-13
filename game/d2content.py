@@ -89,12 +89,14 @@ class D2Content:
             pass
         from . import props
         props.SRC = src
-        sfx = {"normal": "", "nightmare": "(n)", "hell": "(h)"}.get(difficulty, "")
+        sfx ={"normal": "", "nightmare": "(n)", "hell": "(h)"}.get(difficulty, "")
         self.sfx = sfx
         self.difficulty = difficulty if sfx or difficulty == "normal" else "normal"
         self.strings = Strings(src)
         from . import dialogue
         dialogue.STRINGS = self.strings          # NPC speech and quest log text (the player's own tables)
+        props.STRINGS = self.strings             # readable skill names on "+1 to Iron Golem" lines
+        props._skill_names = None                # (rebuild them now the string table is here)
         self.types = {r["code"]: r for r in read_table(src, "ItemTypes") if r.get("code")}
         self._ancestors = {}
         self.bases = []
@@ -367,12 +369,28 @@ class D2Content:
                 self._auto_rows = []
         return self._auto_rows
 
+    SKILL_CODES = {"skill", "oskill", "skilltab", "allskills", "ama", "sor", "nec", "pal", "bar", "dru", "ass"}
+
+    def _auto_gives_skill(self, grp):
+        """Does this AutoMagic group hand out a skill bonus? (Amazon weapons get a skill tab;
+        orbs get life, Necromancer heads poison, Paladin shields resistances.)"""
+        cache = self.__dict__.setdefault("_auto_skill", {})
+        if grp not in cache:
+            cache[grp] = any(m[0] in self.SKILL_CODES
+                             for a in self._automagic() if a["grp"] == grp for m in a["mods"])
+        return cache[grp]
+
     def _class_item_mods(self, base, ilvl, rng, quality):
         """D2's class items: wands, staves, orbs, voodoo heads, scepters, barbarian helms, druid pelts
         and katars get up to three +1-3 bonuses to their class's skills (ItemTypes StaffMods) on normal
         and magic items; Amazon bows / javelins / spears, Paladin shields, Necromancer heads and orbs
         also get their AutoMagic mod (+skill tab, life...) on every quality."""
         sm = base.get("staffmods")
+        # Every class-only item should be able to roll a bonus to its class's skills. A few item
+        # types have no StaffMods of their own and no skill in their AutoMagic group either -
+        # Paladin shields get resistances there - so they fall back to their own class's skills.
+        if not sm and base.get("class") and not self._auto_gives_skill(base.get("auto_prefix") or ""):
+            sm = base["class"]
         # D2 rolls a class item's own skills (Barbarian helms, Druid pelts, orbs, claws, wands...)
         # on magic, rare and crafted items alike - a rare barbarian helm gets them too
         if sm and quality in ("normal", "magic", "superior", "low", "rare", "craft", "crafted"):
