@@ -687,7 +687,11 @@ def on_killed(world, unit):
             give_item(world, code, near=unit.pos)
             world.log("%s dropped %s!" % (unit.name, what), QUEST_COLOR)
     if boss == "council":
-        if q["khalim"] in ("none", "active") and not has_item(p, "qf1", world) and not has_item(p, "qf2", world):
+        # only Travincal's High Council carries the Flail. Bremm, Maffer and Wyand in the Durance
+        # of Hate share the "council" tag but are Mephisto's guard, and drop nothing for the quest
+        here = (world.area_at(unit.pos) or world.level_id) == COUNCIL_LEVEL
+        if here and q["khalim"] in ("none", "active") and not has_item(p, "qf1", world) \
+                and not has_item(p, "qf2", world):
             give_item(world, "qf1", near=unit.pos)
             world.log("%s dropped Khalim's Flail!" % unit.name, QUEST_COLOR)
         left = [m for m in world.monsters if m.alive and getattr(m, "boss", None) == "council"
