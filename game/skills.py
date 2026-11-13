@@ -557,6 +557,15 @@ class SkillBook:
     ROW_AP = {1: 2, 2: 3, 3: 3, 4: 4, 5: 4, 6: 4}
     SUMMON_KINDS = ("summon", "turret", "golem", "raise", "revive")
 
+    fcr = 0                   # Faster Cast Rate from items and buffs (set by Unit.recalc)
+
+    def cast_discount(self):
+        """Faster Cast Rate on a turn-based grid: spells take less of your turn.
+        -1 AP at 50%, -2 AP at 125%. Only skills that don't swing a weapon get it, and no spell
+        ever drops below 2 AP, so the cheap first-row spells stay as they are and the heavy ones
+        are what the stat buys you."""
+        return 2 if self.fcr >= 125 else 1 if self.fcr >= 50 else 0
+
     def ap_cost(self, name, weapon_ap):
         """AP for a skill: summons (minions, golems, traps, raised dead) 2; otherwise by the skill's
         row in its tree - the first row 2, the second and third 3, the rest 4. Auras cost 1 AP to
@@ -575,7 +584,7 @@ class SkillBook:
             return 2
         lv = int(s.reqlevel or 1)               # the row, from the level it needs (1/6/12/18/24/30)
         row = 1 if lv < 6 else 2 if lv < 12 else 3 if lv < 18 else 4 if lv < 24 else 5 if lv < 30 else 6
-        return self.ROW_AP[row]
+        return max(2, self.ROW_AP[row] - self.cast_discount())
 
     # ------------------------------------------------------------ text
     def describe(self, name):

@@ -6,7 +6,7 @@ and the affix tables): what each one does to the hero, and its tooltip line.
 """
 import random
 
-from .d2content import PROP_MAP, ELEM_PARTS
+from .d2content import PROP_MAP, ELEM_PARTS, OFF_CODES
 
 CLASS_CODES = ["ama", "sor", "nec", "pal", "bar", "dru", "ass"]
 CLASS_NAMES = {"ama": "Amazon", "sor": "Sorceress", "nec": "Necromancer", "pal": "Paladin", "bar": "Barbarian",
@@ -203,8 +203,8 @@ def apply(item, props, rng=random, roll=True):
         item.mod_list = []
     elem = {}
     for code, param, lo, hi in props:
-        if not code or code.startswith("*"):
-            continue                    # '*' = commented out in D2's own tables
+        if not code or code.startswith("*") or code in OFF_CODES:
+            continue                    # '*' = commented out in D2's own tables; OFF = no use here
         if code in ELEM_PARTS:
             e, i = ELEM_PARTS[code]
             elem.setdefault(e, [0, 0])[i] = rng.randint(min(lo, hi), max(lo, hi)) if roll else max(lo, hi)

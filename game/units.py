@@ -432,6 +432,9 @@ class Player(Unit):
         self.mana_leech = self.mod("ml")
         self.dr = self.mod("dr")
         self.mdr = self.mod("mdr")
+        self.fcr = self.mod("fcr")
+        if getattr(self, "skills", None) is not None:
+            self.skills.fcr = self.fcr       # Faster Cast Rate: AP off spells (SkillBook.ap_cost)
         self.mf = self.mod("mf")
         self.gf = self.mod("gf")
         self.crit = pb.get("crit", 0)

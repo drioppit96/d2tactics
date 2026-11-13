@@ -1941,6 +1941,10 @@ class SkillCaster:
             m.ap = max(1, m.ap - 2)
         if self._has_flag(m, "slow"):
             m.ap = max(1, m.ap // 2)
+        if eff.get("blinded"):                    # "Hit Blinds Target" from an item
+            eff["blinded"] -= 1
+            if self.udist(m, self.player) > 2:
+                return False
         if self._has_flag(m, "blind") and self.udist(m, self.player) > 2:
             return False
         return True

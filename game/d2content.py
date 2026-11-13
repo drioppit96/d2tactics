@@ -43,8 +43,12 @@ ELEM_PARTS = {"fire-min": ("fire", 0), "fire-max": ("fire", 1), "cold-min": ("co
               "mag-min": ("mag", 0), "mag-max": ("mag", 1)}
 IGNORED = {"fire-len", "cold-len", "pois-len"}
 # not supported yet (skills, charges, sockets): affixes with these don't spawn
-SKIP_CODES = {"charged", "gethit-skill", "hit-skill", "att-skill", "stack", "", "kill-skill", "death-skill",
-              "levelup-skill"}
+SKIP_CODES = {"charged", "stack", ""}
+# Properties this game has no use for: a turn has no animation to speed up, so faster block rate
+# and faster hit recovery would do nothing. They never roll on an affix and are not written onto
+# an item, so no line ever claims something that doesn't happen. (Faster cast rate does work -
+# it takes AP off spells - see SkillBook.ap_cost.)
+OFF_CODES = {"block2", "block3", "balance1", "balance2", "balance3"}
 # affix properties handled by game/props.py once the item exists (sockets, +skills ...)
 LATE_CODES = {"sock", "skilltab", "ama", "pal", "nec", "sor", "bar", "dru", "ass", "allskills", "skill", "oskill"}
 PROP_MAP.update({"res-pois-len": ("pois_len", "val"), "red-dmg": ("dr", "val"), "stam": ("stamina", "val"), "regen-stam": ("stamina_regen", "val"),
@@ -283,8 +287,9 @@ class D2Content:
             a = self._affix_row(r)
             if not a["mods"] or any(m[0] in SKIP_CODES for m in a["mods"]):
                 continue
+            a["mods"] = [m for m in a["mods"] if m[0] not in OFF_CODES]
             from .durability import NO_DUR_CODES
-            if all(m[0] in NO_DUR_CODES for m in a["mods"]):
+            if not a["mods"] or all(m[0] in NO_DUR_CODES for m in a["mods"]):
                 continue                    # durability affixes: nothing to do in this game
             out.append(a)
         return out
@@ -301,7 +306,7 @@ class D2Content:
         if not 0 <= idx < len(rows) or not rows[idx].get("name"):
             return None
         a = self._affix_row(rows[idx])
-        a["mods"] = [m for m in a["mods"] if m[0] not in SKIP_CODES]
+        a["mods"] = [m for m in a["mods"] if m[0] not in SKIP_CODES and m[0] not in OFF_CODES]
         return a
 
     # ------------------------------------------------------------ item generation

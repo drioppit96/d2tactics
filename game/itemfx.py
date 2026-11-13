@@ -165,6 +165,35 @@ def on_attack(world, target):
     _procs(world, "attack", target)
 
 
+def _on_hit_effects(world, p, target, ranged):
+    """The item properties that act on whatever you just hit: knockback, freezing, slowing,
+    blinding and fleeing. Each lands on the monster, never on you or an ally."""
+    rng = world.rng
+    if getattr(target, "is_player", False) or getattr(target, "ally", False):
+        return
+    freeze = p.mod("freeze")
+    if freeze and target.alive and getattr(target, "res", {}).get("cold", 0) < 100:
+        turns = max(1, min(3, int(freeze)))
+        if not target.effects.get("freeze"):          # no re-freezing one that is already frozen
+            target.effects["freeze"] = turns
+            world.log("%s is frozen solid." % target.name, (150, 210, 255))
+    slow = p.mod("slow")
+    if slow and target.alive and rng.randrange(100) < min(75, slow):
+        target.effects["chill"] = max(target.effects.get("chill", 0), 2)
+        world.log("%s slows down." % target.name, (150, 210, 255))
+    blind = p.mod("blind")
+    if blind and target.alive:
+        target.effects["blinded"] = max(target.effects.get("blinded", 0), 2)
+        world.log("%s is blinded." % target.name, (200, 200, 120))
+    howl = p.mod("howl")
+    if howl and target.alive and rng.randrange(100) < min(100, howl):
+        target.effects["flee"] = max(target.effects.get("flee", 0), 2)
+        world.log("%s flees!" % target.name, (240, 220, 90))
+    # knockback last, so the shove doesn't move the target out from under the rest
+    if p.mod("knock") and target.alive and not ranged and hasattr(world, "_knockback"):
+        world._knockback(p, target)
+
+
 def on_hit(world, attacker, target, dmg, ranged=False):
     """You hit a monster: crushing blow, open wounds, chance-to-cast on striking."""
     p = world.player
@@ -186,6 +215,8 @@ def on_hit(world, attacker, target, dmg, ranged=False):
         turns = 4
         target.effects["bleed"] = [per, turns]
         world.log("%s is bleeding!" % target.name, (255, 80, 80))
+    if target.alive:
+        _on_hit_effects(world, p, target, ranged)
     _procs(world, "hit", target)
 
 
