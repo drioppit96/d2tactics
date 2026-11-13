@@ -484,14 +484,24 @@ class D2Assets(AssetProvider):
                 self.tile_cache[key] = faded
             img = self.tile_cache[key]
         k = getattr(self, "render_scale", 1.0)
-        if k != 1.0:
-            img = self._scaled_tile(img, k, ref, lit, alpha)
         sx, sy = cam.to_screen((tx - ty) * 80 - 80 + x0, (tx + ty) * 40 - 8 + y0 - self._roof_lift(ref))
+        if k != 1.0:
+            # round rather than truncate: at a fractional scale truncating leaves hairline gaps
+            # between tiles that should meet edge to edge
+            img = self._scaled_tile(img, k, ref, lit, alpha)
+            surf.blit(img, (int(round(sx)), int(round(sy))))
+            return
         surf.blit(img, (int(sx), int(sy)))
 
     def _scaled_tile(self, img, k, ref, lit, alpha):
-        """The tile at the window's own resolution (HD rendering). Ground has no hard edges to
-        keep, so a smooth resize is right here - the net is for the sprites."""
+        """The tile at the window's own resolution (HD rendering).
+
+        A map tile carries its transparency as a colour key - one colour, (255, 0, 255), that no
+        tile uses - rather than as per-pixel alpha. A smooth resize blends neighbouring pixels, so
+        along the edge of every diamond it would mix that key into the picture: the result is no
+        longer exactly the key colour, nothing keys it out, and the screen fills with magenta
+        seams. So a keyed tile is enlarged without blending, which leaves its colours untouched.
+        Tiles tessellate edge to edge, and feathering those edges any other way shows as a grid."""
         cache = self.__dict__.setdefault("_hd_tiles", {})
         key = (id(img), k, bool(lit), alpha)
         got = cache.get(key)
@@ -501,13 +511,27 @@ class D2Assets(AssetProvider):
             cache.clear()
         w, h = img.get_size()
         size = (max(1, int(round(w * k))), max(1, int(round(h * k))))
+        ck = getattr(img, "get_colorkey", lambda: None)()
         try:
-            big = pygame.transform.smoothscale(img.convert_alpha(), size) \
-                if not hasattr(img, "img") else _pil_scale(img, size)
+            if ck is not None:
+                big = pygame.transform.scale(img, size)
+                big.set_colorkey(ck, pygame.RLEACCEL)
+            elif hasattr(img, "img"):
+                big = _pil_scale(img, size)
+            else:
+                big = pygame.transform.smoothscale(img, size)
         except Exception:
             big = pygame.transform.scale(img, size)
+            if ck is not None:
+                try:
+                    big.set_colorkey(ck, pygame.RLEACCEL)
+                except Exception:
+                    pass
         if alpha is not None and not hasattr(img, "img"):
-            big.set_alpha(alpha)
+            try:
+                big.set_alpha(alpha)
+            except Exception:
+                pass
         cache[key] = (img, big)
         return big
 
