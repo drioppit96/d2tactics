@@ -114,9 +114,27 @@ def _hash(text):
     return h
 
 
-def lamesen_temple(player):
-    """Which of the six temples holds Lam Esen's Tome (fixed per hero)."""
-    return 94 + _hash(getattr(player, "name", "")) % 6
+def lamesen_temple(player, world=None):
+    """Which of the six temples holds Lam Esen's Tome.
+
+    It has to be the same temple for the whole party and for the whole game. Whoever leads is
+    world.player, and that changes every time you click a portrait and again on every turn in
+    combat - so working it out from the hero in front would send the quest marker to one temple
+    and then test the lectern against another. It is settled once, from the party's first hero,
+    and kept in the quest record, which the party shares and the save keeps."""
+    q = getattr(player, "quests", None)
+    if isinstance(q, dict) and isinstance(q.get("lamesen_at"), int):
+        return q["lamesen_at"]
+    who = player
+    if world is not None:
+        from . import tactics
+        pt = tactics.party(world)
+        if pt:
+            who = pt[0]
+    lid = 94 + _hash(getattr(who, "name", "")) % 6
+    if isinstance(q, dict):
+        q["lamesen_at"] = lid
+    return lid
 
 
 # ------------------------------------------------------------------ talking
@@ -536,17 +554,20 @@ def on_object(world, obj):
             world.log("The Gidbinn lies on the altar. Bring it to Ormus.", QUEST_COLOR)
         return True
     if k == "lamtome":
+        # the right temple always gives the tome, even if this lectern was read before: a save
+        # from before the temple was settled may have crumbled the right one already
+        if getattr(world, "level_key", None) == lamesen_temple(p, world):
+            obj["used"] = True
+            if q["lamesen"] in ("none", "active"):
+                _start(world, "lamesen")
+                q["lamesen"] = "cleared"
+                give_item(world, "bbb", near=obj["cell"])
+                world.log("Lam Esen's Tome! Bring it to Alkor.", QUEST_COLOR)
+            return True
         if obj["used"]:
             return False
         obj["used"] = True
-        if getattr(world, "level_key", None) != lamesen_temple(p):
-            world.log("An old lectern. The book on it crumbles to dust - not the one Alkor wants.", GREY)
-            return True
-        if q["lamesen"] in ("none", "active"):
-            _start(world, "lamesen")
-            q["lamesen"] = "cleared"
-            give_item(world, "bbb", near=obj["cell"])
-            world.log("Lam Esen's Tome! Bring it to Alkor.", QUEST_COLOR)
+        world.log("An old lectern. The book on it crumbles to dust - not the one Alkor wants.", GREY)
         return True
     if k == "durance_gate":
         if not obj["used"]:

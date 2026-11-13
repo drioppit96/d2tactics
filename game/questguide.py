@@ -176,7 +176,7 @@ def objectives(world):
         add("khalim", "Smash the Compelling Orb", 83, ("object", "orb"))
     s = st("lamesen")
     if s == "active":
-        add("lamesen", "Find Lam Esen's Tome", quests345.lamesen_temple(p), ("object", "lamtome"))
+        add("lamesen", "Find Lam Esen's Tome", quests345.lamesen_temple(p, world), ("object", "lamtome"))
     elif s == "cleared":
         add("lamesen", "Bring the tome to Alkor", *_npc("alkor"))
     s = st("council")
