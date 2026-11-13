@@ -110,11 +110,32 @@ DIFFICULTY = "normal"           # the difficulty the world being played is on
 POIS_FRAMES = 150   # weapon / charm poison: its total damage spread over ~3 turns, like D2's poison length
 
 
-def hit_chance(attacker, defender, ar_bonus_pct=0, def_bonus_pct=0):
+def _mod(u, key):
+    f = getattr(u, "mod", None)
+    return f(key) if f is not None else 0
+
+
+def hit_chance(attacker, defender, ar_bonus_pct=0, def_bonus_pct=0, ranged=False):
     """D2's to-hit formula: 200% * AR/(AR+DEF) * alvl/(alvl+dlvl), clamped 5..95.
     Player attacks are rescaled to PLAYER_HIT_FLOOR..95%."""
     ar = attacker.ar * (100 + ar_bonus_pct) / 100
+    # "+X to Attack Rating against Demons / against Undead"
+    if getattr(defender, "demon", False):
+        ar += _mod(attacker, "ar_demon")
+    if getattr(defender, "undead", False):
+        ar += _mod(attacker, "ar_undead")
     df = max(0, defender.defense) * (100 + def_bonus_pct) / 100.0
+    # "+X Defense vs. Melee" / "vs. Missile": only against the kind of blow they name
+    df += _mod(defender, "def_missile" if ranged else "def_melee")
+    # what the attacker's gear does to that defence: "-X to Monster Defense Per Hit" has been
+    # wearing it down all fight, "-X% Target Defense" cuts what is left, and "Ignore Target's
+    # Defense" takes the lot
+    df = max(0.0, df - getattr(defender, "def_lost", 0))
+    cut = _mod(attacker, "target_def")
+    if cut:
+        df = df * max(0, 100 - min(100, cut)) / 100.0
+    if _mod(attacker, "ignore_ac"):
+        df = 0.0
     eff = getattr(defender, "effects", {})
     if eff.get("bc"):
         df = df * (100 - eff.get("bc_def", 50)) / 100.0
@@ -834,7 +855,7 @@ class World(SkillCaster, ItemActions):
 
     def preview_attack(self, target, skill="attack"):
         bonus = 20 if skill == "bash" else 0
-        return hit_chance(self.player, target, bonus), self.attack_cost(skill)
+        return hit_chance(self.player, target, bonus, 0, self.player.ranged), self.attack_cost(skill)
 
     def interact(self, npc):
         """Walk up to an NPC and talk (Akara heals, like in D2)."""
@@ -1972,7 +1993,7 @@ class World(SkillCaster, ItemActions):
             ar_bonus += self.aura_bonus(attacker, "ar_pct")          # Blessed Aim
         def_bonus = self.aura_bonus(target, "def_pct") if getattr(target, "ally", False) else 0
         if not mods.get("always") and not _tac.stunned_discount(target) and \
-                self.rng.random() > hit_chance(attacker, target, ar_bonus, def_bonus):
+                self.rng.random() > hit_chance(attacker, target, ar_bonus, def_bonus, bool(ranged_kind)):
             self.emit("miss", target)
             return False
         if target.is_player:
@@ -2092,6 +2113,9 @@ class World(SkillCaster, ItemActions):
         if target.is_player and target.alive and not ranged_kind and attacker.alive:
             if target.thorns:
                 self._damage(attacker, target.thorns, target)
+            lt = _mod(target, "ltng_thorns")          # "Attacker Takes Lightning Damage of X"
+            if lt and attacker.alive:
+                self.elem_hit(attacker, "ltng", lt, lt, target, show=False)
             if self._has_flag(attacker, "maiden") and attacker.alive:
                 self._damage(attacker, max(1, dealt * 2), target)
             ret = None
@@ -2143,6 +2167,11 @@ class World(SkillCaster, ItemActions):
             amount = self._absorb(unit, amount)
             if amount <= 0:
                 return
+            # "X% Damage Taken Goes To Mana": the blow lands in full, and that share of it comes
+            # back as mana
+            to_mana = _mod(unit, "dmg_to_mana")
+            if to_mana and unit.mana < unit.max_mana:
+                unit.mana = min(unit.max_mana, unit.mana + max(1, amount * to_mana // 100))
         unit.hp -= amount
         self.emit("damage", unit, amount, max(0, unit.hp))
         if unit.hp <= 0:
@@ -2227,6 +2256,10 @@ class World(SkillCaster, ItemActions):
         hireling.gain_xp(self, unit.xp_value)
         if getattr(p, "life_kill", 0) and p.alive:
             p.hp = min(p.max_hp, p.hp + p.life_kill)
+        if getattr(unit, "demon", False) and p.alive:      # "+X Life after each Demon Kill"
+            dh = _mod(p, "demon_heal")
+            if dh:
+                p.hp = min(p.max_hp, p.hp + dh)
         if getattr(p, "mana_kill", 0):
             p.mana = min(p.max_mana, p.mana + p.mana_kill)
         if gained:

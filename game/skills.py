@@ -492,11 +492,14 @@ class SkillBook:
     tab_bonus = {}
     single_bonus = {}
 
+    elem_bonus = {}          # "+X to Fire Skills" and the like, by the skill's element
+
     def item_levels(self, name):
         """+skill levels from items (they only raise skills you have learned, like class +skills)."""
         s = self.tree.get(name)
         page = getattr(s, "page", 0) if s is not None else 0
-        return self.item_bonus + self.tab_bonus.get(page, 0) + self.single_bonus.get(name, 0)
+        el = self.elem_bonus.get(getattr(s, "element", ""), 0) if s is not None else 0
+        return self.item_bonus + self.tab_bonus.get(page, 0) + self.single_bonus.get(name, 0) + el
 
     granted = {}             # skills items give you (not learned / other classes): level
     charged = {}             # skills with charges on items: (level, item)

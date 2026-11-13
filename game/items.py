@@ -169,12 +169,23 @@ class Item:
             return self.base.get("name", self.name)
         return self.runeword or self.name
 
+    def _ease(self, base):
+        """"Requirements -X%" belongs to the item it is written on: it makes this one piece easier
+        to wear, not the rest of your gear."""
+        pct = (self.mods or {}).get("req_pct", 0)
+        if not pct or isinstance(pct, tuple):
+            return base or 0
+        return max(0, int((base or 0) * max(0, 100 + pct) / 100.0))
+
+    def strength_req(self):
+        return self._ease(self.reqstr)
+
     def requirements_ok(self, player):
-        return (player.level >= self.levelreq and player.strength >= self.reqstr
+        return (player.level >= self.levelreq and player.strength >= self.strength_req()
                 and player.dexterity >= self.dexterity_req())
 
     def dexterity_req(self):
-        return self.reqdex
+        return self._ease(self.reqdex)
 
     def describe_lines(self, player=None):
         """[(text, colour)] in D2's tooltip order."""
@@ -250,10 +261,11 @@ class Item:
 
         def req(text, ok):
             out.append((text, WHITE if ok else RED_TEXT))
-        if self.reqdex:
-            req("Required Dexterity: %d" % self.reqdex, player is None or player.dexterity >= self.reqdex)
-        if self.reqstr:
-            req("Required Strength: %d" % self.reqstr, player is None or player.strength >= self.reqstr)
+        rdex, rstr = self.dexterity_req(), self.strength_req()
+        if rdex:
+            req("Required Dexterity: %d" % rdex, player is None or player.dexterity >= rdex)
+        if rstr:
+            req("Required Strength: %d" % rstr, player is None or player.strength >= rstr)
         if self.levelreq > 1:
             req("Required Level: %d" % self.levelreq, player is None or player.level >= self.levelreq)
         if not self.identified:

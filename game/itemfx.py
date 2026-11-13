@@ -215,6 +215,10 @@ def on_hit(world, attacker, target, dmg, ranged=False):
         turns = 4
         target.effects["bleed"] = [per, turns]
         world.log("%s is bleeding!" % target.name, (255, 80, 80))
+    ac = p.mod("dmg_ac")
+    if ac and not getattr(target, "is_player", False):
+        # "-X to Monster Defense Per Hit": it wears down as the fight goes on, never past nothing
+        target.def_lost = min(max(0, getattr(target, "defense", 0)), getattr(target, "def_lost", 0) + ac)
     if target.alive:
         _on_hit_effects(world, p, target, ranged)
     _procs(world, "hit", target)

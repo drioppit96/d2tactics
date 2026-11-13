@@ -109,7 +109,7 @@ def wearable(merc, it, st=None):
         return True
     if st is None:
         st = dict(str=999, dex=999)
-    return merc["level"] >= it.levelreq and st["str"] >= it.reqstr and st["dex"] >= it.reqdex
+    return merc["level"] >= it.levelreq and st["str"] >= it.strength_req() and st["dex"] >= it.dexterity_req()
 
 
 def can_wear(merc, it, slot):

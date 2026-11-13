@@ -221,6 +221,12 @@ class SkillCaster:
             return 0
         dmg = max(0, dmg * (100 - res) // 100)
         if dmg > 0 and getattr(target, "is_player", False):
+            # "Magic Damage Reduced by X": a flat bite out of fire, cold, lightning and magic -
+            # the counterpart of "Damage Reduced by X" on physical blows. Poison returns above,
+            # so it keeps its own "Poison Length Reduced" instead
+            mdr = target.mod("mdr") if hasattr(target, "mod") else 0
+            if mdr:
+                dmg = max(0, dmg - mdr)
             from .itemfx import absorb
             dmg, healed = absorb(target, et, dmg)
             if healed:

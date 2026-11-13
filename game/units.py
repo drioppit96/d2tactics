@@ -172,8 +172,9 @@ class Player(Unit):
             q = it.base.get("quiver") if it is not None and isinstance(getattr(it, "base", None), dict) else None
             if q and q not in wanc:
                 continue                # arrows only help a bow, bolts a crossbow
-            if it and (it.mod_list is None or (self.level >= it.levelreq and self.base_str + self._raw("str") >= it.reqstr
-                                                and self.base_dex + self._raw("dex") >= it.reqdex)):
+            if it and (it.mod_list is None or (self.level >= it.levelreq
+                                               and self.base_str + self._raw("str") >= it.strength_req()
+                                               and self.base_dex + self._raw("dex") >= it.dexterity_req())):
                 out.append(it)
         # charms work from the backpack (D2: not from the stash or the cube)
         for it in getattr(self, "inventory", []):
@@ -257,12 +258,16 @@ class Player(Unit):
             for k, v in it.mods.items():
                 if isinstance(v, tuple):
                     continue
-                if k in ("all_skills", "cls_" + self.cls) or k.startswith(("tab_", "sk_")):
+                if k in ("all_skills", "cls_" + self.cls) or k.startswith(("tab_", "sk_", "elem_")):
                     tot[k] = tot.get(k, 0) + v
         sk.item_bonus = tot.get("all_skills", 0) + tot.get("cls_" + self.cls, 0)
         sk.tab_bonus = {}
         sk.single_bonus = {}
+        sk.elem_bonus = {}
         for k, v in tot.items():
+            if k.startswith("elem_") and k.endswith("_skills"):
+                sk.elem_bonus[k[5:-7]] = sk.elem_bonus.get(k[5:-7], 0) + v   # "+X to Fire Skills"
+                continue
             if k.startswith("tab_"):
                 try:
                     t = int(k[4:])
