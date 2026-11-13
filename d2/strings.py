@@ -28,6 +28,11 @@ def _clean(text):
     return text.split("\n")[-1].strip()
 
 
+def _lines(text):
+    text = re.sub(r"\xffc.", "", text)
+    return [ln.strip() for ln in text.split("\n") if ln.strip()]
+
+
 class Strings:
     def __init__(self, src):
         self.table = {}
@@ -41,6 +46,18 @@ class Strings:
     def get(self, key, fallback=None):
         if key in self.table:
             return _clean(self.table[key])
+        return fallback if fallback is not None else key
+
+    def paragraph(self, key, fallback=None):
+        """A whole description, not just its last line. D2 stores a skill's description box with
+        its bottom line first (it fills the box upwards), so the lines come back reversed and are
+        joined into one sentence: "improves attack and defense rating / attack that is not
+        interruptible and" -> "attack that is not interruptible and improves attack and defense
+        rating"."""
+        if key in self.table:
+            lines = _lines(self.table[key])
+            if lines:
+                return " ".join(reversed(lines))
         return fallback if fallback is not None else key
 
 

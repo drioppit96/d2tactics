@@ -206,6 +206,17 @@ def _strings_get(strings, key, fallback=""):
     return v if v is not None else (fallback or key)
 
 
+def _strings_para(strings, key, fallback=""):
+    """A skill's whole description, not just the last line of it."""
+    if not key:
+        return fallback
+    get = getattr(strings, "paragraph", None)
+    if get is None:
+        return _strings_get(strings, key, fallback)
+    v = get(key, None)
+    return v if v is not None else (fallback or key)
+
+
 def load_all(src, strings=None):
     """Every class skill from the tables -> {class code: {skill key: Skill}}."""
     from d2.source import read_table
@@ -225,8 +236,8 @@ def load_all(src, strings=None):
         s.cls, s.data, s.desc = cls, r, d
         s.maxlvl = _int(r.get("maxlvl"), 20) or 20
         s.title = _strings_get(strings, d.get("str name"), key)
-        s.short = _strings_get(strings, d.get("str short"), "")
-        s.long = _strings_get(strings, d.get("str long"), "")
+        s.short = _strings_para(strings, d.get("str short"), "")
+        s.long = _strings_para(strings, d.get("str long"), "")
         s.element = r.get("etype", "")
         s.itype = tuple(x for x in (r.get("itypea1"), r.get("itypea2"), r.get("itypea3")) if x)
         s.extra = dict(OVERRIDES.get(key, {}))
