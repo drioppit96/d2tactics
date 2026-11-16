@@ -100,36 +100,32 @@ ANCIENT_IDS = ("ancientbarb1", "ancientbarb2", "ancientbarb3")
 
 
 def _only_three(world):
-    """The Summit holds three Ancients and the townspeople, and nothing else.
+    """At most one of each Ancient on the Summit.
 
     The map a player is running may not be the one the game ships: the map editor writes
-    maps/arreat_summit.json beside it, and that copy wins once its revision catches up. A copy
-    that stamps the mountaintop preset twice, or that was saved with the statues already in its
-    own monster list, puts two or three Korlics on the plateau instead of one - and because the
-    Summit is a town where nothing respawns, they simply pile up. Rather than trust the file,
-    the town keeps the one statue of each Ancient nearest its own altar and drops the rest.
+    maps/arreat_summit.json beside it, and that copy is used when it is the newer of the two. A
+    copy that stamps the mountaintop preset twice, or that was saved with the statues already in
+    its own monster list, puts two or three Korlics on the plateau instead of one - and because
+    the Summit is a town where nothing respawns, they simply pile up.
+
+    Only the repeats go. Anything else the map puts up here is the map author's business, not
+    ours, so monsters that are not Ancients are left exactly where they were placed.
     """
     keep, drop, seen = [], [], set()
-    npcs = getattr(world, "npcs", None) or []
     for m in world.monsters:
-        if getattr(m, "is_player", False) or m in npcs or getattr(m, "npc", None):
-            keep.append(m)
-            continue
         if getattr(m, "boss", None) == "ancients" or str(getattr(m, "d2id", "")) in ANCIENT_IDS:
             key = str(getattr(m, "d2id", "")) or m.name
             if key in seen:
                 drop.append(m)
-            else:
-                seen.add(key)
-                keep.append(m)
-            continue
-        drop.append(m)          # nothing else belongs up here: the Summit is a town
+                continue
+            seen.add(key)
+        keep.append(m)
     if not drop:
         return
     world.monsters = keep
     for m in drop:
         m.alive = False
-    world.log("The Summit settles: %d stray %s sent back to the mountain." % (
+    world.log("The Summit settles: %d repeated %s sent back to the mountain." % (
         len(drop), "guardian" if len(drop) == 1 else "guardians"), COLOR)
 
 

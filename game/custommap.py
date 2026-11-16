@@ -56,10 +56,15 @@ def _revision(path):
 def game_map_path(name):
     """Your edited copy (maps/<name>.json) if there is one and it is up to date, else the game's own.
     A game map carries a "revision" that goes up when the game's own version changes; a copy you
-    saved from an older revision is set aside (renamed .old.json) so the new one shows."""
+    saved from an older revision is set aside (renamed .old.json) so the new one shows.
+
+    Work you did after that new version arrived is never set aside, however: a copy whose file is
+    newer than the game's own is one you saved since, so it is yours and it wins.
+    """
     mine = os.path.join(MAPS, name + ".json")
     ours = os.path.join(GAME_MAPS, name + ".json")
-    if os.path.exists(mine) and os.path.exists(ours) and _revision(mine) < _revision(ours):
+    if os.path.exists(mine) and os.path.exists(ours) and _revision(mine) < _revision(ours) \
+            and os.path.getmtime(mine) < os.path.getmtime(ours):
         try:
             old = os.path.join(MAPS, name + ".old.json")
             if os.path.exists(old):
@@ -96,6 +101,12 @@ def load(name):
 def save(data, name):
     os.makedirs(MAPS, exist_ok=True)
     path = os.path.join(MAPS, name if name.lower().endswith(".json") else name + ".json")
+    # a copy you save now is current: carry the game's revision so a later launch keeps it
+    ours = os.path.join(GAME_MAPS, os.path.basename(path))
+    if os.path.exists(ours):
+        rev = _revision(ours)
+        if rev > int(data.get("revision") or 0):
+            data = dict(data, revision=rev)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=1)
     return path
