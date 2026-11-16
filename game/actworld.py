@@ -365,13 +365,22 @@ def setup(world, built, grid, rng, info, level_key):
         forge = _smithy(world) if npc_id == "larzuk" else None
         if forge is not None:
             cx, cy = forge                        # Larzuk works at his forge, like D2
+        # Two passes: first the open air, then anywhere. Larzuk's forge backs onto Harrogath's
+        # smithy, and the nearest free cell to it is under the smithy's roof, which puts him
+        # inside the house with the roof lifted off around him. A shopkeeper stands in the yard.
         cell = None
-        for r in range(0, 60, 2):
-            for dx in range(-r, r + 1, 2):
-                for dy in (-r, r):
-                    c = (cx + dx, cy + dy)
-                    if grid.walkable(*c) and c not in occ and c not in world.exits:
+        for outdoors_only in (True, False):
+            for r in range(0, 60, 2):
+                for dx in range(-r, r + 1, 2):
+                    for dy in (-r, r):
+                        c = (cx + dx, cy + dy)
+                        if not grid.walkable(*c) or c in occ or c in world.exits:
+                            continue
+                        if outdoors_only and _under_roof(world, c):
+                            continue
                         cell = c
+                        break
+                    if cell:
                         break
                 if cell:
                     break
@@ -794,6 +803,16 @@ DENSE = {76: (480, 70), 102: (900, 12)}      # 102: the Durance of Hate 3 - the 
 BOSS_ALONE = {102: ("mephisto", 26)}         # Mephisto, across his moat
 # areas whose packs are spread evenly over the whole map: how many
 SPREAD = {77: 48, 86: 24, 110: 90}       # (110: the Bloody Foothills - Baal's siege army, packed like D2's)
+
+
+def _under_roof(world, cell):
+    """Is this cell inside a building? D2 marks a roof with orientation 15, and the renderer
+    lifts the roof off the house you are standing in (render/scene.py _open_roof)."""
+    tm = getattr(world, "tilemap", None)
+    if tm is None:
+        return False
+    t = (cell[0] // SUB, cell[1] // SUB)
+    return any(getattr(r[1], "orientation", 0) == 15 for r in tm.walls.get(t, ()))
 
 
 def _smithy(world):
