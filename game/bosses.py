@@ -91,6 +91,7 @@ def wake_ancients(world):
         if m.alive and getattr(m, "dormant", False):
             m.dormant = False
             m.invulnerable = False
+            m.scenery = False       # the Summit's statues stop being scenery once they rise
             if "sight" in m.__dict__:
                 del m.sight
             m.aware = True

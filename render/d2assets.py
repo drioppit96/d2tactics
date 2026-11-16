@@ -91,6 +91,10 @@ MODE_MAP = {
 MONSTER_IDS = {"ZM": "zombie1", "FA": "fallen1", "FS": "fallenshaman1", "SI": "quillrat1", "SK": "skeleton1"}
 # TEST ONLY: recolour Tyrael's wings. None leaves them D2's own blue-white.
 WING_COLOR = (255, 225, 60)
+# How a COF layer marked transparent is blended, by its DrawEffect: 3 and 6 are D2's light blend,
+# 0..2 are quarter, half and three-quarter alpha.
+LIGHT_EFFECTS = {3, 6}
+ALPHA_EFFECTS = {0: 64, 1: 128, 2: 192}
 
 
 def _convert_dir(d, n_from, n_to):
@@ -294,7 +298,17 @@ class UnitSprites:
                 px = fr.pixels if tab is None else bytes(fr.pixels).translate(tab)
                 img = self.a.indexed_surface(fr.width, fr.height, px, self.pal)
                 if L.transparent:
-                    img.set_alpha(150)
+                    # The COF says how to blend the layer. Effect 3 is D2's light blend - the
+                    # Ancients' ghost aura, a Ghost's body, a Gloam, Tyrael's wings - where the
+                    # dark part of the picture should contribute nothing. A flat alpha over the
+                    # whole layer paints that dark part onto the ground instead, which is the
+                    # black cloud around each of the Ancients. Giving each pixel an alpha that
+                    # follows its brightness fades the aura out at its edge the way a light does,
+                    # and keeps the sprite one cached picture. The rest are plain alpha levels.
+                    if L.draw_effect in LIGHT_EFFECTS:
+                        img = self.a.glow_alpha(fr.width, fr.height, px, self.pal, img)
+                    else:
+                        img.set_alpha(ALPHA_EFFECTS.get(L.draw_effect, 150))
                 comp_surf.blit(img, (fr.xmin - x0, fr.ymin - y0))
             out.append((_display_format(comp_surf), x0, y0))
         return out
@@ -394,6 +408,37 @@ class D2Assets(AssetProvider):
         out.fill((0, 0, 0, 0))
         out.blit(s, (0, 0))
         return _display_format(out, alpha=True)
+
+    def glow_alpha(self, w, h, pixels, palette, img):
+        """`img` again, with every pixel's alpha scaled by how bright that pixel is.
+
+        D2 marks some sprite layers transparent and draws them as light. Drawing one at a flat
+        alpha instead leaves its dark pixels painting over the ground. Scaling alpha by brightness
+        gives the same result as the light blend without having to blend at draw time, so the
+        sprite stays one cached picture.
+        """
+        pal = palette or self.palette
+        luts = self.__dict__.setdefault("_glow_lut", {})
+        lut = luts.get(id(pal))
+        if lut is None:
+            cols = list(pal)[:256] + [(0, 0, 0)] * 256
+            r = bytes(cols[i][0] for i in range(256))
+            g = bytes(cols[i][1] for i in range(256))
+            b = bytes(cols[i][2] for i in range(256))
+            # alpha = how bright the colour is; index 0 is D2's clear one
+            a = bytes([0] + [max(cols[i][:3]) for i in range(1, 256)])
+            lut = luts[id(pal)] = (r, g, b, a)
+        try:
+            src = bytes(pixels)
+            buf = bytearray(w * h * 4)
+            buf[0::4] = src.translate(lut[0])
+            buf[1::4] = src.translate(lut[1])
+            buf[2::4] = src.translate(lut[2])
+            buf[3::4] = src.translate(lut[3])
+            return _display_format(pygame.image.frombuffer(bytes(buf), (w, h), "RGBA"), alpha=True)
+        except Exception:
+            img.set_alpha(150)
+            return img
 
     KEY = (255, 0, 255)
 

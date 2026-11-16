@@ -21,6 +21,7 @@ MAP_NAME = "arreat_summit"
 HARROGATH = 109
 PORTAL_NAME = "Destruction's End"
 STASH_OID = 88            # the chest the map puts beside the Tree: the hero's stash
+ALTAR_OID = 546           # the Ancients' altar in the middle of the ring
 COLOR = (199, 179, 119)
 
 
@@ -90,6 +91,11 @@ def on_enter(world, lid):
                 m.invulnerable = True
                 m.aware = False
                 m.sight = -1
+        # ... and the altar they rise from is the preset's own, in the middle of the ring. Reading
+        # it wakes the three, the way the Rite of Passage does below.
+        for o in world.objects:
+            if o.get("oid") == ALTAR_OID and o.get("kind") == "decor":
+                o["kind"], o["name"] = "altar", "Altar of the Ancients"
         # the chest beside the Tree of Inifuss is the hero's own stash. The map places D2's chest
         # for its look; a town turns every container into scenery (game/objects.py), so it is made
         # a stash here, keeping its art.

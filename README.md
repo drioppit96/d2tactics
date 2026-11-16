@@ -309,13 +309,15 @@ environment variable `D2TACTICS_D2R=0` plays by plain 1.14d rules instead.
 Diablo ends when Baal falls; this game carries on. Kill Baal and a red portal, Destruction's End,
 opens in Harrogath beside the waypoint and leads up to the Arreat Summit. It is a town of its own:
 nothing spawns there, the party rests, and Cain, Anya and Fara have come up with you. The Ancients'
-three statues stand on the plateau as scenery - the Rite of Passage was fought below, so they never
-wake. The Tree of Inifuss grows at the foot of the stair, and the portal at the head of the stair
+three statues stand on the plateau until you touch their altar. The Tree of Inifuss grows at the foot of the stair, and the portal at the head of the stair
 takes you back down.
 
 The great red portal in the middle of the plateau is Act 6's waypoint - the only one it has - so
 the waypoint panel grew a sixth tab and a wider window to hold it (Act VI's tab was cut from the
-real V and I, `tools/make_act6_tab.py`). The chest beside the Tree is your stash.
+real V and I, `tools/make_act6_tab.py`). The chest beside the Tree is your stash. The three
+Ancients stand on their pedestals as statues and stay that way however close you walk; touching
+the altar in the middle of the ring calls all three down at once, the way the Rite of Passage
+does below.
 
 Act 6 is per difficulty, like every other quest: beating Baal in Normal opens the Summit in Normal,
 and Nightmare and Hell each want their own Baal. The layout is `assets/maps/arreat_summit.json`,
