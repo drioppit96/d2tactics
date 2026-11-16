@@ -304,6 +304,20 @@ speed caps, being interrupted, stamina) are listed in `NOT_APPLICABLE` at the bo
 `game/d2r.py`, so it is clear they were read and skipped rather than missed. Setting the
 environment variable `D2TACTICS_D2R=0` plays by plain 1.14d rules instead.
 
+## Act 6: the Arreat Summit
+
+Diablo ends when Baal falls; this game carries on. Kill Baal and a red portal, Destruction's End,
+opens in Harrogath beside the waypoint and leads up to the Arreat Summit. It is a town of its own:
+nothing spawns there, the party rests, and Cain, Anya and Fara have come up with you. The Ancients'
+three statues stand on the plateau as scenery - the Rite of Passage was fought below, so they never
+wake. The Tree of Inifuss grows at the foot of the stair, and the portal at the head of the stair
+takes you back down.
+
+Act 6 is per difficulty, like every other quest: beating Baal in Normal opens the Summit in Normal,
+and Nightmare and Hell each want their own Baal. The layout is `assets/maps/arreat_summit.json`,
+which stamps Diablo's own mountaintop preset and then changes it, so the map editor opens it like
+any other hand-made map.
+
 ## Tactics mode
 
 Choose **MODE: TACTICS** on the character select screen, click up to three heroes (the numbers are

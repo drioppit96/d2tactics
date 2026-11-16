@@ -1,0 +1,108 @@
+"""Act 6: the Arreat Summit.
+
+Diablo ends when Baal falls. This game carries on: once the Lord of Destruction is dead, a red
+portal called Destruction's End opens in Harrogath and leads to the Summit above - a town of its
+own, where the Tree of Inifuss hands out bounties.
+
+It is a town, so the usual town rules hold: nothing spawns there, the party rests, and the stash
+and the waypoint work. The layout is assets/maps/arreat_summit.json, a hand-made map that stamps
+Diablo's own mountaintop preset and then changes it (game/custommap.py).
+
+Act 6 is per difficulty, like everything else the hero's quests track: beating Baal in Normal
+opens the Summit in Normal, and Nightmare and Hell each want their own Baal.
+
+    available(player)       is the Summit open for this hero, in this difficulty
+    ensure_portal(world)    the portal in Harrogath, once Baal is dead
+    on_enter(world, lid)    arriving at the Summit: the way home
+"""
+from .acts import SUMMIT
+
+MAP_NAME = "arreat_summit"
+HARROGATH = 109
+PORTAL_NAME = "Destruction's End"
+COLOR = (199, 179, 119)
+
+
+def available(player):
+    """Act 6 opens for a hero who has killed Baal in the difficulty he is playing."""
+    q = getattr(player, "quests", None) or {}
+    return q.get("baal") in ("cleared", "done")
+
+
+def blocked(player):
+    """The line to show someone who tries to go up before Baal is dead, or None."""
+    if available(player):
+        return None
+    return "The way to the Summit is shut. Baal still holds the Worldstone."
+
+
+def ensure_portal(world):
+    """The red portal that stands in Harrogath once Baal has fallen, and the one that carries you
+    back down from the Summit. Called whenever a level is entered or a save is loaded."""
+    p = getattr(world, "player", None)
+    if p is None or not available(p):
+        return
+    lid = getattr(world, "level_id", None)
+    if lid == HARROGATH:
+        _place(world, SUMMIT, _near_town_centre(world))
+    elif lid == SUMMIT:
+        # the portal the map already carries, at the head of the stair, is the way home
+        _place(world, HARROGATH, None, prefer=_mapped_portal(world))
+
+
+def _mapped_portal(world):
+    """The cell the map's own Destruction's End marker sits on, if it has one."""
+    for o in world.objects:
+        if o.get("kind") == "decor" and str(o.get("name", "")).lower().startswith("destruction"):
+            return o["cell"]
+    return None
+
+
+def _near_town_centre(world):
+    """Beside the waypoint in Harrogath, where a player will walk past it."""
+    wp = next(iter(getattr(world, "waypoints", {})), None)
+    base = (wp[0] + 6, wp[1] + 5) if wp else (world.player.x + 6, world.player.y + 5)
+    return base
+
+
+def _place(world, target, near, prefer=None):
+    """One Destruction's End portal to `target`, and no more than one."""
+    if any(o.get("kind") == "portal" and o.get("target") == target for o in world.objects):
+        return
+    cell = None
+    if prefer is not None:
+        cell = prefer if world.grid.walkable(*prefer) else world._free_cell_near(prefer, 4)
+    if cell is None and near is not None:
+        cell = world._free_cell_near(near, 4) or world._free_cell_near(near, 10)
+    if cell is None:
+        cell = world._free_cell_near(world.player.pos, 8)
+    if cell is None:
+        return
+    world.objects.append(dict(kind="portal", cell=cell, level=world.level_id, oid=0, used=False,
+                              target=target, name=PORTAL_NAME))
+    if prefer is None:
+        world.log("A portal tears open: %s." % PORTAL_NAME, COLOR)
+
+
+def on_enter(world, lid):
+    """Arriving somewhere: open the portal if this is one of the two ends of it."""
+    if lid in (HARROGATH, SUMMIT):
+        ensure_portal(world)
+    if lid == SUMMIT:
+        # The mountaintop preset carries the Ancients' three statues. Up here they are scenery:
+        # the Rite of Passage was fought below, and without this they would wake as you walked
+        # past them (game/bosses.py wakes dormant Ancients on a map that has no altar).
+        for m in world.monsters:
+            if getattr(m, "boss", None) == "ancients":
+                m.scenery = True
+                m.dormant = True
+                m.invulnerable = True
+                m.aware = False
+                m.sight = -1
+        p = world.player
+        seen = p.__dict__.setdefault("visited", set())
+        if SUMMIT not in seen:
+            seen.add(SUMMIT)
+        if not getattr(p, "_summit_seen", False):
+            p._summit_seen = True
+            world.log("You stand on the Arreat Summit. The Tree of Inifuss waits below.", COLOR)

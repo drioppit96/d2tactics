@@ -120,6 +120,8 @@ def on_player_move(world):
     if any(getattr(m, "dormant", False) for m in world.monsters) and \
             not any(o.get("kind") == "altar" for o in world.objects):
         for m in world.monsters:
+            if getattr(m, "scenery", False):
+                continue          # the Arreat Summit's statues are part of the town, not a fight
             if getattr(m, "dormant", False) and chebyshev(m.pos, p.pos) <= 8:
                 wake_ancients(world)
                 break

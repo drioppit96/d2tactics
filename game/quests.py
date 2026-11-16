@@ -244,18 +244,20 @@ def on_enter(world, lid):
         _start(world, "malus")
     if lid in (34, 35, 36, 37) and q["andariel"] == "none":
         _start(world, "andariel")
-    from . import quests2, quests345, rift
+    from . import quests2, quests345, rift, act6
     rift.on_enter(world, lid)
     quests2.on_enter(world, lid)
     quests345.on_enter(world, lid)
+    act6.on_enter(world, lid)
 
 
 def restore(world):
     init(world.player)
-    from . import quests2, quests345, rift
+    from . import quests2, quests345, rift, act6
     quests2.restore(world)
     quests345.restore(world)
     rift.ensure_portal(world)
+    act6.ensure_portal(world)
 
 
 def read_horadric_scroll(world, it):
@@ -273,7 +275,10 @@ def on_transmute(world, box):
 
 def blocked(world, target):
     init(world.player)
-    from . import quests2, quests345
+    from . import quests2, quests345, act6
+    from .acts import SUMMIT
+    if target == SUMMIT:
+        return act6.blocked(world.player)        # Act 6 wants Baal dead in this difficulty
     return quests2.blocked(world, target) or quests345.blocked(world, target)
 
 
