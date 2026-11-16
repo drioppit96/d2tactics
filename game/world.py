@@ -2080,17 +2080,24 @@ class World(SkillCaster, ItemActions):
                     dmg = dmg * (100 + attacker.mod("dmg_undead")) // 100
                 if getattr(target, "demon", False):
                     dmg = dmg * (100 + attacker.mod("dmg_demon")) // 100
-            if dmg and getattr(target, "curses", None):
-                amp = -self.mstat(target, "dr_pct")
-                if amp:
-                    dmg = max(1, dmg * (100 + amp) // 100)
-            if dmg and getattr(target, "res", {}).get("phys"):
-                pres = target.res["phys"]
-                if pres >= 100 and attacker.is_player:
-                    from . import d2r
-                    if d2r.sundered(attacker, "phys"):
-                        pres = d2r.SUNDER_RES    # Bone Break breaks physical immunity too
-                dmg = max(1, dmg * (100 - min(100, pres)) // 100)
+        # A curse on the target, and the target's own hide, count whoever is swinging - the hero,
+        # a skeleton or a golem, the mercenary, another party member. Amplify Damage is a
+        # Necromancer's curse and almost all of a Necromancer's damage comes from his minions, so
+        # while these sat inside the branch above they did nothing for the class that casts them.
+        if dmg and getattr(target, "curses", None):
+            amp = -self.mstat(target, "dr_pct")
+            if amp:
+                dmg = max(1, dmg * (100 + amp) // 100)
+        if dmg and getattr(target, "res", {}).get("phys"):
+            pres = target.res["phys"]
+            if pres >= 100 and not target.is_player:
+                from . import d2r
+                if d2r.sundered(self.player, "phys"):
+                    pres = d2r.SUNDER_RES        # Bone Break breaks physical immunity too
+            dmg = max(1, dmg * (100 - min(100, pres)) // 100)
+        if attacker.is_player:
+            # the elemental damage on the hero's weapon, added after the cut above because
+            # physical resistance does not touch it
             for kind, (lo, hi) in getattr(attacker, "elem", {}).items():
                 if kind == "pois":
                     weapon_pois = (lo, hi)       # D2: weapon poison is damage over time, applied below
