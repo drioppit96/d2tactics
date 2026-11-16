@@ -139,6 +139,13 @@ class SocketRules:
                                            etypes={r.get("etype%d" % i) for i in range(1, 4) if r.get("etype%d" % i)}))
         except Exception:
             self.runewords = []
+        # the runewords D2R added in its patches 2.4 and 2.6: your 1.14d Runes.txt has none of
+        # them, so they are kept in game/d2r.py and put at the front, ahead of the table's own
+        try:
+            from . import d2r
+            self.runewords = d2r.runewords() + self.runewords
+        except Exception:
+            pass
 
     def mods_for(self, filler, host):
         """Property codes a gem / rune / jewel gives inside the host item."""

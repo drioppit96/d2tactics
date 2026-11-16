@@ -1349,6 +1349,7 @@ class World(SkillCaster, ItemActions):
 
     WHIRL_RANGE = 5           # cells you can spin to
     WHIRL_RADIUS = 2          # cells around you that every step of the spin hits
+    WARD_RADIUS = 6           # how far a Grim Ward scares monsters off (D2R 2.4 widened it)
 
     def _whirl_path(self, cell):
         """Whirlwind's way: a straight line up to 5 cells, through monsters, ending on a free cell."""
@@ -1467,7 +1468,7 @@ class World(SkillCaster, ItemActions):
         self.emit("attack", p, corpse.pos, "cast")
         if name == "Grim Ward":
             self.wards = getattr(self, "wards", []) + [(corpse.x, corpse.y, 6 + L)]
-            self.log("A grim ward rises. Monsters keep away from it.", YELLOW)
+            self.log("A grim ward rises. Monsters keep away from it, slowed and shaken.", YELLOW)
             return True
         found = None
         if name == "Find Potion" and self.rng.random() * 100 < min(100, 30 + 5 * L):
@@ -1929,6 +1930,24 @@ class World(SkillCaster, ItemActions):
         p.hp += max(0, p.max_hp - before)
 
     # ------------------------------------------------------------ combat resolution
+    def _thorns_aura(self, unit):
+        """(percent of the blow sent back, level of the aura doing it) for whoever is standing in
+        a Thorns aura - the hero's own, a party member's, or the one on their minions."""
+        pct = (getattr(unit, "bonus", None) or {}).get("thorns_pct", 0)
+        if not pct:
+            pct = self.aura_bonus(unit, "thorns_pct")
+        if not pct:
+            return 0, 0
+        lv = 0
+        from . import tactics
+        for h in (tactics.living(self) or [self.player]):
+            book = getattr(h, "skills", None)
+            if book is not None:
+                for name in ("Thorns", "Spirit of Barbs"):
+                    if name in getattr(book, "tree", {}):
+                        lv = max(lv, book.level(name))
+        return pct, lv
+
     def _skill_mods(self, attacker, skill):
         """Damage / attack rating bonuses and effects of a melee skill at its current level."""
         m = {"dmg": 0, "ar": 0, "knock": False, "stun": 0, "magic": False, "elem": None, "always": False, "leech": 0}
@@ -1950,6 +1969,14 @@ class World(SkillCaster, ItemActions):
             return self.melee_mods(attacker, skill)
         lv = max(1, attacker.skills.level(skill))
         L = lv - 1
+        x = getattr(sk, "extra", None) or {}
+        if "dmg_base" in x or "ar_base" in x:
+            # D2R rewrote the numbers of a few of these by hand (Leap Attack, Double Throw)
+            m.update(dmg=x.get("dmg_base", 0) + x.get("dmg_lvl", 0) * L,
+                     ar=x.get("ar_base", 0) + x.get("ar_lvl", 0) * L)
+            if x.get("splash"):
+                m["knock"] = True
+            return m
         if skill in ("Bash", "bash"):
             m.update(dmg=50 + 5 * L, ar=20 + 5 * L, knock=True)
         elif skill == "Double Swing":
@@ -2058,7 +2085,12 @@ class World(SkillCaster, ItemActions):
                 if amp:
                     dmg = max(1, dmg * (100 + amp) // 100)
             if dmg and getattr(target, "res", {}).get("phys"):
-                dmg = max(1, dmg * (100 - min(100, target.res["phys"])) // 100)
+                pres = target.res["phys"]
+                if pres >= 100 and attacker.is_player:
+                    from . import d2r
+                    if d2r.sundered(attacker, "phys"):
+                        pres = d2r.SUNDER_RES    # Bone Break breaks physical immunity too
+                dmg = max(1, dmg * (100 - min(100, pres)) // 100)
             for kind, (lo, hi) in getattr(attacker, "elem", {}).items():
                 if kind == "pois":
                     weapon_pois = (lo, hi)       # D2: weapon poison is damage over time, applied below
@@ -2068,6 +2100,8 @@ class World(SkillCaster, ItemActions):
                 dmg += max(0, extra * (100 - res) // 100)
                 if kind == "cold" and extra and res < 100 and not target.is_player:
                     target.effects["chill"] = max(target.effects.get("chill", 0), 1)
+        if target.is_player and _mod(target, "dmg_taken") and dmg > 0:
+            dmg = max(1, dmg * (100 + _mod(target, "dmg_taken")) // 100)   # Bone Break's price
         if target.is_player and getattr(target, "dr", 0) and not mods["magic"]:
             dmg = max(1, dmg - target.dr)
         if target.is_player and getattr(target, "dr_pct", 0) and not mods["magic"] and dmg > 1:
@@ -2110,9 +2144,15 @@ class World(SkillCaster, ItemActions):
             if self._has_flag(target, "lifetap") and attacker.hp < attacker.max_hp:
                 attacker.hp = min(attacker.max_hp, attacker.hp + max(1, dealt // 2))
         # thorns / Iron Maiden / Frozen and Shiver Armor
-        if target.is_player and target.alive and not ranged_kind and attacker.alive:
-            if target.thorns:
+        if (target.is_player or getattr(target, "ally", False)) and target.alive and not ranged_kind and attacker.alive:
+            if getattr(target, "thorns", 0):
                 self._damage(attacker, target.thorns, target)
+            # the Thorns aura (and Spirit of Barbs, and an Iron Golem's). D2R 2.4 added a flat
+            # bite on top of the percentage return, which is what makes it worth a point
+            tp, lv = self._thorns_aura(target)
+            if tp and attacker.alive and dealt > 0:
+                back = max(1, dealt * tp // 100) + 2 * lv
+                self._damage(attacker, back, target)
             lt = _mod(target, "ltng_thorns")          # "Attacker Takes Lightning Damage of X"
             if lt and attacker.alive:
                 self.elem_hit(attacker, "ltng", lt, lt, target, show=False)
@@ -2293,6 +2333,8 @@ class World(SkillCaster, ItemActions):
                 for _ in range(rolls):
                     drops += self.content.roll_drop(dl, unit.unique, self.rng, mf=mf, gf=gf)
             drops = riftmap.filter_drops(self, drops, unit)
+            from . import d2r
+            drops += d2r.sunder_drop(self, unit)      # D2R's Sunder Charms, off champions
         else:
             drops = roll_drop(unit.level, unit.unique, self.rng)
         for it in drops:
@@ -2381,7 +2423,13 @@ class World(SkillCaster, ItemActions):
             self._move_away(m, m.ap)
             return
         for wx, wy, turns in getattr(self, "wards", []):
-            if chebyshev(m.pos, (wx, wy)) <= 4:
+            if chebyshev(m.pos, (wx, wy)) <= self.WARD_RADIUS:
+                # D2R 2.4: the ward also slows them and makes them take more damage while they
+                # are running from it
+                m.effects["chill"] = max(m.effects.get("chill", 0), 2)
+                m.curses = getattr(m, "curses", {}) or {}
+                m.curses["Grim Ward"] = {"turns": 2, "stats": {"ed": 25}, "flags": {"aura"},
+                                         "title": "Grim Ward"}
                 self._move_away(m, m.ap)
                 return
         if m.panic:

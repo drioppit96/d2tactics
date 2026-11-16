@@ -26,7 +26,8 @@ Assassin's charge-ups all have turn-based rules.
 is rolled again each time you return to camp), Gheed gambles, Cain identifies for free, Kashya
 hires a Rogue. Scrolls and tomes of Town Portal and Identify, every potion (healing, mana,
 rejuvenation, antidote, thawing, stamina), magic items drop unidentified, gems and runes drop,
-sockets, and every non-ladder runeword of 1.14d (Runes.txt).
+sockets, and every non-ladder runeword of 1.14d (Runes.txt) plus the sixteen Diablo II:
+Resurrected added later (see "Resurrected changes" below).
 
 **Graphics:** projectiles and spells use D2's own missile animations (Missiles.txt) with their
 explosions, cast overlays and aura / curse effects (Overlay.txt, States.txt).
@@ -270,6 +271,38 @@ and when you pick a hero who has unlocked more than Normal you choose the diffic
 Each difficulty has its own quests, waypoints and progress (a new difficulty starts in the Rogue
 Encampment); your character, items and skills carry over. Monsters use D2's Nightmare / Hell stats and
 levels, and your resistances get D2's penalty: -40% in Nightmare, -100% in Hell.
+
+## Resurrected changes
+
+The tables come out of a 1.14d install, so the game would play by 1.14d rules. Diablo II:
+Resurrected changed a lot of those rules, and those changes are laid over the tables after they
+are read (`game/d2r.py`). Nothing in your install is touched.
+
+- **Skills:** patch 2.4's balance pass, the first in eleven years - every class got buffs to its
+  weak trees. Spell damage raised (Inferno, Arctic Blast, Chilling Armor, Fire Claws, Holy Bolt,
+  Blade Shield and more), synergies raised, mastery attack rating 28% to 40%, mana costs cut,
+  Impale always hits and slows, Conversion up to 90%, Holy Bolt and Fist of the Heavens hurt
+  demons, the Paladin's elemental auras hit twice as hard next to him, Weaken scales with its
+  level, Grim Ward slows and shakes what it scares, Leap Attack lands with a thump, Thorns deals
+  flat damage (it did nothing at all before), and the pets got a lot more life and damage.
+- **Charge-ups:** a finishing move spends one charge of each charge-up skill, not the whole
+  stack, so the stack keeps building. Mosaic spends none.
+- **Hirelings:** hired at your own level, and the Iron Wolf got its 2.4 buff (+25% life, +40%
+  defence, +20 resistances).
+- **Runewords:** the seven from 2.4 (Flickering Flame, Mist, Obsession, Pattern, Plague,
+  Unbending Will, Wisdom) and the nine from 2.6 (Bulwark, Cure, Ground, Hearth, Temper, Hustle
+  in armour, Hustle in a weapon, Mosaic, Metamorphosis).
+- **Sets:** the twelve sets 2.4 raised, so the weak ones are worth wearing.
+- **Sunder Charms:** six unique grand charms, one per kind of immunity (Flame Rift, Cold
+  Rupture, Crack of the Heavens, Rotting Fissure, Black Cleft, Bone Break). Carrying one turns an
+  immune monster's resistance into 95% instead, so your damage gets through - and tears a hole in
+  your own resistance to the same thing. In Diablo they only drop in a Terror Zone; here any
+  champion or unique monster can drop one, on Nightmare and Hell, never on Normal.
+
+Changes that cannot mean anything in a turn-based game (animation speeds, casting delays, attack
+speed caps, being interrupted, stamina) are listed in `NOT_APPLICABLE` at the bottom of
+`game/d2r.py`, so it is clear they were read and skipped rather than missed. Setting the
+environment variable `D2TACTICS_D2R=0` plays by plain 1.14d rules instead.
 
 ## Tactics mode
 

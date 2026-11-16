@@ -24,6 +24,14 @@ SPELL_RANGE = 12          # cells
 ELEMS = ("fire", "cold", "ltng", "pois", "mag")
 
 
+def _wearing_runeword(unit, name):
+    """Is the hero wearing a particular runeword right now?"""
+    for it in (getattr(unit, "equipment", None) or {}).values():
+        if it is not None and getattr(it, "runeword", None) == name:
+            return True
+    return False
+
+
 def _line(a, b):
     """Cells from a (exclusive) towards b (inclusive), Bresenham."""
     x0, y0 = a
@@ -170,6 +178,15 @@ class SkillCaster:
         if et in ("fire", "cold", "ltng", "pois") and res < 100:
             res -= self._pierce(et)
         if res >= 100:
+            # D2R's Sunder Charms: carrying the right one turns an immunity into 95% resistance
+            # instead, so damage gets through. Skill-based -resistance (Cold Mastery, Conviction,
+            # Lower Resist) only counts for a fifth against a sundered monster; items count whole.
+            from . import d2r
+            if d2r.sundered(self.player, et):
+                b = getattr(self.player, "bonus", {}) or {}
+                skill_part = b.get(et + "_pierce", 0)
+                item_part = self.player.mod("pierce_" + et) if et in ("fire", "cold", "ltng", "pois") else 0
+                return max(-100, d2r.SUNDER_RES - skill_part // 5 - item_part)
             return 100            # immune
         return max(-100, res)
 
@@ -246,7 +263,11 @@ class SkillCaster:
         amp = -self.mstat(target, "dr_pct")
         dmg = max(1, dmg * (100 + amp) // 100)
         if getattr(target, "res", {}).get("phys", 0):
-            dmg = max(0, dmg * (100 - min(100, target.res["phys"] - amp)) // 100)
+            pres = target.res["phys"]
+            from . import d2r
+            if pres >= 100 and src is self.player and d2r.sundered(self.player, "phys"):
+                pres = d2r.SUNDER_RES            # Bone Break: physical immunity becomes 95%
+            dmg = max(0, dmg * (100 - min(100, pres - amp)) // 100)
         if dmg:
             self._damage(target, dmg, src)
         return dmg
@@ -421,6 +442,15 @@ class SkillCaster:
         if s.data.get("tohit") or s.data.get("tohitcalc"):
             if m["ar"] == 0:
                 m["ar"] = env.tohit()
+        x0 = s.extra
+        if "dmg_base" in x0 or "dmg_lvl" in x0:          # D2R rewrote some skills' own numbers
+            m["dmg"] = x0.get("dmg_base", 0) + x0.get("dmg_lvl", 0) * (env.lvl - 1)
+        if "ar_base" in x0 or "ar_lvl" in x0:
+            m["ar"] = x0.get("ar_base", 0) + x0.get("ar_lvl", 0) * (env.lvl - 1)
+        for other, pct in (x0.get("wsyn") or {}).items():
+            # a weapon skill's synergy: its damage comes from the weapon, so the other skill's
+            # levels add percent damage rather than feeding a damage formula (D2R 2.4)
+            m["dmg"] += pct * max(0, attacker.skills.level(other))
         ed = env.elem_damage()
         if ed:
             m["elem"] = ed
@@ -461,8 +491,15 @@ class SkillCaster:
         if x.get("splash"):
             ed = env.elem_damage()
             for m in self.enemies():
-                if m is not target and self.udist(m, target) <= x["splash"] and ed:
-                    self.elem_hit(m, ed[0], ed[1], ed[2], p, ed[3])
+                if m is not target and self.udist(m, target) <= x["splash"]:
+                    if ed:
+                        self.elem_hit(m, ed[0], ed[1], ed[2], p, ed[3])
+                    elif dealt > 0:
+                        # D2R 2.4: Leap Attack lands with a thump that hurts everyone around it
+                        self.phys_hit(m, max(1, dealt // 2), max(1, dealt // 2), p)
+        if x.get("slow_hit") and target.alive and not getattr(target, "is_player", False):
+            # D2R: Impale, Grim Ward and the spirit wolves slow what they hit
+            target.effects["chill"] = max(target.effects.get("chill", 0), int(x["slow_hit"]))
         if x.get("charges"):
             # D2's charge-up: each hit that lands stores a charge (3 at most) of that skill; several
             # charge-up skills can be charged at the same time; they fade after 15 seconds unused
@@ -473,14 +510,15 @@ class SkillCaster:
         if x.get("finisher") and getattr(p, "charges", None):
             self._release_charges(target, dealt)
         if x.get("self_damage"):
-            hurt = max(1, dealt * x["self_damage"] // 100)
+            pct = x["self_damage"]
+            if x.get("self_damage_scales"):      # D2R: Sacrifice hurts you 1% less per level
+                pct = max(1, pct - (env.lvl - 1))
+            hurt = max(1, dealt * pct // 100)
             p.hp = max(1, p.hp - hurt)
             self.emit("damage", p, hurt, p.hp)
         if x.get("convert") and target.alive and not target.unique:
-            chance = 0
-            for i in range(1, 4):
-                pass
-            if self.rng.random() < 0.15 + 0.02 * env.lvl:
+            cap = x.get("convert_max", 50) / 100.0        # D2R raised Conversion's cap to 90%
+            if self.rng.random() < min(cap, 0.15 + 0.02 * env.lvl):
                 self._make_ally(target)
                 self.log("%s is converted!" % target.name, YELLOW)
 
@@ -496,7 +534,16 @@ class SkillCaster:
         lightning, chaos ice bolts."""
         p = self.player
         charges = getattr(p, "charges", None) or {}
-        p.charges = {}
+        # D2R 2.4: a finisher uses up one charge of each charge-up skill, not the whole stack,
+        # so the stack keeps building. Mosaic goes further and uses none of them up at all.
+        from . import d2r
+        if not d2r.ENABLED:
+            p.charges = {}                                     # 1.14d: the stack is spent
+        elif _wearing_runeword(p, d2r.MOSAIC):
+            p.charges = dict(charges)                          # Mosaic: nothing is spent
+            p.charge_turns = max(2, turns_from_frames(375) or 4)
+        else:
+            p.charges = {sk: n - 1 for sk, n in charges.items() if n > 1}
         for sk, n in charges.items():
             if not n:
                 continue
@@ -1289,7 +1336,13 @@ class SkillCaster:
             for m in foes:
                 if hit_fx:
                     self.emit("explosion", m.pos, hit_fx)
-                self.skill_damage(env, m, 100, show=False)
+                # D2R 2.4: these auras hit twice as hard right next to the paladin, falling off
+                # to their old damage at the edge of the ring
+                mult = 100
+                if env.s.extra.get("melee_double") and r > 1:
+                    d = max(1, self.udist(m, p))
+                    mult = int(200 - 100 * (d - 1) / float(r - 1))
+                self.skill_damage(env, m, max(100, mult), show=False)
                 if name == "Holy Freeze" and m.alive:
                     m.effects["chill"] = max(m.effects.get("chill", 0), 2)   # the aura's own chill
                 if name == "Sanctuary" and m.alive:
@@ -1474,6 +1527,15 @@ class SkillCaster:
         life = env.calc("calc1") if s.data.get("calc1") and s.kind in ("raise", "golem", "summon") else 0
         if 0 < life < 1000:
             m.max_hp = m.hp = m.max_hp * (100 + life) // 100
+        k = s.extra.get("hp_mult")            # D2R 2.4 gave the pets a lot more life
+        if k:
+            m.max_hp = m.hp = max(1, int(m.max_hp * k))
+        if s.extra.get("pscale"):             # ... and more damage
+            k2 = s.extra["pscale"]
+            m.dmg = (max(1, int(m.dmg[0] * k2)), max(1, int(m.dmg[1] * k2)))
+        if s.extra.get("elem") == "cold":     # D2R: spirit wolves bite cold and chill
+            m.missile_elem = "cold"
+            m.elem = dict(getattr(m, "elem", {}) or {}, cold=(max(1, m.dmg[0] // 3), max(2, m.dmg[1] // 3)))
         m.summon_skill = s.key
         if ai:
             m.ai = ai
@@ -1578,7 +1640,7 @@ class SkillCaster:
             self.log("Place it on a free spot.", GREY)
             return False
         mine = self._owned(s.key)
-        limit = 5 if "Sentry" in s.key or "Fire" in s.key else (99 if s.key == "Hydra" else 3)
+        limit = s.extra.get("turret_max") or (5 if "Sentry" in s.key or "Fire" in s.key else (99 if s.key == "Hydra" else 3))
         if len(mine) >= limit:
             mine[0].alive = False
             self.emit("death", mine[0])

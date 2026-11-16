@@ -41,6 +41,11 @@ EXTRA_MAP = {
     "extra-pois": "extra_pois", "half-freeze": "half_freeze", "noheal": "noheal", "pierce": "pierce",
     "block3": "fbr", "Light": "light", "demon-heal": "demon_heal", "stamdrain": "stamdrain",
     "fireskill": "elem_fire_skills", "allskills": "all_skills",
+    # D2R's Sunder Charms: each one breaks one kind of monster immunity, and "dmg-taken" is
+    # the price Bone Break charges for breaking physical immunity
+    "sunder-fire": "sunder_fire", "sunder-cold": "sunder_cold", "sunder-ltng": "sunder_ltng",
+    "sunder-pois": "sunder_pois", "sunder-mag": "sunder_mag", "sunder-phys": "sunder_phys",
+    "dmg-taken": "dmg_taken", "res-mag": "res_mag",
 }
 TEXT_ONLY = {"indestruct", "ethereal", "rep-dur", "rep-quant", "stack", "state", "magicarrow", "explosivearrow",
              "fade", "bloody", "rip", "cheap", "reanimate", "randclassskill", "skill-rand"}
@@ -102,6 +107,13 @@ TEXT = {
     "ltng-min": "+{0} to Minimum Lightning Damage", "ltng-max": "+{0} to Maximum Lightning Damage",
     "pois-min": "+{0} to Minimum Poison Damage", "pois-max": "+{0} to Maximum Poison Damage",
     "mag-min": "+{0} to Minimum Magic Damage", "mag-max": "+{0} to Maximum Magic Damage",
+    "res-mag": "Magic Resist +{0}%", "dmg-taken": "+{0}% Damage Taken",
+    "sunder-fire": "Monster Fire Immunity is Sundered",
+    "sunder-cold": "Monster Cold Immunity is Sundered",
+    "sunder-ltng": "Monster Lightning Immunity is Sundered",
+    "sunder-pois": "Monster Poison Immunity is Sundered",
+    "sunder-mag": "Monster Magic Immunity is Sundered",
+    "sunder-phys": "Monster Physical Immunity is Sundered",
 }
 _skill_names = None
 SRC = None              # the D2 data source (set by D2Content)
@@ -175,8 +187,10 @@ def text(code, v, param=""):
         return ""
     try:
         if "{1}" in fmt:
-            return fmt.format(lo, hi)
-        return fmt.format(hi if lo == hi or not lo else "%d-%d" % (lo, hi))
+            out = fmt.format(lo, hi)
+        else:
+            out = fmt.format(hi if lo == hi or not lo else "%d-%d" % (lo, hi))
+        return out.replace("+-", "-")      # a penalty reads "-80%", not "+-80%"
     except Exception:
         return code
 

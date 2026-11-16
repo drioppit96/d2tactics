@@ -448,6 +448,8 @@ class Player(Unit):
         # D2's difficulty penalty: -40% in Nightmare, -100% in Hell (on every resistance, before the cap)
         pen = {"nightmare": 40, "hell": 100}.get(getattr(self, "difficulty", "normal"), 0)
         self.res = {k: min(cap[k], allres + pb["res"] + self.mod("res_" + k) - pen) for k in ("fire", "cold", "ltng", "pois")}
+        if self.mod("res_mag"):          # Black Cleft's price: a hole in your magic resistance
+            self.res["mag"] = min(75, self.mod("res_mag"))
         # what skills, auras and potion infusions add (D2 shows a resistance they raise in blue)
         sk = getattr(self, "_skill_stats", {}) or {}
         from .potions import buff_stat

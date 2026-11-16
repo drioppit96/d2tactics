@@ -99,6 +99,13 @@ def stats(content, merc):
             st["dmg"][1] += it.dmg[1]
     st["dmg"] = (max(1, st["dmg"][0] * (100 + ed) // 100), max(2, st["dmg"][1] * (100 + ed) // 100))
     st["hp"] = st["hp"] * (100 + lifep) // 100
+    from . import d2r
+    if d2r.ENABLED and merc["kind"] == "act3hire":
+        # D2R 2.4 gave the Iron Wolves a flat buff, because nobody hired them
+        w = d2r.IRON_WOLF
+        st["hp"] = int(st["hp"] * w["life"])
+        st["defense"] = int(st["defense"] * w["defense"])
+        st["res"] += w["res"]
     st["res"] = min(75, st["res"])
     return st
 
@@ -151,8 +158,11 @@ def new_merc(world, kind):
         except ValueError:
             names = None
     lvl0 = _int(r.get("level"), 1) if r is not None else 1
+    from . import d2r
+    # D2R 2.4: a hireling is hired at your own level, not a couple of levels under it
+    lvl = max(1, p.level) if d2r.MERC_HIRE_AT_PLAYER_LEVEL else max(1, min(p.level, max(lvl0, p.level - 2)))
     return dict(kind=kind, hid=hid, name=rng.choice(names) if names else TITLES.get(kind, "Hireling"),
-                level=max(1, min(p.level, max(lvl0, p.level - 2))), xp=0, dead=False, items={})
+                level=max(1, min(p.level, max(lvl0, lvl))), xp=0, dead=False, items={})
 
 
 def xp_needed(content, merc):

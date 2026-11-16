@@ -741,6 +741,11 @@ class D2Content:
                                       full=full, members=members)
         except Exception:
             pass
+        try:
+            from . import d2r
+            d2r.patch_sets(self)        # the set bonuses D2R's patch 2.4 raised
+        except Exception:
+            pass
 
     def uniques_for(self, base, ilvl=None):
         self._load_uniques()

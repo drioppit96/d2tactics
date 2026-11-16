@@ -246,6 +246,8 @@ def load_all(src, strings=None):
             or (s.kind == "missile" and r.get("srcdam") not in ("", "0") and bool(s.itype))
         s.strings = strings
         trees[cls][key] = s
+    from . import d2r
+    d2r.patch_skills(trees)          # Diablo II: Resurrected's patch 2.4 balance changes
     return trees
 
 
@@ -389,12 +391,18 @@ class SkillEnv:
         r, L = self.r, self.lvl
         lo = _bracket(_int(r.get("emin")), [_int(r.get("eminlev%d" % i)) for i in range(1, 6)], L)
         hi = _bracket(_int(r.get("emax")), [_int(r.get("emaxlev%d" % i)) for i in range(1, 6)], L)
+        k = self.s.extra.get("escale")          # D2R raised a lot of spell damage outright
+        if k:
+            lo, hi = lo * k, hi * k
         return lo, hi
 
     def phys_raw(self):
         r, L = self.r, self.lvl
         lo = _bracket(_int(r.get("mindam")), [_int(r.get("minlevdam%d" % i)) for i in range(1, 6)], L)
         hi = _bracket(_int(r.get("maxdam")), [_int(r.get("maxlevdam%d" % i)) for i in range(1, 6)], L)
+        k = self.s.extra.get("pscale")
+        if k:
+            lo, hi = lo * k, hi * k
         return lo, hi
 
     def elem_len(self):
@@ -440,6 +448,10 @@ class SkillEnv:
         if not r:
             return self.s.mana
         shift = _int(r.get("manashift"), 8)
+        per = self.s.extra.get("manalvl")          # D2R changed some skills' mana per level
+        if per is not None:
+            cost = _int(r.get("mana")) * (1 << shift) / 256.0 + per * (self.lvl - 1)
+            return max(cost, _int(r.get("minmana")) if cost > 0 else 0)
         cost = (_int(r.get("mana")) + _int(r.get("lvlmana")) * (self.lvl - 1)) * (1 << shift) / 256.0
         return max(cost, _int(r.get("minmana")) if cost > 0 else 0)
 

@@ -280,3 +280,21 @@ through whole caves (`World` + simple attack/move loop) to check balance.
 - game/hireling.py: player.merc dict saved with the hero; stats from Hireling.txt per level
   (str/dex and damage per level in 1/8, resist in 1/4, skill levels in 1/32), gear slots helm /
   armor / weapon / shield, xp to next = Exp/Lvl * L^2 * (L+1) / 10, capped at your level.
+- game/d2r.py: Diablo II: Resurrected's changes laid over the 1.14d tables after they are read.
+  SKILLS patches a skill's own table row: `col` writes columns straight (emin / emax / eminlev1-5
+  for spell damage, tohit / levtohit for attack rating, mana, and the param columns the game's
+  own formulas read - param8 is nearly always the synergy percentage); `syn` / `psyn` rewrite the
+  edmgsympercalc / dmgsympercalc formula; `wsyn` is a synergy for a weapon skill (its damage
+  comes from the weapon, so the other skill's levels add percent damage in melee_mods instead);
+  `escale` / `pscale` multiply elemental / physical damage (SkillEnv.elem_raw / phys_raw);
+  `manalvl` is mana per level as a decimal (the table holds whole numbers only); `hp_mult` is a
+  pet's life (_spawn_ally); `extra` merges into skills.OVERRIDES' flags. patch_skills() is
+  called at the end of skills.load_all, and copies the row before writing to it.
+  RUNEWORDS is put in front of SocketRules.runewords; patch_sets() runs at the end of
+  D2Content._load_uniques and replaces a set line whose property it names, appending the rest.
+  SUNDER holds the six Sunder Charms as UniqueItems-shaped rows (charm_entry -> make_unique);
+  sunder_drop() is called from World._kill for champions and uniques, Nightmare and Hell only;
+  sundered() turns an immunity into 95% in SkillEnv-side _resist (skillcast) and in the physical
+  paths (world._damage, skillcast.phys_hit), with skill-based -enemy-resistance counting a fifth
+  against a sundered monster and items counting whole. D2TACTICS_D2R=0 turns all of it off, which
+  is how the before-and-after numbers were checked.
