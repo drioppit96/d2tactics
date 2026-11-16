@@ -30,6 +30,11 @@ BOSS_IDS = {"radament": ("Radament", "radament"), "duriel": ("Duriel", "duriel")
             "ancientstatue2": ("Madawc the Guardian", "ancients", "ancientbarb2"),
             "ancientstatue3": ("Korlic the Protector", "ancients", "ancientbarb3")}
 
+# Life multipliers for act and quest bosses, by difficulty. D2's own MonStats give Izual more life
+# than anything else in Act 4, and in a turn-based fight that reads as a very long slog rather than
+# a hard fight, so Normal takes 40% off him. (boss, difficulty) -> what to multiply his life by.
+BOSS_LIFE = {("izual", "normal"): 0.60}
+
 
 def _int(v, d=0):
     try:
@@ -54,8 +59,11 @@ class ActInfo:
 
     def name(self, lid):
         from . import rift
+        from .acts import SUMMIT
         if rift.is_rift(lid):
             return rift.name(lid)
+        if lid == SUMMIT:
+            return "Arreat Summit"
         sa = self._side(lid)
         if sa:
             return sa["name"]
@@ -572,6 +580,10 @@ def _spawn_preset(world, name, cell, owner, taken, info):
         m = _spawn(world, mid, _free_near(world.grid, cell, 8), lvl + 2, taken, unique=True, name=title)
         if m is not None:
             m.boss = boss
+            diff = (getattr(world.content, "difficulty", "normal") or "normal").lower()
+            k = BOSS_LIFE.get((boss, diff))
+            if k:
+                m.max_hp = m.hp = max(1, int(m.max_hp * k))
             if boss == "ancients":
                 bosses.make_dormant(m)      # statues until you touch the altar
         return
