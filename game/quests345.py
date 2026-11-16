@@ -740,6 +740,8 @@ def on_killed(world, unit):
         if nxt and nxt not in got:
             got.append(nxt)
             world.log("%s difficulty unlocked!" % nxt.title(), (255, 120, 80))
+        from . import act6
+        act6.open_on_baal_death(world)      # Destruction's End, right where he fell
         if nxt:
             import types
             world.open_npc = types.SimpleNamespace(npc="difficulty", name="%s awaits" % nxt.title(),

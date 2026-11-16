@@ -19,6 +19,7 @@ from .acts import SUMMIT
 
 MAP_NAME = "arreat_summit"
 HARROGATH = 109
+WORLDSTONE = 132          # the Worldstone Chamber, where Baal falls
 PORTAL_NAME = "Destruction's End"
 STASH_OID = 88            # the chest the map puts beside the Tree: the hero's stash
 ALTAR_OID = 546           # the Ancients' altar in the middle of the ring
@@ -39,15 +40,33 @@ def blocked(player):
 
 
 def ensure_portal(world):
-    """The red portal that stands in Harrogath once Baal has fallen, and the one that carries you
-    back down from the Summit. Called whenever a level is entered or a save is loaded."""
+    """The red portal that stands in Harrogath once Baal has fallen, and the one that opens in the
+    Worldstone Chamber over his body. Called whenever a level is entered or a save is loaded."""
     p = getattr(world, "player", None)
     if p is None or not available(p):
         return
-    if getattr(world, "level_id", None) == HARROGATH:
+    lid = getattr(world, "level_id", None)
+    if lid == HARROGATH:
         _place(world, SUMMIT, _near_town_centre(world))
+    elif lid == WORLDSTONE:
+        _place(world, SUMMIT, p.pos)
     # the Summit needs no portal home: the great red portal in the middle of the plateau is its
     # waypoint (game/acts.py WAYPOINTS[6]), and the waypoint menu goes anywhere you have been
+
+
+def open_on_baal_death(world):
+    """Baal is down in the Worldstone Chamber: Destruction's End tears open where he fell, so the
+    party can walk straight up to the Summit instead of going back to Harrogath first."""
+    p = getattr(world, "player", None)
+    if p is None or not available(p):
+        return
+    if getattr(world, "level_id", None) != WORLDSTONE:
+        return
+    before = len(world.objects)
+    _place(world, SUMMIT, p.pos, prefer=world._free_cell_near((p.x + 2, p.y + 2), 4))
+    if len(world.objects) > before:
+        world.log("The Worldstone is broken. %s opens above you - the Arreat Summit waits."
+                  % PORTAL_NAME, COLOR)
 
 
 def _near_town_centre(world):
@@ -116,7 +135,7 @@ def _only_three(world):
 
 def on_enter(world, lid):
     """Arriving somewhere: open the portal if this is one of the two ends of it."""
-    if lid in (HARROGATH, SUMMIT):
+    if lid in (HARROGATH, SUMMIT, WORLDSTONE):
         ensure_portal(world)
     if lid == SUMMIT:
         _only_three(world)
