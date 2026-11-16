@@ -39,3 +39,5 @@ errors.log
 d2act*_part*.zip
 d2tables.zip
 maps/*.json
+# exported D2 level layouts: these are Blizzard's own level data, like maps/*.json
+assets/maps/*.json

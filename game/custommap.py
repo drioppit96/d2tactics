@@ -305,10 +305,25 @@ def compose(kit, data, level_id=0, seed=None, with_grid=True):
 
 def spawn_monsters(world, built, taken, info):
     """The monsters the designer placed."""
-    from . import actworld
+    from . import actworld, world as _world
     for cell, what, kind in getattr(built, "custom_monsters", []) or []:
         owner = world.area_at(cell) or world.level_id
         lvl = getattr(built, "monster_level", 0) or (info.monster_level(owner) if info else 10)
+        if what in _world.NPC_NAMES and world.content is not None and what in world.content.monstats:
+            # A townsperson, not a fighter: they stand where the designer put them and talk. The
+            # act's own towns let the game look for a spot (actworld._town_npcs); here the cell is
+            # a choice the designer made, so only an unwalkable one is moved, and only a little.
+            c = cell if world.grid.walkable(*cell) and cell not in taken \
+                else actworld._free_near(world.grid, cell, 4)
+            if c is None:
+                continue
+            from .units import Monster
+            m = Monster("zombie", *c, rng=world.rng, template=world.content.monster_template(what))
+            m.npc, m.name, m.ai, m.aware = what, _world.NPC_NAMES.get(what, what.title()), "npc", False
+            world.npcs.append(m)
+            world.monsters.append(m)
+            taken.add(c)
+            continue
         if kind == "super":
             actworld._spawn_preset(world, what, cell, owner, taken, info)
             continue

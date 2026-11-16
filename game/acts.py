@@ -4,9 +4,14 @@ and how the numbers in a DS1's object list are read (MonPreset.txt rows of that 
 from . import act1
 
 # level id -> act
-ACT_RANGES = {1: range(1, 40), 2: range(40, 75), 3: range(75, 103), 4: range(103, 109), 5: range(109, 137)}
+ACT_RANGES = {1: range(1, 40), 2: range(40, 75), 3: range(75, 103), 4: range(103, 109), 5: range(109, 138)}
 TOWNS = {1: 1, 2: 40, 3: 75, 4: 103, 5: 109}
-TOWN_IDS = set(TOWNS.values())
+# Act 6 (this game's own): the Arreat Summit, a town where the Tree of Inifuss hands out bounties.
+# It is laid out by hand rather than generated, and built from Act 5's tiles and drawn with Act 5's
+# palette, so inside the code it counts as an Act 5 level that also happens to be a town.
+# Its layout is read from the player's own install at runtime, never shipped (see .gitignore).
+SUMMIT = 137
+TOWN_IDS = set(TOWNS.values()) | {SUMMIT}
 WORLD_KEYS = {1: "wild", 2: "desert", 3: "kurast", 4: "mesa", 5: "siege"}   # the town's world of each act
 
 # Act 2: Lut Gholein + the desert are one world, the Canyon of the Magi its own
