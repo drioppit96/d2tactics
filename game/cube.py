@@ -302,6 +302,9 @@ def _rebase(it, nb, rng):
     it.code = nb["code"]
     if nb.get("dmg"):
         it.dmg = nb["dmg"]
+    it.dmg2 = nb.get("dmg2")
+    it.either = nb.get("either", False)
+    it.wclass2 = nb.get("wclass2", "")
     if nb.get("defense"):
         lo, hi = nb["defense"]
         it.base_defense = rng.randint(min(lo, hi), max(lo, hi))

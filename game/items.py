@@ -133,9 +133,12 @@ class Item:
         self.invfile = self.flippy = ""
         self.invw = self.invh = 1
         self.two_handed = False
+        self.either = False    # a 1or2handed sword: one hand for a Barbarian, else two
+        self.dmg2 = None       # its two-handed damage, when held alone
         self.block = 0
         self.gfx = ""
         self.wclass = ""
+        self.wclass2 = ""      # its two-handed animation class
         self.look = None
         self.strbonus = self.dexbonus = 0
         self.potion = "heal"
@@ -246,7 +249,11 @@ class Item:
                 out.append(("Can be Inserted into Socketed Items", WHITE))
         if self.dmg:
             lo, hi = self.dmg
-            if self.two_handed:
+            if self.either and self.dmg2:
+                # D2 lists both for a sword a Barbarian can swing either way
+                out.append(("One-Hand Damage: %d to %d" % (lo, hi), WHITE))
+                out.append(("Two-Hand Damage: %d to %d" % self.dmg2, WHITE))
+            elif self.two_handed:
                 out.append(("Two-Hand Damage: %d to %d" % (lo, hi), WHITE))
             else:
                 out.append(("One-Hand Damage: %d to %d" % (lo, hi), WHITE))
@@ -375,6 +382,28 @@ def speed_tier(wsm):
         if wsm <= limit:
             return ap, label
     return 5, "Very Slow"
+
+
+def two_handing(unit, weapon):
+    """Is this weapon being held in both hands right now?
+
+    D2's big swords (Weapons.txt "1or2handed": the Two-Handed Sword up to the Colossus Blade) are
+    two-handers that a Barbarian alone is strong enough to swing one-handed. Which way he is
+    holding one is decided by his other hand, not by the item: with a shield or a second weapon
+    beside it he swings it one-handed, and with that hand empty he takes the hilt in both and gets
+    the weapon's two-handed damage and its two-handed swing. Everyone else two-hands them always.
+    """
+    if weapon is None or not getattr(weapon, "two_handed", False):
+        return False
+    if not getattr(weapon, "either", False):
+        return True                 # a war pike is a war pike
+    off = (getattr(unit, "equipment", None) or {}).get("shield")
+    return off is None
+
+
+def two_hand_capable(unit, weapon):
+    """Can this unit choose to one-hand that weapon (and so wear something in the other hand)?"""
+    return bool(getattr(weapon, "either", False) and getattr(unit, "cls", "") == "bar")
 
 
 def make_gold(level, rng=random):

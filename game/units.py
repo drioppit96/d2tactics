@@ -367,7 +367,11 @@ class Player(Unit):
         mana = e0 + (self.energy - e0) * cs["mpm"] / 4.0 + (self.level - 1) * cs["mpl"] / 4.0 + self.mod("mana")
         self.max_mana = int(mana * (100 + self.mod("mana_pct")) / 100)
         weapon = self.equipment["weapon"] if self.equipment["weapon"] in self._active else None
-        lo, hi = weapon.dmg if weapon and weapon.dmg else (1, 2)
+        from .items import two_handing
+        self.two_handing = two_handing(self, weapon)
+        wdmg = (getattr(weapon, "dmg2", None) if self.two_handing else None) or \
+            (weapon.dmg if weapon else None)
+        lo, hi = wdmg if weapon and wdmg else (1, 2)
         if getattr(self, "shape", None) and (weapon is None or not weapon.dmg):
             lo, hi = 2, 5
         lo += self.mod("mindmg")

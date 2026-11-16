@@ -1786,14 +1786,17 @@ class World(SkillCaster, ItemActions):
             qb = q.base if isinstance(getattr(q, "base", None), dict) else {}
             wb = w.base if isinstance(getattr(w, "base", None), dict) else {}
             return bool(qb.get("quiver")) and qb["quiver"] in wb.get("ancestors", ())
-        if slot == "weapon" and it.two_handed and p.equipment.get("shield") and not goes_with(p.equipment["shield"], it):
+        from .items import two_hand_capable
+        if slot == "weapon" and it.two_handed and not two_hand_capable(p, it) \
+                and p.equipment.get("shield") and not goes_with(p.equipment["shield"], it):
             removed.append(p.equipment["shield"])
             p.equipment["shield"] = None
         off = p.equipment.get("shield")
         if slot == "weapon" and off is not None and getattr(off, "slot", None) == "weapon" and not self.can_offhand(off):
             removed.append(off)             # the off-hand weapon no longer goes with the new one
             p.equipment["shield"] = None
-        if slot == "shield" and weapon is not None and weapon.two_handed and not goes_with(it, weapon):
+        if slot == "shield" and weapon is not None and weapon.two_handed \
+                and not two_hand_capable(p, weapon) and not goes_with(it, weapon):
             removed.append(weapon)
             p.equipment["weapon"] = None
         return removed
@@ -1802,7 +1805,11 @@ class World(SkillCaster, ItemActions):
         """D2: Assassins wear a second claw, Barbarians a second one-handed weapon in the off hand."""
         p = self.player
         w = p.equipment.get("weapon")
-        if it is None or getattr(it, "slot", None) != "weapon" or it.two_handed or w is None or w.two_handed:
+        from .items import two_hand_capable
+        if it is None or getattr(it, "slot", None) != "weapon" or w is None:
+            return False
+        # a Barbarian may pair his big swords, and then swings both of them one-handed
+        if (it.two_handed and not two_hand_capable(p, it)) or (w.two_handed and not two_hand_capable(p, w)):
             return False
         anc = lambda x: set(x.base.get("ancestors", ())) if isinstance(getattr(x, "base", None), dict) else set()
         claw = lambda x: bool(anc(x) & {"h2h", "h2h2"})

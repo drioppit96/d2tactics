@@ -180,6 +180,8 @@ class UnitSprites:
         chain = [self.wclass]
         if self.wclass in ("1SS", "1SJ", "1JS", "1JJ", "HT2"):
             chain += ["1HS", "1HT"]
+        elif self.wclass == "2HS":
+            chain += ["1HS"]       # a big sword with no two-handed art: swing it one-handed
         chain.append("HTH")
         for wc in chain:
             key = (mode, wc)
@@ -610,7 +612,8 @@ class D2Assets(AssetProvider):
             arms["S1"] = [tiers[min(2, lk.get("rspad", 0))]]
             arms["S2"] = [tiers[min(2, lk.get("lspad", 0))]]
         if weapon and weapon.gfx:
-            wclass = (weapon.wclass or "1hs").upper()
+            from game.items import two_handing
+            wclass = ((weapon.wclass2 if two_handing(p, weapon) else weapon.wclass) or "1hs").upper()
             if wclass in ("BOW", "XBW"):
                 arms["LH"] = [weapon.gfx]
                 hide.discard("LH")

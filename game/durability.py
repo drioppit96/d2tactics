@@ -27,6 +27,8 @@ def make_ethereal(it):
     it.ethereal = True
     if it.dmg:
         it.dmg = (it.dmg[0] * 3 // 2, it.dmg[1] * 3 // 2)
+    if getattr(it, "dmg2", None):
+        it.dmg2 = (it.dmg2[0] * 3 // 2, it.dmg2[1] * 3 // 2)
     if getattr(it, "base_defense", None):
         it.base_defense = it.base_defense * 3 // 2
         it.defense = it.base_defense * (100 + it.mods.get("edef", 0)) // 100 + it.mods.get("def", 0)

@@ -219,15 +219,22 @@ class D2Content:
         b["slot"] = slot
         if kind == "weapon":
             two = r.get("2handed") == "1"
+            # D2's "1or2handed" swords: a Barbarian can swing one in one hand, but held alone it is
+            # a two-hander, with its own (much larger) damage and its own animation. Both sets are
+            # kept here and game/items.py two_handing() picks between them at the moment of use.
+            either = two and r.get("1or2handed") == "1"
             lo, hi = (_int(r.get("2handmindam")), _int(r.get("2handmaxdam"))) if two and not r.get("mindam") \
                 else (_int(r.get("mindam")), _int(r.get("maxdam")))
             if not hi and r.get("minmisdam"):
                 lo, hi = _int(r.get("minmisdam")), _int(r.get("maxmisdam"))
+            lo2, hi2 = _int(r.get("2handmindam")), _int(r.get("2handmaxdam"))
             speed = _int(r.get("speed"))
             from .items import speed_tier
             ap = speed_tier(speed)[0]
-            b.update(dmg=(max(1, lo), max(1, hi)), two_handed=two, ap=ap, speed=speed,
-                     wclass=(r.get("2handedwclass") if two and r.get("1or2handed") != "1" else r.get("wclass")) or "1hs",
+            b.update(dmg=(max(1, lo), max(1, hi)), two_handed=two, ap=ap, speed=speed, either=either,
+                     dmg2=((max(1, lo2), max(1, hi2)) if either and hi2 else None),
+                     wclass2=((r.get("2handedwclass") or "2hs") if either else ""),
+                     wclass=(r.get("2handedwclass") if two and not either else r.get("wclass")) or "1hs",
                      gfx=(r.get("alternategfx") or r["code"]).upper(),
                      strbonus=_int(r.get("strbonus")), dexbonus=_int(r.get("dexbonus")),
                      ranged=bool({"miss", "bow", "xbow"} & anc))
@@ -560,6 +567,9 @@ class D2Content:
         it.invfile, it.flippy = base["invfile"], base["flippyfile"]
         it.invw, it.invh = base["invw"], base["invh"]
         it.two_handed = base.get("two_handed", False)
+        it.either = base.get("either", False)
+        it.dmg2 = base.get("dmg2")
+        it.wclass2 = base.get("wclass2", "")
         it.block = base.get("block", 0)
         it.gfx = base.get("gfx", "")
         it.comp = base.get("comp", "")          # which composite layer it is drawn on
@@ -630,6 +640,8 @@ class D2Content:
             it.grade = "low"
             if it.dmg:
                 it.dmg = (max(1, it.dmg[0] * 3 // 4), max(1, it.dmg[1] * 3 // 4))
+            if it.dmg2:
+                it.dmg2 = (max(1, it.dmg2[0] * 3 // 4), max(1, it.dmg2[1] * 3 // 4))
             if it.base_defense is not None:
                 it.base_defense = max(1, it.base_defense * 3 // 4)
                 it.defense = it.base_defense
