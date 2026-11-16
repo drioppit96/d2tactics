@@ -76,11 +76,50 @@ def _place(world, target, near, prefer=None):
         world.log("A portal tears open: %s." % PORTAL_NAME, COLOR)
 
 
+#: the three the mountaintop preset carries, one statue each
+ANCIENT_IDS = ("ancientbarb1", "ancientbarb2", "ancientbarb3")
+
+
+def _only_three(world):
+    """The Summit holds three Ancients and the townspeople, and nothing else.
+
+    The map a player is running may not be the one the game ships: the map editor writes
+    maps/arreat_summit.json beside it, and that copy wins once its revision catches up. A copy
+    that stamps the mountaintop preset twice, or that was saved with the statues already in its
+    own monster list, puts two or three Korlics on the plateau instead of one - and because the
+    Summit is a town where nothing respawns, they simply pile up. Rather than trust the file,
+    the town keeps the one statue of each Ancient nearest its own altar and drops the rest.
+    """
+    keep, drop, seen = [], [], set()
+    npcs = getattr(world, "npcs", None) or []
+    for m in world.monsters:
+        if getattr(m, "is_player", False) or m in npcs or getattr(m, "npc", None):
+            keep.append(m)
+            continue
+        if getattr(m, "boss", None) == "ancients" or str(getattr(m, "d2id", "")) in ANCIENT_IDS:
+            key = str(getattr(m, "d2id", "")) or m.name
+            if key in seen:
+                drop.append(m)
+            else:
+                seen.add(key)
+                keep.append(m)
+            continue
+        drop.append(m)          # nothing else belongs up here: the Summit is a town
+    if not drop:
+        return
+    world.monsters = keep
+    for m in drop:
+        m.alive = False
+    world.log("The Summit settles: %d stray %s sent back to the mountain." % (
+        len(drop), "guardian" if len(drop) == 1 else "guardians"), COLOR)
+
+
 def on_enter(world, lid):
     """Arriving somewhere: open the portal if this is one of the two ends of it."""
     if lid in (HARROGATH, SUMMIT):
         ensure_portal(world)
     if lid == SUMMIT:
+        _only_three(world)
         # The mountaintop preset carries the Ancients' three statues. Up here they are scenery:
         # the Rite of Passage was fought below, and without this they would wake as you walked
         # past them (game/bosses.py wakes dormant Ancients on a map that has no altar).
