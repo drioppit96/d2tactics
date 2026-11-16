@@ -1176,16 +1176,32 @@ class D2Hud:
             cache[id(img)] = (img, g)
         return g
 
+    def _act6_tab(self, on):
+        """Act VI's tab. D2's art stops at V, so this one was cut from the real V and I tabs
+        (assets/ui/tab_act6_*.png, built by tools/make_act6_tab.py)."""
+        key = "_act6tab_%s" % ("on" if on else "off")
+        if key not in self.__dict__:
+            import os
+            root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            path = os.path.join(root, "assets", "ui", "tab_act6_%s.png" % ("on" if on else "off"))
+            try:
+                self.__dict__[key] = pygame.image.load(path).convert_alpha()
+            except Exception:
+                self.__dict__[key] = None
+        return self.__dict__[key]
+
     def _act_tabs(self, surf, acts, current, action, frames_key):
         """D2's act tabs (63x31 each, bright = the open act) along the top of the panel."""
         tabs = self.frames.get(frames_key) or self.frames.get("expwaygatetabs")
-        for a in range(1, 6):
+        for a in range(1, 7):
             x, y, w = 2 + (a - 1) * 63, 0, 63
             if a not in acts:
                 continue
             on = a == current
             f = None
-            if tabs:
+            if a == 6:
+                f = self._act6_tab(on)
+            elif tabs:
                 k = (a - 1) * 2 + (0 if on else 1)
                 f = tabs[k] if k < len(tabs) else None
             if f is not None:
@@ -1195,7 +1211,7 @@ class D2Hud:
                 box.fill((70, 58, 30, 230) if on else (20, 16, 10, 200))
                 surf.blit(box, self.P(x, y))
                 pygame.draw.rect(surf, (120, 100, 60) if on else (70, 60, 40), self.R(x, y, w - 2, 28), 1)
-                self.text(surf, self.f16, "I II III IV V".split()[a - 1], WHITE if on else (150, 140, 120),
+                self.text(surf, self.f16, "I II III IV V VI".split()[a - 1], WHITE if on else (150, 140, 120),
                           x, y + 6, "center", w - 2)
             self.region(x, y, w, 30, action, a)
 
@@ -1488,9 +1504,12 @@ class D2Hud:
         bosses = BOSS_WAYPOINTS.get(self.wp_act, [])
         rows = list(WAYPOINTS[self.wp_act])[:11]
         extra = max(0, len(rows) - 9)
-        self._waygate_bg(surf, bg, extra)
+        # six tabs need 378 px, so the panel grows to the right once Act 6 is open. Until then it
+        # is D2's own 320 and nothing about the window changes.
+        wide = 64 if 6 in acts else 0
+        self._waygate_bg(surf, bg, extra, wide)
         self._act_tabs(surf, acts, self.wp_act, "wp_tab", "expwaygatetabs")
-        self.text(surf, self.f16, "Choose your destination", GOLD, 0, 36, "center", 320)
+        self.text(surf, self.f16, "Choose your destination", GOLD, 0, 36, "center", 320 + wide)
         icons = self.frames.get("waygateicons")
         for i, lid in enumerate(rows):
             y = 58 + i * 36
@@ -1511,7 +1530,7 @@ class D2Hud:
             if on and lid != here:
                 self.region(15, y, 290, 34, "waypoint", lid)
         # TEST ONLY: remove later
-        bx, by = 170, 394 + 36 * extra
+        bx, by = 170 + wide // 2, 394 + 36 * extra
         hot = pygame.Rect(bx, by, 96, 22).collidepoint((int(mx), int(my)))
         box = pygame.Surface((int(96 * self.s), int(22 * self.s)), pygame.SRCALPHA)
         box.fill((90, 40, 30, 220) if hot else (50, 20, 15, 200))
@@ -1519,11 +1538,12 @@ class D2Hud:
         self.text(surf, self.f10, "All (test)", WHITE, bx, by + 5, "center", 96)
         self.region(bx, by, 96, 22, "wp_all")
         x, y, cw, ch = self.WP_CLOSE
-        self._close_button(surf, (x, y + 36 * extra, cw, ch), 0, "waypoints")
+        self._close_button(surf, (x + wide, y + 36 * extra, cw, ch), 0, "waypoints")
 
-    def _waygate_bg(self, surf, bg, extra):
+    def _waygate_bg(self, surf, bg, extra, wide=0):
         """D2's waypoint background, made taller by `extra` slots (36 px each) for this game's boss
-        waypoints: a band of the slot column is repeated, so the slots keep lining up."""
+        waypoints, and wider by `wide` px for Act 6's tab. A band of the slot column is repeated
+        downwards and a band of the panel's middle sideways, so the frame still meets its edges."""
         if not bg:
             self._panel_bg(surf, 0, self.frames.get("blank") or self.frames["invchar6"], 0)
             if extra:
@@ -1531,7 +1551,7 @@ class D2Hud:
                 box.fill((10, 10, 10, 230))
                 surf.blit(box, self.P(0, 432))
             return
-        key = ("waygate", extra)
+        key = ("waygate", extra, wide)
         comp = self.__dict__.setdefault("_bg_cache", {}).get(key)
         if comp is None:
             add = 36 * extra
@@ -1547,9 +1567,20 @@ class D2Hud:
                     if i < len(bg) and bg[i] is not None:
                         band.blit(bg[i], (x, -(256 - add)))
                 comp.blit(band, (0, 256))
+            if wide:
+                # the panel's right edge is its last 64 px: keep that, and fill the new space with
+                # a strip of the middle, which is plain framed stone
+                h = comp.get_height()
+                out = pygame.Surface((320 + wide, h), pygame.SRCALPHA)
+                out.fill((0, 0, 0, 0))
+                out.blit(comp, (0, 0), pygame.Rect(0, 0, 256, h))
+                for x in range(256, 256 + wide, 64):
+                    out.blit(comp, (x, 0), pygame.Rect(192, 0, min(64, 256 + wide - x), h))
+                out.blit(comp, (256 + wide, 0), pygame.Rect(256, 0, 64, h))
+                comp = out
             self._bg_cache[key] = comp
         self.put(surf, comp, 0, 0)
-        self.region(0, 0, 320, 432 + 36 * extra, "panel")
+        self.region(0, 0, 320 + wide, 432 + 36 * extra, "panel")
 
     # ------------------------------------------------------------ the Horadric Cube
     CUBE_GRID = (117, 138)

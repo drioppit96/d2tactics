@@ -653,6 +653,9 @@ class Scene:
 
         if use_tiles:
             f2 = getattr(tm, "floor2", None)
+            # D2 plays its animated floor tiles at about ten frames a second
+            anim = getattr(tm, "anim", None)
+            aframe = int(self.clock * 10.0)
             tx0, ty0 = max(0, x0 // 5 - 1), max(0, y0 // 5 - 1)
             ptx, pty = int(pv.rx) // 5, int(pv.ry) // 5
             # D2 only takes roofs off outdoor houses; in dungeons the roof pieces are the wall tops
@@ -699,10 +702,15 @@ class Scene:
                 for tx in range(tx0, tx1 + 1):
                     if (tx, ty) not in tm.drawn:
                         continue          # like D2, the terrain around you is always shown
+                    an = anim.get((tx, ty)) if anim else None
                     ref = tm.floor.get((tx, ty))
+                    if an and 0 in an:
+                        ref = an[0][aframe % len(an[0])]        # lava and the other moving floors
                     if ref:
                         assets.draw_tile(surf, ref, tx, ty, cam)
                     ref2 = f2.get((tx, ty)) if f2 else None
+                    if an and 1 in an:
+                        ref2 = an[1][aframe % len(an[1])]
                     if ref2:
                         assets.draw_tile(surf, ref2, tx, ty, cam)
                     for wref in tm.walls.get((tx, ty), ()):

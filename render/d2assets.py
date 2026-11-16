@@ -89,6 +89,8 @@ MODE_MAP = {
 }
 
 MONSTER_IDS = {"ZM": "zombie1", "FA": "fallen1", "FS": "fallenshaman1", "SI": "quillrat1", "SK": "skeleton1"}
+# TEST ONLY: recolour Tyrael's wings. None leaves them D2's own blue-white.
+WING_COLOR = (255, 225, 60)
 
 
 def _convert_dir(d, n_from, n_to):
@@ -162,6 +164,7 @@ class UnitSprites:
         self.arms = arms            # component -> preferred armtype list
         self.wclass = weapon_class
         self.remap = None           # 256-byte palette shift (unique monsters' colour), or None
+        self.remap_comp = None      # per COF layer: {"LA": table} (Tyrael's wings are LA and RA)
         self.pal = None             # another act's palette (an object from another act), or None
         self.cache = {}             # (mode, dir) -> [(surface, x0, y0)]
         self.cofs = {}
@@ -287,7 +290,8 @@ class UnitSprites:
             y1 = max(p.ymax for p, _ in parts)
             comp_surf = pygame.Surface((x1 - x0 + 1, y1 - y0 + 1), pygame.SRCALPHA)
             for fr, L in parts:
-                px = fr.pixels if self.remap is None else bytes(fr.pixels).translate(self.remap)
+                tab = (self.remap_comp or {}).get(L.component, self.remap)
+                px = fr.pixels if tab is None else bytes(fr.pixels).translate(tab)
                 img = self.a.indexed_surface(fr.width, fr.height, px, self.pal)
                 if L.transparent:
                     img.set_alpha(150)
@@ -669,6 +673,10 @@ class D2Assets(AssetProvider):
             sp = self._monster_sprites(unit.token, mid, unit.unique)
             if shift:
                 sp.remap = self.color_shift(unit.token, mid, shift)
+            if WING_COLOR and (mid or "").lower().startswith("tyrael"):
+                # TEST ONLY: Tyrael's wings. His COF is three layers - the body (TR) and his two
+                # wings (LA, RA, the two D2 draws half transparent), so only those two are recoloured
+                sp.remap_comp = {c: self._tint_table(WING_COLOR, 40) for c in ("LA", "RA")}
             self.sprites[key] = sp
         return self.sprites[key]
 

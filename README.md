@@ -313,6 +313,10 @@ three statues stand on the plateau as scenery - the Rite of Passage was fought b
 wake. The Tree of Inifuss grows at the foot of the stair, and the portal at the head of the stair
 takes you back down.
 
+The great red portal in the middle of the plateau is Act 6's waypoint - the only one it has - so
+the waypoint panel grew a sixth tab and a wider window to hold it (Act VI's tab was cut from the
+real V and I, `tools/make_act6_tab.py`). The chest beside the Tree is your stash.
+
 Act 6 is per difficulty, like every other quest: beating Baal in Normal opens the Summit in Normal,
 and Nightmare and Hell each want their own Baal. The layout is `assets/maps/arreat_summit.json`,
 which stamps Diablo's own mountaintop preset and then changes it, so the map editor opens it like

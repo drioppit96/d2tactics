@@ -39,6 +39,7 @@ WAYPOINTS = {
     3: [75, 79, 80, 77, 76, 81, 83, 101],
     4: [103, 106, 107],
     5: [109, 111, 112, 113, 115, 117, 118, 123, 129],
+    6: [SUMMIT],                                  # Act 6 has one waypoint: the Arreat Summit
 }
 # extra waypoints of this game at the boss floors (farming): the Countess, Andariel; Radament, Duriel;
 # Mephisto; Diablo; Pindleskin, Baal
@@ -50,7 +51,9 @@ WAYPOINT_TOKEN = {40: "WM", 42: "WM", 43: "WM", 44: "WM", 46: "WM", 48: "QM", 52
                   75: "WZ", 76: "WP", 77: "WP", 78: "WP", 79: "WP", 80: "WP", 81: "WP", 83: "QL", 101: "WI",
                   103: "YG", 106: "WV", 107: "WV",
                   109: "YY", 111: "5A", 112: "5A", 113: "5A", 115: "5A", 117: "5A", 118: "5A", 123: "3P",
-                  129: "8Y", 49: "QM", 73: "WP", 102: "WI", 108: "WV", 121: "3P", 124: "3P", 131: "8Y"}
+                  129: "8Y", 49: "QM", 73: "WP", 102: "WI", 108: "WV", 121: "3P", 124: "3P", 131: "8Y",
+                  # the Summit's waypoint is the great red portal in the middle of the plateau
+                  SUMMIT: "PP"}
 
 TOWN_NPCS = {
     1: dict(act1.TOWN_NPCS),

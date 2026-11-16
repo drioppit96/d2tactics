@@ -29,6 +29,7 @@ class TileMap:
         self.floor = {}     # (tx, ty) -> (dt1, tile)
         self.walls = {}     # (tx, ty) -> [(dt1, tile)]
         self.drawn = set()  # tile positions worth drawing (near walkable space)
+        self.anim = {}      # (tx, ty) -> {floor layer: [frames]} for lava and the other moving floors
 
 
 def _room_exits(name):

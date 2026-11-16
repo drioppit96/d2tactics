@@ -20,6 +20,7 @@ from .acts import SUMMIT
 MAP_NAME = "arreat_summit"
 HARROGATH = 109
 PORTAL_NAME = "Destruction's End"
+STASH_OID = 88            # the chest the map puts beside the Tree: the hero's stash
 COLOR = (199, 179, 119)
 
 
@@ -42,20 +43,10 @@ def ensure_portal(world):
     p = getattr(world, "player", None)
     if p is None or not available(p):
         return
-    lid = getattr(world, "level_id", None)
-    if lid == HARROGATH:
+    if getattr(world, "level_id", None) == HARROGATH:
         _place(world, SUMMIT, _near_town_centre(world))
-    elif lid == SUMMIT:
-        # the portal the map already carries, at the head of the stair, is the way home
-        _place(world, HARROGATH, None, prefer=_mapped_portal(world))
-
-
-def _mapped_portal(world):
-    """The cell the map's own Destruction's End marker sits on, if it has one."""
-    for o in world.objects:
-        if o.get("kind") == "decor" and str(o.get("name", "")).lower().startswith("destruction"):
-            return o["cell"]
-    return None
+    # the Summit needs no portal home: the great red portal in the middle of the plateau is its
+    # waypoint (game/acts.py WAYPOINTS[6]), and the waypoint menu goes anywhere you have been
 
 
 def _near_town_centre(world):
@@ -99,6 +90,12 @@ def on_enter(world, lid):
                 m.invulnerable = True
                 m.aware = False
                 m.sight = -1
+        # the chest beside the Tree of Inifuss is the hero's own stash. The map places D2's chest
+        # for its look; a town turns every container into scenery (game/objects.py), so it is made
+        # a stash here, keeping its art.
+        for o in world.objects:
+            if o.get("oid") == STASH_OID and o.get("kind") in ("decor", "chest"):
+                o["kind"], o["name"] = "stash", "Stash"
         p = world.player
         seen = p.__dict__.setdefault("visited", set())
         if SUMMIT not in seen:

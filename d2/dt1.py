@@ -101,6 +101,12 @@ class TileSet:
             for t in f.tiles:
                 self.by_key.setdefault(t.key(), []).append((f, t))
 
+    def frames_of(self, orientation, main, sub):
+        """Every tile stored under this key, in file order. D2 keeps an animated tile (lava, the
+        pools of the River of Flame) as several tiles sharing one key and plays them in turn, so
+        for those this is the animation rather than a set of variants to choose between."""
+        return self.by_key.get((orientation, main, sub)) or []
+
     def pick(self, orientation, main, sub, rnd=0):
         cands = self.by_key.get((orientation, main, sub))
         if not cands:
