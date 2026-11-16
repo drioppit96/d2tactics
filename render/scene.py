@@ -80,8 +80,29 @@ class Projectile:
         self.dur = 0.06 + d / 650.0      # world pixels -> ~0.2 s over 5 tiles
         self.t = 0.0
 
+    def along(self, points, speed=620.0):
+        """Follow a whole route instead of flying straight (Blessed Hammer's spiral)."""
+        self.route = list(points)
+        self.src, self.dst = self.route[0], self.route[-1]
+        legs = [math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(self.route, self.route[1:])]
+        total = sum(legs) or 1.0
+        self.legs = legs
+        self.dur = max(0.25, total / speed)
+        return self
+
+    route = None
+
     def pos(self):
         k = min(1.0, self.t / self.dur)
+        if self.route:
+            want = k * sum(self.legs)
+            for (a, b), leg in zip(zip(self.route, self.route[1:]), self.legs):
+                if want > leg and leg > 0:
+                    want -= leg
+                    continue
+                f = (want / leg) if leg else 0.0
+                return a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f
+            return self.dst
         return self.src[0] + (self.dst[0] - self.src[0]) * k, self.src[1] + (self.dst[1] - self.src[1]) * k
 
 
@@ -240,6 +261,20 @@ class Scene:
                 pr.trail = self.assets.missile_trail(missile)
             self.projectiles.append(pr)
             return None
+        if kind == "spiral":
+            # Blessed Hammer: one hammer that winds its way outwards, not a ring or a straight shot
+            unit, path = ev[1], ev[2]
+            missile = ev[4] if len(ev) > 4 else None
+            v = self.view(unit)
+            v.mode, v.t, v.dur = "SC", 0.0, 0.38
+            if not path or not self._seen(unit):
+                return 0
+            pts = [cell_to_world(*c) for c in path]
+            pr = Projectile("spike", pts[0], pts[-1], missile).along(pts)
+            if missile and hasattr(self.assets, "missile_trail"):
+                pr.trail = self.assets.missile_trail(missile)
+            self.projectiles.append(pr)
+            return pr.dur
         if kind == "overlay":
             unit, name = ev[1], ev[2]
             self.effects.append(["overlay", name, unit, 0.0, None])

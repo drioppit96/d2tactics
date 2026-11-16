@@ -121,7 +121,7 @@ OVERRIDES = {
     "Clay Golem": dict(kind="golem"), "BloodGolem": dict(kind="golem"), "IronGolem": dict(kind="golem"),
     "FireGolem": dict(kind="golem"), "Poison Dagger": dict(kind="melee"),
     # Paladin
-    "Holy Bolt": dict(kind="missile", undead_only=True, pierce=True), "Blessed Hammer": dict(kind="nova", radius=2),
+    "Holy Bolt": dict(kind="missile", undead_only=True, pierce=True), "Blessed Hammer": dict(kind="spiral", radius=7, turns=2.0),
     "Fist of the Heavens": dict(kind="area", radius=2, always_hit=True), "Charge": dict(kind="charge"),
     "Holy Shield": dict(kind="buff"), "Smite": dict(kind="melee", always_hit=True, stun=1, knock=True),
     "Zeal": dict(kind="melee", hits="calc1"), "Sacrifice": dict(kind="melee", self_damage=8),

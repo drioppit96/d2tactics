@@ -1222,7 +1222,7 @@ class Game:
             if pv is not None:
                 from game.skillcast import SPELL_RANGE
                 kind = p.skills.tree[rs].kind
-                far = kind != "nova" and chebyshev(cell, p.pos) > SPELL_RANGE
+                far = kind not in ("nova", "spiral") and chebyshev(cell, p.pos) > SPELL_RANGE
                 pv = (pv[0], pv[1], far)
             self._path_cache[key] = pv
         return self._path_cache[key]

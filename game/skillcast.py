@@ -9,6 +9,7 @@ Status effects on monsters (m.effects):
 Curses live in m.curses: {skill: {"turns": n, "stats": {...}, "flags": set()}}.
 Player buffs live in p.buffs: {skill: {"turns": n, "stats": {...}}} (summed into Player.recalc).
 """
+import math
 import random
 
 from .grid import chebyshev, DIRS8
@@ -335,9 +336,9 @@ class SkillCaster:
         if k in ("turret", "teleport", "wall") and cell is not None and (cell in self.occupied() or not self.grid.walkable(*cell)):
             cell = self._free_cell_near(cell)
         if self.mode == "explore" and cell is not None and k in ("missile", "nova", "area", "line", "chain", "curse",
-                                                                  "corpse_blast", "charge"):
+                                                                  "corpse_blast", "charge", "spiral"):
             # attacking from the shadows starts the fight (you keep your full turn)
-            centre = p.pos if k == "nova" else cell
+            centre = p.pos if k in ("nova", "spiral") else cell
             near = [m for m in self.enemies() if chebyshev(m.pos, centre) <= 6]
             if near and self.mode == "explore":
                 near[0].aware = True
@@ -747,6 +748,13 @@ class SkillCaster:
             for m in self.enemies():
                 if self.udist(m, p) <= r and self.grid.line_of_sight(p.pos, m.pos):
                     hits |= body(m)
+        elif k == "spiral":
+            path = self._spiral_cells(p.pos, x.get("radius") or env.radius() or 7,
+                                      x.get("turns", self.SPIRAL_TURNS))
+            cells = set(path)
+            for m in self.enemies():
+                if m.pos in cells:
+                    hits |= body(m)
         elif k in ("area", "curse"):
             if k == "curse" and x.get("self_centred"):
                 cell = p.pos
@@ -897,6 +905,51 @@ class SkillCaster:
                 self._add_hazard(p.pos, r, env, 2, "poisonnova")   # (tactics: a poison cloud lingers)
         if not foes:
             self.log("%s hits nothing." % s.title, GREY)
+        return True
+
+    SPIRAL_TURNS = 2.0
+
+    def _spiral_cells(self, origin, radius, turns=SPIRAL_TURNS):
+        """D2's Blessed Hammer: the hammer leaves the paladin's hand and winds anticlockwise around
+        him, a little further out each time round, until it fades at `radius`. These are the cells
+        it crosses, in the order it crosses them."""
+        cells = []
+        steps = max(64, int(turns * 64))
+        for i in range(steps + 1):
+            th = turns * 2.0 * math.pi * i / steps
+            r = radius * i / float(steps)
+            c = (origin[0] + int(round(r * math.cos(th))), origin[1] - int(round(r * math.sin(th))))
+            if cells and c == cells[-1]:
+                continue            # the same cell twice running: one step of the flight, not two
+            if cells:
+                # the first turn is tight enough that two samples can land a few cells apart;
+                # step across the gap so the hammer's flight stays unbroken
+                a = cells[-1]
+                n = max(abs(c[0] - a[0]), abs(c[1] - a[1]))
+                for j in range(1, n):
+                    mid = (a[0] + int(round((c[0] - a[0]) * j / float(n))),
+                           a[1] + int(round((c[1] - a[1]) * j / float(n))))
+                    if mid != cells[-1] and self.grid.walkable(*mid):
+                        cells.append(mid)
+            if self.grid.walkable(*c):
+                cells.append(c)
+        return cells
+
+    def _k_spiral(self, s, env, target, cell, ap, mana):
+        """A hammer that spirals out from the caster and passes through everything on its way."""
+        p = self.player
+        r = s.extra.get("radius") or env.radius() or 7
+        path = self._spiral_cells(p.pos, r, s.extra.get("turns", self.SPIRAL_TURNS))
+        self._spend(ap, mana, None, "cast")
+        self.emit("spiral", p, path, s.element or "mag", self.vis_missile(s))
+        # it hurts every enemy it passes over, in the order it reaches them - nothing stops it
+        order = {c: i for i, c in enumerate(path)}
+        foes = sorted((m for m in self.enemies() if m.pos in order), key=lambda m: order[m.pos])
+        self._wake(foes)
+        for m in foes:
+            self.skill_damage(env, m)
+        if not foes:
+            self.log("%s spins out and fades." % s.title, GREY)
         return True
 
     def _k_area(self, s, env, target, cell, ap, mana):

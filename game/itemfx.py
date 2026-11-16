@@ -151,9 +151,9 @@ def _procs(world, event, target=None):
             if world.rng.randrange(100) < chance:
                 cell = target.pos if target is not None and target.alive else None
                 s = book.tree.get(name)
-                if s is not None and s.kind in ("nova", "cry", "buff", "summon", "aura"):
+                if s is not None and s.kind in ("nova", "spiral", "cry", "buff", "summon", "aura"):
                     cell = p.pos
-                if cell is None and s is not None and s.kind not in ("nova", "buff", "cry"):
+                if cell is None and s is not None and s.kind not in ("nova", "spiral", "buff", "cry"):
                     continue
                 if cast_free(world, name, lvl, target=target if target is not None and target.alive else None, cell=cell):
                     world.log("%s (%d%% chance to cast)" % (s.title if s else name, chance), (110, 110, 255))
