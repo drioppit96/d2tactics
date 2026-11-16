@@ -102,10 +102,38 @@ class TileSet:
                 self.by_key.setdefault(t.key(), []).append((f, t))
 
     def frames_of(self, orientation, main, sub):
-        """Every tile stored under this key, in file order. D2 keeps an animated tile (lava, the
-        pools of the River of Flame) as several tiles sharing one key and plays them in turn, so
-        for those this is the animation rather than a set of variants to choose between."""
-        return self.by_key.get((orientation, main, sub)) or []
+        """The animation under this key, in frame order, or [] if the key is not an animation.
+
+        Several tiles can share a key for two quite different reasons, and telling them apart
+        matters: D2's lava is one picture that moves, while Act 5's snow is a handful of
+        interchangeable patches picked at random so a field of it does not look tiled. Both are
+        flagged in the DT1, but only the moving ones carry Animated = 1 and number their frames
+        0, 1, 2 ... in the rarity field - the variants reuse rarity as a weight, so the same
+        number turns up more than once (snow's are 6, 6, 6). Playing a set of variants makes the
+        ground flicker, so a key only counts as an animation when every frame index is there
+        exactly once.
+        """
+        cands = self.by_key.get((orientation, main, sub)) or []
+        if len(cands) < 2:
+            return []
+        # A tileset is several DT1s merged, and the same file can be listed twice (which repeats
+        # every one of its tiles) while different files can carry the same key. So the same tile
+        # is only counted once, and each file's tiles are judged on their own rather than as one
+        # jumbled pile - otherwise lava's frames 0..9 arrive as 0,0,1,1,...,9,9 and read as
+        # variants rather than as an animation.
+        by_file, seen = {}, set()
+        for f, t in cands:
+            if id(t) in seen:
+                continue
+            seen.add(id(t))
+            by_file.setdefault(id(f), []).append((f, t))
+        for group in by_file.values():
+            if len(group) < 2 or not all(t.animated == 1 for _, t in group):
+                continue
+            order = sorted(group, key=lambda ft: ft[1].rarity)
+            if [t.rarity for _, t in order] == list(range(len(order))):
+                return order
+        return []
 
     def pick(self, orientation, main, sub, rnd=0):
         cands = self.by_key.get((orientation, main, sub))

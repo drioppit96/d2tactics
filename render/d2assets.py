@@ -1017,7 +1017,8 @@ class D2Assets(AssetProvider):
         if not fr:
             return
         img, x0, y0 = fr[idx % len(fr)]
-        surf.blit(img, (int(pos[0] + x0), int(pos[1] + y0)))
+        surf.blit(img, (int(pos[0] + x0), int(pos[1] + y0)),
+                  special_flags=pygame.BLEND_RGB_ADD if self._obj_glow(tok) else 0)
         return pygame.Rect(int(pos[0] + x0), int(pos[1] + y0), img.get_width(), img.get_height())
 
     def draw_decor(self, surf, name, pos):
@@ -1061,6 +1062,34 @@ class D2Assets(AssetProvider):
                 pass
         return rows.get(tok.upper())
 
+    def _obj_glow(self, tok):
+        """Is this object a light rather than a thing - a portal, a waypoint, a fire?
+
+        D2 draws those by adding their picture to what is behind them, the way a real light
+        works, so the dark part of the sprite contributes nothing. Drawn the ordinary way the
+        same art paints its dark surround over the ground, which is the black ring around every
+        portal, fire and puff of smoke. Objects.txt has no column that says "blend" - its trans
+        is 0 for all of them - but it does say which objects carry a light and flicker, and that
+        is exactly this set: the portals, the waypoints and the fires, and nothing solid.
+        """
+        glow = self.__dict__.get("_objglow")
+        if glow is None:
+            glow = self._objglow = set()
+            try:
+                for r in read_table(self.src, "Objects"):
+                    t = (r.get("token") or "").strip().upper()
+
+                    def iv(k):
+                        try:
+                            return int(r.get(k) or 0)
+                        except ValueError:
+                            return 0
+                    if t and iv("flicker") and iv("lit1"):
+                        glow.add(t)
+            except Exception:
+                pass
+        return tok.upper() in glow
+
     def draw_object(self, surf, kind, oid, pos, s, clock=0.0, used=False):
         """Quest objects and waypoints with D2's object graphics (placeholder marker if missing)."""
         toks = self.OBJECT_TOKENS.get(kind, [])
@@ -1100,7 +1129,8 @@ class D2Assets(AssetProvider):
                     fps = row[1][mi]
                 img, x0, y0 = frames[int(clock * fps) % len(frames)]
                 if img is not None:
-                    surf.blit(img, (int(pos[0] + x0), int(pos[1] + y0)))
+                    surf.blit(img, (int(pos[0] + x0), int(pos[1] + y0)),
+                              special_flags=pygame.BLEND_RGB_ADD if self._obj_glow(tok) else 0)
                     return
         # placeholder: a glowing marker
         col = {"waypoint": (90, 140, 255), "portal": (255, 60, 40), "cairn": (200, 200, 220), "tp": (80, 120, 255),

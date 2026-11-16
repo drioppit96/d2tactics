@@ -199,12 +199,12 @@ def stamp(b, ds, tiles, ox, oy, rng, owner, skip_npc_objects=False, keep_edges=T
                         tm.floor[pos] = t
                     else:
                         tm.floor2[pos] = t
-                    if getattr(t[1], "animated", 0):
-                        # D2 keeps lava (and the other moving floors) as several tiles under one
-                        # key and plays them in turn; `pick` would freeze it on one of them
-                        fr = tiles.frames_of(0, c.main, c.sub)
-                        if len(fr) > 1:
-                            tm.anim.setdefault(pos, {})[li] = fr
+                    # a moving floor - lava, and the few others D2 animates - is several tiles
+                    # under one key played in turn, and `pick` would freeze it on one of them.
+                    # frames_of returns [] for a key whose tiles are only random variants.
+                    fr = tiles.frames_of(0, c.main, c.sub)
+                    if fr:
+                        tm.anim.setdefault(pos, {})[li] = fr
             walls = []
             for layer in ds.walls:
                 c = layer[y * w + x]
