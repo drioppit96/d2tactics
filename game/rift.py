@@ -441,6 +441,8 @@ def on_killed(world, unit):
         world.log("Infernal Rift %d was the last. Nothing deeper answers." % MAX_FLOORS, RED)
         return
     p.rift_depth = depth - 1                     # (the deepest floor beaten)
+    from . import bounties
+    bounties.on_rift_floor(world)                # a Delve contract counts this floor
     if any(o.get("kind") == "portal" and is_rift(o.get("target")) for o in world.objects):
         return
     cell = world._free_cell_near(unit.pos, 8) or world._free_cell_near(p.pos, 6)

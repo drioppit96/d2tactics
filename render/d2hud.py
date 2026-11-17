@@ -1767,7 +1767,7 @@ class D2Hud:
             cache[want] = pick
             return pick
         if k == bounties.HUNT:
-            want = str(o.get("target") or "").lower()
+            want = str((o.get("targets") or [o.get("target")])[0] or "").lower()
             su = (getattr(mons, "superuniques", None) or {}).get(want)
             if su is None:
                 # SuperUniques.txt keys them by their table name ("Eyeback Unleashed"); what the
@@ -1787,12 +1787,15 @@ class D2Hud:
                     return cand
             return None
         if k == bounties.ORGAN and o.get("organ"):
-            fam = o["organ"][0]
-            for cand in (fam + "1", fam):
-                if mons is not None and cand in (mons.monstats or {}):
+            # the six tokens come from a whole kind, so show something of that kind
+            from game import organs
+            cls = (organs.ORGANS.get(o["organ"]) or (None, None, None))[1]
+            for cand in ("fallen1", "skeleton1", "zombie1", "goatman1"):
+                if mons is not None and cand in (mons.monstats or {}) \
+                        and bounties.mon_class(world, cand) == cls:
                     return cand
         if k == bounties.BOSS:
-            tag = o.get("target")
+            tag = (o.get("targets") or [o.get("target")])[0]
             if mons is not None and tag in (mons.monstats or {}):
                 return tag
         return None
@@ -1948,7 +1951,7 @@ class D2Hud:
                       "center", pw)
         y += bh + 8
 
-        cost = bounties.reroll_cost(world)
+        cost = bounties.reroll_cost(world)   # free now, kept so the button can still say so
         taken = o["id"] in held_ids
         can_take = not taken and len(held) < bounties.MAX_HELD
         done = mine is not None and bounties.complete(mine, p)
@@ -1957,10 +1960,10 @@ class D2Hud:
                         "bounty_claim" if done else "bounty_take", o["id"], on=done or can_take)
         self._d2_button(surf, 20 + bw2, y, bw2, 32, "Abandon", "bounty_drop", o["id"],
                         on=mine is not None and not done)
-        self._d2_button(surf, 24 + 2 * bw2, y, bw2, 32, "Refresh", "bounty_reroll",
-                        on=p.gold >= cost)
+        self._d2_button(surf, 24 + 2 * bw2, y, bw2, 32, "Refresh", "bounty_reroll", on=True)
         y += 34
-        self.text(surf, self.f10, "refresh costs %d gold      you have %d" % (cost, p.gold),
+        self.text(surf, self.f10, ("refreshing is free      you have %d gold" % p.gold) if not cost
+                  else ("refresh costs %d gold      you have %d" % (cost, p.gold)),
                   (165, 150, 110), 0, y, "center", W)
         self._close_button(surf, (W - 42, H - 46, 32, 32), 0, "bounties")
 
