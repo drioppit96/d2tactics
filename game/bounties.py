@@ -1,6 +1,6 @@
 """The Tree of Inifuss: bounties, the thing Act 6 is for.
 
-Diablo's story ends when Baal falls. The Arreat Summit is where this game carries on, and the
+Diablo's story ends when Baal falls. Sanctuary is where this game carries on, and the
 Tree is what it carries on with: a board of six contracts against the world below, refreshed for
 gold, three of them in hand at a time.
 

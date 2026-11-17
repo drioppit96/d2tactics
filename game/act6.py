@@ -1,15 +1,16 @@
-"""Act 6: the Arreat Summit.
+"""Act 6: Sanctuary.
 
 Diablo ends when Baal falls. This game carries on: once the Lord of Destruction is dead, a red
-portal called Destruction's End opens in Harrogath and leads to the Summit above - a town of its
-own, where the Tree of Inifuss hands out bounties.
+portal called Destruction's End opens in Harrogath and leads to Sanctuary above - a town of
+its own, where the Tree of Inifuss hands out bounties. It is named apart from D2's own Arreat
+Summit (Levels.txt 120, "Rocky Summit") so the two never stand for one another.
 
 It is a town, so the usual town rules hold: nothing spawns there, the party rests, and the stash
-and the waypoint work. The layout is assets/maps/arreat_summit.json, a hand-made map that stamps
+and the waypoint work. The layout is assets/maps/sanctuary.json, a hand-made map that stamps
 Diablo's own mountaintop preset and then changes it (game/custommap.py).
 
 Act 6 is per difficulty, like everything else the hero's quests track: beating Baal in Normal
-opens the Summit in Normal, and Nightmare and Hell each want their own Baal.
+opens Sanctuary in Normal, and Nightmare and Hell each want their own Baal.
 
     available(player)       is the Summit open for this hero, in this difficulty
     ensure_portal(world)    the portal in Harrogath, once Baal is dead
@@ -17,7 +18,7 @@ opens the Summit in Normal, and Nightmare and Hell each want their own Baal.
 """
 from .acts import SUMMIT
 
-MAP_NAME = "arreat_summit"
+MAP_NAME = "sanctuary"          # assets/maps/sanctuary.json, bound by its "level": 137
 HARROGATH = 109
 WORLDSTONE = 132          # the Worldstone Chamber, where Baal falls
 PORTAL_NAME = "Destruction's End"
@@ -37,7 +38,7 @@ def blocked(player):
     """The line to show someone who tries to go up before Baal is dead, or None."""
     if available(player):
         return None
-    return "The way to the Summit is shut. Baal still holds the Worldstone."
+    return "The way to Sanctuary is shut. Baal still holds the Worldstone."
 
 
 def ensure_portal(world):
@@ -66,7 +67,7 @@ def open_on_baal_death(world):
     before = len(world.objects)
     _place(world, SUMMIT, p.pos, prefer=world._free_cell_near((p.x + 2, p.y + 2), 4))
     if len(world.objects) > before:
-        world.log("The Worldstone is broken. %s opens above you - the Arreat Summit waits."
+        world.log("The Worldstone is broken. %s opens above you - Sanctuary waits."
                   % PORTAL_NAME, COLOR)
 
 
@@ -104,7 +105,7 @@ def _only_three(world):
     """At most one of each Ancient on the Summit.
 
     The map a player is running may not be the one the game ships: the map editor writes
-    maps/arreat_summit.json beside it, and that copy is used when it is the newer of the two. A
+    maps/sanctuary.json beside it, and that copy is used when it is the newer of the two. A
     copy that stamps the mountaintop preset twice, or that was saved with the statues already in
     its own monster list, puts two or three Korlics on the plateau instead of one - and because
     the Summit is a town where nothing respawns, they simply pile up.
@@ -169,4 +170,4 @@ def on_enter(world, lid):
             seen.add(SUMMIT)
         if not getattr(p, "_summit_seen", False):
             p._summit_seen = True
-            world.log("You stand on the Arreat Summit. The Tree of Inifuss waits below.", COLOR)
+            world.log("You stand in Sanctuary. The Tree of Inifuss waits below.", COLOR)

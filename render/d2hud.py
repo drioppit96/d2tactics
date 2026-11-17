@@ -354,7 +354,7 @@ class D2Hud:
             if cur is None or cur is it:
                 continue
             try:
-                out.append([("Currently equipped", (170, 215, 255))] + list(cur.describe_lines(p)))
+                out.append(list(cur.describe_lines(p)))   # the blue box says what it is
             except Exception:
                 pass
         return out

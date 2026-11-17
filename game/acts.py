@@ -6,7 +6,7 @@ from . import act1
 # level id -> act
 ACT_RANGES = {1: range(1, 40), 2: range(40, 75), 3: range(75, 103), 4: range(103, 109), 5: range(109, 138)}
 TOWNS = {1: 1, 2: 40, 3: 75, 4: 103, 5: 109}
-# Act 6 (this game's own): the Arreat Summit, a town where the Tree of Inifuss hands out bounties.
+# Act 6 (this game's own): Sanctuary, a town where the Tree of Inifuss hands out bounties.
 # It is laid out by hand rather than generated, and built from Act 5's tiles and drawn with Act 5's
 # palette, so inside the code it counts as an Act 5 level that also happens to be a town.
 # Its layout is read from the player's own install at runtime, never shipped (see .gitignore).
@@ -39,7 +39,7 @@ WAYPOINTS = {
     3: [75, 79, 80, 77, 76, 81, 83, 101],
     4: [103, 106, 107],
     5: [109, 111, 112, 113, 115, 117, 118, 123, 129],
-    6: [SUMMIT],                                  # Act 6 has one waypoint: the Arreat Summit
+    6: [SUMMIT],                                  # Act 6 has one waypoint: Sanctuary
 }
 # extra waypoints of this game at the boss floors (farming): the Countess, Andariel; Radament, Duriel;
 # Mephisto; Diablo; Pindleskin, Baal

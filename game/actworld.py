@@ -63,7 +63,7 @@ class ActInfo:
         if rift.is_rift(lid):
             return rift.name(lid)
         if lid == SUMMIT:
-            return "Arreat Summit"
+            return "Sanctuary"
         sa = self._side(lid)
         if sa:
             return sa["name"]

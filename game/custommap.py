@@ -125,17 +125,24 @@ def for_level(level_id):
         mine = set(list_maps())
         paths += [os.path.join(GAME_MAPS, f) for f in sorted(os.listdir(GAME_MAPS))
                   if f.lower().endswith(".json") and f not in mine]
+    # Two files can claim the same level - a map the game renamed leaves your copy behind under the
+    # old name, and both say "level": 137. The newer revision is the one that wins; where they are
+    # level, your own copy does, because `paths` lists yours first.
+    best, best_rev = None, None
     for path in paths:
         try:
             mt = os.path.getmtime(path)
             ent = _cache.get(path)
             if ent is None or ent[0] != mt:
                 ent = _cache[path] = (mt, load(path))
-            if int(ent[1].get("level") or 0) == level_id:
-                return ent[1]
+            if int(ent[1].get("level") or 0) != level_id:
+                continue
+            rev = int(ent[1].get("revision") or 0)
+            if best is None or rev > best_rev:
+                best, best_rev = ent[1], rev
         except Exception:
             continue
-    return None
+    return best
 
 
 def tileset(kit, lvltype):

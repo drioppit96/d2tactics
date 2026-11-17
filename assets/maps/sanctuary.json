@@ -1,6 +1,6 @@
 {
  "version": 1,
- "name": "Arreat Summit",
+ "name": "Sanctuary",
  "act": 5,
  "lvltype": "Act 5 - Barricade",
  "width": 20,
@@ -995,5 +995,5 @@
   120
  ],
  "exits": [],
- "revision": 4
+ "revision": 5
 }
