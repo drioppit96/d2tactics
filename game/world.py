@@ -871,8 +871,12 @@ class World(SkillCaster, ItemActions):
                 return True
         p.face(*npc.pos)
         npc.face(*p.pos)
-        pages = self.talk_to(npc, menu=False)
-        if npc.npc in HEALERS:
+        from .acts import SUMMIT as _SUM
+        quiet = npc.npc == "tyrael3" and getattr(self, "level_id", None) == _SUM
+        pages = None if quiet else self.talk_to(npc, menu=False)
+        from .acts import SUMMIT
+        up_top = getattr(self, "level_id", None) == SUMMIT
+        if npc.npc in HEALERS and (npc.npc != "tyrael3" or up_top):
             # Tyrael mends the whole party, hirelings and all: there is no one else up there
             from . import tactics
             crowd = list(tactics.party(self)) if npc.npc == "tyrael3" and hasattr(tactics, "party") else [p]

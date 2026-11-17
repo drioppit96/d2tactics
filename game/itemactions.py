@@ -38,7 +38,7 @@ NPC_OPTIONS = {
     "larzuk": ["Talk", "Trade", "Recharge", "Imbue Sockets"], "malah": ["Talk", "Trade"], "drehya": ["Talk", "Trade", "Gamble"],
     "qual-kehk": ["Talk", "Hire"], "nihlathak": ["Talk"], "cain6": ["Talk", "Identify Items"],
     # Sanctuary: Tyrael mends the party, Hadriel deals, Izual keeps the arms
-    "tyrael3": ["Trade"],                       # he mends you the moment you speak to him
+    "tyrael3": ["Talk"],
     "malachai": ["Talk", "Trade", "Gamble"],
     "izualghost": ["Talk", "Trade", "Recharge"],
 }
@@ -73,7 +73,13 @@ def npc_options(world, npc_id):
         grant_imbue(world)              # (heroes who returned the Malus before Imbue existed)
     if npc_id == "charsi" and imbue_ready(world):
         opts.insert(2, "Imbue")
-    if npc_id in ("tyrael3", "difficulty"):
+    from .acts import SUMMIT
+    up_top = getattr(world, "level_id", None) == SUMMIT
+    if npc_id == "tyrael3" and up_top:
+        # Sanctuary's Tyrael keeps the shelves and mends you as you walk up; he has nothing to
+        # say and no road onward, because the road onward is Harrogath's Tyrael, down below
+        return ["Trade"]
+    if npc_id == "difficulty" or (npc_id == "tyrael3" and not up_top):
         # once Baal is dead: travel on to the next difficulty (or back to one you have played)
         cur = getattr(p, "difficulty", "normal")
         for d in getattr(p, "diff_unlocked", None) or ["normal"]:

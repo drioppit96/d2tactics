@@ -1203,12 +1203,11 @@ class D2Hud:
     QUEST_SLOTS = [(x + 4, y + 4) for x, y in QUEST_SOCKETS]
     QUEST_ORDER = {1: ["den", "blood_raven", "malus", "cain", "tower", "andariel"]}         # D2's quest log order
     QUEST_CLOSE = (278, 389, 32, 32)
-    #: Act 6's page: three contracts, bigger brackets, and room to read what they say
-    QUEST6_W, QUEST6_H = 430, 470
-    QUEST6_SPLIT = 180
-    QUEST6_SOCK = (104, 124)
-    QUEST6_PITCH = 118
-    QUEST6_X0, QUEST6_Y0 = 40, 40
+    #: the quest log at the size this game wants: bigger brackets and room to read what they say
+    QUESTBIG_W, QUESTBIG_H = 430, 512
+    QUESTBIG_SOCK = (104, 124)
+    QUESTBIG_PITCH = (118, 134)
+    QUESTBIG_X0, QUESTBIG_Y0 = 48, 40
     WP_CLOSE = (272, 385, 32, 32)
 
     def _quest_icon(self, act, n):
@@ -1312,13 +1311,12 @@ class D2Hud:
         if getattr(self, "q_act", None) not in acts:
             self.q_act = here if here in acts else acts[-1]
         act = self.q_act
-        # Act 6's page is its own size: three contracts want room to be read, not six quest slots
-        big = act == 6
-        W, H = (self.QUEST6_W, self.QUEST6_H) if big else (320, 432)
-        if big:
-            self._panel_frame(surf, bg or self.frames.get("blank"), W, H, split=self.QUEST6_SPLIT)
-        else:
-            self._panel_bg(surf, 0, bg or self.frames.get("blank") or self.frames["invchar6"], 0)
+        # one size for every act: Act 6 lists three contracts in a row, the rest two rows of three
+        W, H = self.QUESTBIG_W, self.QUESTBIG_H
+        px, py = self.QUESTBIG_PITCH
+        rows = 1 if act == 6 else 2
+        split = self.QUESTBIG_Y0 + rows * py - 6
+        self._panel_frame(surf, bg or self.frames.get("blank"), W, H, split=split)
         self._act_tabs(surf, acts, act, "q_tab", "expquesttabs")
         if act == 6:
             entries = self._bounty_journal(p)
@@ -1339,14 +1337,11 @@ class D2Hud:
         seen = p.__dict__.setdefault("_quest_anim", {})
         for i, ent in enumerate(entries[:6]):
             title, status, text = ent[:3]
-            sw, sh = (self.QUEST6_SOCK if big else (80, 95))
-            if big:
-                sx, sy = self.QUEST6_X0 + i * self.QUEST6_PITCH, self.QUEST6_Y0
-                x, y = sx, sy
-            else:
-                sx, sy = self.QUEST_SOCKETS[i]
-                x, y = self.QUEST_SLOTS[i]
-            if big and sockets:
+            sw, sh = self.QUESTBIG_SOCK
+            sx = self.QUESTBIG_X0 + (i % 3) * px
+            sy = self.QUESTBIG_Y0 + (i // 3) * py
+            x, y = sx, sy
+            if sockets:
                 f = sockets[1 if i == sel and len(sockets) > 1 else 0]
                 if f is not None:
                     key = ("qsock", id(f), sw, sh)
@@ -1354,15 +1349,11 @@ class D2Hud:
                     if sc is None:
                         sc = self._bg_cache[key] = pygame.transform.smoothscale(f, self.P(sw, sh))
                     surf.blit(sc, self.P(sx, sy))
-            elif sockets:
-                f = sockets[1 if i == sel and len(sockets) > 1 else 0]
-                if f is not None:
-                    self.put(surf, f, sx, sy)
             else:
                 pygame.draw.rect(surf, (200, 170, 90) if i == sel else (60, 55, 45), self.R(sx, sy, 80, 95), 2)
             icon = None if act == 6 else self._quest_icon(act, i + 1)
             if act == 6:
-                plaque = self._bounty_icon((entries[i][3] if len(entries[i]) > 3 else None) or "skulls")
+                plaque = self._bounty_icon((ent[3] if len(ent) > 3 else None) or "skulls")
                 if plaque is not None:
                     pw, ph = sw - 26, sh - 32
                     key = ("qbic", id(plaque), pw, ph)
@@ -1382,20 +1373,25 @@ class D2Hud:
                     idx = 25 if status != "none" else 26
                 f = icon[min(idx, len(icon) - 1)]
                 if f is not None:
-                    self.put(surf, f, x, y)
+                    iw, ih = sw - 26, sh - 32
+                    key = ("qic", id(f), iw, ih)
+                    sc = self.__dict__.setdefault("_bg_cache", {}).get(key)
+                    if sc is None:
+                        sc = self._bg_cache[key] = pygame.transform.smoothscale(f, self.P(iw, ih))
+                    surf.blit(sc, self.P(x + 13, y + 20))
             else:
-                box = pygame.Surface((int(72 * self.s), int(86 * self.s)), pygame.SRCALPHA)
+                box = pygame.Surface(self.P(sw - 26, sh - 32), pygame.SRCALPHA)
                 box.fill((50, 40, 25, 230) if status not in ("done", "none") else ((40, 40, 40, 230) if status == "done" else (12, 12, 12, 230)))
-                surf.blit(box, self.P(x, y))
+                surf.blit(box, self.P(x + 13, y + 20))
                 self.text(surf, self.f30, "+" if status == "done" else ("?" if status == "none" else "!"),
                           GREY if status == "done" else ((230, 200, 120) if status != "none" else (80, 75, 65)),
-                          x, y + 26, "center", 72)
+                          x + 13, y + 52, "center", sw - 26)
             self.region(sx, sy, sw, sh, "q_pick", (act, i))
             if pygame.Rect(int(sx), int(sy), sw, sh).collidepoint((int(mx), int(my))):
                 self.hover_lines = [(title, GOLD if status != "none" else GREY)]
         if entries:
             title, status, text = entries[sel][:3]
-            ty = (self.QUEST6_SPLIT + 10) if big else 234
+            ty = split + 12
             self.text(surf, self.f16, title, WHITE if status != "none" else GREY, 0, ty, "center", W)
             if status == "done":
                 text = "Quest completed."
@@ -1420,7 +1416,7 @@ class D2Hud:
         # Play Quest Dialogue (D2 replays what the quest giver said): here the quest's text goes to the log
         ql = self.frames.get("questlast")
         if entries and entries[sel][1] != "none":
-            bx, by = (W - 94, H - 43) if big else (226, 389)
+            bx, by = W - 94, H - 43
             hot = pygame.Rect(bx, by, 32, 32).collidepoint((int(mx), int(my)))
             if ql:
                 f = ql[1 if hot and len(ql) > 1 else 0]
@@ -1429,7 +1425,7 @@ class D2Hud:
             self.region(bx, by, 32, 32, "q_dialogue", entries[sel])
             if hot:
                 self.hover_lines = [("Play Quest Dialogue", WHITE)]
-        self._close_button(surf, (W - 42, H - 43, 32, 32) if big else self.QUEST_CLOSE, 0, "quests")
+        self._close_button(surf, (W - 42, H - 43, 32, 32), 0, "quests")
 
     # ------------------------------------------------------------ vendors
     STORE_GRID = (15, 62)

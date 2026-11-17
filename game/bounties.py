@@ -77,8 +77,15 @@ def _difficulty(world):
     return (getattr(getattr(world, "content", None), "difficulty", "normal") or "normal").lower()
 
 
+#: contract kinds that still exist. A board is kept across saves, so one written by an older
+#: build can be carrying a kind this one no longer has ("clear", which asked you to empty a
+#: whole area): those are dropped rather than left on the Tree for ever.
+KINDS = (CULL, HUNT, BOSS, ORGAN, GEM, RUNE)
+
+
 def _wipe_if_stale(world):
-    """A board written for Normal means nothing in Nightmare."""
+    """A board written for Normal means nothing in Nightmare, and a kind the game has dropped
+    means nothing at all."""
     p = world.player
     init(p)
     diff = _difficulty(world)
@@ -86,6 +93,17 @@ def _wipe_if_stale(world):
     if b is not None and b.get("diff") != diff:
         p.bounty_board = None
         p.bounties = [x for x in p.bounties if x.get("diff") == diff]
+        b = None
+    gone = [x for x in p.bounties if x.get("kind") not in KINDS]
+    if gone:
+        p.bounties = [x for x in p.bounties if x.get("kind") in KINDS]
+        world.log("%d contract%s the Tree no longer writes %s struck off." % (
+            len(gone), "" if len(gone) == 1 else "s", "was" if len(gone) == 1 else "were"), GREY)
+    if b is not None and any(o.get("kind") not in KINDS for o in b.get("offers", ())):
+        rng, areas, taken = world.rng, _areas(world), set()
+        b["offers"] = [o if o.get("kind") in KINDS
+                       else _distinct(world, rng, 800 + i, areas, taken)
+                       for i, o in enumerate(b["offers"])]
 
 
 # ---------------------------------------------------------------- making the offers
@@ -173,7 +191,7 @@ def _make_offer(world, rng, n, areas):
     else:
         roster = _roster(world, lid)
         mid = rng.choice(roster) if roster else "fallen1"
-        count = rng.choice((8, 10, 12, 15))
+        count = rng.choice((30, 60, 100))
         o.update(target=mid, count=count,
                  title="Cull the %s" % _monster_name(world, mid),
                  text="Kill %d %s, wherever you find them."
