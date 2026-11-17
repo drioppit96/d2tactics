@@ -1513,7 +1513,7 @@ class Game:
                         if h.mate is not None:
                             h.show_inv = True
                             h.show_char = h.show_quests = False
-                            for k in ("show_cube", "show_merc", "show_waypoints", "show_loot", "show_skills"):
+                            for k in ("show_cube", "show_merc", "show_waypoints", "show_bounties", "show_loot", "show_skills"):
                                 if hasattr(h, k):
                                     setattr(h, k, False)
                             h.store = None
@@ -1600,6 +1600,14 @@ class Game:
                 return
             elif action == "waypoints":
                 h.show_waypoints = False
+            elif action == "bounties":
+                h.show_bounties = False
+            elif action == "bounty_sel":
+                h.bounty_sel = arg
+            elif action in ("bounty_take", "bounty_claim", "bounty_drop", "bounty_reroll"):
+                from game import bounties as _bo
+                {"bounty_take": _bo.accept, "bounty_claim": _bo.claim,
+                 "bounty_drop": _bo.abandon}.get(action, lambda w, a: _bo.reroll(w))(w, arg)
             elif action == "wp_all":                      # TEST ONLY: remove later
                 from game.acts import WAYPOINTS
                 p = w.player
@@ -1913,10 +1921,11 @@ class Game:
             elif w.held is not None:
                 w.drop_held()
             elif h.show_inv or h.show_char or getattr(h, "show_skills", False) or getattr(h, "show_quests", False) \
-                    or getattr(h, "show_waypoints", False) or getattr(h, "show_cube", False):
+                    or getattr(h, "show_waypoints", False) or getattr(h, "show_bounties", False) or getattr(h, "show_cube", False):
                 h.show_inv = h.show_char = False
                 h.show_cube = False
                 h.show_waypoints = False
+                h.show_bounties = False
                 if hasattr(h, "show_skills"):
                     h.show_skills = False
                 if hasattr(h, "show_quests"):
@@ -1953,7 +1962,7 @@ class Game:
             h.show_loot = not getattr(h, "show_loot", False)        # loot window (a chest of the area's drops)
             if h.show_loot:
                 h.show_char = h.show_quests = False
-                for k in ("show_cube", "show_merc", "show_waypoints"):
+                for k in ("show_cube", "show_merc", "show_waypoints", "show_bounties"):
                     if hasattr(h, k):
                         setattr(h, k, False)
                 h.store = None
@@ -2271,6 +2280,9 @@ class Game:
         if getattr(self.world, "open_stash", False):
             self.world.open_stash = False
             self.open_stash()
+        if getattr(self.world, "open_bounties", False):
+            self.world.open_bounties = False
+            self.hud.show_bounties = True
         h = self.hud
         if getattr(h, "show_cube", False) and getattr(getattr(h, "cube_item", None), "code", "") == "stash":
             from game.grid import chebyshev as _cheb

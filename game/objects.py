@@ -445,6 +445,9 @@ def operate(world, o):
     if kind == "stash":
         world.open_stash = True
         return True
+    if kind == "bounty":
+        world.open_bounties = True
+        return True
     if o["used"]:
         return False
     if kind == "lever":
@@ -736,6 +739,8 @@ def tooltip(o):
         return [o["name"], "Click to " + ("close" if o.get("open") else "open")]
     if k == "stash":
         return ["Stash", "Click to open"]
+    if k == "bounty":
+        return [o["name"], "Click for contracts"]
     if k == "seal":
         return ["Seal", "Click to open"]
     if k == "lever":
@@ -751,6 +756,6 @@ def clickable(o):
     k = o["kind"]
     if k in ("decor", "drain"):
         return False
-    if k in ("door", "stash"):
+    if k in ("door", "stash", "bounty"):
         return True
     return not o["used"]

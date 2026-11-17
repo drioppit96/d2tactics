@@ -406,6 +406,8 @@ def on_monster_killed(world, unit=None):
         quests2.on_killed(world, unit)
         quests345.on_killed(world, unit)
         rift.on_killed(world, unit)
+        from . import bounties
+        bounties.on_killed(world, unit)
     if boss == "blood_raven" and q["blood_raven"] in ("none", "active"):
         q["blood_raven"] = "cleared"
         world.log("Blood Raven is slain! Return to Kashya.", QUEST_COLOR)

@@ -4,6 +4,7 @@ Everything is laid out in D2's 800x600 coordinates and scaled to the window heig
 so the control panel, globes, belt, character sheet, inventory and skill tree sit
 exactly where they do in the original.
 """
+import os
 import pygame
 
 from d2.dc6 import DC6
@@ -145,6 +146,7 @@ class D2Hud:
         self.minimaps = {}
         self.regions = []
         self.hover_lines = None
+        self.hover_item = None
         self.skill_page = 1
         self.scaled = {}
         self.s = 1.0
@@ -262,6 +264,7 @@ class D2Hud:
         self.lw = W / self.s
         self.regions = []
         self.hover_lines = None
+        self.hover_item = None
         self.mouse = self.logical(mouse)
         self.world = world
         p = world.player
@@ -273,6 +276,8 @@ class D2Hud:
             self._draw_store(surf, world)
         elif getattr(self, "show_cube", False) and self.cube_item is not None:
             self._draw_cube(surf, world)
+        elif getattr(self, "show_bounties", False):
+            self._draw_bounties(surf, world)
         elif getattr(self, "show_waypoints", False):
             self._draw_waypoints(surf, world)
         elif getattr(self, "show_merc", False) and getattr(p, "merc", None):
@@ -321,11 +326,38 @@ class D2Hud:
             else:
                 self.tooltip(surf, list(zip(texts, list(cols) + [WHITE] * len(texts))), self.mouse)
         if self.hover_lines:
-            self.tooltip(surf, self.hover_lines, self.mouse)
+            r = self.tooltip(surf, self.hover_lines, self.mouse)
+            for n, cmp_lines in enumerate(self._equipped_compare(p)):
+                # D2 never showed you what you were already wearing: this does, in blue, beside it
+                w2 = max((self.f16.width(t) for t, _ in cmp_lines), default=10) + 14
+                x2 = r.right + 8 + n * (w2 + 8)
+                if x2 + w2 > self.lw - 4:
+                    x2 = r.x - 8 - w2 - n * (w2 + 8)
+                self.tooltip(surf, cmp_lines, None, at_xy=(x2, r.y), bg=(22, 52, 86, 225))
         held = getattr(world, "held", None)
         if held is not None:
             self._draw_held(surf, held)
         self._draw_cursor(surf)
+
+    def _equipped_compare(self, p):
+        """What this hero is already wearing in the slot the hovered item would go in."""
+        it = getattr(self, "hover_item", None)
+        if it is None or p is None or getattr(it, "kind", "equip") != "equip":
+            return []
+        slot = getattr(it, "slot", None)
+        if not slot:
+            return []
+        slots = ["ring1", "ring2"] if slot in ("ring", "ring1", "ring2") else [slot]
+        out = []
+        for s in slots:
+            cur = (p.equipment or {}).get(s)
+            if cur is None or cur is it:
+                continue
+            try:
+                out.append([("Currently equipped", (170, 215, 255))] + list(cur.describe_lines(p)))
+            except Exception:
+                pass
+        return out
 
     # ------------------------------------------------------------ quest tracker
     def _quest_slot(self, qid):
@@ -477,7 +509,7 @@ class D2Hud:
     def _other_left_panel(self):
         return bool(self.show_char or self.show_quests or getattr(self, "show_cube", False)
                     or getattr(self, "show_merc", False) or self.store is not None
-                    or getattr(self, "show_waypoints", False))
+                    or getattr(self, "show_waypoints", False) or getattr(self, "show_bounties", False))
 
     def _left_panel_open(self):
         return self._other_left_panel() or (getattr(self, "loot_list", None) is not None) or \
@@ -697,6 +729,7 @@ class D2Hud:
                         self._cooldown_mark(surf, potions.cooldown_of(col[r]), bx, by)
                     if pygame.Rect(int(bx), int(by), 29, 29).collidepoint((int(mx), int(my))):
                         self.hover_lines = col[r].describe_lines(p)
+                        self.hover_item = col[r]
                 self.region(bx, by, 29, 29, "potion", (i, r))
 
     def _draw_target_bar(self, surf, m, scene):
@@ -738,7 +771,7 @@ class D2Hud:
                 self.text(surf, self.f16, t, c, self.lw / 2.0 - tw / 2.0, ly, "center", tw)
                 ly += 15
 
-    def tooltip(self, surf, lines, at, left_of=None, top=False):
+    def tooltip(self, surf, lines, at, left_of=None, top=False, bg=None, at_xy=None):
         """lines: [(text, colour)] - drawn like D2's item description box."""
         if lines and isinstance(lines, tuple) and len(lines) == 2 and isinstance(lines[0], list):
             texts, cols = lines
@@ -754,16 +787,25 @@ class D2Hud:
                 x = left_of.x + left_of.w + 12
             x = min(max(4, x), self.lw - w - 4)
             y = min(max(4, left_of.y + left_of.h / 2 - h / 2), 600 - 110 - h)
+        elif at is None:
+            x, y = 4, 4                     # at_xy below decides where it really goes
         else:
             x = min(max(4, at[0] - w / 2), self.lw - w - 4)
             y = at[1] - h - 18
             if y < 4:
                 y = at[1] + 24
-        bg = pygame.Surface((int(w * self.s), int(h * self.s)), pygame.SRCALPHA)
-        bg.fill((0, 0, 0, 205))
-        surf.blit(bg, self.P(x, y))
+        if at_xy is not None:
+            x, y = at_xy
+            x = min(max(4, x), self.lw - w - 4)
+            y = min(max(4, y), 600 - h - 4)
+        box = pygame.Surface((int(w * self.s), int(h * self.s)), pygame.SRCALPHA)
+        box.fill(bg or (0, 0, 0, 205))
+        surf.blit(box, self.P(x, y))
+        if bg:
+            pygame.draw.rect(surf, (150, 200, 240), self.R(x, y, w, h), 1)
         for i, (t, c) in enumerate(lines):
             self.text(surf, self.f16, t, c, x, y + 4 + i * lh, "center", w)
+        return pygame.Rect(int(x), int(y), int(w), int(h))
 
     # ------------------------------------------------------------ control panel
     def _draw_control_panel(self, surf, world, scene):
@@ -848,6 +890,7 @@ class D2Hud:
                 self._icon(surf, col[0], bx, by, 29, 29)
                 if pygame.Rect(int(bx), int(by), 29, 29).collidepoint(mpos):
                     self.hover_lines = col[0].describe_lines(p)
+                    self.hover_item = col[0]
             bx, by = bx0 + i * 31, by0
             if col and combat:
                 self._cooldown_mark(surf, potions.cooldown_of(col[0]), bx, by)
@@ -1540,6 +1583,203 @@ class D2Hud:
         x, y, cw, ch = self.WP_CLOSE
         self._close_button(surf, (x + wide, y + 36 * extra, cw, ch), 0, "waypoints")
 
+    def _button(self, surf, x, y, w, h, label, action, arg=None, on=True, tone=(70, 60, 40)):
+        """A small panel button: the bounty board's Take / Claim / Give up / Reroll."""
+        mx, my = self.mouse
+        hot = on and pygame.Rect(x, y, w, h).collidepoint((int(mx), int(my)))
+        box = pygame.Surface((int(w * self.s), int(h * self.s)), pygame.SRCALPHA)
+        if not on:
+            box.fill((28, 26, 22, 170))
+        else:
+            box.fill(tuple(min(255, c + 45) for c in tone) + (235,) if hot else tone + (210,))
+        surf.blit(box, self.P(x, y))
+        self.text(surf, self.f10, label, WHITE if on else (110, 105, 95), x, y + (h - 10) // 2,
+                  "center", w)
+        if on:
+            self.region(x, y, w, h, action, arg)
+
+    BOUNTY_W, BOUNTY_H = 400, 516
+    BOUNTY_SOCK = (88, 104)                 # D2's 80x95 quest bracket, enlarged for the wider board
+    BOUNTY_COLS, BOUNTY_ROWS = 4, 2
+    BOUNTY_X0, BOUNTY_Y0 = 16, 44
+    BOUNTY_PITCH = (92, 112)
+
+    def _panel_frame(self, surf, bg, w, h):
+        """A D2 panel of any size: the four corners of the 320x432 art kept sharp, its edges and
+        middle tiled outwards. The quest and waypoint panels are this art at its native size."""
+        key = ("frame", w, h, id(bg))
+        comp = self.__dict__.setdefault("_bg_cache", {}).get(key)
+        if comp is None:
+            base = pygame.Surface((320, 432), pygame.SRCALPHA)
+            base.fill((0, 0, 0, 0))
+            for i, (x, y) in enumerate([(0, 0), (256, 0), (0, 256), (256, 256)]):
+                if bg and i < len(bg) and bg[i] is not None:
+                    base.blit(bg[i], (x, y))
+            c = 96                                      # corner block kept at native size
+            comp = pygame.Surface((w, h), pygame.SRCALPHA)
+            mid = base.subsurface(pygame.Rect(c, c, 320 - 2 * c, 432 - 2 * c)).copy()
+            for y in range(c, h - c, mid.get_height()):
+                for x in range(c, w - c, mid.get_width()):
+                    comp.blit(mid, (x, y))
+            top = base.subsurface(pygame.Rect(c, 0, 320 - 2 * c, c)).copy()
+            bot = base.subsurface(pygame.Rect(c, 432 - c, 320 - 2 * c, c)).copy()
+            for x in range(c, w - c, top.get_width()):
+                comp.blit(top, (x, 0)); comp.blit(bot, (x, h - c))
+            lef = base.subsurface(pygame.Rect(0, c, c, 432 - 2 * c)).copy()
+            rig = base.subsurface(pygame.Rect(320 - c, c, c, 432 - 2 * c)).copy()
+            for y in range(c, h - c, lef.get_height()):
+                comp.blit(lef, (0, y)); comp.blit(rig, (w - c, y))
+            for sx, sy, dx, dy in ((0, 0, 0, 0), (320 - c, 0, w - c, 0),
+                                   (0, 432 - c, 0, h - c), (320 - c, 432 - c, w - c, h - c)):
+                comp.blit(base, (dx, dy), pygame.Rect(sx, sy, c, c))
+            self._bg_cache[key] = comp
+        self.put(surf, comp, 0, 0)
+        self.region(0, 0, w, h, "panel")
+
+    def _bounty_icon(self, name):
+        """One of the carved plaques in assets/ui/bounty, scaled into the bracket."""
+        cache = self.__dict__.setdefault("_bounty_icons", {})
+        if name not in cache:
+            img = None
+            try:
+                path = os.path.join("assets", "ui", "bounty", "%s.png" % name)
+                if os.path.exists(path):
+                    img = pygame.image.load(path).convert()
+            except Exception:
+                img = None
+            cache[name] = img
+        return cache[name]
+
+    def _d2_button(self, surf, x, y, w, h, label, action, arg=None, on=True):
+        """The medium D2 button the character screen uses for its difficulty buttons."""
+        mx, my = self.mouse
+        hot = on and pygame.Rect(x, y, w, h).collidepoint((int(mx), int(my)))
+        art = self.frames.get("mediumbuttonblank")
+        if art:
+            f = art[1 if hot and len(art) > 1 else 0]
+            if f is not None:
+                key = ("btn", id(f), w, h)
+                sc = self.__dict__.setdefault("_bg_cache", {}).get(key)
+                if sc is None:
+                    sc = self._bg_cache[key] = pygame.transform.smoothscale(f, self.P(w, h))
+                surf.blit(sc, self.P(x, y))
+        else:
+            box = pygame.Surface(self.P(w, h), pygame.SRCALPHA)
+            box.fill((70, 62, 48, 230) if hot else (44, 40, 32, 215))
+            surf.blit(box, self.P(x, y))
+        col = WHITE if on else (112, 106, 96)
+        self.text(surf, self.f16, label, col, x, y + (h - 14) // 2, "center", w)
+        if on:
+            self.region(x, y, w, h, action, arg)
+
+    def _draw_bounties(self, surf, world):
+        """The Tree of Inifuss: eight carved contracts in two rows, three of them in your hands."""
+        from game import bounties
+        p = world.player
+        b = bounties.board(world)
+        held = bounties.held(p)
+        held_ids = {x["id"] for x in held}
+        W, H = self.BOUNTY_W, self.BOUNTY_H
+        self._panel_frame(surf, self.frames.get("questbackground") or self.frames.get("blank"), W, H)
+        self.text(surf, self.f16, "Tree of Inifuss", GOLD, 0, 12, "center", W)
+        self.text(surf, self.f10, "%d of %d contracts taken" % (len(held), bounties.MAX_HELD),
+                  (170, 162, 145), 0, 30, "center", W)
+
+        offers = b["offers"][:self.BOUNTY_COLS * self.BOUNTY_ROWS]
+        if getattr(self, "bounty_sel", None) is None or self.bounty_sel >= len(offers):
+            self.bounty_sel = 0
+        sock = self.frames.get("questsockets")
+        sw, sh = self.BOUNTY_SOCK
+        px, py = self.BOUNTY_PITCH
+        mx, my = self.mouse
+        for i, o in enumerate(offers):
+            col, row = i % self.BOUNTY_COLS, i // self.BOUNTY_COLS
+            x, y = self.BOUNTY_X0 + col * px, self.BOUNTY_Y0 + row * py
+            taken = o["id"] in held_ids
+            if sock:
+                # frame 1 is D2's gold-outlined bracket: that is what marks a contract you hold
+                f = sock[1 if taken and len(sock) > 1 else 0]
+                if f is not None:
+                    key = ("sock", id(f), sw, sh)
+                    sc = self.__dict__.setdefault("_bg_cache", {}).get(key)
+                    if sc is None:
+                        sc = self._bg_cache[key] = pygame.transform.smoothscale(f, self.P(sw, sh))
+                    surf.blit(sc, self.P(x, y))
+            else:
+                pygame.draw.rect(surf, (200, 170, 90) if taken else (60, 55, 45), self.R(x, y, sw, sh), 2)
+            icon = self._bounty_icon(o.get("icon") or "skulls")
+            if icon is not None:
+                # the bracket's arch is part of the art: sit the plaque inside it, not over it
+                key = ("bic", id(icon), sw - 26, sh - 32)
+                sc = self.__dict__.setdefault("_bg_cache", {}).get(key)
+                if sc is None:
+                    sc = self._bg_cache[key] = pygame.transform.smoothscale(icon, self.P(sw - 26, sh - 32))
+                surf.blit(sc, self.P(x + 13, y + 20))
+            done = taken and bounties.complete(next(z for z in held if z["id"] == o["id"]))
+            if done:
+                tick = pygame.Surface(self.P(sw - 26, 13), pygame.SRCALPHA)
+                tick.fill((12, 40, 12, 210))
+                surf.blit(tick, self.P(x + 13, y + sh - 33))
+                self.text(surf, self.f10, "done", (150, 230, 150), x + 13, y + sh - 32, "center", sw - 26)
+            if i == self.bounty_sel:
+                pygame.draw.rect(surf, (235, 215, 140), self.R(x - 2, y - 2, sw + 4, sh + 4), 2)
+            self.region(x, y, sw, sh, "bounty_sel", i)
+
+        y = self.BOUNTY_Y0 + self.BOUNTY_ROWS * py + 6
+        o = offers[self.bounty_sel] if offers else None
+        if o is None:
+            return
+        mine = next((z for z in held if z["id"] == o["id"]), None)
+        self.text(surf, self.f16, o["title"], GOLD, 0, y, "center", W)
+        y += 22
+        self.text(surf, self.f10, o["text"], (198, 190, 172), 0, y, "center", W)
+        y += 16
+        if mine is not None:
+            prog = "completed" if bounties.complete(mine) else (
+                "%d of %d" % (mine["done"], mine["count"]) if mine["count"] > 1 else "under way")
+            self.text(surf, self.f10, prog,
+                      (150, 230, 150) if bounties.complete(mine) else (190, 170, 110), 0, y, "center", W)
+        y += 18
+
+        # the reward: the item this contract pays, and the gold beside it
+        bx, by, bw, bh = 16, y, W - 32, 76
+        box = pygame.Surface(self.P(bw, bh), pygame.SRCALPHA)
+        box.fill((10, 9, 8, 225))
+        surf.blit(box, self.P(bx, by))
+        pygame.draw.rect(surf, (86, 78, 58), self.R(bx, by, bw, bh), 1)
+        self.text(surf, self.f10, "Reward", (170, 162, 145), bx + 10, by + 6)
+        it = bounties.reward_item(world, o)
+        cell = self.R(bx + 10, by + 20, 50, 48)
+        pygame.draw.rect(surf, (52, 48, 38), cell, 1)
+        if it is not None:
+            try:
+                self.assets.draw_item_icon(surf, it, cell)
+            except Exception:
+                pass
+            self.text(surf, self.f10, getattr(it, "shown_name", it.name)[:26],
+                      getattr(it, "color", WHITE), bx + 70, by + 24)
+        else:
+            self.text(surf, self.f10, "no item", (120, 114, 104), bx + 70, by + 24)
+        self.text(surf, self.f10, "%d gold" % o["gold"], (220, 200, 130), bx + 70, by + 42)
+        self.text(surf, self.f10, "%d experience" % o["xp"], (180, 174, 158), bx + 70, by + 56)
+        y += bh + 8
+
+        cost = bounties.reroll_cost(world)
+        taken = o["id"] in held_ids
+        can_take = not taken and len(held) < bounties.MAX_HELD
+        done = mine is not None and bounties.complete(mine)
+        bw2 = (W - 40) // 3
+        self._d2_button(surf, 16, y, bw2, 32, "Claim" if done else "Accept",
+                        "bounty_claim" if done else "bounty_take", o["id"], on=done or can_take)
+        self._d2_button(surf, 20 + bw2, y, bw2, 32, "Abandon", "bounty_drop", o["id"],
+                        on=mine is not None and not done)
+        self._d2_button(surf, 24 + 2 * bw2, y, bw2, 32, "Refresh", "bounty_reroll",
+                        on=p.gold >= cost)
+        y += 34
+        self.text(surf, self.f10, "refresh costs %d gold      you have %d" % (cost, p.gold),
+                  (165, 150, 110), 0, y, "center", W)
+        self._close_button(surf, (W - 42, H - 46, 32, 32), 0, "bounties")
+
     def _waygate_bg(self, surf, bg, extra, wide=0):
         """D2's waypoint background, made taller by `extra` slots (36 px each) for this game's boss
         waypoints, and wider by `wide` px for Act 6's tab. A band of the slot column is repeated
@@ -1615,6 +1855,7 @@ class D2Hud:
                 self._icon(surf, it, x, y, w, h)
                 if hot and held is None:
                     self.hover_lines = it.describe_lines(p)
+                    self.hover_item = it
             self.region(x, y, w, h, "merc_slot", slot)
         st = hireling.stats(world.content, merc) or {}
         dead = merc.get("dead")
@@ -1874,6 +2115,7 @@ class D2Hud:
             self._icon(surf, it, x + 1, y + 1, w * C - 1, h * C - 1)
             if held is None and pygame.Rect(int(x), int(y), w * C, h * C).collidepoint((int(mx), int(my))):
                 self.hover_lines = list(it.describe_lines(p))
+                self.hover_item = it
         if held is not None and self.cube_cell_at((mx * self.s, my * self.s)) is not None:
             ax, ay = self.cube_anchor(held)
             ok, over = cb.fits(box, held, ax, ay)
@@ -1981,6 +2223,7 @@ class D2Hud:
                 self._icon(surf, it, ox + x, y, w, h)
                 if hot and held is None:
                     self.hover_lines = list(it.describe_lines(p)) + self._socket_cost_lines(it)
+                    self.hover_item = it
                     self._draw_sockets(surf, it, ox + x, y, w, h)
                 elif hot and held is not None and getattr(held, "gem", None) and getattr(it, "sockets", 0):
                     self._draw_sockets(surf, it, ox + x, y, w, h)
@@ -2385,6 +2628,7 @@ class D2Hud:
                 surf.blit(hl, self.P(x0 + 4, y))
                 if it.kind != "gold" and hasattr(it, "describe_lines"):
                     self.hover_lines = it.describe_lines(p)
+                    self.hover_item = it
             self.text(surf, self.f16, name, it.color, x0 + 10, y + 1)
             self.text(surf, self.f16, "%d" % d, (150, 150, 150), x0 + w - 40, y + 1, "right", 30)
             self.region(x0 + 4, y, w - 8, lh, "loot_pick", (cell, it))

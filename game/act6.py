@@ -22,6 +22,7 @@ HARROGATH = 109
 WORLDSTONE = 132          # the Worldstone Chamber, where Baal falls
 PORTAL_NAME = "Destruction's End"
 STASH_OID = 88            # the chest the map puts beside the Tree: the hero's stash
+TREE_OID = 30             # the Tree of Inifuss: the bounty board
 ALTAR_OID = 546           # the Ancients' altar in the middle of the ring
 COLOR = (199, 179, 119)
 
@@ -156,6 +157,12 @@ def on_enter(world, lid):
         for o in world.objects:
             if o.get("oid") == STASH_OID and o.get("kind") in ("decor", "chest"):
                 o["kind"], o["name"] = "stash", "Stash"
+        # the Tree of Inifuss is what Act 6 is for: click it for the bounty board
+        for o in world.objects:
+            if o.get("oid") == TREE_OID and o.get("kind") in ("decor", "chest", "bounty"):
+                o["kind"], o["name"] = "bounty", "Tree of Inifuss"
+        from . import bounties
+        bounties.init(world.player)
         p = world.player
         seen = p.__dict__.setdefault("visited", set())
         if SUMMIT not in seen:

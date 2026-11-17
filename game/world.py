@@ -1540,7 +1540,7 @@ class World(SkillCaster, ItemActions):
         p.face(*obj["cell"])
         if obj.get("generic"):
             from . import objects
-            if obj["kind"] not in ("door", "stash"):
+            if obj["kind"] not in ("door", "stash", "bounty"):
                 self.emit("attack", p, obj["cell"], "cast")
             return objects.operate(self, obj)
         self.emit("attack", p, obj["cell"], "cast")
