@@ -95,6 +95,13 @@ def init(p):
         p.bounty_done = 0
     if not hasattr(p, "bounty_wipe"):
         p.bounty_wipe = 0
+    if int(getattr(p, "bounty_wipe", 0) or 0) != WIPE:
+        # the one-time clear-out. It sits here, in the first thing every path calls, so that it
+        # happens whether the contracts are read by the quest log, the Tree or the portals, and
+        # not only when the Tree is opened
+        p.bounty_wipe = WIPE
+        p.bounties = []
+        p.bounty_board = None
 
 
 def party(world):
@@ -175,18 +182,8 @@ def _wipe_once(world):
     The contracts have been reworked enough times that old ones in a log are not worth keeping.
     This runs the first time a hero's bounties are read after the change, and never again.
     """
-    wiped = False
-    for h in party(world):
-        if int(getattr(h, "bounty_wipe", 0) or 0) == WIPE:
-            continue
-        h.bounty_wipe = WIPE
-        if h.bounties or h.bounty_board:
-            wiped = True
-        h.bounties = []
-        h.bounty_board = None
-    if wiped:
-        world.log("The Tree's bark is bare. Its old contracts are gone.", GREY)
-    return wiped
+    party(world)             # init() does the clearing itself, for everyone in the team
+    return False
 
 
 def _wipe_if_stale(world):

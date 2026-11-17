@@ -194,7 +194,7 @@ def _item_from(d, content):
 
 # what D2 keeps separately for each difficulty (quests, waypoints, Cain, the act you are in...)
 PER_DIFF = ("quests", "waypoints", "visited", "cain", "act", "quest_stats", "boss_kills", "map_explored",
-            "tracked_quest", "cairn_order", "rift_depth", "bounties", "bounty_board", "bounty_done")
+            "tracked_quest", "cairn_order", "rift_depth", "bounties", "bounty_board", "bounty_done", "bounty_wipe")
 DIFFICULTIES = ("normal", "nightmare", "hell")
 
 
@@ -283,6 +283,7 @@ def save_character(player, difficulty="normal"):
         bounties=[dict(x) for x in (getattr(p, "bounties", None) or [])],
         bounty_board=(dict(getattr(p, "bounty_board", None)) if getattr(p, "bounty_board", None) else None),
         bounty_done=int(getattr(p, "bounty_done", 0) or 0),
+        bounty_wipe=int(getattr(p, "bounty_wipe", 0) or 0),
         cairn_order=getattr(p, "cairn_order", None), map_explored=dict(getattr(p, "map_explored", None) or {}), quest_stats=dict(getattr(p, "quest_stats", {}) or {}), act=int(getattr(p, "current_act", 1) or 1),
         equipment={k: _item_dict(v) for k, v in p.equipment.items()},
         inventory=[_item_dict(it) for it in p.inventory], belt=[_item_dict(it) for it in p.belt],
@@ -391,6 +392,7 @@ def build_player(data, content):
     p.bounties = [dict(x) for x in (data.get("bounties") or [])]
     p.bounty_board = (dict(data["bounty_board"]) if data.get("bounty_board") else None)
     p.bounty_done = int(data.get("bounty_done", 0) or 0)
+    p.bounty_wipe = int(data.get("bounty_wipe", 0) or 0)
     p.current_act = data.get("act", 1)
     for k in p.equipment:
         p.equipment[k] = _item_from(data.get("equipment", {}).get(k), content)
