@@ -132,6 +132,39 @@ def _difficulty(world):
 KINDS = (CULL, HUNT, BOSS, ORGAN, GEM, RUNE, RIFT)
 
 
+def _migrate(world, o):
+    """Bring a contract written by an older build up to date, or return None to strike it off.
+
+    Boss contracts used to name one boss in `target`; they now keep a list in `targets`, and
+    one written the old way could never be finished because nothing was ever matched against
+    it. Hunt contracts used to name a kind of monster, which Hunt no longer asks for at all,
+    so those cannot be rescued and are dropped.
+    """
+    k = o.get("kind")
+    if k == BOSS and not o.get("targets"):
+        tag = o.get("target")
+        if not tag or tag not in dict(BOSSES):
+            return None
+        o["targets"] = [tag]
+        o["got"] = [g for g in (o.get("got") or []) if g in o["targets"]]
+        o["count"] = 1
+        o["done"] = len(o["got"])
+        if o.get("level") is None:
+            o["level"] = BOSS_LEVEL.get(tag)
+    if k == HUNT and not o.get("targets"):
+        return None
+    if k in (BOSS, HUNT):
+        o.setdefault("got", [])
+    o.setdefault("tier", 1)
+    o.setdefault("done", 0)
+    o.setdefault("count", 1)
+    if not o.get("icon"):
+        o["icon"] = CLASS_ICON.get(o.get("mclass"), ICON_BY_KIND.get(k, "skulls"))
+    if not o.get("item"):
+        o["item"] = _roll_reward(world, o)
+    return o
+
+
 def _wipe_if_stale(world):
     """A board written for Normal means nothing in Nightmare, and a kind the game has dropped
     means nothing at all."""
@@ -143,16 +176,21 @@ def _wipe_if_stale(world):
         p.bounty_board = None
         p.bounties = [x for x in p.bounties if x.get("diff") == diff]
         b = None
-    gone = [x for x in p.bounties if x.get("kind") not in KINDS]
+    kept = []
+    for x in p.bounties:
+        if x.get("kind") in KINDS and _migrate(world, x) is not None:
+            kept.append(x)
+    gone = len(p.bounties) - len(kept)
     if gone:
-        p.bounties = [x for x in p.bounties if x.get("kind") in KINDS]
+        p.bounties = kept
         world.log("%d contract%s the Tree no longer writes %s struck off." % (
-            len(gone), "" if len(gone) == 1 else "s", "was" if len(gone) == 1 else "were"), GREY)
-    if b is not None and any(o.get("kind") not in KINDS for o in b.get("offers", ())):
-        rng, areas, taken = world.rng, _areas(world), set()
-        b["offers"] = [o if o.get("kind") in KINDS
-                       else _distinct(world, rng, 800 + i, areas, taken)
-                       for i, o in enumerate(b["offers"])]
+            gone, "" if gone == 1 else "s", "was" if gone == 1 else "were"), GREY)
+    if b is not None:
+        ok = [o.get("kind") in KINDS and _migrate(world, o) is not None for o in b.get("offers", ())]
+        if not all(ok):
+            rng, areas, taken = world.rng, _areas(world), set()
+            b["offers"] = [o if ok[i] else _distinct(world, rng, 800 + i, areas, taken)
+                           for i, o in enumerate(b["offers"])]
 
 
 # ---------------------------------------------------------------- making the offers
@@ -506,8 +544,35 @@ def board(world):
         taken = set()
         p.bounty_board = dict(diff=_difficulty(world), rerolls=0, version=BOARD_VERSION,
                               offers=[_distinct(world, rng, i, areas, taken) for i in range(BOARD_SIZE)])
+    _graft_held(world)
     _mirror(world)
     return p.bounty_board
+
+
+def _graft_held(world):
+    """Make sure everything in hand has a plaque on the Tree.
+
+    The panel's buttons work on the contract the plaque belongs to, so a contract held but no
+    longer on the board - one carried through a rewrite of the board, or left behind by an older
+    build - could be neither handed in nor given up. Anything in hand that has no plaque takes
+    the place of one that is not.
+    """
+    p = world.player
+    b = p.bounty_board
+    if not b:
+        return
+    offers = b.get("offers") or []
+    shown = {o.get("id") for o in offers}
+    orphans = [x for x in p.bounties if x.get("id") not in shown]
+    if not orphans:
+        return
+    free = [i for i, o in enumerate(offers) if o.get("id") not in {x["id"] for x in p.bounties}]
+    for x in orphans:
+        if free:
+            offers[free.pop()] = x
+        else:
+            offers.append(x)
+    b["offers"] = offers
 
 
 def reroll_cost(world):
@@ -687,16 +752,18 @@ def on_killed(world, unit):
         if complete(o):
             continue
         k = o["kind"]
-        if k == BOSS and boss and boss in (o.get("targets") or []):
+        wants = o.get("targets") or ([o["target"]] if o.get("target") else [])
+        if k == BOSS and boss and boss in wants:
             got = o.setdefault("got", [])
             if boss not in got:
                 got.append(boss)
                 o["done"] = len(got)
+                o["count"] = max(o.get("count", 1), len(wants))
         elif k == CULL and o.get("mclass") and mon_class(world, mid) == o["mclass"]:
             o["done"] = min(o["count"], o.get("done", 0) + 1)
         elif k == HUNT and special:
             got = o.setdefault("got", [])
-            for want in (o.get("targets") or []):
+            for want in wants:
                 if want.lower() == name and want not in got:
                     got.append(want)
                     o["done"] = len(got)
