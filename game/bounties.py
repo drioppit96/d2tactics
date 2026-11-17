@@ -107,11 +107,33 @@ def _wipe_if_stale(world):
 
 
 # ---------------------------------------------------------------- making the offers
+def _open_world(lid):
+    """A level a contract may name: a real place in the world, not a town and not a rift floor.
+
+    Rift floors are built fresh for each run, so a portal to one would open on a level that no
+    longer exists by the time you walked through it.
+    """
+    if not isinstance(lid, int) or lid in TOWN_IDS or lid == SUMMIT:
+        return False
+    try:
+        from . import rift
+        if rift.is_rift(lid):
+            return False
+    except Exception:
+        pass
+    try:
+        from . import riftmap
+        if getattr(riftmap, "is_rift", None) and riftmap.is_rift(lid):
+            return False
+    except Exception:
+        pass
+    return True
+
+
 def _areas(world):
-    """Levels a contract may name: somewhere this hero has been, that is not a town."""
+    """Levels a contract may name: somewhere this hero has been, out in the open world."""
     p = world.player
-    seen = [l for l in sorted(getattr(p, "visited", ()) or ())
-            if isinstance(l, int) and l not in TOWN_IDS and l != SUMMIT]
+    seen = [l for l in sorted(getattr(p, "visited", ()) or ()) if _open_world(l)]
     return seen or [2]
 
 
@@ -436,10 +458,14 @@ def progress(player, o):
 
 
 def destination(o):
-    """The level a contract sends you to, or None for one you settle at the Tree."""
+    """The level a contract sends you to, or None for one you settle at the Tree.
+
+    A deposit is handed in at the Tree and opens nothing, and nothing ever opens onto a rift.
+    """
     if o.get("kind") in DEPOSIT:
         return None
-    return o.get("level")
+    lvl = o.get("level")
+    return lvl if _open_world(lvl) else None
 
 
 def complete(o, player=None):

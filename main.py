@@ -2149,7 +2149,7 @@ class Game:
             obj = self.object_under_mouse(mouse) or (w.object_at(cell) if hasattr(w, "object_at") else None)
             if obj is not None:
                 label = {"cairn": "Cairn Stone", "inifuss": "Tree of Inifuss", "tome": "Moldy Tome",
-                         "malus": "Horadric Malus", "cage": "Cain's Cage", "portal": "Portal to Tristram",
+                         "malus": "Horadric Malus", "cage": "Cain's Cage", "portal": "Portal",
                          "tp": "Town Portal (to the Rogue Encampment)", "tp_back": "Town Portal (back)"}
                 if obj.get("generic"):
                     from game.objects import tooltip as _otip
@@ -2157,6 +2157,18 @@ class Game:
                     tip = (lines, [(90, 200, 255)] + [TEXT] * (len(lines) - 1))
                 else:
                     name = label.get(obj["kind"], obj["kind"])
+                    if obj["kind"] == "portal":
+                        # name where it goes, not where the first portal in the game went
+                        tgt = obj.get("target")
+                        where = None
+                        if tgt is not None and getattr(w, "info", None) is not None:
+                            try:
+                                where = w.info.name(tgt)
+                            except Exception:
+                                where = None
+                        name = obj.get("name") or ("Portal to %s" % where if where else "Portal")
+                        if where and obj.get("name"):
+                            name = "%s  -  %s" % (obj["name"], where)
                     if obj["kind"] == "cairn":
                         from game.quests import CAIRN_NAMES
                         name = "Cairn Stone %s" % CAIRN_NAMES.get(obj.get("oid"), "")
@@ -2345,6 +2357,11 @@ class Game:
             self.world.open_npc = None
         if getattr(self.world, "open_waypoint", None) is not None:
             self.world.open_waypoint = None
+            # once Sanctuary is yours it is the way home: the gate opens on Act VI, one click away
+            from game import act6 as _a6
+            from game.acts import SUMMIT as _SUM
+            if _a6.available(self.world.player) and _SUM in (getattr(self.world.player, "waypoints", None) or ()):
+                self.hud.wp_act = 6
             self.hud.show_waypoints = True
         self.cam.resize(*self.screen.get_size())
         self.cam.follow(*self.scene.player_world_pos(), dt)
