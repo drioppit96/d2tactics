@@ -734,10 +734,8 @@ class Game:
         p.portal = None
 
     def respawn(self):
-        """D2: you wake up in the camp (and leave some gold behind)."""
+        """You wake up in the camp. Gold belongs to the party now, so dying costs none of it."""
         p = self.world.player
-        lost = p.gold // 2
-        p.gold -= lost
         p.alive = True
         p.recalc()
         p.hp, p.mana = p.max_hp, p.max_mana
@@ -756,7 +754,7 @@ class Game:
             old.player = p
         wild.relocate_player(wild._default_start())
         wild.update_area()
-        wild.log("You wake up in %s. You lost %d gold." % (self.assets.act_info.name(town), lost), (230, 160, 90))
+        wild.log("You wake up in %s." % self.assets.act_info.name(town), (230, 160, 90))
         self._start_scene()
         self.save()
 

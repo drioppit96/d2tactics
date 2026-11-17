@@ -391,6 +391,8 @@ def make_stash():
     st.tab = 1
     st.contents = st.pages[0]
     st.gold = 0
+    st.essences = {}           # the account's four essences (game/essences.py)
+    st.purse = None            # the party's gold, once a hero is attached to this chest
     return st
 
 

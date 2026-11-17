@@ -836,12 +836,12 @@ class World(SkillCaster, ItemActions):
         return False
 
     def _into_stack(self, it):
-        """A body part merges into one the hero is already carrying: they stack to 99 in a square,
-        the way gems bank in the stash, so a cull's worth of them does not fill the bag."""
-        if getattr(it, "kind", "") != "organ":
+        """An essence goes to the account's purse rather than into the bag: it is a number every
+        character on the account shares, not a thing to carry (game/essences.py)."""
+        if getattr(it, "kind", "") != "essence":
             return False
-        from . import organs
-        return organs.add(self.player, it)
+        from . import essences
+        return essences.collect(self.player, it)
 
     def pickup_item(self, cell, it):
         """Loot window: take one item lying on the screen. Outside combat from anywhere you can see;
@@ -2401,10 +2401,10 @@ class World(SkillCaster, ItemActions):
             drops += d2r.sunder_drop(self, unit)      # D2R's Sunder Charms, off champions
         else:
             drops = roll_drop(unit.level, unit.unique, self.rng)
-        from . import organs
-        part = organs.roll_drop(self, unit, self.rng)   # its heart, brain or blood, for the Tree
-        if part is not None:
-            drops = list(drops) + [part]
+        from . import essences
+        ess = essences.roll_drop(self, unit, self.rng)  # what its kind leaves behind, for the Tree
+        if ess is not None:
+            drops = list(drops) + [ess]
         for it in drops:
             cell = self._drop_cell(unit.pos)
             self.ground.setdefault(cell, []).append(it)

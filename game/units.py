@@ -77,7 +77,7 @@ class Player(Unit):
         self.start_stats = (self.base_str, self.base_dex, self.base_eng, self.base_vit)
         self.stat_points = 0
         self.xp = 0
-        self.gold = 0
+        self._gold = 0
         self.mana = 10
         self.equipment = {s: None for s in SLOTS}
         # D2's weapon swap (W): the other weapon set's weapon and shield, and each set's skills
@@ -323,6 +323,24 @@ class Player(Unit):
     @property
     def energy(self):
         return self.base_eng + self.mod("eng")
+
+    # ---------------------------------------------------------------- the party's purse
+    # Gold belongs to the party, not to the hero carrying it: it lives on the one chest every
+    # character shares, so what one of them picks up all of them can spend. A hero with no chest
+    # attached yet (a brand new one, or one being read off disk) keeps his own until he gets one.
+    @property
+    def gold(self):
+        st = getattr(self, "stash", None)
+        shared = getattr(st, "purse", None) if st is not None else None
+        return int(self._gold if shared is None else shared)
+
+    @gold.setter
+    def gold(self, v):
+        v = int(v)
+        self._gold = v
+        st = getattr(self, "stash", None)
+        if st is not None and getattr(st, "purse", None) is not None:
+            st.purse = v
 
     def recalc(self):
         """Derived stats with D2's formulas for the character's class (CharStats.txt)."""

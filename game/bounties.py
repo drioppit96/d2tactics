@@ -22,7 +22,7 @@ from .acts import ACT_RANGES, TOWN_IDS, SUMMIT
 MAX_HELD = 3            # contracts in hand at once
 REFRESH_AFTER = 3       # contracts handed in before the Tree writes its board again
 BOARD_SIZE = 8          # offers on the Tree: two rows of four
-BOARD_VERSION = 4       # bumped when the contracts themselves change: old boards are rewritten
+BOARD_VERSION = 5       # bumped when the contracts themselves change: old boards are rewritten
 #: a hero's contracts were cleared out once, when the kinds of contract changed for the last
 #: Raising this clears every hero's board and hand once, the next time his contracts are read,
 #: and the new number is written to his save so it never runs twice. Only raise it when the
@@ -36,13 +36,12 @@ GREY = (150, 145, 135)
 CULL = "cull"           # kill N of a whole kind of creature (demons, the dead...), anywhere
 HUNT = "hunt"           # kill one named unique, by name
 BOSS = "boss"           # kill one of the act bosses
-ORGAN = "organ"         # deposit N body parts of one creature (game/organs.py)
+ESSENCE = "essence"     # deposit N of one of the four essences (game/essences.py)
 GEM = "gem"             # deposit N perfect gems of one colour
-RUNE = "rune"           # deposit N of one rune
 RIFT = "rift"           # clear N floors of the rift, over as many runs as it takes
 
-#: the three you hand in rather than hunt down
-DEPOSIT = (ORGAN, GEM, RUNE)
+#: the two you hand in rather than hunt down
+DEPOSIT = (ESSENCE, GEM)
 
 #: the act bosses worth a contract, by the boss tag game/actworld.py gives them. The named
 #: uniques that used to sit here are Hunt's business now.
@@ -73,7 +72,7 @@ BOSS_LEVEL = {"andariel": 37, "duriel": 73, "mephisto": 102, "diablo": 108}
 
 #: the carved plaques the board shows, by what the contract is against
 ICON_BY_KIND = {CULL: "skulls", HUNT: "skulls", BOSS: "horned_skull",
-                ORGAN: "gauntlet", GEM: "eye", RUNE: "serpent", RIFT: "trident"}
+                ESSENCE: "gauntlet", GEM: "eye", RIFT: "trident"}
 #: a contract against one of these families gets its own plaque instead
 ICON_BY_FAMILY = {"zombie": "undead", "skeleton": "undead", "returned": "undead",
                   "burningdead": "undead", "corpsefire": "undead", "skmage": "undead",
@@ -89,7 +88,7 @@ ICONS = ("demon", "undead", "eye", "horned_skull", "trident", "skulls", "coin",
 #: what a contract is worth, before its size is taken into account. Hunt and Boss have no sizes
 #: of their own - one named head is one named head - so they are weighted for the whole job
 #: rather than for the smallest of three.
-WEIGHT = {CULL: 1.0, HUNT: 2.2, BOSS: 3.2, ORGAN: 1.6, GEM: 2.6, RUNE: 3.0, RIFT: 2.0}
+WEIGHT = {CULL: 1.0, HUNT: 2.2, BOSS: 3.2, ESSENCE: 1.8, GEM: 2.6, RIFT: 2.0}
 
 DIFF_MULT = {"normal": 1.0, "nightmare": 2.4, "hell": 5.0}
 
@@ -146,7 +145,7 @@ def _difficulty(world):
 #: contract kinds that still exist. A board is kept across saves, so one written by an older
 #: build can be carrying a kind this one no longer has ("clear", which asked you to empty a
 #: whole area): those are dropped rather than left on the Tree for ever.
-KINDS = (CULL, HUNT, BOSS, ORGAN, GEM, RUNE, RIFT)
+KINDS = (CULL, HUNT, BOSS, ESSENCE, GEM, RIFT)
 
 
 def _migrate(world, o):
@@ -290,31 +289,21 @@ TIER_PAY = {1: 1.0, 2: 2.2, 3: 4.0}
 
 #: how much each kind asks for, by tier
 AMOUNT = {CULL: (30, 60, 100), RIFT: (5, 10, 15), BOSS: (1, 1, 1), HUNT: (1, 1, 1),
-          ORGAN: (10, 25, 50), GEM: (2, 4, 7), RUNE: (5, 3, 2)}
+          ESSENCE: (25, 60, 120), GEM: (2, 4, 7)}
 
-#: which runes a deposit asks for, by tier, as positions in D2's own list (1 El ... 33 Zod).
-#: A bigger contract asks for fewer runes, but far better ones: five of El to Ral, three of Ort
-#: to Io, or two of Lum to Ist.
-RUNE_ASK = {1: (1, 8), 2: (9, 16), 3: (17, 24)}
-
-#: which runes a reward can pay, by tier. The bands sit above what the same tier asks for, so a
-#: rune contract always hands back something better than it took, and every other kind of
-#: contract pays a rune worth keeping rather than the El that an even falloff would give.
+#: which runes a reward can pay, by tier. Without a band an even falloff over all thirty-three
+#: runes hands out El almost every time, which is no reward at all. Nothing asks for runes any
+#: more - they were never worth the squares they took up - but they are still worth being paid in.
 RUNE_PAY = {1: (5, 12), 2: (11, 19), 3: (17, 26)}
 
-#: how far above the rune it asked for a rune contract must pay, and how wide that band is.
-#: D2's cube turns two or three of a rune into the next one up, so paying three to six places
-#: above what it took is a clear profit on the trade without reaching the top of the list.
-RUNE_STEP = 3
-RUNE_SPAN = 3
 RUNE_CAP = 30             # Ber: the Tree does not hand out the last three runes
 
 
 def _make_offer(world, rng, n, areas):
     diff = _difficulty(world)
     p = world.player
-    kind = rng.choices([CULL, HUNT, BOSS, ORGAN, GEM, RUNE, RIFT],
-                       weights=[26, 18, 10, 20, 7, 7, 12])[0]
+    kind = rng.choices([CULL, HUNT, BOSS, ESSENCE, GEM, RIFT],
+                       weights=[24, 18, 10, 24, 10, 14])[0]
     # one head is one head: a hunt and a boss contract name one target and come in one size
     tier = 1 if kind in (HUNT, BOSS) else rng.choice(TIERS)
     want = AMOUNT[kind][tier - 1]
@@ -335,21 +324,16 @@ def _make_offer(world, rng, n, areas):
         o.update(target=None, count=want, level=None,
                  title="%sDelve the Rift" % pre,
                  text="Clear %d floors of the rift, however many runs it takes." % want)
-    elif kind == ORGAN:
-        from . import organs
-        token = rng.choice(sorted(organs.ORGANS))
-        nm = organs.label(token)
-        o.update(target=organs.code_for(token), count=want, level=None, deposit=nm, organ=token,
+    elif kind == ESSENCE:
+        from . import essences
+        ek = rng.choice(essences.ORDER)
+        nm = essences.label(ek)
+        o.update(target=ek, count=want, level=None, deposit=nm, essence=ek,
                  title="%sDeposit %d %s" % (pre, want, nm),
-                 text="Bring the Tree %d %s." % (want, nm))
+                 text="Bring the Tree %d of the %s." % (want, nm))
     elif kind == GEM:
         code, nm = _perfect_gem(world, rng)
         o.update(target=code, count=want, level=None, deposit=nm,
-                 title="%sDeposit %d %s" % (pre, want, _plural(nm, want)),
-                 text="The Tree wants %d %s." % (want, _plural(nm, want)))
-    elif kind == RUNE:
-        code, nm, rank = _rune_pick(world, rng, *RUNE_ASK[tier])
-        o.update(target=code, count=want, level=None, deposit=nm, rune_rank=rank,
                  title="%sDeposit %d %s" % (pre, want, _plural(nm, want)),
                  text="The Tree wants %d %s." % (want, _plural(nm, want)))
     else:
@@ -364,7 +348,7 @@ def _make_offer(world, rng, n, areas):
     o["ilvl"] = min(99, lvl + int(6 * WEIGHT[kind] * TIER_PAY[tier]))
     if kind == CULL:
         o["icon"] = CLASS_ICON.get(o.get("mclass"), "skulls")
-    elif kind == ORGAN:
+    elif kind == ESSENCE:
         o["icon"] = "gauntlet"
     else:
         o["icon"] = ICON_BY_KIND[kind]
@@ -437,8 +421,8 @@ def _roll_reward(world, o):
     simply does not say which it will be until the work is handed in (claim_item below). One
     reward in ten is a perfect gem or a rune, and those are what they are either way.
 
-    A contract that asked for gems or runes never pays in gems: it pays a rune, and a rune well
-    above the one it took, because handing over three runes for a gem is no trade at all.
+    A gem contract never pays back a gem: it pays a rune, because handing a hoard of perfect
+    gems over for one more gem is no trade at all.
     """
     from .save import _item_dict
     c = getattr(world, "content", None)
@@ -448,10 +432,7 @@ def _roll_reward(world, o):
     kind = o.get("kind")
     lo, hi = RUNE_PAY.get(tier, RUNE_PAY[1])
     hi = min(RUNE_CAP, hi)
-    if kind == RUNE:
-        lo = min(RUNE_CAP, max(lo, int(o.get("rune_rank", 0) or 0) + RUNE_STEP))
-        hi = min(RUNE_CAP, max(hi, lo + RUNE_SPAN))
-    hoard = kind in (GEM, RUNE)
+    hoard = kind == GEM
     r = rng.random()
     if r < GEM_CHANCE and not hoard:
         code, _nm = _perfect_gem(world, rng)
@@ -683,11 +664,11 @@ def accept(world, bid):
 
 
 def held_count(player, o):
-    """How much of a deposit contract the hero is actually carrying."""
-    from . import organs
+    """How much of a deposit contract is to hand: essences from the account, gems from the bag."""
     code = o.get("target")
-    if o["kind"] == ORGAN:
-        return organs.count(player, code)
+    if o["kind"] == ESSENCE:
+        from . import essences
+        return essences.count(player, code)
     n = 0
     for it in (player.inventory or []):
         if getattr(it, "code", None) == code and getattr(it, "gem", None):
@@ -829,10 +810,10 @@ def on_rift_floor(world):
 
 def _spend_deposit(player, o):
     """Hand the goods over: the Tree keeps them."""
-    from . import organs
     code, want = o.get("target"), o.get("count", 1)
-    if o["kind"] == ORGAN:
-        return organs.take(player, code, want)
+    if o["kind"] == ESSENCE:
+        from . import essences
+        return essences.take(player, code, want)
     left = want
     for it in list(player.inventory or []):
         if left <= 0:

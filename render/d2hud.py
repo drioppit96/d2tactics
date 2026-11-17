@@ -1787,10 +1787,10 @@ class D2Hud:
                 if mons is not None and cand in (mons.monstats or {}):
                     return cand
             return None
-        if k == bounties.ORGAN and o.get("organ"):
-            # the six tokens come from a whole kind, so show something of that kind
-            from game import organs
-            cls = (organs.ORGANS.get(o["organ"]) or (None, None, None))[1]
+        if k == bounties.ESSENCE and o.get("essence"):
+            # an essence comes from a whole kind of creature, so show something of that kind
+            from game import essences
+            cls = next((c for c, e in essences.BY_CLASS.items() if e == o["essence"]), None)
             for cand in ("fallen1", "skeleton1", "zombie1", "goatman1"):
                 if mons is not None and cand in (mons.monstats or {}) \
                         and bounties.mon_class(world, cand) == cls:
@@ -1814,6 +1814,60 @@ class D2Hud:
                 img = None
             cache[name] = img
         return cache[name]
+
+    def _coin_icon(self, name):
+        """One of the little currency discs in assets/ui/currency (gold and the four essences)."""
+        cache = self.__dict__.setdefault("_coin_icons", {})
+        if name not in cache:
+            img = None
+            try:
+                path = os.path.join("assets", "ui", "currency", "%s.png" % name)
+                if os.path.exists(path):
+                    img = pygame.image.load(path).convert_alpha()
+            except Exception:
+                img = None
+            cache[name] = img
+        return cache[name]
+
+    def _coin(self, surf, name, x, y, size=18):
+        """Draw one of them at a logical size, scaled once and kept."""
+        img = self._coin_icon(name)
+        if img is None:
+            return False
+        key = ("coin", name, size)
+        sc = self.__dict__.setdefault("_bg_cache", {}).get(key)
+        if sc is None:
+            sc = self._bg_cache[key] = pygame.transform.smoothscale(img, self.P(size, size))
+        surf.blit(sc, self.P(x, y))
+        return True
+
+    def _draw_purse(self, surf, p, ox, y0):
+        """The account's four essences, under the backpack: a disc and a number for each.
+
+        They are not in the bag and never were - they are numbers the whole account shares, so
+        they sit apart from the grid, in two rows of two under it.
+        """
+        from game import essences
+        bw, bh, gap = 148, 24, 4
+        mx, my = self.mouse
+        for i, (kind, name, n) in enumerate(essences.holdings(p)):
+            col, row = i % 2, i // 2
+            x = ox + 8 + col * (bw + gap)
+            y = y0 + row * (bh + gap)
+            box = pygame.Surface(self.P(bw, bh), pygame.SRCALPHA)
+            box.fill((14, 13, 12, 225))
+            surf.blit(box, self.P(x, y))
+            pygame.draw.rect(surf, (74, 70, 62), self.R(x, y, bw, bh), 1)
+            if not self._coin(surf, kind, x + 3, y + 3, bh - 6):
+                pygame.draw.circle(surf, essences.color(kind),
+                                   self.P(x + 3 + (bh - 6) / 2.0, y + bh / 2.0), int(7 * self.s))
+            self.text(surf, self.f16, "%d" % n, WHITE if n else (118, 114, 106),
+                      x + bh + 2, y + 4, "right", bw - bh - 8)
+            if pygame.Rect(int(x), int(y), bw, bh).collidepoint((int(mx), int(my))):
+                self.hover_lines = [(name, essences.color(kind)),
+                                    ("%d on the account" % n, WHITE),
+                                    ("Shared by every character; the Tree takes them", GREY)]
+        return y0 + 2 * (bh + gap)
 
     def _d2_button(self, surf, x, y, w, h, label, action, arg=None, on=True):
         """The medium D2 button the character screen uses for its difficulty buttons."""
@@ -2462,13 +2516,16 @@ class D2Hud:
         dy = GRID_Y + rows * CELL - 371
         gold_box = GOLD_BOX if not extra else (GOLD_BOX[0], GOLD_BOX[1] + dy, GOLD_BOX[2], GOLD_BOX[3])
         close = INV_CLOSE if not extra else (INV_CLOSE[0], INV_CLOSE[1] + dy, INV_CLOSE[2], INV_CLOSE[3])
+        self._coin(surf, "gold", ox + gold_box[0] - 20, gold_box[1], 18)
         if mate:
             self.text(surf, self.f16, str(p.gold), WHITE, ox + gold_box[0] + 4, gold_box[1] + 1)
             self.text(surf, self.f16, "%s (level %d)" % (p.name, p.level), GOLD,
                       ox + gold_box[0] + gold_box[2] + 6, gold_box[1] + 1)
+            self._draw_purse(surf, p, ox, 436 + dy)
             self._close_button(surf, close, ox, "mate_close")
             return
         self.text(surf, self.f16, str(p.gold), WHITE, ox + gold_box[0] + 4, gold_box[1] + 1)
+        self._draw_purse(surf, p, ox, 436 + dy)       # the account's essences, under the panel
         if self._is_stash() and getattr(self, "cube_item", None) is not None:
             # with the stash open, your gold goes into it with a click (right click: 1000)
             self.region(ox + gold_box[0], gold_box[1], gold_box[2], gold_box[3], "stash_gold", True)

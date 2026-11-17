@@ -156,6 +156,9 @@ class Item:
 
     @property
     def color(self):
+        if self.kind == "essence":
+            from .essences import color as _ecol      # each essence is named in its own colour
+            return _ecol(getattr(self, "essence", None))
         if self.kind in ("gold", "potion"):
             return WHITE
         if self.kind == "quest":

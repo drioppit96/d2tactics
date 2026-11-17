@@ -46,6 +46,8 @@ def load_shared_stash(content):
         return st
     st.gold = sd.get("gold", 0) or 0
     st.bank = {k: int(v) for k, v in (sd.get("bank") or {}).items() if int(v) > 0}
+    st.essences = {k: int(v) for k, v in (sd.get("essences") or {}).items() if int(v) > 0}
+    st.purse = int(sd["purse"]) if sd.get("purse") is not None else None
     for i, page in enumerate((sd.get("pages") or [])[:len(st.pages)]):
         stash_tab(st, i + 1)
         for d in page or []:
@@ -70,6 +72,9 @@ def _stash_dict(st):
     if pages is None:
         pages = [getattr(st, "contents", None) or []]
     return dict(gold=getattr(st, "gold", 0), bank=dict(getattr(st, "bank", {}) or {}),
+                # the account's own things: the four essences and the party's purse
+                essences={k: int(v) for k, v in (getattr(st, "essences", None) or {}).items()},
+                purse=int(getattr(st, "purse", 0) or 0),
                 pages=[[_item_dict(it) for it in page] for page in pages])
 
 
@@ -411,6 +416,8 @@ def build_player(data, content):
     sd = data.get("stash") or {}
     st.gold = sd.get("gold", 0) or 0
     st.bank = {k: int(v) for k, v in (sd.get("bank") or {}).items() if int(v) > 0}
+    st.essences = {k: int(v) for k, v in (sd.get("essences") or {}).items() if int(v) > 0}
+    st.purse = int(sd["purse"]) if sd.get("purse") is not None else None
     pages = sd.get("pages")
     if pages is None:
         pages = [sd.get("items", []) or []]        # an old save: the 6 x 8 stash becomes tab 2
@@ -469,6 +476,15 @@ def attach_shared_stash(content, heroes, stash=None):
                 st.bank[k] = st.bank.get(k, 0) + int(v)
         h.stash_merged = True
         h.stash = st
+    # the party's purse. The first time a chest is attached it takes over the most gold any one
+    # hero was carrying - not the sum, because the heroes of a party already shared a purse in
+    # all but name. After that every hero reads and writes this one number.
+    if getattr(st, "purse", None) is None:
+        st.purse = max([int(getattr(h, "_gold", 0) or 0) for h in heroes] or [0])
+    for h in heroes:
+        h._gold = int(st.purse)
+    if not isinstance(getattr(st, "essences", None), dict):
+        st.essences = {}
     return st
 
 
