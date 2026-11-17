@@ -1610,9 +1610,16 @@ class Game:
                  "bounty_drop": _bo.abandon}.get(action, lambda w, a: _bo.reroll(w))(w, arg)
             elif action == "wp_all":                      # TEST ONLY: remove later
                 from game.acts import WAYPOINTS
+                from game import act6, quests
                 p = w.player
                 p.waypoints = set(getattr(p, "waypoints", {1})) | {l for lst in WAYPOINTS.values() for l in lst}
-                w.log("Test: every waypoint of Acts 1-5 is now active.", (199, 179, 119))
+                # Act 6 is shut until Baal dies, so the test button opens it too - otherwise its
+                # waypoint is lit but travelling to it is refused, which reads as a broken button
+                quests.init(p)
+                p.quests["baal"] = p.quests.get("baal") if p.quests.get("baal") in ("cleared", "done") else "cleared"
+                act6.ensure_portal(w)
+                w.log("Test: every waypoint of Acts 1-6 is now active, and Sanctuary is open.",
+                      (199, 179, 119))
             elif action in ("skill_right", "skill_left", "skill_aura"):
                 side = action[6:]
                 h.skill_popup = False if h.skill_popup == side else side
