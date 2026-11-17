@@ -1954,13 +1954,11 @@ class D2Hud:
         taken = o["id"] in held_ids
         can_take = not taken and len(held) < bounties.MAX_HELD
         done = mine is not None and bounties.complete(mine, p)
-        bw2 = (W - 36) // 2
-        self._d2_button(surf, 16, y, bw2, 32, "Claim" if done else "Accept",
+        bw2 = min(192, W - 32)
+        self._d2_button(surf, (W - bw2) // 2, y, bw2, 32, "Claim" if done else "Accept",
                         "bounty_claim" if done else "bounty_take", o["id"], on=done or can_take)
-        self._d2_button(surf, 20 + bw2, y, bw2, 32, "Abandon", "bounty_drop", o["id"],
-                        on=mine is not None and not done)
         y += 34
-        self.text(surf, self.f10, "a contract stays on the Tree until you hand it in or give it up",
+        self.text(surf, self.f10, "a contract is kept until the Tree takes it back finished",
                   (165, 150, 110), 0, y, "center", W)
         self._close_button(surf, (W - 42, H - 46, 32, 32), 0, "bounties")
 

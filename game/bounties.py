@@ -6,13 +6,12 @@ them in hand at a time.
 
     board(world)            the eight offers, made the first time you look and kept after
     accept(world, bid)      take one (three at once, no more)
-    abandon(world, bid)     give one up, its slot comes free
     on_killed(world, unit)  count a kill towards whatever is in hand
     claim(world, bid)       hand in a finished one and take the reward
 
-A contract in hand keeps its plaque on the Tree for as long as it is held: nothing replaces it
-and nothing finishes it by itself. The only way it leaves your log is the Tree - handed in there
-when the work is done, or given up there.
+A contract in hand keeps its plaque on the Tree for as long as it is held: nothing replaces it,
+nothing finishes it by itself, and there is no giving it up. The one way it leaves your log is
+handing it in at the Tree, finished.
 
 A bounty lives on the hero (p.bounties, p.bounty_board), so it keeps across levels and saves and
 each hero carries his own. Everything is per difficulty: stepping up to Nightmare wipes the board
@@ -581,7 +580,7 @@ def _graft_held(world):
 
     The panel's buttons work on the contract the plaque belongs to, so a contract held but no
     longer on the board - one carried through a rewrite of the board, or left behind by an older
-    build - could be neither handed in nor given up. Anything in hand that has no plaque takes
+    build - could be neither handed in nor claimed. Anything in hand that has no plaque takes
     the place of one that is not.
     """
     p = world.player
@@ -631,20 +630,6 @@ def accept(world, bid):
             h.bounties.append(dict(o))
     _mirror(world)
     world.log("Contract taken: %s." % o["title"], COLOR)
-    _sync_portals(world)
-    return True
-
-
-def abandon(world, bid):
-    p = world.player
-    init(p)
-    o = next((x for x in p.bounties if x["id"] == bid), None)
-    if o is None:
-        return False
-    for h in party(world):
-        h.bounties = [x for x in h.bounties if x["id"] != bid]
-    _mirror(world)
-    world.log("Contract given up: %s." % o["title"], GREY)
     _sync_portals(world)
     return True
 

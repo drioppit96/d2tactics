@@ -1624,10 +1624,9 @@ class Game:
                 h.show_bounties = False
             elif action == "bounty_sel":
                 h.bounty_sel = arg
-            elif action in ("bounty_take", "bounty_claim", "bounty_drop"):
+            elif action in ("bounty_take", "bounty_claim"):
                 from game import bounties as _bo
-                {"bounty_take": _bo.accept, "bounty_claim": _bo.claim,
-                 "bounty_drop": _bo.abandon}[action](w, arg)
+                (_bo.claim if action == "bounty_claim" else _bo.accept)(w, arg)
             elif action == "wp_all":                      # TEST ONLY: remove later
                 from game.acts import WAYPOINTS
                 from game import act6, quests
