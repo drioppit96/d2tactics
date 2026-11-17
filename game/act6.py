@@ -24,7 +24,7 @@ WORLDSTONE = 132          # the Worldstone Chamber, where Baal falls
 PORTAL_NAME = "Destruction's End"
 STASH_OID = 88            # the chest the map puts beside the Tree: the hero's stash
 TREE_OID = 30             # the Tree of Inifuss: the bounty board
-ALTAR_OID = 546           # the Ancients' altar in the middle of the ring
+ALTAR_OIDS = (546,)       # the Ancients' altar in the middle of the ring: removed, not used
 COLOR = (199, 179, 119)
 
 
@@ -137,21 +137,14 @@ def on_enter(world, lid):
         ensure_portal(world)
     if lid == SUMMIT:
         _only_three(world)
-        # The mountaintop preset carries the Ancients' three statues. Up here they are scenery:
-        # the Rite of Passage was fought below, and without this they would wake as you walked
-        # past them (game/bosses.py wakes dormant Ancients on a map that has no altar).
-        for m in world.monsters:
-            if getattr(m, "boss", None) == "ancients":
-                m.scenery = True
-                m.dormant = True
-                m.invulnerable = True
-                m.aware = False
-                m.sight = -1
-        # ... and the altar they rise from is the preset's own, in the middle of the ring. Reading
-        # it wakes the three, the way the Rite of Passage does below.
-        for o in world.objects:
-            if o.get("oid") == ALTAR_OID and o.get("kind") == "decor":
-                o["kind"], o["name"] = "altar", "Altar of the Ancients"
+        # The mountaintop preset carries the Ancients' three statues and the altar they rise from.
+        # The Rite of Passage was fought below, in Act 5, and Sanctuary is a town: none of it
+        # belongs here, so the statues and the altar go rather than standing about as scenery.
+        world.monsters = [m for m in world.monsters
+                          if getattr(m, "boss", None) != "ancients"
+                          and str(getattr(m, "d2id", "")) not in ANCIENT_IDS]
+        world.objects = [o for o in world.objects
+                         if o.get("oid") not in ALTAR_OIDS and o.get("kind") != "altar"]
         # the chest beside the Tree of Inifuss is the hero's own stash. The map places D2's chest
         # for its look; a town turns every container into scenery (game/objects.py), so it is made
         # a stash here, keeping its art.

@@ -1604,10 +1604,15 @@ class D2Hud:
     BOUNTY_X0, BOUNTY_Y0 = 16, 44
     BOUNTY_PITCH = (92, 112)
 
-    def _panel_frame(self, surf, bg, w, h):
-        """A D2 panel of any size: the four corners of the 320x432 art kept sharp, its edges and
-        middle tiled outwards. The quest and waypoint panels are this art at its native size."""
-        key = ("frame", w, h, id(bg))
+    def _panel_frame(self, surf, bg, w, h, split=None):
+        """A D2 panel of any size, built from the quest panel's own art.
+
+        That art is in two halves: carved stone down to y=235, where the quest icons sit, and the
+        flat dark description box below it. Both are tiled out to the size wanted - stone above
+        `split`, dark below - so a board of bounty brackets sits on stone the whole way down
+        instead of running onto black half way through.
+        """
+        key = ("frame", w, h, split, id(bg))
         comp = self.__dict__.setdefault("_bg_cache", {}).get(key)
         if comp is None:
             base = pygame.Surface((320, 432), pygame.SRCALPHA)
@@ -1616,19 +1621,26 @@ class D2Hud:
                 if bg and i < len(bg) and bg[i] is not None:
                     base.blit(bg[i], (x, y))
             c = 96                                      # corner block kept at native size
+            cut = h - c if split is None else max(c, min(h - c, int(split)))
             comp = pygame.Surface((w, h), pygame.SRCALPHA)
-            mid = base.subsurface(pygame.Rect(c, c, 320 - 2 * c, 432 - 2 * c)).copy()
-            for y in range(c, h - c, mid.get_height()):
-                for x in range(c, w - c, mid.get_width()):
-                    comp.blit(mid, (x, y))
+            stone = base.subsurface(pygame.Rect(c, 104, 320 - 2 * c, 126)).copy()
+            dark = base.subsurface(pygame.Rect(c, 258, 320 - 2 * c, 120)).copy()
+            for band, y0, y1 in ((stone, c, cut), (dark, cut, h - c)):
+                for y in range(y0, y1, band.get_height()):
+                    for x in range(c, w - c, band.get_width()):
+                        comp.blit(band, (x, y), pygame.Rect(0, 0, band.get_width(),
+                                                            min(band.get_height(), y1 - y)))
             top = base.subsurface(pygame.Rect(c, 0, 320 - 2 * c, c)).copy()
             bot = base.subsurface(pygame.Rect(c, 432 - c, 320 - 2 * c, c)).copy()
             for x in range(c, w - c, top.get_width()):
                 comp.blit(top, (x, 0)); comp.blit(bot, (x, h - c))
-            lef = base.subsurface(pygame.Rect(0, c, c, 432 - 2 * c)).copy()
-            rig = base.subsurface(pygame.Rect(320 - c, c, c, 432 - 2 * c)).copy()
-            for y in range(c, h - c, lef.get_height()):
-                comp.blit(lef, (0, y)); comp.blit(rig, (w - c, y))
+            # the side frames follow the same split, so the dark box reaches both edges
+            for sy, y0, y1 in ((104, c, cut), (258, cut, h - c)):
+                lef = base.subsurface(pygame.Rect(0, sy, c, 120)).copy()
+                rig = base.subsurface(pygame.Rect(320 - c, sy, c, 120)).copy()
+                for y in range(y0, y1, 120):
+                    area = pygame.Rect(0, 0, c, min(120, y1 - y))
+                    comp.blit(lef, (0, y), area); comp.blit(rig, (w - c, y), area)
             for sx, sy, dx, dy in ((0, 0, 0, 0), (320 - c, 0, w - c, 0),
                                    (0, 432 - c, 0, h - c), (320 - c, 432 - c, w - c, h - c)):
                 comp.blit(base, (dx, dy), pygame.Rect(sx, sy, c, c))
@@ -1680,7 +1692,9 @@ class D2Hud:
         held = bounties.held(p)
         held_ids = {x["id"] for x in held}
         W, H = self.BOUNTY_W, self.BOUNTY_H
-        self._panel_frame(surf, self.frames.get("questbackground") or self.frames.get("blank"), W, H)
+        grid_end = self.BOUNTY_Y0 + self.BOUNTY_ROWS * self.BOUNTY_PITCH[1] + 8
+        self._panel_frame(surf, self.frames.get("questbackground") or self.frames.get("blank"),
+                          W, H, split=grid_end)
         self.text(surf, self.f16, "Tree of Inifuss", GOLD, 0, 12, "center", W)
         self.text(surf, self.f10, "%d of %d contracts taken" % (len(held), bounties.MAX_HELD),
                   (170, 162, 145), 0, 30, "center", W)
@@ -1697,8 +1711,9 @@ class D2Hud:
             x, y = self.BOUNTY_X0 + col * px, self.BOUNTY_Y0 + row * py
             taken = o["id"] in held_ids
             if sock:
-                # frame 1 is D2's gold-outlined bracket: that is what marks a contract you hold
-                f = sock[1 if taken and len(sock) > 1 else 0]
+                # frame 1 is D2's gold-lit bracket, the one its quest log puts round the quest you
+                # are reading: here it marks the contract you are reading, and nothing else does
+                f = sock[1 if i == self.bounty_sel and len(sock) > 1 else 0]
                 if f is not None:
                     key = ("sock", id(f), sw, sh)
                     sc = self.__dict__.setdefault("_bg_cache", {}).get(key)
@@ -1715,14 +1730,15 @@ class D2Hud:
                 if sc is None:
                     sc = self._bg_cache[key] = pygame.transform.smoothscale(icon, self.P(sw - 26, sh - 32))
                 surf.blit(sc, self.P(x + 13, y + 20))
-            done = taken and bounties.complete(next(z for z in held if z["id"] == o["id"]))
-            if done:
-                tick = pygame.Surface(self.P(sw - 26, 13), pygame.SRCALPHA)
-                tick.fill((12, 40, 12, 210))
-                surf.blit(tick, self.P(x + 13, y + sh - 33))
-                self.text(surf, self.f10, "done", (150, 230, 150), x + 13, y + sh - 32, "center", sw - 26)
-            if i == self.bounty_sel:
-                pygame.draw.rect(surf, (235, 215, 140), self.R(x - 2, y - 2, sw + 4, sh + 4), 2)
+            if taken:
+                mine_i = next(z for z in held if z["id"] == o["id"])
+                fin = bounties.complete(mine_i)
+                strip = pygame.Surface(self.P(sw - 26, 13), pygame.SRCALPHA)
+                strip.fill((12, 40, 12, 215) if fin else (44, 36, 14, 215))
+                surf.blit(strip, self.P(x + 13, y + sh - 33))
+                self.text(surf, self.f10, "done" if fin else "taken",
+                          (150, 230, 150) if fin else (214, 190, 120),
+                          x + 13, y + sh - 32, "center", sw - 26)
             self.region(x, y, sw, sh, "bounty_sel", i)
 
         y = self.BOUNTY_Y0 + self.BOUNTY_ROWS * py + 6
