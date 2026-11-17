@@ -1842,32 +1842,34 @@ class D2Hud:
         return True
 
     def _draw_purse(self, surf, p, ox, y0):
-        """The account's four essences, under the backpack: a disc and a number for each.
+        """The account's three essences, in a row between the backpack and the gold.
 
-        They are not in the bag and never were - they are numbers the whole account shares, so
-        they sit apart from the grid, in two rows of two under it.
+        They are not in the bag and never were - they are numbers the whole account shares - so
+        they get a row of their own, each one a disc in its colour and a count beside it.
         """
         from game import essences
-        bw, bh, gap = 148, 24, 4
+        kinds = essences.holdings(p)
+        if not kinds:
+            return y0
+        bh, gap = 20, 3
+        bw = (304 - gap * (len(kinds) - 1)) // len(kinds)
         mx, my = self.mouse
-        for i, (kind, name, n) in enumerate(essences.holdings(p)):
-            col, row = i % 2, i // 2
-            x = ox + 8 + col * (bw + gap)
-            y = y0 + row * (bh + gap)
+        for i, (kind, name, n) in enumerate(kinds):
+            x = ox + 8 + i * (bw + gap)
             box = pygame.Surface(self.P(bw, bh), pygame.SRCALPHA)
-            box.fill((14, 13, 12, 225))
-            surf.blit(box, self.P(x, y))
-            pygame.draw.rect(surf, (74, 70, 62), self.R(x, y, bw, bh), 1)
-            if not self._coin(surf, kind, x + 3, y + 3, bh - 6):
+            box.fill((12, 11, 10, 232))
+            surf.blit(box, self.P(x, y0))
+            pygame.draw.rect(surf, (78, 73, 64), self.R(x, y0, bw, bh), 1)
+            if not self._coin(surf, kind, x + 2, y0 + 2, bh - 4):
                 pygame.draw.circle(surf, essences.color(kind),
-                                   self.P(x + 3 + (bh - 6) / 2.0, y + bh / 2.0), int(7 * self.s))
+                                   self.P(x + 2 + (bh - 4) / 2.0, y0 + bh / 2.0), int(6 * self.s))
             self.text(surf, self.f16, "%d" % n, WHITE if n else (118, 114, 106),
-                      x + bh + 2, y + 4, "right", bw - bh - 8)
-            if pygame.Rect(int(x), int(y), bw, bh).collidepoint((int(mx), int(my))):
+                      x + bh, y0 + 2, "right", bw - bh - 5)
+            if pygame.Rect(int(x), int(y0), bw, bh).collidepoint((int(mx), int(my))):
                 self.hover_lines = [(name, essences.color(kind)),
                                     ("%d on the account" % n, WHITE),
                                     ("Shared by every character; the Tree takes them", GREY)]
-        return y0 + 2 * (bh + gap)
+        return y0 + bh + gap
 
     def _d2_button(self, surf, x, y, w, h, label, action, arg=None, on=True):
         """The medium D2 button the character screen uses for its difficulty buttons."""
@@ -2521,11 +2523,11 @@ class D2Hud:
             self.text(surf, self.f16, str(p.gold), WHITE, ox + gold_box[0] + 4, gold_box[1] + 1)
             self.text(surf, self.f16, "%s (level %d)" % (p.name, p.level), GOLD,
                       ox + gold_box[0] + gold_box[2] + 6, gold_box[1] + 1)
-            self._draw_purse(surf, p, ox, 436 + dy)
+            self._draw_purse(surf, p, ox, 371 + dy)
             self._close_button(surf, close, ox, "mate_close")
             return
         self.text(surf, self.f16, str(p.gold), WHITE, ox + gold_box[0] + 4, gold_box[1] + 1)
-        self._draw_purse(surf, p, ox, 436 + dy)       # the account's essences, under the panel
+        self._draw_purse(surf, p, ox, 371 + dy)       # the essences, in the row above the gold
         if self._is_stash() and getattr(self, "cube_item", None) is not None:
             # with the stash open, your gold goes into it with a click (right click: 1000)
             self.region(ox + gold_box[0], gold_box[1], gold_box[2], gold_box[3], "stash_gold", True)

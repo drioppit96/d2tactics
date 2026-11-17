@@ -22,7 +22,7 @@ from .acts import ACT_RANGES, TOWN_IDS, SUMMIT
 MAX_HELD = 3            # contracts in hand at once
 REFRESH_AFTER = 3       # contracts handed in before the Tree writes its board again
 BOARD_SIZE = 8          # offers on the Tree: two rows of four
-BOARD_VERSION = 5       # bumped when the contracts themselves change: old boards are rewritten
+BOARD_VERSION = 6       # bumped when the contracts themselves change: old boards are rewritten
 #: a hero's contracts were cleared out once, when the kinds of contract changed for the last
 #: Raising this clears every hero's board and hand once, the next time his contracts are read,
 #: and the new number is written to his save so it never runs twice. Only raise it when the
@@ -169,6 +169,10 @@ def _migrate(world, o):
             o["level"] = BOSS_LEVEL.get(tag)
     if k == HUNT and not o.get("targets"):
         return None
+    if k == ESSENCE:
+        from . import essences
+        if o.get("target") not in essences.ESSENCES:
+            return None          # an essence the game no longer has (the Old Ones' was dropped)
     if k in (BOSS, HUNT):
         o.setdefault("got", [])
     o.setdefault("tier", 1)

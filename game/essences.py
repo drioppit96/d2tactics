@@ -1,12 +1,11 @@
-"""Essences: the four currencies every character on the account shares.
+"""Essences: the three currencies every character on the account shares.
 
 What a creature leaves behind when it dies, kept as a number rather than as something in the bag.
-There are four, one for each kind of thing that can die:
+There are three, one for each kind of thing that can die:
 
     Essence of the Damned      demons
     Essence of the Dead        the walking dead
     Essence of the Beasts      beasts
-    Essence of the Old Ones    the act bosses, and nothing else
 
 They are account wide. They sit on the one chest every character shares, so it makes no odds
 which hero in the party walks over the drop - it counts for all of them, and for every other
@@ -22,21 +21,19 @@ import random
 DAMNED = "damned"          # demons
 DEAD = "dead"              # the walking dead
 BEAST = "beast"            # beasts
-OLD = "old"                # the act bosses
 
 #: kind -> (what it is called, the colour it is drawn in, D2 art: inventory, on the ground)
 ESSENCES = {
     DAMNED: ("Essence of the Damned",   (214,  92,  78), ("invbet", "flpgsr")),
     DEAD:   ("Essence of the Dead",     (124, 178, 226), ("invtes", "flpgsb")),
     BEAST:  ("Essence of the Beasts",   (142, 196, 104), ("invfed", "flpgsg")),
-    OLD:    ("Essence of the Old Ones", (190, 130, 232), ("invvps", "flpvps")),
 }
 
 #: the order they are shown in, everywhere
-ORDER = (DAMNED, DEAD, BEAST, OLD)
+ORDER = (DAMNED, DEAD, BEAST)
 
-#: which kind of creature leaves which. An act boss leaves the Old Ones' essence and nothing
-#: else, whatever kind of thing it is otherwise.
+#: which kind of creature leaves which. An act boss leaves its own kind's essence like anything
+#: else, only a great deal more of it.
 BY_CLASS = {"demon": DAMNED, "undead": DEAD, "beast": BEAST}
 
 #: how often a kill leaves one, by what the thing was. Scarce enough to be worth seeing on the
@@ -64,6 +61,8 @@ def art(kind):
 # ---------------------------------------------------------------- the account's holdings
 def purse(player):
     """The account's essences: a dict on the shared chest, so every hero reads the same one."""
+    # there used to be a fourth, the Old Ones', for act bosses. Anything still held of it counts
+    # as the Damned's, which is what an act boss leaves now.
     st = getattr(player, "stash", None)
     holder = st if st is not None else player
     got = getattr(holder, "essences", None)
@@ -73,6 +72,9 @@ def purse(player):
             holder.essences = got
         except Exception:
             return {}
+    gone = got.pop("old", 0)
+    if gone:
+        got[DAMNED] = int(got.get(DAMNED, 0) or 0) + int(gone)
     return got
 
 
@@ -121,8 +123,6 @@ def kind_for(world, unit):
         return None
     if getattr(unit, "ally", False) or getattr(unit, "summoned", False):
         return None
-    if getattr(unit, "boss", None):
-        return OLD                       # an act boss, and whatever else carries a boss tag
     from . import bounties
     mid = str(getattr(unit, "d2id", "") or "")
     if not mid:
