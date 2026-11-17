@@ -448,6 +448,12 @@ def operate(world, o):
     if kind == "bounty":
         world.open_bounties = True
         return True
+    if kind in ("portal", "arcane_portal", "duriel_portal", "red_portal"):
+        # Sanctuary's pedestals and the Tree's bounty portals are map objects, so they come
+        # through here rather than through the quest objects. The travelling itself is the
+        # quests' business, the same as for a portal the game places itself.
+        from . import quests
+        return quests.on_object(world, o)
     if o["used"]:
         return False
     if kind == "lever":
@@ -747,6 +753,8 @@ def tooltip(o):
         return ["Lever", "Click to pull"]
     if k == "altar":
         return ["Ancients' Altar", "Touch it to call the Ancients"]
+    if k in ("portal", "arcane_portal", "duriel_portal", "red_portal"):
+        return [o.get("name") or "Portal", "Click to enter"]
     return [o["name"]]
 
 
