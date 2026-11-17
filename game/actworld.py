@@ -64,6 +64,9 @@ class ActInfo:
             return rift.name(lid)
         if lid == SUMMIT:
             return "Sanctuary"
+        from . import arena
+        if arena.is_arena(lid):
+            return arena.name(lid)
         sa = self._side(lid)
         if sa:
             return sa["name"]
@@ -953,6 +956,17 @@ def make_world(kit, info, content, level_key, seed=None, player=None, char_class
     act2.KIT = kit
     if unique_level(level_key):
         seed = 7919 * level_key + 17          # fixed: unique areas look the same every game
+    from . import arena
+    if arena.is_arena(level_key):
+        # the Tree's rooms are made new each time you step through: a fresh seed per visit, kept
+        # on the hero so a saved game picks up where it left off
+        n = int(getattr(player, "arena_visit", 0) or 0) + 1
+        try:
+            player.arena_visit = n
+        except Exception:
+            pass
+        seed = (7919 * level_key + 17) ^ (n * 2654435761) ^ int(getattr(player, "map_seed", 0) or 0)
+        seed &= 0x3FFFFFFF
     from . import custommap, rift
     if rift.is_rift(level_key):
         b, grid, rng = rift.build_level(kit, level_key, seed, player)
@@ -974,6 +988,9 @@ def make_world(kit, info, content, level_key, seed=None, player=None, char_class
     elif level_key == 39:
         from .act1 import build_cow
         b, grid, rng = build_cow(kit, seed, content)
+    elif level_key in (138, 139):
+        from . import arena
+        b, grid, rng = arena.build(kit, level_key, seed, content)
     elif level_key in LATE_WORLDS:
         mod, fn = LATE_WORLDS[level_key]
         import importlib

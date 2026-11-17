@@ -450,6 +450,12 @@ class Game:
 
     def _get_world(self, key, title):
         from game.actworld import make_world
+        from game import arena
+        if arena.is_arena(key):
+            # the Tree's rooms are not places that persist: each time you step through a pedestal
+            # it is a new room, with a new thing standing in it
+            self.levels.pop(key, None)
+            self._prebuilt.pop(key, None)
         if key in self.levels:
             return self.levels[key]
         if key in self._prebuilt:

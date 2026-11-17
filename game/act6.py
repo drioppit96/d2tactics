@@ -24,6 +24,14 @@ WORLDSTONE = 132          # the Worldstone Chamber, where Baal falls
 PORTAL_NAME = "Destruction's End"
 STASH_OID = 88            # the chest the map puts beside the Tree: the hero's stash
 TREE_OID = 30             # the Tree of Inifuss: the bounty board
+PAD_OID = 305             # the four pedestal pads on the plateau's upper shelf
+COW_LEVEL = 39            # the Moo Moo Farm
+
+#: what each pad opens on, by its cell. They read left to right as you look at the shelf.
+PADS = {(19, 32): ("cow", COW_LEVEL, "The Secret Cow Level"),
+        (30, 32): ("rift", None, "The Infernal Rift"),
+        (70, 33): ("boss", 138, "The Black Road"),
+        (80, 33): ("uber", 139, "The Warded Vault")}
 ALTAR_OIDS = (546,)       # the Ancients' altar in the middle of the ring: removed, not used
 COLOR = (199, 179, 119)
 
@@ -131,6 +139,45 @@ def _only_three(world):
         len(drop), "guardian" if len(drop) == 1 else "guardians"), COLOR)
 
 
+def pads(world):
+    """The four pads on the upper shelf, each a door of its own.
+
+    Left to right: the Moo Moo Farm, the rift (which used to open beside Gheed and opens here
+    now), a room with one of the Great Evils alone in it, and a room with a key holder and the
+    ten champions that keep it.
+    """
+    if getattr(world, "level_id", None) != SUMMIT:
+        return
+    from . import rift
+    for o in world.objects:
+        if o.get("oid") != PAD_OID:
+            continue
+        spec = PADS.get(tuple(o.get("cell") or ()))
+        if spec is None:
+            continue
+        what, target, label = spec
+        if what == "rift":
+            target = rift.level_id(1)
+            rift.plan(target, world.player)      # the floor is this hero's own, from his rift seed
+        o["kind"] = "portal"
+        o["target"] = target
+        o["name"] = label
+        o["used"] = False
+        o["level"] = SUMMIT
+
+
+def arena_way_back(world):
+    """A room the Tree opened has one door, and it is the one you came in by."""
+    if any(o.get("kind") == "portal" and o.get("target") == SUMMIT for o in world.objects):
+        return
+    p = world.player
+    cell = world._free_cell_near((p.x + 2, p.y + 2), 5) or world._free_cell_near(p.pos, 8)
+    if cell is None:
+        return
+    world.objects.append(dict(kind="portal", cell=cell, level=world.level_id, oid=0, used=False,
+                              target=SUMMIT, name="Back to Sanctuary"))
+
+
 def bounty_portals(world):
     """The three pedestals in the ring, one per contract in hand.
 
@@ -193,6 +240,7 @@ def on_enter(world, lid):
         from . import bounties
         bounties.init(world.player)
         bounty_portals(world)
+        pads(world)
         p = world.player
         seen = p.__dict__.setdefault("visited", set())
         if SUMMIT not in seen:

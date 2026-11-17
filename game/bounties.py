@@ -164,6 +164,9 @@ def _open_world(lid):
     """
     if not isinstance(lid, int) or lid in TOWN_IDS or lid == SUMMIT:
         return False
+    from . import arena
+    if arena.is_arena(lid):
+        return False                 # the Tree's own rooms are not places in the world
     try:
         from . import rift
         if rift.is_rift(lid):

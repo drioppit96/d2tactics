@@ -402,10 +402,13 @@ def available(player):
 
 
 def ensure_portal(world):
-    """The red portal stands beside Gheed in the Rogue Encampment once Andariel has fallen."""
+    """The way into the rift is a pedestal in Sanctuary now (game/act6.py pads), not a portal
+    beside Gheed - but the Rogue Encampment still has to forget the last run when you come back
+    through it, which is what the rest of this does."""
     p = world.player
     if world.level_id != 1 or not available(p):
         return
+    town_only = True
     depth = 1                                   # leaving the rift resets the count: town always opens Rift 1
     if int(getattr(p, "rift_depth", 0) or 0) or getattr(p, "_in_rift", False):
         from . import riftmap                   # back in town: that run is over, the next one is new
@@ -416,6 +419,8 @@ def ensure_portal(world):
         forget(p)
         world.objects[:] = [o for o in world.objects
                             if not (o.get("kind") == "portal" and is_rift(o.get("target")))]
+    if town_only:
+        return                                   # Sanctuary's pedestal is the only way in now
     if any(o.get("kind") == "portal" and is_rift(o.get("target")) for o in world.objects):
         return
     plan(level_id(depth), p)                    # (the floor is the hero's own, from his rift seed)

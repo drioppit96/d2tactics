@@ -249,6 +249,12 @@ def on_enter(world, lid):
     quests2.on_enter(world, lid)
     quests345.on_enter(world, lid)
     act6.on_enter(world, lid)
+    from . import arena
+    if arena.is_arena(lid):
+        arena.populate(world)
+        act6.arena_way_back(world)
+    elif lid == act6.COW_LEVEL and act6.available(p):
+        act6.arena_way_back(world)      # you came through Sanctuary's pad: that is the way out
 
 
 def restore(world):
