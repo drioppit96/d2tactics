@@ -22,7 +22,11 @@ from .acts import ACT_RANGES, TOWN_IDS, SUMMIT
 MAX_HELD = 3            # contracts in hand at once
 BOARD_SIZE = 8          # offers on the Tree: two rows of four
 BOARD_VERSION = 4       # bumped when the contracts themselves change: old boards are rewritten
-WIPE = 1                # bumped to clear every hero's board and hand once, on next load
+#: a hero's contracts were cleared out once, when the kinds of contract changed for the last
+#: time. That is over: nothing clears a log any more. A contract written by an older build is
+#: brought up to date instead (_migrate), and only one that cannot be is struck off. The field
+#: is still written to the save so no older build of the game can clear a log again.
+WIPE = 1
 COLOR = (199, 179, 119)
 GREY = (150, 145, 135)
 
@@ -94,14 +98,7 @@ def init(p):
     if not hasattr(p, "bounty_done"):
         p.bounty_done = 0
     if not hasattr(p, "bounty_wipe"):
-        p.bounty_wipe = 0
-    if int(getattr(p, "bounty_wipe", 0) or 0) != WIPE:
-        # the one-time clear-out. It sits here, in the first thing every path calls, so that it
-        # happens whether the contracts are read by the quest log, the Tree or the portals, and
-        # not only when the Tree is opened
         p.bounty_wipe = WIPE
-        p.bounties = []
-        p.bounty_board = None
 
 
 def party(world):
@@ -176,23 +173,12 @@ def _migrate(world, o):
     return o
 
 
-def _wipe_once(world):
-    """Clear the board and whatever is in hand, once per hero, when WIPE goes up.
-
-    The contracts have been reworked enough times that old ones in a log are not worth keeping.
-    This runs the first time a hero's bounties are read after the change, and never again.
-    """
-    party(world)             # init() does the clearing itself, for everyone in the team
-    return False
-
-
 def _wipe_if_stale(world):
     """A board written for Normal means nothing in Nightmare, and a kind the game has dropped
     means nothing at all."""
     p = world.player
     init(p)
-    if _wipe_once(world):
-        return
+    party(world)             # everyone in the team, so each one's own fields are set up
     diff = _difficulty(world)
     b = p.bounty_board
     if b is not None and b.get("diff") != diff:
