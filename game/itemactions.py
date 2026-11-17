@@ -14,7 +14,9 @@ RED = (255, 80, 80)
 VENDORS = {"akara": "akara", "charsi": "charsi", "gheed": "gheed",
            "fara": "fara", "lysander": "lysander", "drognan": "drognan", "elzix": "elzix",
            "ormus": "ormus", "alkor": "alkor", "asheara": "asheara", "hratli": "hralti",      # D2's own spelling
-           "jamella": "jamella", "halbu": "halbu", "larzuk": "larzuk", "malah": "malah", "drehya": "drehya"}
+           "jamella": "jamella", "halbu": "halbu", "larzuk": "larzuk", "malah": "malah", "drehya": "drehya",
+           # Sanctuary (Act 6): the three who kept the Worldstone keep its last town
+           "tyrael3": "malah", "malachai": "gheed", "izualghost": "halbu"}
 NPC_OPTIONS = {
     "akara": ["Talk", "Trade", "Level 99 (test)"],             # TEST ONLY: "Level 99 (test)", remove later
     "charsi": ["Talk", "Trade", "Recharge"], "gheed": ["Talk", "Trade", "Gamble"],
@@ -34,7 +36,11 @@ NPC_OPTIONS = {
     "jamella": ["Talk", "Trade", "Gamble"], "halbu": ["Talk", "Trade", "Recharge"], "cain4": ["Talk", "Identify Items"],
     # Harrogath
     "larzuk": ["Talk", "Trade", "Recharge", "Imbue Sockets"], "malah": ["Talk", "Trade"], "drehya": ["Talk", "Trade", "Gamble"],
-    "qual-kehk": ["Talk", "Hire"], "nihlathak": ["Talk"], "tyrael3": ["Talk"], "cain6": ["Talk", "Identify Items"],
+    "qual-kehk": ["Talk", "Hire"], "nihlathak": ["Talk"], "cain6": ["Talk", "Identify Items"],
+    # Sanctuary: Tyrael mends the party, Hadriel deals, Izual keeps the arms
+    "tyrael3": ["Talk", "Trade", "Heal Party"],
+    "malachai": ["Talk", "Trade", "Gamble"],
+    "izualghost": ["Talk", "Trade", "Recharge"],
 }
 STORE_W, STORE_H = 10, 10
 TAB_NAMES = {"armo": "Armor", "weap": "Weapons", "misc": "Misc", "gamble": "Gamble", "maps": "Maps"}

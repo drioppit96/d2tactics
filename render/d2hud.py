@@ -1258,6 +1258,26 @@ class D2Hud:
                           x, y + 6, "center", w - 2)
             self.region(x, y, w, 30, action, a)
 
+    def _bounty_journal(self, p):
+        """Act 6's page of the quest log: the contracts in hand, read like quests."""
+        from game import bounties
+        bounties.init(p)
+        out = []
+        for o in bounties.held(p):
+            done = bounties.complete(o, p)
+            n = bounties.progress(p, o)
+            if done:
+                state, line = "done", "Done. The Tree of Inifuss is waiting."
+            else:
+                state = "active"
+                line = o["text"] if o["count"] <= 1 else "%s  (%d of %d)" % (o["text"], n, o["count"])
+            out.append((o["title"], state, line, o.get("icon")))
+        while len(out) < bounties.MAX_HELD:
+            out.append(("Empty contract", "none",
+                        "The Tree of Inifuss writes three at a time. This one is yours to take.",
+                        None))
+        return out
+
     def _draw_quests(self, surf, p):
         """D2's quest log: act tabs, the board of quest icons (in colour while the quest is under way,
         grey once done after D2's completion animation, dark when not started), the chosen quest's
@@ -1269,16 +1289,22 @@ class D2Hud:
         here = act_of(self.world.level_id) if getattr(self, "world", None) and self.world.level_id else 1
         top = max([here, int(getattr(p, "current_act", 1) or 1)] + [act_of(l) for l in getattr(p, "visited", ()) if l])
         acts = list(range(1, min(5, top) + 1))
+        from game import act6 as _a6
+        if _a6.available(p):
+            acts.append(6)                  # Act 6 has no quests of its own: the board goes here
         if getattr(self, "q_act", None) not in acts:
             self.q_act = here if here in acts else acts[-1]
         act = self.q_act
         self._act_tabs(surf, acts, act, "q_tab", "expquesttabs")
-        entries = journal(p, act)
-        from game import quests as _q
-        ids = [q for q, _ in ({1: _q.ACT1}.get(act) or [])]
-        order = self.QUEST_ORDER.get(act)
-        if order and ids:
-            entries = [entries[ids.index(q)] for q in order if q in ids]
+        if act == 6:
+            entries = self._bounty_journal(p)
+        else:
+            entries = journal(p, act)
+            from game import quests as _q
+            ids = [q for q, _ in ({1: _q.ACT1}.get(act) or [])]
+            order = self.QUEST_ORDER.get(act)
+            if order and ids:
+                entries = [entries[ids.index(q)] for q in order if q in ids]
         sel = self.q_sel.get(act)
         if sel is None or sel >= len(entries):
             sel = next((i for i, e in enumerate(entries) if e[1] not in ("done", "none")), 0)
@@ -1287,7 +1313,8 @@ class D2Hud:
         mx, my = self.mouse
         import time as _t
         seen = p.__dict__.setdefault("_quest_anim", {})
-        for i, (title, status, text) in enumerate(entries[:6]):
+        for i, ent in enumerate(entries[:6]):
+            title, status, text = ent[:3]
             sx, sy = self.QUEST_SOCKETS[i]
             x, y = self.QUEST_SLOTS[i]
             if sockets:
@@ -1296,8 +1323,16 @@ class D2Hud:
                     self.put(surf, f, sx, sy)
             else:
                 pygame.draw.rect(surf, (200, 170, 90) if i == sel else (60, 55, 45), self.R(sx, sy, 80, 95), 2)
-            icon = self._quest_icon(act, i + 1)
-            if icon:
+            icon = None if act == 6 else self._quest_icon(act, i + 1)
+            if act == 6:
+                plaque = self._bounty_icon((entries[i][3] if len(entries[i]) > 3 else None) or "skulls")
+                if plaque is not None:
+                    key = ("qbic", id(plaque), 64, 74)
+                    sc = self.__dict__.setdefault("_bg_cache", {}).get(key)
+                    if sc is None:
+                        sc = self._bg_cache[key] = pygame.transform.smoothscale(plaque, self.P(64, 74))
+                    surf.blit(sc, self.P(x + 4, y + 10))
+            elif icon:
                 if status == "done":
                     # D2 plays the completion animation once (the first time you look), then the grey icon
                     t0 = seen.get((act, i))
@@ -1321,7 +1356,7 @@ class D2Hud:
             if pygame.Rect(int(sx), int(sy), 80, 95).collidepoint((int(mx), int(my))):
                 self.hover_lines = [(title, GOLD if status != "none" else GREY)]
         if entries:
-            title, status, text = entries[sel]
+            title, status, text = entries[sel][:3]
             self.text(surf, self.f16, title, WHITE if status != "none" else GREY, 0, 234, "center", 320)
             if status == "done":
                 text = "Quest completed."

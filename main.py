@@ -587,6 +587,20 @@ class Game:
         elif opt == "Recharge":
             from game import durability
             durability.recharge_all(w)
+        elif opt == "Heal Party":
+            from game import tactics
+            party = list(tactics.party(w)) if hasattr(tactics, "party") else [w.player]
+            healed = 0
+            for hero in party or [w.player]:
+                if hero.hp < hero.max_hp or hero.mana < hero.max_mana:
+                    healed += 1
+                hero.hp, hero.mana = hero.max_hp, hero.max_mana
+                merc = getattr(hero, "merc", None)
+                if merc and merc.get("hp", 0) > 0:
+                    merc["hp"] = merc.get("max_hp", merc["hp"])
+            w.log("Tyrael: 'Be whole again.'" if healed else "Tyrael: 'You carry no wounds.'",
+                  (220, 210, 170))
+            w.emit("heal", w.player)
         elif opt == "Level 99 (test)":
             # TESTING ONLY: jump to level 99 with every stat and skill point the levels give
             p = w.player
