@@ -1,15 +1,18 @@
 """The Tree of Inifuss: bounties, the thing Act 6 is for.
 
 Diablo's story ends when Baal falls. Sanctuary is where this game carries on, and the
-Tree is what it carries on with: a board of six contracts against the world below, refreshed for
-gold, three of them in hand at a time.
+Tree is what it carries on with: a board of eight contracts against the world below, three of
+them in hand at a time.
 
-    board(world)            the six offers, made the first time you look and kept after
+    board(world)            the eight offers, made the first time you look and kept after
     accept(world, bid)      take one (three at once, no more)
     abandon(world, bid)     give one up, its slot comes free
-    reroll(world)           pay to replace every offer you have not taken
     on_killed(world, unit)  count a kill towards whatever is in hand
     claim(world, bid)       hand in a finished one and take the reward
+
+A contract in hand keeps its plaque on the Tree for as long as it is held: nothing replaces it
+and nothing finishes it by itself. The only way it leaves your log is the Tree - handed in there
+when the work is done, or given up there.
 
 A bounty lives on the hero (p.bounties, p.bounty_board), so it keeps across levels and saves and
 each hero carries his own. Everything is per difficulty: stepping up to Nightmare wipes the board
@@ -19,8 +22,8 @@ from .acts import ACT_RANGES, TOWN_IDS, SUMMIT
 
 MAX_HELD = 3            # contracts in hand at once
 BOARD_SIZE = 8          # offers on the Tree: two rows of four
-BOARD_VERSION = 2       # bumped when the contracts themselves change: old boards are rewritten
-REROLL_BASE = 0         # the Tree asks nothing to write new contracts
+BOARD_VERSION = 3       # bumped when the contracts themselves change: old boards are rewritten
+WIPE = 1                # bumped to clear every hero's board and hand once, on next load
 COLOR = (199, 179, 119)
 GREY = (150, 145, 135)
 
@@ -91,6 +94,8 @@ def init(p):
         p.bounty_board = None
     if not hasattr(p, "bounty_done"):
         p.bounty_done = 0
+    if not hasattr(p, "bounty_wipe"):
+        p.bounty_wipe = 0
 
 
 def party(world):
@@ -165,11 +170,33 @@ def _migrate(world, o):
     return o
 
 
+def _wipe_once(world):
+    """Clear the board and whatever is in hand, once per hero, when WIPE goes up.
+
+    The contracts have been reworked enough times that old ones in a log are not worth keeping.
+    This runs the first time a hero's bounties are read after the change, and never again.
+    """
+    wiped = False
+    for h in party(world):
+        if int(getattr(h, "bounty_wipe", 0) or 0) == WIPE:
+            continue
+        h.bounty_wipe = WIPE
+        if h.bounties or h.bounty_board:
+            wiped = True
+        h.bounties = []
+        h.bounty_board = None
+    if wiped:
+        world.log("The Tree's bark is bare. Its old contracts are gone.", GREY)
+    return wiped
+
+
 def _wipe_if_stale(world):
     """A board written for Normal means nothing in Nightmare, and a kind the game has dropped
     means nothing at all."""
     p = world.player
     init(p)
+    if _wipe_once(world):
+        return
     diff = _difficulty(world)
     b = p.bounty_board
     if b is not None and b.get("diff") != diff:
@@ -530,7 +557,7 @@ def _distinct(world, rng, n, areas, taken, tries=12):
 
 
 def board(world):
-    """The eight offers on the Tree, made once and then kept until taken or rerolled."""
+    """The eight offers on the Tree, made the first time you look and kept after."""
     _wipe_if_stale(world)
     p = world.player
     b = p.bounty_board
@@ -542,7 +569,7 @@ def board(world):
         rng = world.rng
         areas = _areas(world)
         taken = set()
-        p.bounty_board = dict(diff=_difficulty(world), rerolls=0, version=BOARD_VERSION,
+        p.bounty_board = dict(diff=_difficulty(world), version=BOARD_VERSION,
                               offers=[_distinct(world, rng, i, areas, taken) for i in range(BOARD_SIZE)])
     _graft_held(world)
     _mirror(world)
@@ -569,32 +596,10 @@ def _graft_held(world):
     free = [i for i, o in enumerate(offers) if o.get("id") not in {x["id"] for x in p.bounties}]
     for x in orphans:
         if free:
-            offers[free.pop()] = x
+            offers[free.pop(0)] = x
         else:
             offers.append(x)
     b["offers"] = offers
-
-
-def reroll_cost(world):
-    b = board(world)
-    return REROLL_BASE * (2 ** int(b.get("rerolls", 0)))
-
-
-def reroll(world):
-    """New contracts, for nothing: the Tree asks no price to write them again."""
-    p = world.player
-    b = board(world)
-    rng = world.rng
-    areas = _areas(world)
-    held = {x["id"] for x in p.bounties}
-    n = int(b.get("rerolls", 0)) * BOARD_SIZE + BOARD_SIZE
-    taken = {(o["kind"], o.get("level"), o.get("target")) for o in b["offers"] if o["id"] in held}
-    b["offers"] = [o if o["id"] in held else _distinct(world, rng, n + i, areas, taken)
-                   for i, o in enumerate(b["offers"])]
-    b["rerolls"] = int(b.get("rerolls", 0)) + 1
-    world.log("The Tree's leaves turn. New contracts.", COLOR)
-    _mirror(world)
-    return True
 
 
 # ---------------------------------------------------------------- taking and giving up

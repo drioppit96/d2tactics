@@ -1951,19 +1951,16 @@ class D2Hud:
                       "center", pw)
         y += bh + 8
 
-        cost = bounties.reroll_cost(world)   # free now, kept so the button can still say so
         taken = o["id"] in held_ids
         can_take = not taken and len(held) < bounties.MAX_HELD
         done = mine is not None and bounties.complete(mine, p)
-        bw2 = (W - 40) // 3
+        bw2 = (W - 36) // 2
         self._d2_button(surf, 16, y, bw2, 32, "Claim" if done else "Accept",
                         "bounty_claim" if done else "bounty_take", o["id"], on=done or can_take)
         self._d2_button(surf, 20 + bw2, y, bw2, 32, "Abandon", "bounty_drop", o["id"],
                         on=mine is not None and not done)
-        self._d2_button(surf, 24 + 2 * bw2, y, bw2, 32, "Refresh", "bounty_reroll", on=True)
         y += 34
-        self.text(surf, self.f10, ("refreshing is free      you have %d gold" % p.gold) if not cost
-                  else ("refresh costs %d gold      you have %d" % (cost, p.gold)),
+        self.text(surf, self.f10, "a contract stays on the Tree until you hand it in or give it up",
                   (165, 150, 110), 0, y, "center", W)
         self._close_button(surf, (W - 42, H - 46, 32, 32), 0, "bounties")
 
