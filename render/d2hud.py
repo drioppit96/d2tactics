@@ -1732,7 +1732,7 @@ class D2Hud:
                 surf.blit(sc, self.P(x + 13, y + 20))
             if taken:
                 mine_i = next(z for z in held if z["id"] == o["id"])
-                fin = bounties.complete(mine_i)
+                fin = bounties.complete(mine_i, p)
                 strip = pygame.Surface(self.P(sw - 26, 13), pygame.SRCALPHA)
                 strip.fill((12, 40, 12, 215) if fin else (44, 36, 14, 215))
                 surf.blit(strip, self.P(x + 13, y + sh - 33))
@@ -1751,10 +1751,11 @@ class D2Hud:
         self.text(surf, self.f10, o["text"], (198, 190, 172), 0, y, "center", W)
         y += 16
         if mine is not None:
-            prog = "completed" if bounties.complete(mine) else (
-                "%d of %d" % (mine["done"], mine["count"]) if mine["count"] > 1 else "under way")
+            prog = "completed" if bounties.complete(mine, p) else (
+                "%d of %d" % (bounties.progress(p, mine), mine["count"])
+                if mine["count"] > 1 else "under way")
             self.text(surf, self.f10, prog,
-                      (150, 230, 150) if bounties.complete(mine) else (190, 170, 110), 0, y, "center", W)
+                      (150, 230, 150) if bounties.complete(mine, p) else (190, 170, 110), 0, y, "center", W)
         y += 18
 
         # the reward: the item this contract pays, and the gold beside it
@@ -1783,7 +1784,7 @@ class D2Hud:
         cost = bounties.reroll_cost(world)
         taken = o["id"] in held_ids
         can_take = not taken and len(held) < bounties.MAX_HELD
-        done = mine is not None and bounties.complete(mine)
+        done = mine is not None and bounties.complete(mine, p)
         bw2 = (W - 40) // 3
         self._d2_button(surf, 16, y, bw2, 32, "Claim" if done else "Accept",
                         "bounty_claim" if done else "bounty_take", o["id"], on=done or can_take)

@@ -2351,6 +2351,10 @@ class World(SkillCaster, ItemActions):
             drops += d2r.sunder_drop(self, unit)      # D2R's Sunder Charms, off champions
         else:
             drops = roll_drop(unit.level, unit.unique, self.rng)
+        from . import organs
+        part = organs.roll_drop(self, unit, self.rng)   # its heart, brain or blood, for the Tree
+        if part is not None:
+            drops = list(drops) + [part]
         for it in drops:
             cell = self._drop_cell(unit.pos)
             self.ground.setdefault(cell, []).append(it)

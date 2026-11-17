@@ -26,8 +26,13 @@ GREY = (150, 145, 135)
 #: what a contract can ask for
 CULL = "cull"           # kill N of a kind, anywhere
 HUNT = "hunt"           # kill a unique or champion in one area
-CLEAR = "clear"         # leave one area with nothing alive on it
 BOSS = "boss"           # kill one of the act bosses
+ORGAN = "organ"         # deposit N body parts of one creature (game/organs.py)
+GEM = "gem"             # deposit N perfect gems of one colour
+RUNE = "rune"           # deposit N of one rune
+
+#: the three you hand in rather than hunt down
+DEPOSIT = (ORGAN, GEM, RUNE)
 
 #: the act bosses worth a contract, by the boss tag game/actworld.py gives them
 BOSSES = [("andariel", "Andariel"), ("duriel", "Duriel"), ("mephisto", "Mephisto"),
@@ -35,7 +40,8 @@ BOSSES = [("andariel", "Andariel"), ("duriel", "Duriel"), ("mephisto", "Mephisto
           ("countess", "The Countess"), ("summoner", "The Summoner"), ("blood_raven", "Blood Raven")]
 
 #: the carved plaques the board shows, by what the contract is against
-ICON_BY_KIND = {CULL: "skulls", HUNT: "gargoyle", CLEAR: "trident", BOSS: "horned_skull"}
+ICON_BY_KIND = {CULL: "skulls", HUNT: "gargoyle", BOSS: "horned_skull",
+                ORGAN: "gauntlet", GEM: "eye", RUNE: "serpent"}
 #: a contract against one of these families gets its own plaque instead
 ICON_BY_FAMILY = {"zombie": "undead", "skeleton": "undead", "returned": "undead",
                   "burningdead": "undead", "corpsefire": "undead", "skmage": "undead",
@@ -47,7 +53,8 @@ ICONS = ("demon", "undead", "eye", "horned_skull", "trident", "skulls", "coin",
          "gargoyle", "gauntlet", "winged_skull", "serpent")
 
 #: reward weight by kind - a contract that takes longer pays more
-WEIGHT = {CULL: 1.0, HUNT: 1.4, CLEAR: 1.8, BOSS: 2.2}
+#: a deposit asks you to give up something you could have used, so it pays better
+WEIGHT = {CULL: 1.0, HUNT: 1.4, BOSS: 2.2, ORGAN: 1.6, GEM: 2.6, RUNE: 3.0}
 
 DIFF_MULT = {"normal": 1.0, "nightmare": 2.4, "hell": 5.0}
 
@@ -111,10 +118,18 @@ def _roster(world, lid):
         return []
 
 
+def _plural(name, n):
+    """'3 Thul Runes', '5 Fallen Hearts' - the count reads first, so the name follows it."""
+    if n == 1 or not name:
+        return name
+    return name + ("es" if name[-1] in "sxz" else "s")
+
+
 def _make_offer(world, rng, n, areas):
     diff = _difficulty(world)
     p = world.player
-    kind = rng.choices([CULL, HUNT, CLEAR, BOSS], weights=[40, 30, 20, 10])[0]
+    kind = rng.choices([CULL, HUNT, BOSS, ORGAN, GEM, RUNE],
+                       weights=[30, 22, 10, 22, 8, 8])[0]
     lid = rng.choice(areas)
     o = dict(id="b%d" % n, kind=kind, diff=diff, done=0, level=lid)
     if kind == BOSS:
@@ -122,10 +137,30 @@ def _make_offer(world, rng, n, areas):
         o.update(target=tag, count=1, level=None,
                  title="Slay %s" % title,
                  text="%s still draws breath. End it." % title)
-    elif kind == CLEAR:
-        o.update(target=None, count=1,
-                 title="Clear %s" % _level_name(world, lid),
-                 text="Leave nothing alive in %s." % _level_name(world, lid))
+    elif kind == ORGAN:
+        roster = _roster(world, lid)
+        mid = rng.choice(roster) if roster else "fallen1"
+        from . import organs
+        fam = organs.family(mid)
+        ok = organs.kind_for(fam)
+        count = rng.choice((5, 8, 10, 12))
+        nm = "%s %s" % (_monster_name(world, mid), organs.LABEL[ok])
+        o.update(target=organs.code_for(fam, ok), count=count, level=None, deposit=nm,
+                 organ=[fam, ok],
+                 title="Deposit %d %s" % (count, _plural(nm, count)),
+                 text="Bring the Tree %d %s." % (count, _plural(nm, count)))
+    elif kind == GEM:
+        code, nm = _perfect_gem(world, rng)
+        count = rng.choice((2, 3, 4))
+        o.update(target=code, count=count, level=None, deposit=nm,
+                 title="Deposit %d %s" % (count, _plural(nm, count)),
+                 text="The Tree wants %d %s." % (count, _plural(nm, count)))
+    elif kind == RUNE:
+        code, nm, _w = _rune_pick(world, rng)
+        count = rng.choice((1, 2, 3))
+        o.update(target=code, count=count, level=None, deposit=nm,
+                 title="Deposit %d %s" % (count, _plural(nm, count)),
+                 text="The Tree wants %d %s." % (count, _plural(nm, count)))
     elif kind == HUNT:
         o.update(target=None, count=1,
                  title="Hunt in %s" % _level_name(world, lid),
@@ -149,25 +184,106 @@ def _make_offer(world, rng, n, areas):
     return o
 
 
-def _roll_reward(world, o):
-    """The one item a contract pays, rolled when the contract is written and kept with it."""
-    from .save import _item_dict
+#: what a contract's item roll can turn into, over and above the ordinary boss drop
+SET_CHANCE = 0.03         # a set item
+UNIQUE_CHANCE = 0.03      # a unique
+GEM_CHANCE = 0.05         # a perfect gem
+RUNE_CHANCE = 0.05        # a rune, the high ones far less often
+
+
+def _gem_bases(world, grade=4):
     c = getattr(world, "content", None)
+    return [b for b in (getattr(c, "bases", None) or [])
+            if b.get("gem") and b["gem"][0] == "gem" and b["gem"][2] == grade]
+
+
+def _perfect_gem(world, rng):
+    """A perfect gem base: (code, its name)."""
+    gems = _gem_bases(world)
+    if not gems:
+        return "gpr", "Perfect Ruby"
+    b = rng.choice(gems)
+    return b["code"], b.get("name") or b["code"]
+
+
+def _rune_pick(world, rng, ceiling=33):
+    """One rune, the higher ones far rarer: El is common, Zod all but never.
+
+    Each step up the list is worth about three quarters of the one below it, so the thirty-three
+    runes fall off the way D2's own rune drops do without copying its treasure classes.
+    """
+    c = getattr(world, "content", None)
+    by = getattr(c, "base_by_code", None) or {}
+    runes = [("r%02d" % n, n) for n in range(1, ceiling + 1) if "r%02d" % n in by]
+    if not runes:
+        return "r01", "El Rune", 1.0
+    weights = [0.75 ** (n - 1) for _, n in runes]
+    code, n = rng.choices(runes, weights=weights)[0]
+    b = by.get(code) or {}
+    return code, (b.get("name") or code), weights[n - 1]
+
+
+def _make_code(world, code, ilvl, rng):
+    c = getattr(world, "content", None)
+    b = (getattr(c, "base_by_code", None) or {}).get(code)
+    if b is None:
+        return None
     try:
-        if c is not None and hasattr(c, "roll_drop"):
-            drops = c.roll_drop(o["ilvl"], True, world.rng)
-        else:
-            from . import items
-            drops = items.roll_drop(o["ilvl"], True, world.rng)
+        return c.make_item(b, ilvl, rng)
     except Exception:
         return None
-    for it in (drops or []):
-        if it is not None and getattr(it, "kind", "") != "gold":
+
+
+def _roll_reward(world, o):
+    """The one item a contract pays, rolled when the contract is written and kept with it.
+
+    Most of the time this is an ordinary boss drop at the contract's item level. On top of that
+    the Tree pays set and unique items far more often than the world does, and one roll in ten
+    is a perfect gem or a rune instead.
+    """
+    from .save import _item_dict
+    c = getattr(world, "content", None)
+    rng = world.rng
+    ilvl = o["ilvl"]
+    it = None
+    r = rng.random()
+    if r < GEM_CHANCE:
+        code, _nm = _perfect_gem(world, rng)
+        it = _make_code(world, code, ilvl, rng)
+    elif r < GEM_CHANCE + RUNE_CHANCE:
+        code, _nm, _w = _rune_pick(world, rng)
+        it = _make_code(world, code, ilvl, rng)
+    else:
+        q = rng.random()
+        forced = "unique" if q < UNIQUE_CHANCE else ("set" if q < UNIQUE_CHANCE + SET_CHANCE else None)
+        if forced and c is not None:
+            # most bases have no set piece or unique of their own, so keep drawing bases until
+            # one does - otherwise asking for a set item quietly returns a magic one
+            for _ in range(24):
+                try:
+                    b = c.pick_base(max(1, ilvl), rng)
+                    cand = c.make_item(b, ilvl, rng, forced) if b else None
+                except Exception:
+                    cand = None
+                if cand is not None and getattr(cand, "rarity", "") == forced:
+                    it = cand
+                    break
+        if it is None:
             try:
-                return _item_dict(it)
+                drops = c.roll_drop(ilvl, True, rng) if c is not None and hasattr(c, "roll_drop") else None
+                if drops is None:
+                    from . import items
+                    drops = items.roll_drop(ilvl, True, rng)
             except Exception:
                 return None
-    return None
+            it = next((d for d in (drops or [])
+                       if d is not None and getattr(d, "kind", "") != "gold"), None)
+    if it is None:
+        return None
+    try:
+        return _item_dict(it)
+    except Exception:
+        return None
 
 
 def reward_item(world, o):
@@ -263,7 +379,32 @@ def abandon(world, bid):
     return True
 
 
-def complete(o):
+def held_count(player, o):
+    """How much of a deposit contract the hero is actually carrying."""
+    from . import organs
+    code = o.get("target")
+    if o["kind"] == ORGAN:
+        return organs.count(player, code)
+    n = 0
+    for it in (player.inventory or []):
+        if getattr(it, "code", None) == code and getattr(it, "gem", None):
+            n += max(1, getattr(it, "quantity", 1) or 1)
+    st = getattr(player, "stash", None)
+    if st is not None:
+        n += int((getattr(st, "bank", None) or {}).get(code, 0))
+    return n
+
+
+def progress(player, o):
+    """Where a contract stands: kills are counted as they happen, deposits are counted now."""
+    if o["kind"] in DEPOSIT:
+        return min(o.get("count", 1), held_count(player, o))
+    return o.get("done", 0)
+
+
+def complete(o, player=None):
+    if player is not None and o["kind"] in DEPOSIT:
+        return held_count(player, o) >= o.get("count", 1)
     return o.get("done", 0) >= o.get("count", 1)
 
 
@@ -296,14 +437,33 @@ def on_killed(world, unit):
             o["done"] = min(o["count"], o.get("done", 0) + 1)
         elif k == HUNT and special and lid == o.get("level"):
             o["done"] = o["count"]
-        elif k == CLEAR and lid == o.get("level"):
-            alive = [m for m in world.monsters
-                     if m.alive and m is not unit and not getattr(m, "is_player", False)
-                     and not getattr(m, "npc", None) and not getattr(m, "ally", False)]
-            if not alive:
-                o["done"] = o["count"]
         if complete(o):
             world.log("Contract done: %s. The Tree is waiting." % o["title"], COLOR)
+
+
+def _spend_deposit(player, o):
+    """Hand the goods over: the Tree keeps them."""
+    from . import organs
+    code, want = o.get("target"), o.get("count", 1)
+    if o["kind"] == ORGAN:
+        return organs.take(player, code, want)
+    left = want
+    for it in list(player.inventory or []):
+        if left <= 0:
+            break
+        if getattr(it, "code", None) == code and getattr(it, "gem", None):
+            player.inventory.remove(it)
+            left -= 1
+    st = getattr(player, "stash", None)
+    bank = getattr(st, "bank", None) if st is not None else None
+    if left > 0 and bank:
+        take = min(left, int(bank.get(code, 0)))
+        if take:
+            bank[code] = int(bank.get(code, 0)) - take
+            if bank[code] <= 0:
+                bank.pop(code, None)
+            left -= take
+    return left <= 0
 
 
 # ---------------------------------------------------------------- the reward
@@ -311,7 +471,10 @@ def claim(world, bid):
     p = world.player
     init(p)
     o = next((x for x in p.bounties if x["id"] == bid), None)
-    if o is None or not complete(o):
+    if o is None or not complete(o, p):
+        return False
+    if o["kind"] in DEPOSIT and not _spend_deposit(p, o):
+        world.log("You are not carrying them.", GREY)
         return False
     p.bounties.remove(o)
     b = p.bounty_board
