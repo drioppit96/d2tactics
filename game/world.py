@@ -95,6 +95,22 @@ GREEN = (100, 220, 100)
 YELLOW = (255, 230, 90)
 GREY = (170, 170, 170)
 
+#: D2 shortens how long a stun holds the bigger the monster is, so a boss cannot simply be kept
+#: on the floor for ever. A turn is the smallest stun there is here, so the same idea is spent on
+#: the other side of it: once a stun wears off, that much is shrugged away before another lands.
+#: An ordinary monster shrugs nothing, so Bash and Smite work on the world exactly as before.
+STUN_SHRUG = {"normal": 0, "champion": 1, "unique": 2, "boss": 3}
+
+
+def _stun_grade(m):
+    if getattr(m, "boss", None):
+        return "boss"
+    if getattr(m, "unique", False):
+        return "unique"
+    if getattr(m, "champion", False):
+        return "champion"
+    return "normal"
+
 
 # D2's melee hit chance is very low early on; in a turn-based game every miss costs a whole
 # action, so the player's attacks get a floor (settings.ini [game] min_hit_chance)
@@ -2158,8 +2174,9 @@ class World(SkillCaster, ItemActions):
                 if target.alive:
                     dealt += self.elem_hit(target, et, lo, hi, attacker, POIS_FRAMES if et == "pois" else 50, show=False)
         if getattr(attacker, "hit_stun", 0) and target.alive and not target.is_player and \
-                self.rng.randrange(100) < attacker.hit_stun:
+                self.rng.randrange(100) < attacker.hit_stun and not self._shrugs_off_stun(target):
             target.effects["stun"] = max(target.effects.get("stun", 0), 1)
+            target.stun_shrug = STUN_SHRUG.get(_stun_grade(target), 0)
         if not attacker.is_player and getattr(attacker, "ally", False) and getattr(attacker, "leech", 0) and dealt:
             attacker.hp = min(attacker.max_hp, attacker.hp + max(1, dealt * attacker.leech // 100))
         if attacker.is_player and target is not attacker:
@@ -2198,11 +2215,19 @@ class World(SkillCaster, ItemActions):
                     if ed:
                         self.elem_hit(attacker, "cold", ed[1], ed[2], target, ed[3], show=False)
         if mods["stun"] and target.alive and not target.is_player:
-            target.effects["stun"] = max(target.effects.get("stun", 0), mods["stun"])
-            self.log("%s is stunned!" % target.name, YELLOW)
+            if self._shrugs_off_stun(target):
+                self.log("%s shakes off the blow." % target.name, GREY)
+            else:
+                target.effects["stun"] = max(target.effects.get("stun", 0), mods["stun"])
+                target.stun_shrug = STUN_SHRUG.get(_stun_grade(target), 0)
+                self.log("%s is stunned!" % target.name, YELLOW)
         if mods["knock"] and target.alive:
             self._knockback(attacker, target)
         return True
+
+    def _shrugs_off_stun(self, target):
+        """True if this one is still shaking the last stun off and cannot be stunned again yet."""
+        return int(getattr(target, "stun_shrug", 0) or 0) > 0
 
     def _knockback(self, src_unit, target, cells=1):
         if getattr(target, "radius", 0) or getattr(target, "stationary", False):
@@ -2447,6 +2472,8 @@ class World(SkillCaster, ItemActions):
                     eff.pop(k, None)
         if eff.get("stun"):
             eff["stun"] -= 1
+        elif getattr(m, "stun_shrug", 0):
+            m.stun_shrug -= 1
             self.emit("miss", m)          # shows a little "miss" puff: it can't act
             return
         if eff.get("flee"):

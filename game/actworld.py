@@ -33,7 +33,10 @@ BOSS_IDS = {"radament": ("Radament", "radament"), "duriel": ("Duriel", "duriel")
 # Life multipliers for act and quest bosses, by difficulty. D2's own MonStats give Izual more life
 # than anything else in Act 4, and in a turn-based fight that reads as a very long slog rather than
 # a hard fight, so Normal takes 40% off him. (boss, difficulty) -> what to multiply his life by.
-BOSS_LIFE = {("izual", "normal"): 0.60}
+#: Normal is where a party is weakest and the act bosses were written for one hero with a
+#: hireling, so every one of them carries 40% less life there. Nightmare and Hell are untouched.
+BOSS_LIFE_NORMAL = 0.60
+BOSS_LIFE = {}          # per boss overrides, if one ever needs to differ from the rest
 
 
 def _int(v, d=0):
@@ -593,7 +596,7 @@ def _spawn_preset(world, name, cell, owner, taken, info):
         if m is not None:
             m.boss = boss
             diff = (getattr(world.content, "difficulty", "normal") or "normal").lower()
-            k = BOSS_LIFE.get((boss, diff))
+            k = BOSS_LIFE.get((boss, diff), BOSS_LIFE_NORMAL if diff == "normal" else None)
             if k:
                 m.max_hp = m.hp = max(1, int(m.max_hp * k))
             if boss == "ancients":
