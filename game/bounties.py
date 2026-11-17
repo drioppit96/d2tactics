@@ -21,7 +21,7 @@ from .acts import ACT_RANGES, TOWN_IDS, SUMMIT
 
 MAX_HELD = 3            # contracts in hand at once
 BOARD_SIZE = 8          # offers on the Tree: two rows of four
-BOARD_VERSION = 3       # bumped when the contracts themselves change: old boards are rewritten
+BOARD_VERSION = 4       # bumped when the contracts themselves change: old boards are rewritten
 WIPE = 1                # bumped to clear every hero's board and hand once, on next load
 COLOR = (199, 179, 119)
 GREY = (150, 145, 135)
@@ -294,7 +294,24 @@ TIER_PAY = {1: 1.0, 2: 2.2, 3: 4.0}
 
 #: how much each kind asks for, by tier
 AMOUNT = {CULL: (30, 60, 100), RIFT: (5, 10, 15), BOSS: (1, 2, 3), HUNT: (1, 2, 3),
-          ORGAN: (10, 25, 50), GEM: (2, 4, 7), RUNE: (1, 3, 5)}
+          ORGAN: (10, 25, 50), GEM: (2, 4, 7), RUNE: (5, 3, 2)}
+
+#: which runes a deposit asks for, by tier, as positions in D2's own list (1 El ... 33 Zod).
+#: A bigger contract asks for fewer runes, but far better ones: five of El to Ral, three of Ort
+#: to Io, or two of Lum to Ist.
+RUNE_ASK = {1: (1, 8), 2: (9, 16), 3: (17, 24)}
+
+#: which runes a reward can pay, by tier. The bands sit above what the same tier asks for, so a
+#: rune contract always hands back something better than it took, and every other kind of
+#: contract pays a rune worth keeping rather than the El that an even falloff would give.
+RUNE_PAY = {1: (5, 12), 2: (11, 19), 3: (17, 26)}
+
+#: how far above the rune it asked for a rune contract must pay, and how wide that band is.
+#: D2's cube turns two or three of a rune into the next one up, so paying three to six places
+#: above what it took is a clear profit on the trade without reaching the top of the list.
+RUNE_STEP = 3
+RUNE_SPAN = 3
+RUNE_CAP = 30             # Ber: the Tree does not hand out the last three runes
 
 
 def _names(items):
@@ -347,8 +364,8 @@ def _make_offer(world, rng, n, areas):
                  title="%sDeposit %d %s" % (pre, want, _plural(nm, want)),
                  text="The Tree wants %d %s." % (want, _plural(nm, want)))
     elif kind == RUNE:
-        code, nm, _w = _rune_pick(world, rng)
-        o.update(target=code, count=want, level=None, deposit=nm,
+        code, nm, rank = _rune_pick(world, rng, *RUNE_ASK[tier])
+        o.update(target=code, count=want, level=None, deposit=nm, rune_rank=rank,
                  title="%sDeposit %d %s" % (pre, want, _plural(nm, want)),
                  text="The Tree wants %d %s." % (want, _plural(nm, want)))
     else:
@@ -393,21 +410,26 @@ def _perfect_gem(world, rng):
     return b["code"], b.get("name") or b["code"]
 
 
-def _rune_pick(world, rng, ceiling=33):
-    """One rune, the higher ones far rarer: El is common, Zod all but never.
+def _rune_pick(world, rng, lo=1, hi=33):
+    """One rune out of a band of D2's list, the higher end of the band the rarer.
 
-    Each step up the list is worth about three quarters of the one below it, so the thirty-three
-    runes fall off the way D2's own rune drops do without copying its treasure classes.
+    Returns (code, name, rank). A band keeps a reward honest: without one an even falloff over
+    all thirty-three runes hands out El almost every time, which is no reward at all.
     """
     c = getattr(world, "content", None)
     by = getattr(c, "base_by_code", None) or {}
-    runes = [("r%02d" % n, n) for n in range(1, ceiling + 1) if "r%02d" % n in by]
+    lo, hi = max(1, int(lo)), min(33, int(hi))
+    if hi < lo:
+        hi = lo
+    runes = [("r%02d" % n, n) for n in range(lo, hi + 1) if "r%02d" % n in by]
     if not runes:
-        return "r01", "El Rune", 1.0
-    weights = [0.75 ** (n - 1) for _, n in runes]
+        runes = [("r%02d" % n, n) for n in range(1, 34) if "r%02d" % n in by]
+    if not runes:
+        return "r01", "El Rune", 1
+    weights = [0.82 ** (n - runes[0][1]) for _, n in runes]
     code, n = rng.choices(runes, weights=weights)[0]
     b = by.get(code) or {}
-    return code, (b.get("name") or code), weights[n - 1]
+    return code, (b.get("name") or code), n
 
 
 def _make_code(world, code, ilvl, rng):
@@ -428,17 +450,28 @@ def _roll_reward(world, o):
     The board shows it plain and white, because nothing has been decided yet: what it is worth is
     rolled when the work is handed in (claim_item below). One reward in ten is a perfect gem or a
     rune, and those are what they are either way.
+
+    A contract that asked for gems or runes never pays in gems: it pays a rune, and a rune well
+    above the one it took, because handing over three runes for a gem is no trade at all.
     """
     from .save import _item_dict
     c = getattr(world, "content", None)
     rng = world.rng
     ilvl = o["ilvl"]
+    tier = int(o.get("tier", 1) or 1)
+    kind = o.get("kind")
+    lo, hi = RUNE_PAY.get(tier, RUNE_PAY[1])
+    hi = min(RUNE_CAP, hi)
+    if kind == RUNE:
+        lo = min(RUNE_CAP, max(lo, int(o.get("rune_rank", 0) or 0) + RUNE_STEP))
+        hi = min(RUNE_CAP, max(hi, lo + RUNE_SPAN))
+    hoard = kind in (GEM, RUNE)
     r = rng.random()
-    if r < GEM_CHANCE:
+    if r < GEM_CHANCE and not hoard:
         code, _nm = _perfect_gem(world, rng)
         it = _make_code(world, code, ilvl, rng)
-    elif r < GEM_CHANCE + RUNE_CHANCE:
-        code, _nm, _w = _rune_pick(world, rng)
+    elif r < (RUNE_CHANCE * 3 if hoard else GEM_CHANCE + RUNE_CHANCE):
+        code, _nm, _rank = _rune_pick(world, rng, lo, hi)
         it = _make_code(world, code, ilvl, rng)
     else:
         try:
