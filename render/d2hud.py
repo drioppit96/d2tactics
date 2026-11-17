@@ -31,6 +31,8 @@ INV_SLOTS = {"helm": (132, 2, 60, 60), "amulet": (205, 30, 30, 31), "weapon": (1
 GRID_X, GRID_Y, CELL = 18, 255, 29
 GOLD_BOX = (107, 392, 90, 18)
 INV_CLOSE = (18, 385, 32, 32)
+#: the four currency counters, right of the close button, where the gold bracket used to be
+PURSE_BOX = (56, 383, 256, 48)
 CHAR_CLOSE = (128, 389, 32, 32)
 SKILL_TREE_X, SKILL_TREE_DX, SKILL_TREE_Y, SKILL_TREE_DY = 15, 69, 59, 63
 
@@ -1841,35 +1843,47 @@ class D2Hud:
         surf.blit(sc, self.P(x, y))
         return True
 
-    def _draw_purse(self, surf, p, ox, y0):
-        """The account's three essences, in a row between the backpack and the gold.
+    def _draw_purse(self, surf, p, ox, dy, mate=False):
+        """The four counters at the foot of the inventory: gold, then the three essences.
 
-        They are not in the bag and never were - they are numbers the whole account shares - so
-        they get a row of their own, each one a disc in its colour and a count beside it.
+        Two rows of two, right of the close button, each a disc in the currency's own colour and
+        a bracket with the number in it. Gold sits with the essences because it is the same sort
+        of thing now - a number the whole party shares rather than coin in one hero's pocket.
         """
         from game import essences
-        kinds = essences.holdings(p)
-        if not kinds:
-            return y0
-        bh, gap = 20, 3
-        bw = (304 - gap * (len(kinds) - 1)) // len(kinds)
+        x0, y0, bw, bh = PURSE_BOX[0], PURSE_BOX[1] + dy, PURSE_BOX[2], PURSE_BOX[3]
+        # a slate behind them, which also covers the single gold bracket the panel art paints
+        slate = pygame.Surface(self.P(bw, bh), pygame.SRCALPHA)
+        slate.fill((17, 16, 14, 255))   # opaque: the panel paints a gold bracket under here
+        surf.blit(slate, self.P(ox + x0, y0))
+        pygame.draw.rect(surf, (74, 66, 50), self.R(ox + x0, y0, bw, bh), 1)
+        cw, ch, gap = (bw - 10) // 2, 21, 3
+        rows = [("gold", "Gold", p.gold, GOLD)] + \
+               [(k, nm, n, essences.color(k)) for k, nm, n in essences.holdings(p)]
         mx, my = self.mouse
-        for i, (kind, name, n) in enumerate(kinds):
-            x = ox + 8 + i * (bw + gap)
-            box = pygame.Surface(self.P(bw, bh), pygame.SRCALPHA)
-            box.fill((12, 11, 10, 232))
-            surf.blit(box, self.P(x, y0))
-            pygame.draw.rect(surf, (78, 73, 64), self.R(x, y0, bw, bh), 1)
-            if not self._coin(surf, kind, x + 2, y0 + 2, bh - 4):
-                pygame.draw.circle(surf, essences.color(kind),
-                                   self.P(x + 2 + (bh - 4) / 2.0, y0 + bh / 2.0), int(6 * self.s))
-            self.text(surf, self.f16, "%d" % n, WHITE if n else (118, 114, 106),
-                      x + bh, y0 + 2, "right", bw - bh - 5)
-            if pygame.Rect(int(x), int(y0), bw, bh).collidepoint((int(mx), int(my))):
-                self.hover_lines = [(name, essences.color(kind)),
-                                    ("%d on the account" % n, WHITE),
+        for i, (key, name, n, col) in enumerate(rows[:4]):
+            cx = ox + x0 + 4 + (i % 2) * (cw + gap)
+            cy = y0 + 3 + (i // 2) * (ch + gap)
+            if not self._coin(surf, key, cx, cy + 3, 15):
+                pygame.draw.circle(surf, col, self.P(cx + 7.5, cy + 10.5), int(6 * self.s))
+            bx, bwid = cx + 18, cw - 18
+            br = pygame.Surface(self.P(bwid, ch), pygame.SRCALPHA)
+            br.fill((6, 6, 6, 245))
+            surf.blit(br, self.P(bx, cy))
+            pygame.draw.rect(surf, (124, 104, 62), self.R(bx, cy, bwid, ch), 1)
+            self.text(surf, self.f16, "%d" % n, WHITE if n else (112, 108, 100), bx + 5, cy + 3)
+            hot = pygame.Rect(int(cx), int(cy), cw, ch).collidepoint((int(mx), int(my)))
+            if key == "gold":
+                if not mate and self._is_stash() and getattr(self, "cube_item", None) is not None:
+                    self.region(bx, cy, bwid, ch, "stash_gold", True)
+                    if hot:
+                        self.hover_lines = [("Click: put all your gold in the stash", WHITE),
+                                            ("Right click: put 1000 gold in the stash", WHITE)]
+                elif hot:
+                    self.hover_lines = [("Gold", GOLD), ("%d, the whole party's" % n, WHITE)]
+            elif hot:
+                self.hover_lines = [(name, col), ("%d on the account" % n, WHITE),
                                     ("Shared by every character; the Tree takes them", GREY)]
-        return y0 + bh + gap
 
     def _d2_button(self, surf, x, y, w, h, label, action, arg=None, on=True):
         """The medium D2 button the character screen uses for its difficulty buttons."""
@@ -2518,23 +2532,13 @@ class D2Hud:
         dy = GRID_Y + rows * CELL - 371
         gold_box = GOLD_BOX if not extra else (GOLD_BOX[0], GOLD_BOX[1] + dy, GOLD_BOX[2], GOLD_BOX[3])
         close = INV_CLOSE if not extra else (INV_CLOSE[0], INV_CLOSE[1] + dy, INV_CLOSE[2], INV_CLOSE[3])
-        self._coin(surf, "gold", ox + gold_box[0] - 20, gold_box[1], 18)
+        # gold and the three essences, in their own block (the stash click lives on the gold one)
+        self._draw_purse(surf, p, ox, dy, mate=mate)
         if mate:
-            self.text(surf, self.f16, str(p.gold), WHITE, ox + gold_box[0] + 4, gold_box[1] + 1)
             self.text(surf, self.f16, "%s (level %d)" % (p.name, p.level), GOLD,
-                      ox + gold_box[0] + gold_box[2] + 6, gold_box[1] + 1)
-            self._draw_purse(surf, p, ox, 371 + dy)
+                      ox + 8, gold_box[1] - 22)
             self._close_button(surf, close, ox, "mate_close")
             return
-        self.text(surf, self.f16, str(p.gold), WHITE, ox + gold_box[0] + 4, gold_box[1] + 1)
-        self._draw_purse(surf, p, ox, 371 + dy)       # the essences, in the row above the gold
-        if self._is_stash() and getattr(self, "cube_item", None) is not None:
-            # with the stash open, your gold goes into it with a click (right click: 1000)
-            self.region(ox + gold_box[0], gold_box[1], gold_box[2], gold_box[3], "stash_gold", True)
-            if pygame.Rect(ox + gold_box[0], gold_box[1], gold_box[2], gold_box[3]).collidepoint(
-                    (int(self.mouse[0]), int(self.mouse[1]))):
-                self.hover_lines = [("Click: put all your gold in the stash", WHITE),
-                                    ("Right click: put 1000 gold in the stash", WHITE)]
         self._close_button(surf, close, ox, "inv")
 
     def _held_anchor(self, cell, item, ox=None, page=None):
