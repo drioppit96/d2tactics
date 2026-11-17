@@ -363,8 +363,15 @@ def _make_offer(world, rng, n, areas):
 #: what a contract's item roll can turn into, over and above the ordinary boss drop
 SET_CHANCE = 0.03         # a set item
 UNIQUE_CHANCE = 0.03      # a unique
-GEM_CHANCE = 0.05         # a perfect gem
-RUNE_CHANCE = 0.05        # a rune, the high ones far less often
+#: what the Tree pays in, besides gear. It deals in nothing a vendor sells: no potions, no
+#: scrolls, no arrows, no charms - only things worth the walk back.
+GEM_CHANCE = 0.08         # a perfect gem
+RUNE_CHANCE = 0.08        # a rune, the high ones far less often
+JEWEL_CHANCE = 0.06       # a rare jewel, for a socket
+ESSENCE_CHANCE = 0.06     # a pile of one of the three essences
+
+#: how many essences a contract that pays in them hands over, by tier
+ESSENCE_PAY = {1: 15, 2: 35, 3: 70}
 
 
 def _gem_bases(world, grade=4):
@@ -404,13 +411,13 @@ def _rune_pick(world, rng, lo=1, hi=33):
     return code, (b.get("name") or code), n
 
 
-def _make_code(world, code, ilvl, rng):
+def _make_code(world, code, ilvl, rng, quality=None):
     c = getattr(world, "content", None)
     b = (getattr(c, "base_by_code", None) or {}).get(code)
     if b is None:
         return None
     try:
-        return c.make_item(b, ilvl, rng)
+        return c.make_item(b, ilvl, rng, quality) if quality else c.make_item(b, ilvl, rng)
     except Exception:
         return None
 
@@ -427,6 +434,10 @@ def _roll_reward(world, o):
 
     A gem contract never pays back a gem: it pays a rune, because handing a hoard of perfect
     gems over for one more gem is no trade at all.
+
+    Nothing a vendor sells comes out of here - no potions, no scrolls, no arrows, no charms -
+    and no magic item either. It is a rune, a perfect gem, a rare jewel, a pile of essence, or a
+    piece of gear that is rare at worst.
     """
     from .save import _item_dict
     c = getattr(world, "content", None)
@@ -437,13 +448,29 @@ def _roll_reward(world, o):
     lo, hi = RUNE_PAY.get(tier, RUNE_PAY[1])
     hi = min(RUNE_CAP, hi)
     hoard = kind == GEM
+    gem_at = 0.0 if hoard else GEM_CHANCE               # a gem contract is never paid in gems
+    rune_at = gem_at + (RUNE_CHANCE * 3 if hoard else RUNE_CHANCE)
+    jewel_at = rune_at + JEWEL_CHANCE
+    essence_at = jewel_at + ESSENCE_CHANCE
     r = rng.random()
-    if r < GEM_CHANCE and not hoard:
+    if r < gem_at:
         code, _nm = _perfect_gem(world, rng)
         it = _make_code(world, code, ilvl, rng)
-    elif r < (RUNE_CHANCE * 3 if hoard else GEM_CHANCE + RUNE_CHANCE):
+    elif r < rune_at:
         code, _nm, _rank = _rune_pick(world, rng, lo, hi)
         it = _make_code(world, code, ilvl, rng)
+    elif r < jewel_at:
+        o["quality"] = "rare"                           # a jewel has no set piece or unique
+        it = _make_code(world, "jew", ilvl, rng, "normal")
+        if it is not None:
+            # D2 has no plain jewel, so one made white comes out magic with a name already on
+            # it. The board shows the base, as it does for everything else
+            it.name, it.rarity, it.mods, it.mod_list = "Jewel", "normal", {}, None
+    elif r < essence_at:
+        from . import essences
+        ek = rng.choice(essences.ORDER)
+        n = ESSENCE_PAY.get(tier, ESSENCE_PAY[1])
+        return dict(essence=ek, n=n, name=essences.label(ek))
     else:
         quality = _roll_quality(rng, tier)
         it = _base_for(c, ilvl, rng, quality)
@@ -459,14 +486,14 @@ def _roll_reward(world, o):
 
 
 def _roll_quality(rng, tier):
-    """Magic, rare, set or unique, at the odds this contract's size earns."""
+    """Rare, set or unique, at the odds this contract's size earns. Never magic."""
     odds = TIER_RARITY.get(int(tier or 1), TIER_RARITY[1])
     r = rng.random()
-    for q in ("unique", "set", "rare"):
+    for q in ("unique", "set"):
         if r < odds[q]:
             return q
         r -= odds[q]
-    return "magic"
+    return "rare"
 
 
 def _base_for(c, ilvl, rng, quality):
@@ -479,10 +506,20 @@ def _base_for(c, ilvl, rng, quality):
     if c is None:
         return None
 
+    def worth_it(b):
+        """Gear, and only gear. A charm is never rare, a quiver is vendor stock, and anything
+        marked normal_only in D2's own table - throwing potions, arrows - takes no affixes."""
+        return bool(b) and not b.get("charm") and not b.get("quiver") and not b.get("jewel") \
+            and not b.get("normal_only") and b.get("slot") \
+            and "use" not in b and "gem" not in b and "potion" not in b
+
     def draw(q):
         try:
-            b = c.pick_base(max(1, ilvl), rng)
-            if b is None:
+            for _ in range(20):
+                b = c.pick_base(max(1, ilvl), rng)
+                if worth_it(b):
+                    break
+            else:
                 return None, None
             made = c.make_item(b, ilvl, rng, q)
             return (b, made) if made is not None and getattr(made, "rarity", "") == q else (b, None)
@@ -508,15 +545,11 @@ def _base_for(c, ilvl, rng, quality):
         return None
 
 
-#: what a contract pays out at, by tier. A bigger contract is not only more gold: it is a better
-#: roll. Everything these do not claim is magic, so the extra rares, sets and uniques come
-#: straight out of the magic share and nothing else is touched.
-#: These are shares of the item roll, and one reward in ten is a gem or a rune before it gets
-#: here, so they are set a tenth high to land where they are meant to: 3% of all rewards at
-#: tier 1, not 3% of the nine in ten that reach this.
-TIER_RARITY = {1: {"unique": 0.034, "set": 0.034, "rare": 0.190},
-               2: {"unique": 0.068, "set": 0.068, "rare": 0.290},
-               3: {"unique": 0.115, "set": 0.115, "rare": 0.400}}
+#: what a contract pays out at, by tier. The Tree never pays in magic items: what a set or a
+#: unique does not claim is rare. A bigger contract is not only more gold, it is a better roll.
+TIER_RARITY = {1: {"unique": 0.034, "set": 0.034, "rare": 1.0},
+               2: {"unique": 0.068, "set": 0.068, "rare": 1.0},
+               3: {"unique": 0.115, "set": 0.115, "rare": 1.0}}
 
 
 def claim_item(world, o):
@@ -528,7 +561,7 @@ def claim_item(world, o):
     """
     c = getattr(world, "content", None)
     d = o.get("item")
-    if not d or c is None:
+    if not d or c is None or d.get("essence"):
         return reward_item(world, o)
     rng = world.rng
     code = d.get("code")
@@ -546,13 +579,18 @@ def claim_item(world, o):
     # other item: what was promised is what is handed over
     ladder = ("unique", "set", "rare", "magic")
     for q in ladder[ladder.index(want) if want in ladder else len(ladder) - 1:]:
-        try:
-            cand = c.make_item(base, ilvl, rng, q)
-        except Exception:
-            cand = None
-        if cand is not None:
-            it = cand
-            break
+        for _ in range(6 if q == "rare" else 1):
+            try:
+                cand = c.make_item(base, ilvl, rng, q)
+            except Exception:
+                cand = None
+            if cand is not None and getattr(cand, "rarity", "") == q:
+                it = cand
+                break
+            if cand is not None and it is None:
+                it = cand                 # a base that will not take that quality: keep it by
+        if it is not None and getattr(it, "rarity", "") == q:
+            break                         # until something better turns up
     if it is None:
         it = reward_item(world, o)
     if it is not None:
@@ -565,6 +603,9 @@ def reward_item(world, o):
     d = o.get("item")
     if not d:
         return None
+    if d.get("essence"):
+        from . import essences
+        return essences.make(d["essence"], int(d.get("n", 1) or 1))
     from .save import _item_from
     try:
         it = _item_from(d, getattr(world, "content", None))
