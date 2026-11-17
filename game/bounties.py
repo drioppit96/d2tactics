@@ -20,6 +20,7 @@ and whatever was in hand, because the contracts were written against the world y
 from .acts import ACT_RANGES, TOWN_IDS, SUMMIT
 
 MAX_HELD = 3            # contracts in hand at once
+REFRESH_AFTER = 3       # contracts handed in before the Tree writes its board again
 BOARD_SIZE = 8          # offers on the Tree: two rows of four
 BOARD_VERSION = 4       # bumped when the contracts themselves change: old boards are rewritten
 #: a hero's contracts were cleared out once, when the kinds of contract changed for the last
@@ -430,9 +431,11 @@ def _roll_reward(world, o):
     """The item a contract will pay, chosen when the contract is written - but only the item, not
     what it will turn out to be.
 
-    The board shows it plain and white, because nothing has been decided yet: what it is worth is
-    rolled when the work is handed in (claim_item below). One reward in ten is a perfect gem or a
-    rune, and those are what they are either way.
+    The board shows it plain and white, and claiming it hands over that same base - never another
+    one. How good it turns out to be is settled here too, out of sight, because a base that is
+    going to be a set piece or a unique has to be one that has such a piece at all; the board
+    simply does not say which it will be until the work is handed in (claim_item below). One
+    reward in ten is a perfect gem or a rune, and those are what they are either way.
 
     A contract that asked for gems or runes never pays in gems: it pays a rune, and a rune well
     above the one it took, because handing over three runes for a gem is no trade at all.
@@ -457,16 +460,65 @@ def _roll_reward(world, o):
         code, _nm, _rank = _rune_pick(world, rng, lo, hi)
         it = _make_code(world, code, ilvl, rng)
     else:
-        try:
-            b = c.pick_base(max(1, ilvl), rng) if c is not None else None
-            it = c.make_item(b, ilvl, rng, "normal") if b else None
-        except Exception:
-            it = None
+        quality = _roll_quality(rng, tier)
+        it = _base_for(c, ilvl, rng, quality)
+        if it is not None:
+            o["quality"] = quality
     if it is None:
         return None
     it.identified = True
     try:
         return _item_dict(it)
+    except Exception:
+        return None
+
+
+def _roll_quality(rng, tier):
+    """Magic, rare, set or unique, at the odds this contract's size earns."""
+    odds = TIER_RARITY.get(int(tier or 1), TIER_RARITY[1])
+    r = rng.random()
+    for q in ("unique", "set", "rare"):
+        if r < odds[q]:
+            return q
+        r -= odds[q]
+    return "magic"
+
+
+def _base_for(c, ilvl, rng, quality):
+    """A base the contract can show, white, and still pay at `quality` when it is handed in.
+
+    Most bases have no set piece or unique of their own, so one that is going to be either has
+    to be drawn until it is one that has one. Whatever comes out is what the board shows and
+    what the Tree hands over: only how good it is was decided here.
+    """
+    if c is None:
+        return None
+
+    def draw(q):
+        try:
+            b = c.pick_base(max(1, ilvl), rng)
+            if b is None:
+                return None, None
+            made = c.make_item(b, ilvl, rng, q)
+            return (b, made) if made is not None and getattr(made, "rarity", "") == q else (b, None)
+        except Exception:
+            return None, None
+
+    tries = 24 if quality in ("unique", "set") else 1
+    first = None
+    for _ in range(tries):
+        b, made = draw(quality)
+        if first is None and b is not None:
+            first = b
+        if made is not None:
+            try:
+                return c.make_item(b, ilvl, rng, "normal")      # the board shows it plain
+            except Exception:
+                return None
+    if first is None:
+        return None
+    try:
+        return c.make_item(first, ilvl, rng, "normal")
     except Exception:
         return None
 
@@ -485,8 +537,8 @@ TIER_RARITY = {1: {"unique": 0.034, "set": 0.034, "rare": 0.190},
 def claim_item(world, o):
     """What the contract actually pays, decided now that the work is done.
 
-    The base was fixed when the contract was written; this is where it finds out whether it is
-    magic, rare, set or unique, at the odds its tier earns. A gem or a rune is already what it
+    The base and how good it is were both fixed when the contract was written; this is where the
+    item is actually made, out of that base and nothing else. A gem or a rune is already what it
     is and passes through.
     """
     c = getattr(world, "content", None)
@@ -502,37 +554,20 @@ def claim_item(world, o):
             it.identified = True
         return it
     ilvl = o.get("ilvl") or 1
-    odds = TIER_RARITY.get(int(o.get("tier", 1) or 1), TIER_RARITY[1])
-    r = rng.random()
-    forced = None
-    for q in ("unique", "set", "rare"):
-        if r < odds[q]:
-            forced = q
-            break
-        r -= odds[q]
+    want = o.get("quality") or "magic"
     it = None
-    if forced in ("unique", "set"):
-        # most bases have no set piece or unique of their own, so keep drawing bases until one
-        # does - otherwise asking for a set item quietly returns a magic one
-        for _ in range(24):
-            try:
-                b = c.pick_base(max(1, ilvl), rng)
-                cand = c.make_item(b, ilvl, rng, forced) if b else None
-            except Exception:
-                cand = None
-            if cand is not None and getattr(cand, "rarity", "") == forced:
-                it = cand
-                break
-    elif forced == "rare":
+    # the base is the one the board showed and does not change here. If it turns out to have no
+    # piece of the kind that was rolled for it, it steps down a rung rather than becoming some
+    # other item: what was promised is what is handed over
+    ladder = ("unique", "set", "rare", "magic")
+    for q in ladder[ladder.index(want) if want in ladder else len(ladder) - 1:]:
         try:
-            it = c.make_item(base, ilvl, rng, "rare")
+            cand = c.make_item(base, ilvl, rng, q)
         except Exception:
-            it = None
-    if it is None:
-        try:
-            it = c.make_item(base, ilvl, rng, "magic")   # everything the tier did not claim
-        except Exception:
-            it = None
+            cand = None
+        if cand is not None:
+            it = cand
+            break
     if it is None:
         it = reward_item(world, o)
     if it is not None:
@@ -847,9 +882,34 @@ def claim(world, bid):
     who = "%d in the party" % len(crowd) if len(crowd) > 1 else "you"
     world.log("%s: %d gold, and %d experience to %s." % (o["title"], o["gold"], o["xp"], who), COLOR)
     _give_reward(world, o)
+    if b is not None:
+        b["claims"] = int(b.get("claims", 0) or 0) + 1
+        if b["claims"] >= REFRESH_AFTER:
+            b["claims"] = 0
+            _rewrite(world)
     _mirror(world)
     _sync_portals(world)
     return True
+
+
+def _rewrite(world):
+    """Every contract on the Tree written again, except the ones in hand.
+
+    This happens on its own after three are handed in. What is held keeps its plaque and its
+    place in the quest log, because the work behind it is real and nothing out here undoes it.
+    """
+    p = world.player
+    b = p.bounty_board
+    if not b:
+        return
+    rng = world.rng
+    areas = _areas(world)
+    held_ids = {x["id"] for x in p.bounties}
+    taken = {(o["kind"], o.get("level"), o.get("target")) for o in b["offers"] if o["id"] in held_ids}
+    n = 1700 + int(getattr(p, "bounty_done", 0) or 0) * BOARD_SIZE
+    b["offers"] = [o if o["id"] in held_ids else _distinct(world, rng, n + i, areas, taken)
+                   for i, o in enumerate(b["offers"])]
+    world.log("The Tree's leaves turn. New contracts.", COLOR)
 
 
 def _give_reward(world, o):
