@@ -25,14 +25,19 @@ BONE_MARROW = "bone_marrow"
 DAMNED_ESSENCE = "damned_essence"
 BONES = "bones"
 
-#: token -> (what it is called, which kind of creature leaves it, D2 art: code, inv, flippy)
+#: token -> (what it is called, which kind of creature leaves it, D2 art: code, inv, flippy).
+#: The art is D2's own and is picked to look like the thing: Khalim's Heart for a heart, the
+#: Burning Essence of Terror for a burning essence, the Twisted Essence of Suffering for the
+#: essence of the damned, a skull for bones, and a dark lump of flesh for marrow. Blood is the
+#: one that has no art of its own in D2, so it borrows the red flask and is told apart by its
+#: name and the count on the square.
 ORGANS = {
     DEMON_BLOOD:     ("Demonic Blood",         "demon",  ("hp5", "invhp5", "flprpl")),
     DEMON_HEART:     ("Demonic Heart",         "demon",  ("qhr", "invhrt", "flphrt")),
-    BURNING_ESSENCE: ("Burning Essence",       "demon",  ("rvs", "invvps", "flpvps")),
-    BONE_MARROW:     ("Bone Marrow",           "undead", ("mp5", "invmp5", "flpbpl")),
-    DAMNED_ESSENCE:  ("Essence of the Damned", "undead", ("rvl", "invvpl", "flpvpl")),
-    BONES:           ("Bones",                 "undead", ("qbr", "invbrnz", "flpbrnz")),
+    BURNING_ESSENCE: ("Burning Essence",       "demon",  ("bet", "invbet", "flpgsr")),
+    BONE_MARROW:     ("Bone Marrow",           "undead", ("mbr", "invbrnz", "flpbrnz")),
+    DAMNED_ESSENCE:  ("Essence of the Damned", "undead", ("tes", "invtes", "flpgsb")),
+    BONES:           ("Bones",                 "undead", ("sku", "invsku", "flpskl")),
 }
 
 #: the three each kind of creature can leave, in a fixed order

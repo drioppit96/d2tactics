@@ -2363,6 +2363,10 @@ class D2Hud:
             surf.blit(sc, pos)
         else:
             self.assets.draw_item_icon(surf, item, self.R(x, y, w, h))
+        n = int(getattr(item, "quantity", 0) or 0)
+        if n > 1 and getattr(item, "kind", "") == "organ":
+            # how many are in the square, in the bottom right corner of it
+            self.text(surf, self.f10, str(n), (235, 220, 160), x, y + h - 12, "right", w - 3)
 
     def _draw_inventory(self, surf, world, hero=None, ox=None, pre=""):
         """The inventory panel: yours on the right, or (tactics) another hero's on the left -

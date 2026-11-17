@@ -806,6 +806,8 @@ class World(SkillCaster, ItemActions):
                 pass
             elif self._into_tome(it):
                 pass
+            elif self._into_stack(it):
+                pass
             elif p.inv_add(it):
                 pass
             else:
@@ -833,6 +835,14 @@ class World(SkillCaster, ItemActions):
                 return True
         return False
 
+    def _into_stack(self, it):
+        """A body part merges into one the hero is already carrying: they stack to 99 in a square,
+        the way gems bank in the stash, so a cull's worth of them does not fill the bag."""
+        if getattr(it, "kind", "") != "organ":
+            return False
+        from . import organs
+        return organs.add(self.player, it)
+
     def pickup_item(self, cell, it):
         """Loot window: take one item lying on the screen. Outside combat from anywhere you can see;
         in combat it must be next to you (1 AP)."""
@@ -852,6 +862,8 @@ class World(SkillCaster, ItemActions):
         elif it.kind == "potion" and potions.belt_add(p, it, self):
             pass
         elif self._into_tome(it):
+            pass
+        elif self._into_stack(it):
             pass
         elif not p.inv_add(it):
             self.log("Your inventory is full.", GREY)
