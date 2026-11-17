@@ -23,10 +23,11 @@ MAX_HELD = 3            # contracts in hand at once
 BOARD_SIZE = 8          # offers on the Tree: two rows of four
 BOARD_VERSION = 4       # bumped when the contracts themselves change: old boards are rewritten
 #: a hero's contracts were cleared out once, when the kinds of contract changed for the last
-#: time. That is over: nothing clears a log any more. A contract written by an older build is
-#: brought up to date instead (_migrate), and only one that cannot be is struck off. The field
-#: is still written to the save so no older build of the game can clear a log again.
-WIPE = 1
+#: Raising this clears every hero's board and hand once, the next time his contracts are read,
+#: and the new number is written to his save so it never runs twice. Only raise it when the
+#: contracts themselves change in a way _migrate cannot mend: a log full of work is lost here,
+#: so a contract an older build wrote is normally brought up to date instead.
+WIPE = 2
 COLOR = (199, 179, 119)
 GREY = (150, 145, 135)
 
@@ -54,8 +55,8 @@ NAMED = [("Bishibosh", 3), ("Rakanishu", 4), ("Treehead WoodFist", 5), ("Corpsef
          ("Pitspawn Fouldog", 29), ("Bone Ash", 33), ("Griswold", 38),
          ("Beetleburst", 42), ("Dark Elder", 44), ("Radament", 49), ("Fangskin", 61),
          ("Coldworm the Burrower", 64), ("The Summoner", 74),
-         ("Stormtree", 78), ("Sszark the Burning", 84), ("Icehawk Riftwing", 92),
-         ("Bremm Sparkfist", 102), ("Maffer Dragonhand", 102), ("Wyand Voidbringer", 102),
+         # Act 3 (levels 75 to 102) is left out: its levels do not build reliably yet, and a
+         # contract that sends you somewhere the game cannot open is worse than no contract.
          ("Izual", 105), ("Hephasto The Armorer", 107),
          ("Shenk the Overseer", 110), ("Dac Farren", 110), ("Eldritch the Rectifier", 111),
          ("Eyeback the Unleashed", 111), ("Frozenstein", 114), ("Pindleskin", 121),
@@ -84,7 +85,10 @@ ICONS = ("demon", "undead", "eye", "horned_skull", "trident", "skulls", "coin",
 
 #: reward weight by kind - a contract that takes longer pays more
 #: a deposit asks you to give up something you could have used, so it pays better
-WEIGHT = {CULL: 1.0, HUNT: 1.4, BOSS: 2.2, ORGAN: 1.6, GEM: 2.6, RUNE: 3.0, RIFT: 2.0}
+#: what a contract is worth, before its size is taken into account. Hunt and Boss have no sizes
+#: of their own - one named head is one named head - so they are weighted for the whole job
+#: rather than for the smallest of three.
+WEIGHT = {CULL: 1.0, HUNT: 2.2, BOSS: 3.2, ORGAN: 1.6, GEM: 2.6, RUNE: 3.0, RIFT: 2.0}
 
 DIFF_MULT = {"normal": 1.0, "nightmare": 2.4, "hell": 5.0}
 
@@ -97,8 +101,12 @@ def init(p):
         p.bounty_board = None
     if not hasattr(p, "bounty_done"):
         p.bounty_done = 0
-    if not hasattr(p, "bounty_wipe"):
+    if int(getattr(p, "bounty_wipe", 0) or 0) != WIPE:
+        # the clear-out. It sits here, in the first thing every path calls, so it happens whether
+        # the contracts are read by the quest log, the Tree or Sanctuary's pedestals
         p.bounty_wipe = WIPE
+        p.bounties = []
+        p.bounty_board = None
 
 
 def party(world):
@@ -272,14 +280,15 @@ def _plural(name, n):
     return name + ("es" if name[-1] in "sxz" else "s")
 
 
-#: every contract comes in three sizes. Tier 1 is an evening's work, tier 3 a project, and the
-#: reward follows: the gold, the experience and the item level all scale with it.
+#: most contracts come in three sizes. Tier 1 is an evening's work, tier 3 a project, and the
+#: reward follows: the gold, the experience and the item level all scale with it. Hunt and Boss
+#: are the exception: they name one target and have no sizes.
 TIERS = (1, 2, 3)
 TIER_NAME = {1: "", 2: "Greater ", 3: "Grand "}
 TIER_PAY = {1: 1.0, 2: 2.2, 3: 4.0}
 
 #: how much each kind asks for, by tier
-AMOUNT = {CULL: (30, 60, 100), RIFT: (5, 10, 15), BOSS: (1, 2, 3), HUNT: (1, 2, 3),
+AMOUNT = {CULL: (30, 60, 100), RIFT: (5, 10, 15), BOSS: (1, 1, 1), HUNT: (1, 1, 1),
           ORGAN: (10, 25, 50), GEM: (2, 4, 7), RUNE: (5, 3, 2)}
 
 #: which runes a deposit asks for, by tier, as positions in D2's own list (1 El ... 33 Zod).
@@ -300,39 +309,27 @@ RUNE_SPAN = 3
 RUNE_CAP = 30             # Ber: the Tree does not hand out the last three runes
 
 
-def _names(items):
-    """'Andariel', 'Andariel and Duriel', 'Andariel, Duriel and Mephisto'."""
-    items = list(items)
-    if len(items) <= 1:
-        return items[0] if items else ""
-    return "%s and %s" % (", ".join(items[:-1]), items[-1])
-
-
 def _make_offer(world, rng, n, areas):
     diff = _difficulty(world)
     p = world.player
     kind = rng.choices([CULL, HUNT, BOSS, ORGAN, GEM, RUNE, RIFT],
                        weights=[26, 18, 10, 20, 7, 7, 12])[0]
-    tier = rng.choice(TIERS)
+    # one head is one head: a hunt and a boss contract name one target and come in one size
+    tier = 1 if kind in (HUNT, BOSS) else rng.choice(TIERS)
     want = AMOUNT[kind][tier - 1]
     lid = rng.choice(areas)
     o = dict(id="b%d" % n, kind=kind, diff=diff, done=0, level=lid, tier=tier)
     pre = TIER_NAME[tier]
     if kind == BOSS:
-        picks = rng.sample(BOSSES, min(want, len(BOSSES)))
-        names = [t[1] for t in picks]
-        o.update(targets=[t[0] for t in picks], got=[], count=len(picks),
-                 level=BOSS_LEVEL.get(picks[0][0]),
-                 title="%sSlay %s" % (pre, names[0] if len(names) == 1 else "%d of the Great Evils" % len(names)),
-                 text="%s still draw breath. End them." % _names(names) if len(names) > 1
-                      else "%s still draws breath. End it." % names[0])
+        tag, shown = rng.choice(BOSSES)
+        o.update(targets=[tag], got=[], count=1, level=BOSS_LEVEL.get(tag),
+                 title="Slay %s" % shown,
+                 text="%s still draws breath. End it." % shown)
     elif kind == HUNT:
-        picks = rng.sample(NAMED, min(want, len(NAMED)))
-        names = [t[0] for t in picks]
-        o.update(targets=names, got=[], count=len(picks), level=picks[0][1],
-                 title="%sHunt %s" % (pre, names[0] if len(names) == 1 else "%d named" % len(names)),
-                 text="%s. Bring down those and no others." % _names(
-                     ["%s in %s" % (nm, _level_name(world, lv)) for nm, lv in picks]))
+        who, where = rng.choice(NAMED)
+        o.update(targets=[who], got=[], count=1, level=where,
+                 title="Hunt %s" % who,
+                 text="%s is in %s. Bring it down." % (who, _level_name(world, where)))
     elif kind == RIFT:
         o.update(target=None, count=want, level=None,
                  title="%sDelve the Rift" % pre,
