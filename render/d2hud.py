@@ -286,6 +286,10 @@ class D2Hud:
         self._draw_party(surf, world, scene)
         self._draw_minions(surf, world, scene)
         self._draw_automap(surf, world)
+        # the control panel first, then whatever is open over it: a panel reaches further down
+        # than the globes do, and it is the thing being read, so it goes on top of them. Regions
+        # are hit back to front, so the panel takes the clicks where they overlap too.
+        self._draw_control_panel(surf, world, scene)
         if self.store is not None:
             self._draw_store(surf, world)
         elif getattr(self, "show_cube", False) and self.cube_item is not None:
@@ -312,7 +316,6 @@ class D2Hud:
                 self._draw_inventory(surf, world, hero=mate, ox=0, pre="mate_")
         if getattr(self, "loot_list", None) is not None:
             self._draw_loot(surf, world)
-        self._draw_control_panel(surf, world, scene)
         self._draw_tracker(surf, world, scene)
         if self.skill_popup:
             self._draw_skill_popup(surf, p)
