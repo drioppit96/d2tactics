@@ -1745,16 +1745,53 @@ class D2Hud:
         """The monster id a contract is against, where there is one."""
         from game import bounties
         k = o.get("kind")
+        mons = getattr(world, "content", None)
         if k == bounties.CULL:
-            return o.get("target")
+            # a Cull names a whole kind, so show one of its own: the first monster of that kind
+            want = o.get("mclass")
+            cache = self.__dict__.setdefault("_class_face", {})
+            if want in cache:
+                return cache[want]
+            pick = None
+            for cand in ("fallen1", "skeleton1", "zombie1", "quillrat1", "goatman1",
+                         "corruptrogue1", "sandmaggot1", "bighead1", "sandraider1"):
+                if mons is not None and cand in (mons.monstats or {}) \
+                        and bounties.mon_class(world, cand) == want:
+                    pick = cand
+                    break
+            if pick is None and mons is not None:
+                for cand in sorted(mons.monstats or {}):
+                    if bounties.mon_class(world, cand) == want:
+                        pick = cand
+                        break
+            cache[want] = pick
+            return pick
+        if k == bounties.HUNT:
+            want = str(o.get("target") or "").lower()
+            su = (getattr(mons, "superuniques", None) or {}).get(want)
+            if su is None:
+                # SuperUniques.txt keys them by their table name ("Eyeback Unleashed"); what the
+                # game shows is that run through the string table ("Eyeback the Unleashed")
+                strings = getattr(mons, "strings", None) or {}
+                for row in (getattr(mons, "superuniques", None) or {}).values():
+                    raw = row.get("name") or row.get("superunique") or ""
+                    if raw.lower() == want or str(strings.get(raw, raw)).lower() == want:
+                        su = row
+                        break
+            if su is not None and su.get("class"):
+                return su["class"]
+            # the quest bosses (Blood Raven, Radament, Izual...) are not in SuperUniques.txt
+            flat = want.replace("the ", "").replace(" ", "").replace("'", "")
+            for cand in (flat, flat + "1", want.replace(" ", "")):
+                if mons is not None and cand in (mons.monstats or {}):
+                    return cand
+            return None
         if k == bounties.ORGAN and o.get("organ"):
             fam = o["organ"][0]
-            mons = getattr(world, "content", None)
             for cand in (fam + "1", fam):
                 if mons is not None and cand in (mons.monstats or {}):
                     return cand
         if k == bounties.BOSS:
-            mons = getattr(world, "content", None)
             tag = o.get("target")
             if mons is not None and tag in (mons.monstats or {}):
                 return tag
@@ -1860,8 +1897,10 @@ class D2Hud:
         mine = next((z for z in held if z["id"] == o["id"]), None)
         self.text(surf, self.f16, o["title"], GOLD, 0, y, "center", W)
         y += 22
-        self.text(surf, self.f10, o["text"], (198, 190, 172), 0, y, "center", W)
-        y += 16
+        for line in self._wrap(self.f10, o["text"], W - 72)[:2]:
+            self.text(surf, self.f10, line, (198, 190, 172), 0, y, "center", W)
+            y += 13
+        y += 3
         if mine is not None:
             prog = "completed" if bounties.complete(mine, p) else (
                 "%d of %d" % (bounties.progress(p, mine), mine["count"])

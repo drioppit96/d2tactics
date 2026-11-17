@@ -24,8 +24,8 @@ COLOR = (199, 179, 119)
 GREY = (150, 145, 135)
 
 #: what a contract can ask for
-CULL = "cull"           # kill N of a kind, anywhere
-HUNT = "hunt"           # kill a unique or champion in one area
+CULL = "cull"           # kill N of a whole kind of creature (demons, the dead...), anywhere
+HUNT = "hunt"           # kill one named unique, by name
 BOSS = "boss"           # kill one of the act bosses
 ORGAN = "organ"         # deposit N body parts of one creature (game/organs.py)
 GEM = "gem"             # deposit N perfect gems of one colour
@@ -34,17 +34,35 @@ RUNE = "rune"           # deposit N of one rune
 #: the three you hand in rather than hunt down
 DEPOSIT = (ORGAN, GEM, RUNE)
 
-#: the act bosses worth a contract, by the boss tag game/actworld.py gives them
+#: the act bosses worth a contract, by the boss tag game/actworld.py gives them. The named
+#: uniques that used to sit here are Hunt's business now.
 BOSSES = [("andariel", "Andariel"), ("duriel", "Duriel"), ("mephisto", "Mephisto"),
-          ("diablo", "Diablo"), ("shenk", "Shenk the Overseer"), ("nihlathak", "Nihlathak"),
-          ("countess", "The Countess"), ("summoner", "The Summoner"), ("blood_raven", "Blood Raven")]
+          ("diablo", "Diablo")]
+
+#: D2's named uniques and where each one stands. Every pair here was checked by building that
+#: level and finding the monster on it, so a Hunt never sends you somewhere it is not.
+NAMED = [("Bishibosh", 3), ("Rakanishu", 4), ("Treehead WoodFist", 5), ("Corpsefire", 8),
+         ("Coldcrow", 9), ("Blood Raven", 17), ("The Countess", 25), ("The Smith", 28),
+         ("Pitspawn Fouldog", 29), ("Bone Ash", 33), ("Griswold", 38),
+         ("Beetleburst", 42), ("Dark Elder", 44), ("Radament", 49), ("Fangskin", 61),
+         ("Coldworm the Burrower", 64), ("The Summoner", 74),
+         ("Stormtree", 78), ("Sszark the Burning", 84), ("Icehawk Riftwing", 92),
+         ("Bremm Sparkfist", 102), ("Maffer Dragonhand", 102), ("Wyand Voidbringer", 102),
+         ("Izual", 105), ("Hephasto The Armorer", 107),
+         ("Shenk the Overseer", 110), ("Dac Farren", 110), ("Eldritch the Rectifier", 111),
+         ("Eyeback the Unleashed", 111), ("Frozenstein", 114), ("Pindleskin", 121),
+         ("Nihlathak", 124)]
+
+#: what a Cull asks for: the whole kind, not one family of it. D2's "human" class is townspeople
+#: and hirelings almost to a man, so there is nothing in it to cull and it is not offered.
+CLASSES = [("demon", "demons"), ("undead", "the walking dead"), ("beast", "beasts")]
+CLASS_ICON = {"demon": "demon", "undead": "undead", "beast": "gargoyle"}
 
 #: where each of them stands, so a contract against one can open a portal to it
-BOSS_LEVEL = {"andariel": 37, "duriel": 73, "mephisto": 102, "diablo": 108, "shenk": 110,
-              "nihlathak": 124, "countess": 25, "summoner": 74, "blood_raven": 17}
+BOSS_LEVEL = {"andariel": 37, "duriel": 73, "mephisto": 102, "diablo": 108}
 
 #: the carved plaques the board shows, by what the contract is against
-ICON_BY_KIND = {CULL: "skulls", HUNT: "gargoyle", BOSS: "horned_skull",
+ICON_BY_KIND = {CULL: "skulls", HUNT: "skulls", BOSS: "horned_skull",
                 ORGAN: "gauntlet", GEM: "eye", RUNE: "serpent"}
 #: a contract against one of these families gets its own plaque instead
 ICON_BY_FAMILY = {"zombie": "undead", "skeleton": "undead", "returned": "undead",
@@ -206,24 +224,26 @@ def _make_offer(world, rng, n, areas):
                  title="Deposit %d %s" % (count, _plural(nm, count)),
                  text="The Tree wants %d %s." % (count, _plural(nm, count)))
     elif kind == HUNT:
-        o.update(target=None, count=1,
-                 title="Hunt in %s" % _level_name(world, lid),
-                 text="A champion or a unique walks %s. Bring it down."
-                      % _level_name(world, lid))
+        who, where = rng.choice(NAMED)
+        o.update(target=who, count=1, level=where,
+                 title="Hunt %s" % who,
+                 text="%s walks %s. Bring that one down and no other."
+                      % (who, _level_name(world, where)))
     else:
-        roster = _roster(world, lid)
-        mid = rng.choice(roster) if roster else "fallen1"
+        cls, shown = rng.choice(CLASSES)
         count = rng.choice((30, 60, 100))
-        o.update(target=mid, count=count,
-                 title="Cull the %s" % _monster_name(world, mid),
-                 text="Kill %d %s, wherever you find them."
-                      % (count, _monster_name(world, mid)))
+        o.update(target=cls, count=count, level=None, mclass=cls,
+                 title="Cull %s" % shown,
+                 text="Kill %d of %s, wherever in the world you find them." % (count, shown))
     lvl = max(1, getattr(p, "level", 1))
     k = WEIGHT[kind] * DIFF_MULT.get(diff, 1.0)
     o["gold"] = int(600 * k + lvl * 90 * k)
     o["xp"] = int(p.xp_threshold(lvl) * 0.04 * k) if hasattr(p, "xp_threshold") else int(500 * k)
     o["ilvl"] = min(99, lvl + int(6 * WEIGHT[kind]))
-    o["icon"] = ICON_BY_FAMILY.get(_family(o.get("target")), ICON_BY_KIND[kind])
+    if kind == CULL:
+        o["icon"] = CLASS_ICON.get(o.get("mclass"), "skulls")
+    else:
+        o["icon"] = ICON_BY_FAMILY.get(_family(o.get("target")), ICON_BY_KIND[kind])
     o["item"] = _roll_reward(world, o)      # rolled now, so the board can show what it pays
     return o
 
@@ -475,6 +495,50 @@ def complete(o, player=None):
 
 
 # ---------------------------------------------------------------- counting the work
+#: MonType.txt is a tree - "skeleton" is a "lowundead" is an "undead". This walks it to the root
+#: and sorts what comes out into the four kinds a Cull can ask for.
+_CLASS_ROOT = {"demon": "demon", "undead": "undead", "human": "human"}
+
+
+def _montype_tree(world):
+    c = getattr(world, "content", None)
+    cache = getattr(c, "_montype_equiv", None)
+    if cache is None:
+        cache = {}
+        try:
+            from d2.source import read_table
+            for r in read_table(c.src, "MonType"):
+                t = (r.get("type") or "").strip().lower()
+                if t:
+                    cache[t] = (r.get("equiv1") or "").strip().lower()
+        except Exception:
+            cache = {}
+        try:
+            c._montype_equiv = cache
+        except Exception:
+            pass
+    return cache
+
+
+def mon_class(world, mid):
+    """Which of the four kinds a monster belongs to: demon, undead, human or beast."""
+    c = getattr(world, "content", None)
+    if c is None or not mid:
+        return None
+    row = (getattr(c, "monstats", None) or {}).get(mid) or {}
+    t = (row.get("montype") or "").strip().lower()
+    if not t:
+        return None
+    equiv = _montype_tree(world)
+    seen = set()
+    while t and t not in seen:
+        if t in _CLASS_ROOT:
+            return _CLASS_ROOT[t]
+        seen.add(t)
+        t = equiv.get(t) or ""
+    return "beast"          # insects, constructs and everything with no kin named above
+
+
 def _family(mid):
     """D2 numbers a monster's variants (fallen1..fallen5): one contract covers the whole family."""
     s = str(mid or "")
@@ -499,9 +563,10 @@ def on_killed(world, unit):
         k = o["kind"]
         if k == BOSS and boss and boss == o.get("target"):
             o["done"] = o["count"]
-        elif k == CULL and _family(mid) and _family(mid) == _family(o.get("target")):
+        elif k == CULL and o.get("mclass") and mon_class(world, mid) == o["mclass"]:
             o["done"] = min(o["count"], o.get("done", 0) + 1)
-        elif k == HUNT and special and lid == o.get("level"):
+        elif k == HUNT and special and \
+                (getattr(unit, "name", "") or "").lower() == str(o.get("target") or "").lower():
             o["done"] = o["count"]
         if complete(o):
             world.log("Contract done: %s. The Tree is waiting." % o["title"], COLOR)
