@@ -131,6 +131,37 @@ def _only_three(world):
         len(drop), "guardian" if len(drop) == 1 else "guardians"), COLOR)
 
 
+def bounty_portals(world):
+    """The three pedestals in the ring, one per contract in hand.
+
+    Take a contract that sends you somewhere and the pedestal it stands on opens, leading
+    straight to the area the work is in. It stays open until the contract is done, then shuts:
+    there is nothing left to go there for. A deposit is settled at the Tree, so it opens nothing.
+    """
+    if getattr(world, "level_id", None) != SUMMIT:
+        return
+    spots = list(getattr(world, "pedestals", None) or ())
+    if not spots:
+        return
+    from . import bounties
+    p = world.player
+    bounties.init(p)
+    want = []
+    for o in bounties.held(p):
+        lvl = bounties.destination(o)
+        if lvl is None or bounties.complete(o, p):
+            continue
+        want.append((o["id"], lvl, o["title"]))
+    # they are ordinary portals, so they draw and work like any other; "bounty" marks them ours
+    world.objects = [o for o in world.objects if not o.get("bounty")]
+    for i, (bid, lvl, title) in enumerate(want[:len(spots)]):
+        cell = spots[i]
+        if not world.grid.walkable(*cell):
+            cell = world._free_cell_near(cell, 3) or cell
+        world.objects.append(dict(kind="portal", cell=cell, level=SUMMIT, oid=0, used=False,
+                                  target=lvl, name=title, bounty=bid))
+
+
 def on_enter(world, lid):
     """Arriving somewhere: open the portal if this is one of the two ends of it."""
     if lid in (HARROGATH, SUMMIT, WORLDSTONE):
@@ -140,6 +171,10 @@ def on_enter(world, lid):
         # The mountaintop preset carries the Ancients' three statues and the altar they rise from.
         # The Rite of Passage was fought below, in Act 5, and Sanctuary is a town: none of it
         # belongs here, so the statues and the altar go rather than standing about as scenery.
+        # their three pedestals are kept: the bounty portals stand on them (bounty_portals below)
+        world.pedestals = sorted((m.x, m.y) for m in world.monsters
+                                 if getattr(m, "boss", None) == "ancients"
+                                 or str(getattr(m, "d2id", "")) in ANCIENT_IDS)
         world.monsters = [m for m in world.monsters
                           if getattr(m, "boss", None) != "ancients"
                           and str(getattr(m, "d2id", "")) not in ANCIENT_IDS]
@@ -157,6 +192,7 @@ def on_enter(world, lid):
                 o["kind"], o["name"] = "bounty", "Tree of Inifuss"
         from . import bounties
         bounties.init(world.player)
+        bounty_portals(world)
         p = world.player
         seen = p.__dict__.setdefault("visited", set())
         if SUMMIT not in seen:

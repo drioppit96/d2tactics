@@ -100,6 +100,18 @@ class D2Font:
         return s
 
 
+class _MobStandIn(object):
+    """Just enough of a monster for render.d2assets.draw_unit to draw its idle frame."""
+    is_player = False
+    unique = False
+    color_shift = 0
+    facing = (1, 1)
+    giant = 0
+
+    def __init__(self, token, d2id):
+        self.token, self.d2id = token, d2id
+
+
 class D2Hud:
     def __init__(self, fonts, assets):
         self.fonts = fonts
@@ -1683,6 +1695,47 @@ class D2Hud:
         self.put(surf, comp, 0, 0)
         self.region(0, 0, w, h, "panel")
 
+    def _mob_sprite(self, mid, world):
+        """One idle frame of a monster, so a contract can show you what you are looking for."""
+        cache = self.__dict__.setdefault("_mob_art", {})
+        if mid in cache:
+            return cache[mid]
+        img = None
+        try:
+            row = ((getattr(world, "content", None).monstats) or {}).get(mid) or {}
+            token = row.get("code")
+            if token:
+                mob = _MobStandIn(token, mid)
+                tmp = pygame.Surface((260, 260), pygame.SRCALPHA)
+                self.assets.draw_unit(tmp, mob, {"mode": "NU", "phase": 0.0, "no_shadow": True},
+                                      (130, 200), 1.0, 1.0)
+                r = tmp.get_bounding_rect()
+                if r.w > 1 and r.h > 1:
+                    img = tmp.subsurface(r).copy()
+        except Exception:
+            img = None
+        cache[mid] = img
+        return img
+
+    def _bounty_target_mob(self, o, world):
+        """The monster id a contract is against, where there is one."""
+        from game import bounties
+        k = o.get("kind")
+        if k == bounties.CULL:
+            return o.get("target")
+        if k == bounties.ORGAN and o.get("organ"):
+            fam = o["organ"][0]
+            mons = getattr(world, "content", None)
+            for cand in (fam + "1", fam):
+                if mons is not None and cand in (mons.monstats or {}):
+                    return cand
+        if k == bounties.BOSS:
+            mons = getattr(world, "content", None)
+            tag = o.get("target")
+            if mons is not None and tag in (mons.monstats or {}):
+                return tag
+        return None
+
     def _bounty_icon(self, name):
         """One of the carved plaques in assets/ui/bounty, scaled into the bracket."""
         cache = self.__dict__.setdefault("_bounty_icons", {})
@@ -1814,6 +1867,22 @@ class D2Hud:
             self.text(surf, self.f10, "no item", (120, 114, 104), bx + 70, by + 24)
         self.text(surf, self.f10, "%d gold" % o["gold"], (220, 200, 130), bx + 70, by + 42)
         self.text(surf, self.f10, "%d experience" % o["xp"], (180, 174, 158), bx + 70, by + 56)
+        # what you are hunting, drawn from the game's own art, so there is no guessing
+        mid = self._bounty_target_mob(o, world)
+        pw, ph = 96, bh - 14
+        px0, py0 = bx + bw - pw - 8, by + 7
+        pygame.draw.rect(surf, (52, 48, 38), self.R(px0, py0, pw, ph), 1)
+        mob = self._mob_sprite(mid, world) if mid else None
+        if mob is not None:
+            kx = min((pw - 8) * self.s / float(mob.get_width()),
+                     (ph - 8) * self.s / float(mob.get_height()), 1.6)
+            sc = pygame.transform.smoothscale(
+                mob, (max(1, int(mob.get_width() * kx)), max(1, int(mob.get_height() * kx))))
+            r = self.R(px0, py0, pw, ph)
+            surf.blit(sc, (r.centerx - sc.get_width() // 2, r.centery - sc.get_height() // 2))
+        else:
+            self.text(surf, self.f10, "no quarry", (104, 99, 90), px0, py0 + ph // 2 - 6,
+                      "center", pw)
         y += bh + 8
 
         cost = bounties.reroll_cost(world)

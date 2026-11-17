@@ -39,6 +39,10 @@ BOSSES = [("andariel", "Andariel"), ("duriel", "Duriel"), ("mephisto", "Mephisto
           ("diablo", "Diablo"), ("shenk", "Shenk the Overseer"), ("nihlathak", "Nihlathak"),
           ("countess", "The Countess"), ("summoner", "The Summoner"), ("blood_raven", "Blood Raven")]
 
+#: where each of them stands, so a contract against one can open a portal to it
+BOSS_LEVEL = {"andariel": 37, "duriel": 73, "mephisto": 102, "diablo": 108, "shenk": 110,
+              "nihlathak": 124, "countess": 25, "summoner": 74, "blood_raven": 17}
+
 #: the carved plaques the board shows, by what the contract is against
 ICON_BY_KIND = {CULL: "skulls", HUNT: "gargoyle", BOSS: "horned_skull",
                 ORGAN: "gauntlet", GEM: "eye", RUNE: "serpent"}
@@ -134,7 +138,7 @@ def _make_offer(world, rng, n, areas):
     o = dict(id="b%d" % n, kind=kind, diff=diff, done=0, level=lid)
     if kind == BOSS:
         tag, title = rng.choice(BOSSES)
-        o.update(target=tag, count=1, level=None,
+        o.update(target=tag, count=1, level=BOSS_LEVEL.get(tag),
                  title="Slay %s" % title,
                  text="%s still draws breath. End it." % title)
     elif kind == ORGAN:
@@ -349,6 +353,15 @@ def reroll(world):
 
 
 # ---------------------------------------------------------------- taking and giving up
+def _sync_portals(world):
+    """Sanctuary's three pedestals follow what is in hand (game/act6.py)."""
+    try:
+        from . import act6
+        act6.bounty_portals(world)
+    except Exception:
+        pass
+
+
 def held(p):
     init(p)
     return p.bounties
@@ -365,6 +378,7 @@ def accept(world, bid):
         return False
     p.bounties.append(dict(o))
     world.log("Contract taken: %s." % o["title"], COLOR)
+    _sync_portals(world)
     return True
 
 
@@ -376,6 +390,7 @@ def abandon(world, bid):
         return False
     p.bounties.remove(o)
     world.log("Contract given up: %s." % o["title"], GREY)
+    _sync_portals(world)
     return True
 
 
@@ -400,6 +415,13 @@ def progress(player, o):
     if o["kind"] in DEPOSIT:
         return min(o.get("count", 1), held_count(player, o))
     return o.get("done", 0)
+
+
+def destination(o):
+    """The level a contract sends you to, or None for one you settle at the Tree."""
+    if o.get("kind") in DEPOSIT:
+        return None
+    return o.get("level")
 
 
 def complete(o, player=None):
@@ -491,6 +513,7 @@ def claim(world, bid):
     p.bounty_done = int(getattr(p, "bounty_done", 0)) + 1
     world.log("%s: %d gold and %d experience." % (o["title"], o["gold"], o["xp"]), COLOR)
     _give_reward(world, o)
+    _sync_portals(world)
     return True
 
 
