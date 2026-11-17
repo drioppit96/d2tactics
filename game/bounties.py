@@ -391,13 +391,24 @@ def _roll_reward(world, o):
         return None
 
 
+#: what a contract pays out at, by tier. A bigger contract is not only more gold: it is a better
+#: roll. Everything these do not claim is magic, so the extra rares, sets and uniques come
+#: straight out of the magic share and nothing else is touched.
+#: These are shares of the item roll, and one reward in ten is a gem or a rune before it gets
+#: here, so they are set a tenth high to land where they are meant to: 3% of all rewards at
+#: tier 1, not 3% of the nine in ten that reach this.
+TIER_RARITY = {1: {"unique": 0.034, "set": 0.034, "rare": 0.190},
+               2: {"unique": 0.068, "set": 0.068, "rare": 0.290},
+               3: {"unique": 0.115, "set": 0.115, "rare": 0.400}}
+
+
 def claim_item(world, o):
     """What the contract actually pays, decided now that the work is done.
 
     The base was fixed when the contract was written; this is where it finds out whether it is
-    plain, magic, rare, set or unique. A gem or a rune is already what it is and passes through.
+    magic, rare, set or unique, at the odds its tier earns. A gem or a rune is already what it
+    is and passes through.
     """
-    from .save import _item_dict, _item_from
     c = getattr(world, "content", None)
     d = o.get("item")
     if not d or c is None:
@@ -411,10 +422,16 @@ def claim_item(world, o):
             it.identified = True
         return it
     ilvl = o.get("ilvl") or 1
-    q = rng.random()
-    forced = "unique" if q < UNIQUE_CHANCE else ("set" if q < UNIQUE_CHANCE + SET_CHANCE else None)
+    odds = TIER_RARITY.get(int(o.get("tier", 1) or 1), TIER_RARITY[1])
+    r = rng.random()
+    forced = None
+    for q in ("unique", "set", "rare"):
+        if r < odds[q]:
+            forced = q
+            break
+        r -= odds[q]
     it = None
-    if forced:
+    if forced in ("unique", "set"):
         # most bases have no set piece or unique of their own, so keep drawing bases until one
         # does - otherwise asking for a set item quietly returns a magic one
         for _ in range(24):
@@ -426,11 +443,14 @@ def claim_item(world, o):
             if cand is not None and getattr(cand, "rarity", "") == forced:
                 it = cand
                 break
+    elif forced == "rare":
+        try:
+            it = c.make_item(base, ilvl, rng, "rare")
+        except Exception:
+            it = None
     if it is None:
         try:
-            # the same odds a boss's drop gets, so most of these are magic and a few are rare
-            q = c.roll_quality(base, ilvl, rng, boss=True)
-            it = c.make_item(base, ilvl, rng, q)
+            it = c.make_item(base, ilvl, rng, "magic")   # everything the tier did not claim
         except Exception:
             it = None
     if it is None:
