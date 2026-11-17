@@ -1203,6 +1203,12 @@ class D2Hud:
     QUEST_SLOTS = [(x + 4, y + 4) for x, y in QUEST_SOCKETS]
     QUEST_ORDER = {1: ["den", "blood_raven", "malus", "cain", "tower", "andariel"]}         # D2's quest log order
     QUEST_CLOSE = (278, 389, 32, 32)
+    #: Act 6's page: three contracts, bigger brackets, and room to read what they say
+    QUEST6_W, QUEST6_H = 430, 470
+    QUEST6_SPLIT = 180
+    QUEST6_SOCK = (104, 124)
+    QUEST6_PITCH = 118
+    QUEST6_X0, QUEST6_Y0 = 40, 40
     WP_CLOSE = (272, 385, 32, 32)
 
     def _quest_icon(self, act, n):
@@ -1297,7 +1303,6 @@ class D2Hud:
         from game.quests import journal
         from game.acts import act_of
         bg = self.frames.get("questbackground")
-        self._panel_bg(surf, 0, bg or self.frames.get("blank") or self.frames["invchar6"], 0)
         here = act_of(self.world.level_id) if getattr(self, "world", None) and self.world.level_id else 1
         top = max([here, int(getattr(p, "current_act", 1) or 1)] + [act_of(l) for l in getattr(p, "visited", ()) if l])
         acts = list(range(1, min(5, top) + 1))
@@ -1307,6 +1312,13 @@ class D2Hud:
         if getattr(self, "q_act", None) not in acts:
             self.q_act = here if here in acts else acts[-1]
         act = self.q_act
+        # Act 6's page is its own size: three contracts want room to be read, not six quest slots
+        big = act == 6
+        W, H = (self.QUEST6_W, self.QUEST6_H) if big else (320, 432)
+        if big:
+            self._panel_frame(surf, bg or self.frames.get("blank"), W, H, split=self.QUEST6_SPLIT)
+        else:
+            self._panel_bg(surf, 0, bg or self.frames.get("blank") or self.frames["invchar6"], 0)
         self._act_tabs(surf, acts, act, "q_tab", "expquesttabs")
         if act == 6:
             entries = self._bounty_journal(p)
@@ -1327,9 +1339,22 @@ class D2Hud:
         seen = p.__dict__.setdefault("_quest_anim", {})
         for i, ent in enumerate(entries[:6]):
             title, status, text = ent[:3]
-            sx, sy = self.QUEST_SOCKETS[i]
-            x, y = self.QUEST_SLOTS[i]
-            if sockets:
+            sw, sh = (self.QUEST6_SOCK if big else (80, 95))
+            if big:
+                sx, sy = self.QUEST6_X0 + i * self.QUEST6_PITCH, self.QUEST6_Y0
+                x, y = sx, sy
+            else:
+                sx, sy = self.QUEST_SOCKETS[i]
+                x, y = self.QUEST_SLOTS[i]
+            if big and sockets:
+                f = sockets[1 if i == sel and len(sockets) > 1 else 0]
+                if f is not None:
+                    key = ("qsock", id(f), sw, sh)
+                    sc = self.__dict__.setdefault("_bg_cache", {}).get(key)
+                    if sc is None:
+                        sc = self._bg_cache[key] = pygame.transform.smoothscale(f, self.P(sw, sh))
+                    surf.blit(sc, self.P(sx, sy))
+            elif sockets:
                 f = sockets[1 if i == sel and len(sockets) > 1 else 0]
                 if f is not None:
                     self.put(surf, f, sx, sy)
@@ -1339,11 +1364,12 @@ class D2Hud:
             if act == 6:
                 plaque = self._bounty_icon((entries[i][3] if len(entries[i]) > 3 else None) or "skulls")
                 if plaque is not None:
-                    key = ("qbic", id(plaque), 64, 74)
+                    pw, ph = sw - 26, sh - 32
+                    key = ("qbic", id(plaque), pw, ph)
                     sc = self.__dict__.setdefault("_bg_cache", {}).get(key)
                     if sc is None:
-                        sc = self._bg_cache[key] = pygame.transform.smoothscale(plaque, self.P(64, 74))
-                    surf.blit(sc, self.P(x + 4, y + 10))
+                        sc = self._bg_cache[key] = pygame.transform.smoothscale(plaque, self.P(pw, ph))
+                    surf.blit(sc, self.P(x + 13, y + 20))
             elif icon:
                 if status == "done":
                     # D2 plays the completion animation once (the first time you look), then the grey icon
@@ -1364,18 +1390,20 @@ class D2Hud:
                 self.text(surf, self.f30, "+" if status == "done" else ("?" if status == "none" else "!"),
                           GREY if status == "done" else ((230, 200, 120) if status != "none" else (80, 75, 65)),
                           x, y + 26, "center", 72)
-            self.region(sx, sy, 80, 95, "q_pick", (act, i))
-            if pygame.Rect(int(sx), int(sy), 80, 95).collidepoint((int(mx), int(my))):
+            self.region(sx, sy, sw, sh, "q_pick", (act, i))
+            if pygame.Rect(int(sx), int(sy), sw, sh).collidepoint((int(mx), int(my))):
                 self.hover_lines = [(title, GOLD if status != "none" else GREY)]
         if entries:
             title, status, text = entries[sel][:3]
-            self.text(surf, self.f16, title, WHITE if status != "none" else GREY, 0, 234, "center", 320)
+            ty = (self.QUEST6_SPLIT + 10) if big else 234
+            self.text(surf, self.f16, title, WHITE if status != "none" else GREY, 0, ty, "center", W)
             if status == "done":
                 text = "Quest completed."
-            words, line, y = (text or "").split(), "", 262
+            words, line, y = (text or "").split(), "", ty + 28
+            wrap_w = W - 36
             for wd in words:
                 trial = (line + " " + wd).strip()
-                if self.f16.width(trial) > 284:
+                if self.f16.width(trial) > wrap_w:
                     self.text(surf, self.f16, line, WHITE, 18, y)
                     y += 16
                     line = wd
@@ -1392,7 +1420,7 @@ class D2Hud:
         # Play Quest Dialogue (D2 replays what the quest giver said): here the quest's text goes to the log
         ql = self.frames.get("questlast")
         if entries and entries[sel][1] != "none":
-            bx, by = 226, 389
+            bx, by = (W - 94, H - 43) if big else (226, 389)
             hot = pygame.Rect(bx, by, 32, 32).collidepoint((int(mx), int(my)))
             if ql:
                 f = ql[1 if hot and len(ql) > 1 else 0]
@@ -1401,7 +1429,7 @@ class D2Hud:
             self.region(bx, by, 32, 32, "q_dialogue", entries[sel])
             if hot:
                 self.hover_lines = [("Play Quest Dialogue", WHITE)]
-        self._close_button(surf, self.QUEST_CLOSE, 0, "quests")
+        self._close_button(surf, (W - 42, H - 43, 32, 32) if big else self.QUEST_CLOSE, 0, "quests")
 
     # ------------------------------------------------------------ vendors
     STORE_GRID = (15, 62)

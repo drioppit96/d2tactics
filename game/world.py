@@ -46,8 +46,10 @@ NPC_NAMES = {"akara": "Akara", "charsi": "Charsi", "gheed": "Gheed", "kashya": "
              "tyrael2": "Tyrael", "jamella": "Jamella", "halbu": "Halbu", "cain4": "Deckard Cain",
              # Harrogath
              "larzuk": "Larzuk", "drehya": "Anya", "malah": "Malah", "nihlathak": "Nihlathak",
-             "qual-kehk": "Qual-Kehk", "tyrael3": "Tyrael", "cain6": "Deckard Cain"}
-HEALERS = {"akara", "fara", "ormus", "jamella", "malah"}
+             "qual-kehk": "Qual-Kehk", "tyrael3": "Tyrael", "cain6": "Deckard Cain",
+             # Sanctuary (Act 6) - D2's own files call Hadriel "malachai"
+             "malachai": "Hadriel", "izualghost": "Izual"}
+HEALERS = {"akara", "fara", "ormus", "jamella", "malah", "tyrael3"}
 NPC_LINES = {
     "act5pow": "Barbarian: Break the gate, friend - Qual-Kehk must know we still live!",
     "act5pow_free": "Barbarian: Thank you! We go home to Harrogath.",
@@ -871,7 +873,14 @@ class World(SkillCaster, ItemActions):
         npc.face(*p.pos)
         pages = self.talk_to(npc, menu=False)
         if npc.npc in HEALERS:
-            p.hp, p.mana = p.max_hp, p.max_mana
+            # Tyrael mends the whole party, hirelings and all: there is no one else up there
+            from . import tactics
+            crowd = list(tactics.party(self)) if npc.npc == "tyrael3" and hasattr(tactics, "party") else [p]
+            for hero in crowd or [p]:
+                hero.hp, hero.mana = hero.max_hp, hero.max_mana
+                merc = getattr(hero, "merc", None)
+                if merc and merc.get("hp", 0) > 0:
+                    merc["hp"] = merc.get("max_hp", merc["hp"])
             self.emit("heal", p, 0)
         if npc.npc.startswith("cain"):
             self.identify_all(quiet=True)       # Deckard Cain looks at everything you carry, every act

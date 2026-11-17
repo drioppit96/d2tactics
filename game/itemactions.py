@@ -38,7 +38,7 @@ NPC_OPTIONS = {
     "larzuk": ["Talk", "Trade", "Recharge", "Imbue Sockets"], "malah": ["Talk", "Trade"], "drehya": ["Talk", "Trade", "Gamble"],
     "qual-kehk": ["Talk", "Hire"], "nihlathak": ["Talk"], "cain6": ["Talk", "Identify Items"],
     # Sanctuary: Tyrael mends the party, Hadriel deals, Izual keeps the arms
-    "tyrael3": ["Talk", "Trade", "Heal Party"],
+    "tyrael3": ["Trade"],                       # he mends you the moment you speak to him
     "malachai": ["Talk", "Trade", "Gamble"],
     "izualghost": ["Talk", "Trade", "Recharge"],
 }
