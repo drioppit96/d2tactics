@@ -340,12 +340,13 @@ class D2Hud:
         if self.hover_lines:
             r = self.tooltip(surf, self.hover_lines, self.mouse)
             for n, cmp_lines in enumerate(self._equipped_compare(p)):
-                # D2 never showed you what you were already wearing: this does, in blue, beside it
+                # D2 never showed you what you were already wearing: this does, in a grey box
+                # beside it, so the one you are wearing is never mistaken for the one you hover
                 w2 = max((self.f16.width(t) for t, _ in cmp_lines), default=10) + 14
                 x2 = r.right + 8 + n * (w2 + 8)
                 if x2 + w2 > self.lw - 4:
                     x2 = r.x - 8 - w2 - n * (w2 + 8)
-                self.tooltip(surf, cmp_lines, None, at_xy=(x2, r.y), bg=(22, 52, 86, 225))
+                self.tooltip(surf, cmp_lines, None, at_xy=(x2, r.y), bg=(46, 45, 43, 236))
         held = getattr(world, "held", None)
         if held is not None:
             self._draw_held(surf, held)
@@ -814,7 +815,7 @@ class D2Hud:
         box.fill(bg or (0, 0, 0, 205))
         surf.blit(box, self.P(x, y))
         if bg:
-            pygame.draw.rect(surf, (150, 200, 240), self.R(x, y, w, h), 1)
+            pygame.draw.rect(surf, (128, 124, 116), self.R(x, y, w, h), 1)
         for i, (t, c) in enumerate(lines):
             self.text(surf, self.f16, t, c, x, y + 4 + i * lh, "center", w)
         return pygame.Rect(int(x), int(y), int(w), int(h))
@@ -2438,9 +2439,7 @@ class D2Hud:
                 self._draw_sockets(surf, it, x, y, w * CELL - 1, h * CELL - 1)
             if held is None and hot:
                 lines = list(it.describe_lines(p))
-                cur = p.equipment.get("ring1" if it.slot == "ring" else it.slot) if it.slot else None
-                if cur:
-                    lines = lines + [("", WHITE), ("Equipped: " + cur.shown_name, cur.color)]
+                self.hover_item = it            # what is worn in its slot, in its own box beside
                 if self.store is not None:
                     from game.d2items import sell_price
                     from game.qol import is_goblin
@@ -2766,6 +2765,7 @@ class D2Hud:
                 lines.append(("%d cells away" % chebyshev(cell, p.pos) +
                               (" - too far in combat" if far else ""), GREY))
                 self.hover_lines = lines
+                self.hover_item = it            # the comparison box follows onto the ground
         # pages
         if len(pages) > 1:
             b = self.frames.get("buysellbtn") or []
