@@ -842,6 +842,15 @@ class D2Content:
         setp = 0.010 * boost * (1 + mf_s / 100.0) * better
         rare = (0.025 + (0.15 if boss else 0)) * (1 + mf / 150.0) * better
         magic = 0.18 * (1 + mf / 100.0) + (0.6 if boss else 0)
+        if base.get("magic_only"):
+            # a ring or an amulet is never plain, so the four fifths of the roll that would have
+            # been "normal" cannot go there. Shared out among the qualities it can actually be,
+            # instead of all of it falling through to magic, which made every ring that dropped
+            # the weakest one it could be.
+            span = unique + setp + rare + magic
+            if span > 0:
+                k = 1.0 / span
+                unique, setp, rare, magic = unique * k, setp * k, rare * k, magic * k
         if r < unique and self.uniques_for(base, ilvl):
             return "unique"
         r -= unique
@@ -1064,7 +1073,11 @@ class D2Content:
         b = self.base_by_code.get(code)
         if b is None:
             return []
-        q = self.roll_quality(b, mlvl, rng, mf, boss_q) if b.get("slot") and b["kind"] in ("weapon", "armor") else "normal"
+        # anything you can wear gets a quality rolled for it. This used to ask for weapons and
+        # armour only, and a ring's kind is "misc", so every ring and amulet out of a treasure
+        # class came out "normal" - which, since jewellery is never plain, became the weakest
+        # magic it could be. No rare rings, no Nagelring, no amulet of any set, ever.
+        q = self.roll_quality(b, mlvl, rng, mf, boss_q) if b.get("slot") else "normal"
         it = self.make_item(b, mlvl, rng, q)
         return [it] if it is not None else []
 
