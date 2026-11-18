@@ -43,6 +43,33 @@ NPC_OPTIONS = {
     "izualghost": ["Talk", "Trade", "Recharge"],
 }
 STORE_W, STORE_H = 10, 10
+
+#: which tier of an item a vendor stocks, by difficulty. D2's tables mark shop stock only on the
+#: normal rows - Charsi's column is on forty-two bases, none above item level 12 - and the game
+#: swaps each one for its exceptional or elite counterpart as the difficulty rises. Those
+#: counterparts are the ubercode and ultracode columns, kept on every base as b["tiers"].
+SHOP_TIER = {"normal": 0, "nightmare": 1, "hell": 2}
+
+#: the highest item level a vendor's wares are rolled at, by difficulty. It decides which bases
+#: are on the shelf at all and how good the affixes on the magic ones are.
+SHOP_ILVL = {"normal": 30, "nightmare": 55, "hell": 85}
+
+
+def shop_tier(content, base, tier):
+    """The exceptional or elite version of a base, or the base itself where there is none.
+
+    Falls back a step at a time, because plenty of items have an exceptional version and no
+    elite one, and a vendor on Hell should still sell the exceptional rather than nothing.
+    """
+    if tier <= 0:
+        return base
+    codes = base.get("tiers") or ("", "", "")
+    for t in range(min(tier, len(codes) - 1), 0, -1):
+        code = (codes[t] or "").strip()
+        up = (content.base_by_code or {}).get(code) if code else None
+        if up is not None:
+            return up
+    return base
 TAB_NAMES = {"armo": "Armor", "weap": "Weapons", "misc": "Misc", "gamble": "Gamble", "maps": "Maps"}
 
 def _difficulty(world):
@@ -148,7 +175,9 @@ class ItemActions:
             stock(cache[key][0], p)
             return cache[key][0]
         rng = self.rng
-        ilvl = min(p.level + 5, 30)
+        diff = _difficulty(self)
+        tier = SHOP_TIER.get(diff, 0)
+        ilvl = min(p.level + 5, SHOP_ILVL.get(diff, 30))
         pages = {"armo": [], "weap": [], "misc": []}
         if gamble:
             # D2: what Gamble.txt lists, up to your level; rings and amulets always among them;
@@ -181,7 +210,7 @@ class ItemActions:
         else:
             col = VENDORS.get(npc_id)
             from . import potions
-            sells = potions.vendor_tiers(getattr(p, "current_act", 1) or 1, _difficulty(self))
+            sells = potions.vendor_tiers(getattr(p, "current_act", 1) or 1, diff)
             for b in c.bases:
                 sh = b.get("shop", {}).get(col)
                 if b.get("code") in potions.TIERS and b.get("code") not in ("rvs", "rvl"):
@@ -194,7 +223,10 @@ class ItemActions:
                     it.infinite = True
                     pages["misc"].append(it)
                     continue
-                if not sh or b["qlvl"] > ilvl:
+                if not sh:
+                    continue
+                b = shop_tier(c, b, tier)       # the exceptional or elite one on the harder runs
+                if b["qlvl"] > ilvl:
                     continue
                 mn, mx, mmn, mmx, mlvl = sh
                 page = b.get("page", "misc")
