@@ -172,15 +172,48 @@ class Player(Unit):
             q = it.base.get("quiver") if it is not None and isinstance(getattr(it, "base", None), dict) else None
             if q and q not in wanc:
                 continue                # arrows only help a bow, bolts a crossbow
+            have_str = self.base_str + self._available("str")
+            have_dex = self.base_dex + self._available("dex")
             if it and (it.mod_list is None or (self.level >= it.levelreq
-                                               and self.base_str + self._raw("str") >= it.strength_req()
-                                               and self.base_dex + self._raw("dex") >= it.dexterity_req())):
+                                               and have_str >= it.strength_req()
+                                               and have_dex >= it.dexterity_req())):
                 out.append(it)
         # charms work from the backpack (D2: not from the stash or the cube)
         for it in getattr(self, "inventory", []):
             if getattr(it, "charm", False) and it.mod_list is not None and self.level >= it.levelreq:
                 out.append(it)
         return out
+
+    def _charms(self):
+        return [it for it in getattr(self, "inventory", [])
+                if getattr(it, "charm", False) and it.mod_list is not None
+                and self.level >= it.levelreq]
+
+    def _available(self, stat):
+        """Everything adding to a stat, for judging whether a piece of gear can be worn.
+
+        This has to count the same things the character sheet counts, or the sheet says you have
+        the strength for a sword while the gear check says you have not, and the sword silently
+        stops working: full requirements shown in white, one to three damage, and nothing to say
+        why. So it takes in charms in the backpack, what skills and auras give, what a potion is
+        giving at the time, and the "per level" properties - not only the plain numbers written
+        on the gear, which was all it used to look at.
+        """
+        v = getattr(self, "_skill_stats", {}).get(stat, 0)
+        v = 0 if isinstance(v, tuple) else v
+        if getattr(self, "potion_buffs", None):
+            from .potions import buff_stat
+            v += buff_stat(self, stat)
+        for it in list(self.equipment.values()) + self._charms():
+            if not it:
+                continue
+            m = (it.mods or {}).get(stat, 0)
+            if not isinstance(m, tuple):
+                v += m
+            per = (it.mods or {}).get(stat + "@lvl", 0)
+            if per and not isinstance(per, tuple):
+                v += per * self.level // 8
+        return v
 
     def _raw(self, stat):
         return sum(it.mods.get(stat, 0) for it in self.equipment.values()
