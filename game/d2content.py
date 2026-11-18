@@ -79,6 +79,33 @@ QUEST_USE = {"box": "cube", "ass": "book_skill", "tr1": "horadric_scroll", "xyz"
              "tr2": "scroll_resist"}
 
 
+#: the four elements an immunity can be carried back on. Physical and magic are left out: a
+#: monster you simply cannot hit is a wall for a character with one kind of damage, and D2 keeps
+#: those rare and late.
+_NM_CARRY = (("fire", "resfi"), ("cold", "resco"), ("ltng", "resli"), ("pois", "respo"))
+
+
+def _nightmare_immunity(row, res):
+    """Give a monster on Nightmare the immunity it carries in Hell, if it has none of its own.
+
+    D2's own table marks only eighty-four monsters of five hundred and eighty-two immune on
+    Nightmare, and half of those are poison, so a run through Nightmare can pass without meeting
+    one. Hell marks four hundred and seventy-seven. This hands each monster the one element it
+    resists hardest in Hell, so Nightmare is where damage types start to matter and Hell is still
+    worse - there a monster can be immune to three things at once.
+    """
+    if any(res.get(e, 0) >= 100 for e, _c in _NM_CARRY):
+        return res                      # it already has one of its own
+    best, best_val = None, 0
+    for elem, col in _NM_CARRY:
+        v = _int(row.get(col + "(h)"))
+        if v >= 100 and v > best_val:
+            best, best_val = elem, v
+    if best:
+        res[best] = 100
+    return res
+
+
 class D2Content:
     def __init__(self, src, difficulty="normal"):
         self.src = src
@@ -1171,6 +1198,8 @@ class D2Content:
             "undead": r.get("lundead") == "1" or r.get("hundead") == "1", "demon": r.get("demon") == "1",
             "size": self.monster_size(r),
         }
+        if sfx == "(n)":
+            _nightmare_immunity(r, t["res"])
         if d2boss:
             t["tc"] = r.get("treasureclass1" + sfx) or r.get("treasureclass1") or None
             t["tc_quest"] = r.get("treasureclass4" + sfx) or r.get("treasureclass4") or None
