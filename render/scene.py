@@ -916,8 +916,14 @@ class Scene:
                     if rect is None:
                         rect = pygame.Rect(0, 0, int(22 * s), int(38 * s))
                         rect.midbottom = (int(feet[0]), int(feet[1] + 4 * s))
-                    # keep the core of the sprite, trimming empty margins
-                    r = pygame.Rect(rect.x + rect.w * 0.2, rect.y + rect.h * 0.1, rect.w * 0.6, rect.h * 0.9)
+                    # Keep the sprite, trimming only its empty margins. This used to keep the
+                    # middle 60% of the width, which on a sprite seventeen world units across
+                    # left a target ten wide on a tile thirty-two wide: a click on a monster's
+                    # arm missed it, fell through to the ground behind, and became a walk order.
+                    r = pygame.Rect(rect.x + rect.w * 0.07, rect.y + rect.h * 0.08,
+                                    rect.w * 0.86, rect.h * 0.92)
+                    if r.w < 24 * s:            # a narrow sprite still gets a target worth aiming at
+                        r = r.inflate(int(24 * s - r.w), 0)
                     wx = (r.x - cam.sw / 2) / s + cam.wx
                     wy = (r.y - cam.sh / 2) / s + cam.wy
                     self.unit_hits.append((pygame.Rect(int(wx), int(wy), int(r.w / s), int(r.h / s)), u))

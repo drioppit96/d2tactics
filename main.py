@@ -16,6 +16,11 @@ from render.hud import Hud, GOLD, TEXT
 from render.iso import Camera
 from render.scene import Scene
 
+#: how far wide of a monster's sprite a click still means "that one", in world pixels. A cell is
+#: thirty-two across, so this is about a sixth of a tile - enough to forgive an aim that lands on
+#: a monster's weapon or just past its shoulder, not enough to steal a click meant for the floor.
+MOUSE_SLACK = 3
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -1101,15 +1106,33 @@ class Game:
         if last and self.walk_action:
             self._arrive()
 
-    def monster_under_mouse(self, pos):
-        """A monster whose sprite is under the mouse (front-most first), else None."""
+    def monster_under_mouse(self, pos, slack=0):
+        """A monster whose sprite is under the mouse (front-most first), else None.
+
+        With `slack`, a click that lands just off a sprite still counts as that monster, the
+        nearest one winning. A sprite is drawn above the cell it stands on, so a click a few
+        pixels wide of one lands on the ground behind it and would otherwise be a walk order
+        into the middle of a fight.
+        """
         W, H = self.screen.get_size()
         wx = (pos[0] - W / 2) / self.cam.scale + self.cam.wx
         wy = (pos[1] - H / 2) / self.cam.scale + self.cam.wy
-        for rect, u in reversed(getattr(self.scene, "unit_hits", [])):
+        hits = getattr(self.scene, "unit_hits", [])
+        for rect, u in reversed(hits):
             if u.alive and rect.collidepoint((int(wx), int(wy))):
                 return u
-        return None
+        if slack <= 0:
+            return None
+        best = None
+        for rect, u in reversed(hits):
+            if not u.alive:
+                continue
+            if not rect.inflate(slack * 2, slack * 2).collidepoint((int(wx), int(wy))):
+                continue
+            d = (rect.centerx - wx) ** 2 + (rect.centery - wy) ** 2
+            if best is None or d < best[0]:
+                best = (d, u)
+        return best[1] if best else None
 
     def object_under_mouse(self, pos):
         """A chest / shrine / door ... whose picture is under the mouse (front-most first)."""
@@ -1774,7 +1797,7 @@ class Game:
             w.drop_held()
             return
         cell = self.cam.screen_to_cell(*pos)
-        m = self.monster_under_mouse(pos) or self.monster_at(cell)
+        m = self.monster_under_mouse(pos, slack=MOUSE_SLACK) or self.monster_at(cell)
         if m is not None and getattr(m, "ally", False):
             if getattr(m, "hireling", False) and button == 1:
                 self.toggle_merc()        # click your hireling: its inventory
@@ -2035,7 +2058,8 @@ class Game:
         if w.mode != "explore" or self.hud.over_ui(mouse) or getattr(w, "held", None) is not None:
             return
         cell = self.cam.screen_to_cell(*mouse)
-        if self.monster_under_mouse(mouse) or not w.grid.walkable(*cell) or cell == w.player.pos:
+        if self.monster_under_mouse(mouse, slack=MOUSE_SLACK) or not w.grid.walkable(*cell) \
+                or cell == w.player.pos:
             return
         if self.walk_action is None and cell != self.walk_goal:
             self.walk_to(cell)
@@ -2067,7 +2091,8 @@ class Game:
             highlight = self._path_cache[hk]
             if not self.opts.get("show_move_range", True):
                 highlight = None
-        m = self.monster_under_mouse(mouse) or self.monster_at(cell)
+        # the same reach the click uses, so the cursor always shows what a click would do
+        m = self.monster_under_mouse(mouse, slack=MOUSE_SLACK) or self.monster_at(cell)
         self.scene.skill_area = self._skill_area(m.pos if m is not None and m.ai != "npc" else cell)
         tip = None
         preview = None
