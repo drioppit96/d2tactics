@@ -1038,7 +1038,10 @@ class Scene:
         r = getattr(u, "radius", 0)
         return [(u.x + dx, u.y + dy) for dy in range(-r, r + 1) for dx in range(-r, r + 1)]
 
-    HAZARD_COLORS = {"fire": (255, 120, 30, 70), "cold": (120, 170, 255, 70), "pois": (90, 220, 60, 70),
+    #: the tint on the ground under each kind of hazard. Poison is half the rest: a Poison Nova
+    #: covers a hundred cells where a Fire Wall covers a dozen, so the same alpha washed the
+    #: whole screen green
+    HAZARD_COLORS = {"fire": (255, 120, 30, 70), "cold": (120, 170, 255, 70), "pois": (90, 220, 60, 35),
                      "ltng": (230, 230, 120, 60)}
 
     def _draw_hazards(self, surf, cam, g, flames=False):
@@ -1052,14 +1055,17 @@ class Scene:
             cells = h["cells"]
             col = self.HAZARD_COLORS.get(h.get("elem"), (255, 120, 30, 60))
             vis = h.get("vis")
-            dense = len(cells) <= 12
+            # how many of the cells actually draw the sprite. A Fire Wall is a dozen cells and
+            # wants one in each; a Poison Nova is a hundred and would be a thicket of them, so
+            # the bigger the hazard the fewer it draws and the more it reads as a haze
+            step = 1 if len(cells) <= 12 else (3 if len(cells) <= 60 else 7)
             for (x, y) in cells:
                 if not g.in_bounds(x, y) or not g.visible[y][x]:
                     continue
                 if not flames:
                     self._diamond(surf, cam, x, y, col)
                     continue
-                if vis and hasattr(assets, "draw_missile") and (dense or (x + 2 * y) % 3 == 0):
+                if vis and hasattr(assets, "draw_missile") and (x * 3 + 2 * y) % step == 0:
                     sx, sy = cam.cell_to_screen(x, y)
                     # each cell starts its loop at a different point so the flames don't pulse together
                     assets.draw_missile(surf, vis, (sx, sy), (0, 1), self.clock + (x * 7 + y * 13) % 10 * 0.07,
