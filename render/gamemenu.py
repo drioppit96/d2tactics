@@ -82,8 +82,8 @@ class GameMenu:
     def items(self):
         o = self.game.opts
         if self.page == "main":
-            return [("OPTIONS", "options"), ("QUALITY OF LIFE", "qol"), ("SAVE AND EXIT GAME", "save_exit"),
-                    ("RETURN TO GAME", "close")]
+            return [("OPTIONS", "options"), ("QUALITY OF LIFE", "qol"), ("CODEX", "codex"),
+                    ("SAVE AND EXIT GAME", "save_exit"), ("RETURN TO GAME", "close")]
         if self.page == "qol":
             from game import qol
             p = self.game.world.player
@@ -118,6 +118,10 @@ class GameMenu:
             g.world.log(msg + " (this character)", (199, 179, 119))
         elif action == "back":
             self.page, self.sel = "main", 0
+        elif action == "codex":
+            from .codex import Codex
+            self.codex = Codex(self.game)
+            self.page, self.sel = "codex", 0
         elif action == "close":
             g.menu = None
         elif action == "save_exit":
@@ -154,7 +158,11 @@ class GameMenu:
             save_options(o)
             g.apply_options()
 
-    def key(self, key):
+    def key(self, key, unicode=""):
+        if self.page == "codex":
+            if not self.codex.key(key, unicode):
+                self.page, self.sel = "main", 0
+            return
         items = self.items()
         if key == pygame.K_ESCAPE:
             if self.page in ("options", "qol"):
@@ -172,7 +180,16 @@ class GameMenu:
             if act in ("light", "hl_mon", "hl_tile", "range", "area", "fixed"):
                 self.activate(act, -1 if key in (pygame.K_LEFT, pygame.K_a) else 1)
 
+    def wheel(self, dy):
+        if self.page == "codex":
+            self.codex.wheel(dy)
+
     def click(self, pos, button=1):
+        if self.page == "codex":
+            if button == 3:
+                self.page, self.sel = "main", 0
+                return True
+            return self.codex.click(pos, button)
         for i, (r, action) in enumerate(self.rects):
             if r.collidepoint(pos):
                 self.sel = i
@@ -191,6 +208,10 @@ class GameMenu:
         return self.game.fonts["big" if big else "med"].render(text, True, color)
 
     def draw(self, surf, mouse):
+        if self.page == "codex":
+            self.codex.draw(surf, mouse)
+            self._cursor(surf, mouse)
+            return
         W, H = surf.get_size()
         shade = pygame.Surface((W, H), pygame.SRCALPHA)
         shade.fill((0, 0, 0, 150))
@@ -235,7 +256,12 @@ class GameMenu:
             hw, hh = int(hint.get_width() * k * 0.6), int(hint.get_height() * k * 0.6)
             hs = pygame.transform.smoothscale(hint, (max(1, hw), max(1, hh)))
             surf.blit(hs, (int(W / 2 - hw / 2), int(H - 140 * k)))
-        # D2's hand cursor on top (the system cursor is hidden while playing)
+        self._cursor(surf, mouse)
+
+    def _cursor(self, surf, mouse=None):
+        """D2's hand cursor on top (the system cursor is hidden while playing)."""
+        if mouse is None:
+            mouse = pygame.mouse.get_pos()
         hud = self.game.hud
         cur = getattr(hud, "cursor", None)
         if cur and cur[0] is not None:

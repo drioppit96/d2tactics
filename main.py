@@ -1920,11 +1920,11 @@ class Game:
             if sk is not None and sk.kind != "aura":
                 w.log("Right click: %s." % sk.title, (170, 170, 170))
 
-    def handle_key(self, key):
+    def handle_key(self, key, unicode=""):
         w = self.world
         h = self.hud
         if self.menu is not None:
-            self.menu.key(key)
+            self.menu.key(key, unicode)
             return
         n = self._numpad(key)
         if n is not None and getattr(self, "state", "") == "play":
@@ -2271,13 +2271,16 @@ class Game:
             elif ev.type == pygame.KEYDOWN:
                 if ev.key in (pygame.K_LCTRL, pygame.K_RCTRL):
                     self._ctrl_down = True
-                self.handle_key(ev.key)
+                self.handle_key(ev.key, getattr(ev, "unicode", ""))
             elif ev.type == pygame.KEYUP and ev.key in (pygame.K_LCTRL, pygame.K_RCTRL):
                 self._ctrl_down = False
             elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button in (1, 3) and self.menu is not None:
                 self.menu.click(ev.pos, ev.button)
             elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button in (1, 3):
                 self.handle_click(ev.pos, ev.button)
+            elif ev.type == pygame.MOUSEWHEEL and self.menu is not None:
+                if hasattr(self.menu, "wheel"):
+                    self.menu.wheel(ev.y)
             elif ev.type == pygame.MOUSEWHEEL and self.menu is None and self._is_stash_open() \
                     and self.hud.logical(pygame.mouse.get_pos())[0] < 320:
                 from game.cube import stash_tab
