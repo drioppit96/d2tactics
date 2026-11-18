@@ -69,6 +69,8 @@ class FloatText:
         self.wx, self.wy = wx, wy
         self.t = 0.0
         self.big = big
+        self.dx = 0.0            # shifted sideways when another number is already there
+        self.w, self.h = 20.0, 12.0
 
 
 class Projectile:
@@ -111,6 +113,7 @@ class Scene:
         self.world = world
         self.assets = assets
         self.fonts = fonts
+        self.d2_fonts = None     # D2's own fonts, handed over once the HUD has read them
         self.views = {}
         self.queue = []
         self.current = None
@@ -174,6 +177,47 @@ class Scene:
             if v.busy() and not (explore and getattr(v.unit, "ally", False)):
                 return False
         return True
+
+    def _float(self, text, color, wx, wy, big=False):
+        """Add a floating number, moved out of the way of any still on screen near it.
+
+        Several hits land in the same moment - a volley, a nova, a whole pack struck at once -
+        and every one of them used to start at the same height over the same spot, so the
+        numbers sat on top of each other and read as nonsense. Each new one steps aside, then
+        up, until it has a space of its own. The room it needs is measured from the lettering
+        itself, because a three figure number is three times the width of a one figure one.
+        """
+        f = FloatText(text, color, wx, wy, big=big)
+        f.w, f.h = self._float_size(f)
+        for _ in range(16):
+            clash = next((o for o in self.floats if self._float_clash(f, o)), None)
+            if clash is None:
+                break
+            step = (f.w + clash.w) / 2.0 + 4
+            if abs(f.dx) < 1.0:
+                f.dx = step                      # out to one side
+            elif f.dx > 0:
+                f.dx = -step                     # and the other
+            else:
+                f.dx = 0.0
+                f.wy -= f.h + 2                  # both taken: start a row higher
+        self.floats.append(f)
+        return f
+
+    def _float_size(self, f):
+        """How much room the text takes, in world pixels (the font's own size: the camera's
+        zoom is applied to both the text and the world, so the two agree)."""
+        d2 = self.d2_fonts
+        if d2:
+            font = d2["big"] if f.big else d2["med"]
+            return max(1.0, float(font.width(f.text))), max(1.0, float(font.height()))
+        font = self.fonts["big"] if f.big else self.fonts["med"]
+        return float(font.size(f.text)[0]), float(font.get_height())
+
+    def _float_clash(self, f, o):
+        ow, oh = getattr(o, "w", 20.0), getattr(o, "h", 12.0)
+        return (abs((o.wx + o.dx) - (f.wx + f.dx)) < (f.w + ow) / 2.0
+                and abs((o.wy - o.t * 22) - f.wy) < max(f.h, oh))
 
     def _seen(self, unit, cells=()):
         g = self.world.grid
@@ -331,19 +375,20 @@ class Scene:
             wx, wy = cell_to_world(v.rx, v.ry)
             col = (255, 70, 70) if unit.is_player else (255, 255, 255)
             if self._seen(unit):
-                self.floats.append(FloatText(str(amount), col, wx, wy - 30, big=amount >= 10))
+                # only a real hit gets the big lettering, or every number on screen is huge
+                self._float(str(amount), col, wx, wy - 30, big=amount >= 100)
             return 0.08
         if kind == "miss":
             v = self.view(ev[1])
             if self._seen(ev[1]):
                 wx, wy = cell_to_world(v.rx, v.ry)
-                self.floats.append(FloatText("miss", (170, 170, 170), wx, wy - 30))
+                self._float("miss", (170, 170, 170), wx, wy - 30)
             return 0.08
         if kind == "heal":
             v = self.view(ev[1])
             v.shown_hp = min(ev[1].max_hp, v.shown_hp + ev[2])
             wx, wy = cell_to_world(v.rx, v.ry)
-            self.floats.append(FloatText(f"+{ev[2]}", (90, 230, 90), wx, wy - 30))
+            self._float("+%d" % ev[2], (90, 230, 90), wx, wy - 30)
             return 0.15
         if kind == "death":
             v = self.view(ev[1])
@@ -386,7 +431,7 @@ class Scene:
         if kind == "levelup":
             self.banner = [f"Level {ev[1]}!", (255, 230, 90), 1.6]
             wx, wy = cell_to_world(*self.world.player.pos)
-            self.floats.append(FloatText("LEVEL UP", (255, 230, 90), wx, wy - 50, big=True))
+            self._float("LEVEL UP", (255, 230, 90), wx, wy - 50, big=True)
             return 0.3
         if kind in ("game_over", "victory"):
             self.flags.add(kind)
@@ -1186,12 +1231,34 @@ class Scene:
         self._draw_labels(surf, labels)
         self._draw_overhead_bars(surf, cam)
         for f in self.floats:
-            font = self.fonts["big"] if f.big else self.fonts["med"]
-            sx, sy = cam.to_screen(f.wx, f.wy - f.t * 22)
-            img = font.render(f.text, True, f.color)
+            sx, sy = cam.to_screen(f.wx + f.dx, f.wy - f.t * 22)
+            img = self._float_img(f, cam)
+            if img is None:
+                continue
             if f.t > 0.7:
+                img = img.copy()
                 img.set_alpha(int(255 * max(0, 1 - (f.t - 0.7) / 0.4)))
             surf.blit(img, (sx - img.get_width() / 2, sy))
+
+    def _float_img(self, f, cam):
+        """A damage number in D2's own font, drawn at the zoom the world is drawn at."""
+        d2 = self.d2_fonts
+        if not d2:
+            font = self.fonts["big"] if f.big else self.fonts["med"]
+            return font.render(f.text, True, f.color)
+        key = (f.text, f.color, f.big, round(cam.scale, 2))
+        cache = self.__dict__.setdefault("_float_cache", {})
+        img = cache.get(key)
+        if img is None:
+            font = d2["big"] if f.big else d2["med"]
+            raw = font.render(f.text, f.color, d2["ind"])
+            k = cam.scale
+            img = raw if abs(k - 1.0) < 0.01 else pygame.transform.scale(
+                raw, (max(1, int(raw.get_width() * k)), max(1, int(raw.get_height() * k))))
+            if len(cache) > 400:
+                cache.clear()
+            cache[key] = img
+        return img
 
     def _diamond(self, surf, cam, x, y, rgba, outline=False):
         from .iso import TILE_W, TILE_H

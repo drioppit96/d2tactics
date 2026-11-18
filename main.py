@@ -775,9 +775,21 @@ class Game:
         self._path_cache = {}
         self.walk_queue, self.walk_action, self.walk_goal = [], None, None
         self.scene = Scene(self.world, self.assets, self.fonts)
+        self.scene.d2_fonts = self.d2_fonts()      # damage numbers in D2's own lettering
         self.scene.banner = [self.world.level_name, (199, 179, 119), 2.0]
         self.scene.opts = self.opts
         self.cam.snap(*self.scene.player_world_pos())
+
+    def d2_fonts(self):
+        """D2's own fonts, for the parts of the world drawn outside the panels.
+
+        The HUD reads them out of the MPQs; the serif fonts the scene used instead were the one
+        place on screen that was not the game's own lettering.
+        """
+        h = getattr(self, "hud", None)
+        if h is None or not hasattr(h, "f16"):
+            return None
+        return {"med": h.f16, "big": h.f30, "small": h.f10, "ind": h.ind}
 
     # ------------------------------------------------------------ sprite cache prebuild
     def sprite_plan(self):
