@@ -902,7 +902,10 @@ class SkillCaster:
                     if m.alive:
                         self._knockback(p, m)       # (tactics: the shock wave throws them back)
             if s.key == "Poison Nova":
-                self._add_hazard(p.pos, r, env, 2, "poisonnova")   # (tactics: a poison cloud lingers)
+                # (tactics: a poison cloud lingers). The cloud is drawn with D2's own poison
+                # cloud, not the nova arc: the arc is a sweep outwards, and standing still in a
+                # cell it reads as a green beam rather than as a cloud
+                self._add_hazard(p.pos, r, env, 2, self.ground_missile(s))
         if not foes:
             self.log("%s hits nothing." % s.title, GREY)
         return True
@@ -1007,7 +1010,7 @@ class SkillCaster:
 
     GROUND_MISSILES = {"Fire Wall": "firewall", "Meteor": "meteorfire", "Blizzard": "blizzard1",
                        "Blaze": "blaze", "Immolation Arrow": "immolationfire", "Fire Ball": "meteorfire",
-                       "Firestorm": "firestorm", "Poison Nova": "poisonnova", "Volcano": "meteorfire",
+                       "Firestorm": "firestorm", "Poison Nova": "poisonexplosioncloud", "Volcano": "meteorfire",
                        "Armageddon": "meteorfire", "Wake of Fire Sentry": "firewall",
                        "Plague Javelin": "plaguejavcloud", "Poison Javelin": "poisonjavcloud"}
 
