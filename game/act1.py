@@ -55,7 +55,7 @@ WAYPOINT_LEVELS = [1, 3, 4, 5, 6, 27, 29, 32, 35]         # D2's act 1 waypoint 
 
 # what the dungeons are made of
 DUNGEONS = {
-    8: dict(kit="cave", rooms=7, roles=["prev", "spec"]),
+    8: dict(kit="cave", rooms=3, roles=["prev", "spec"], spare=1),   # the Den: small on purpose
     9: dict(kit="cave", rooms=7, roles=["prev", "down", "crow"]),
     13: dict(kit="preset", files=["caves\\caveroom2.ds1"], lvltype="Act 1 - Cave"),
     10: dict(kit="cave", rooms=8, roles=["prev", "next", "down"]),
@@ -1250,8 +1250,10 @@ def build_maze(kit, level_id, spec, seed=None):
         mk = kit.mazes[spec["kit"]] = MazeKit(kit, spec["kit"])
     rng = random.Random(seed)
     roles = spec.get("roles", [])
-    # D2's room count (LvlMaze.txt), but always room for every special room and a bend
-    n_rooms = max(len(roles) + 2, spec["rooms"])
+    # D2's room count (LvlMaze.txt), but always room for every special room and a bend. A level
+    # that wants to be small can say so with "spare": the Den of Evil does, being a one-room
+    # errand that had been sprawling over seven
+    n_rooms = max(len(roles) + spec.get("spare", 2), spec["rooms"])
     import math
     cols = rows = spec.get("grid", max(4, int(math.ceil(math.sqrt(n_rooms * 2.0)))))
     for attempt in range(200 if spec.get("role_exits") else 60):

@@ -803,7 +803,11 @@ def _reachable(world, c):
 
 
 # (cells of walkable ground per monster pack, most packs) for areas that are crowded
-DENSE = {76: (480, 70), 102: (900, 12)}      # 102: the Durance of Hate 3 - the council, not an army
+#: lid -> (walkable cells per pack, most packs). Overrides the usual 330 / 40 for a level that
+#: wants a different crowd: 76 the packed compound, 102 the Durance of Hate 3 (the council, not
+#: an army), 8 the Den of Evil - half the cave it was, so half the packs, which leaves the
+#: fighting as thick on the ground as it always was
+DENSE = {76: (480, 70), 102: (900, 12), 8: (330, 20)}
 # a boss whose own chamber is his alone: ordinary monsters within this many cells of him are
 # cleared away after the level is filled, so the walk in is the fight and he is the next one
 BOSS_ALONE = {102: ("mephisto", 26)}         # Mephisto, across his moat
@@ -859,7 +863,7 @@ def _populate(world, lid, rect, taken, safe, info):
         per_pack, cap = (1100, 20) if outdoor else (360, 24)   # dense, hard fights on the smaller maps
     if rift.is_rift(lid):
         cap = min(cap, 12 if tactics.ACTIVE else 16)   # a rift floor is a fight, not a march
-    if lid in DENSE:                    # this game's packed compounds: the armory, the scriptorium
+    if lid in DENSE:                    # levels that set their own crowd (see DENSE)
         per_pack, cap = DENSE[lid]
     n_packs = min(int(walk / per_pack), cap)
     lvl = info.monster_level(lid)
