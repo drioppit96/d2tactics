@@ -961,13 +961,32 @@ class SkillCaster:
         r = s.extra.get("radius") or env.radius() or 2
         foes = [m for m in self.enemies() if chebyshev(m.pos, cell) <= r]
         self._spend(ap, mana, cell, "cast")
-        self.emit("nova", self.player, cell, r, s.element or "phys", self.vis_missile(s, area=True))
+        strike = s.extra.get("strike")
+        if strike:
+            # Fist of the Heavens: D2's own missile for it ("fistoftheheavensdelay") has no
+            # graphic at all - it is an invisible marker that drops the holy bolts - so the
+            # lightning that lands is drawn with the bolt D2 draws, and the holy bolts rain on
+            # the ring around it.
+            self.emit("explosion", cell, strike)
+            bolts = s.extra.get("bolts")
+            ring = [c for c in self._ring(cell, r) if self.grid.in_bounds(*c)]
+            if bolts and ring:
+                self.emit("flames", ring, bolts)       # the centre already has the lightning
+        else:
+            self.emit("nova", self.player, cell, r, s.element or "phys", self.vis_missile(s, area=True))
         self._wake(foes)
         for m in foes:
             self.skill_damage(env, m)
         if s.extra.get("linger"):
             self._add_hazard(cell, r, env, s.extra["linger"], self.ground_missile(s))
         return True
+
+    @staticmethod
+    def _ring(centre, r):
+        """The cells around a point, out to r, the centre itself left out."""
+        cx, cy = centre
+        return [(cx + dx, cy + dy)
+                for dy in range(-r, r + 1) for dx in range(-r, r + 1) if dx or dy]
 
     def _k_line(self, s, env, target, cell, ap, mana):
         p = self.player

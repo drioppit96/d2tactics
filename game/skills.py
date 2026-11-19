@@ -122,7 +122,10 @@ OVERRIDES = {
     "FireGolem": dict(kind="golem"), "Poison Dagger": dict(kind="melee"),
     # Paladin
     "Holy Bolt": dict(kind="missile", undead_only=True, pierce=True), "Blessed Hammer": dict(kind="spiral", radius=7, turns=2.0),
-    "Fist of the Heavens": dict(kind="area", radius=2, always_hit=True), "Charge": dict(kind="charge"),
+    # D2's Fist of the Heavens strikes the spot with lightning and throws holy bolts off it; the
+    # lightning itself hits what is standing there, not a wide circle, so the area is one tile out.
+    "Fist of the Heavens": dict(kind="area", radius=1, always_hit=True,
+                                strike="lightningstrike", bolts="fistoftheheavensbolt"), "Charge": dict(kind="charge"),
     "Holy Shield": dict(kind="buff"), "Smite": dict(kind="melee", always_hit=True, stun=1, knock=True),
     "Zeal": dict(kind="melee", hits="calc1"), "Sacrifice": dict(kind="melee", self_damage=8),
     "Vengeance": dict(kind="melee"), "Conversion": dict(kind="melee", convert=True),

@@ -154,7 +154,11 @@ class GameMenu:
             o["fixed_maps"] = not o["fixed_maps"]
             g.world.log("Maps: %s (from your next game on)." % ("the same every game - monsters still change"
                         if o["fixed_maps"] else "new every game"), (199, 179, 119))
-        if action in ("light", "hl_mon", "hl_tile", "range", "area", "fixed", "snd_vol", "mus_vol"):
+        # anything that changed a setting is written out at once, so the choice survives the
+        # session. "hd" used to be left out of this list, which is why HD sprites went back to
+        # off every time the game started.
+        if action in ("light", "hl_mon", "hl_tile", "range", "area", "fixed", "hd",
+                      "snd_vol", "mus_vol"):
             save_options(o)
             g.apply_options()
 
