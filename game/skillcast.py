@@ -218,6 +218,8 @@ class SkillCaster:
                 target.effects["poison_src"] = src
             else:
                 target.effects.pop("poison", None)
+            from . import dmglog
+            dmglog.note(self, src, target, "pois", total, total)
             self._damage(target, per, src)
             return per
         dmg = self.rng.randint(int(lo), int(max(lo, hi)))
@@ -237,6 +239,7 @@ class SkillCaster:
             if show:
                 self.log("%s is immune to %s." % (target.name, {"fire": "fire", "cold": "cold", "ltng": "lightning", "mag": "magic"}.get(et, et)), GREY)
             return 0
+        rolled = dmg
         dmg = max(0, dmg * (100 - res) // 100)
         if dmg > 0 and getattr(target, "is_player", False):
             # "Magic Damage Reduced by X": a flat bite out of fire, cold, lightning and magic -
@@ -251,6 +254,8 @@ class SkillCaster:
                 self.emit("heal", target, healed)
         if dmg <= 0:
             return 0
+        from . import dmglog
+        dmglog.note(self, src, target, et, rolled, dmg)
         self._damage(target, dmg, src)
         if et == "cold" and target.alive and not target.is_player:
             turns = max(1, min(3, turns_from_frames(length))) if length else 1
@@ -261,6 +266,7 @@ class SkillCaster:
         if not target.alive or hi <= 0:
             return 0
         dmg = self.rng.randint(int(lo), int(max(lo, hi)))
+        rolled = dmg
         amp = -self.mstat(target, "dr_pct")
         dmg = max(1, dmg * (100 + amp) // 100)
         if getattr(target, "res", {}).get("phys", 0):
@@ -270,11 +276,15 @@ class SkillCaster:
                 pres = d2r.SUNDER_RES            # Bone Break: physical immunity becomes 95%
             dmg = max(0, dmg * (100 - min(100, pres - amp)) // 100)
         if dmg:
+            from . import dmglog
+            dmglog.note(self, src, target, "phys", rolled, dmg)
             self._damage(target, dmg, src)
         return dmg
 
     def skill_damage(self, env, target, mult_pct=100, show=True):
         """Damage of a spell-like skill (no weapon) on one target."""
+        from . import dmglog
+        dmglog.new_blow(self)
         total = 0
         if env.s.extra.get("undead_only") and not getattr(target, "undead", False):
             return 0
@@ -2054,6 +2064,9 @@ class SkillCaster:
         per, turns = eff["poison"]
         src = eff.get("poison_src") or (self.player if not getattr(u, "is_player", False) else None)
         if per > 0:
+            from . import dmglog
+            dmglog.new_blow(self)
+            dmglog.note(self, src, u, "pois", per, per, "poison")
             self._damage(u, per, src)
         turns -= 1
         if turns <= 0:

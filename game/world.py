@@ -2082,6 +2082,8 @@ class World(SkillCaster, ItemActions):
             self.emit("miss", target)
             self.log("Blocked!", GREY)
             return False
+        from . import dmglog
+        dmglog.new_blow(self)
         hand = attacker.dmg
         if getattr(attacker, "is_player", False) and getattr(attacker, "dmg_off", None):
             attacker._offhand = not getattr(attacker, "_offhand", True)     # D2: the hands take turns
@@ -2132,6 +2134,7 @@ class World(SkillCaster, ItemActions):
         # a skeleton or a golem, the mercenary, another party member. Amplify Damage is a
         # Necromancer's curse and almost all of a Necromancer's damage comes from his minions, so
         # while these sat inside the branch above they did nothing for the class that casts them.
+        phys_rolled = dmg
         if dmg and getattr(target, "curses", None):
             amp = -self.mstat(target, "dr_pct")
             if amp:
@@ -2143,6 +2146,8 @@ class World(SkillCaster, ItemActions):
                 if d2r.sundered(self.player, "phys"):
                     pres = d2r.SUNDER_RES        # Bone Break breaks physical immunity too
             dmg = max(1, dmg * (100 - min(100, pres)) // 100)
+        if phys_rolled or dmg:
+            dmglog.note(self, attacker, target, "phys", phys_rolled, dmg)
         if attacker.is_player:
             # the elemental damage on the hero's weapon, added after the cut above because
             # physical resistance does not touch it
@@ -2152,9 +2157,11 @@ class World(SkillCaster, ItemActions):
                     continue
                 extra = self.rng.randint(lo, max(lo, hi))
                 res = self._resist(target, kind)
+                dmglog.note(self, attacker, target, kind, extra, max(0, extra * (100 - res) // 100))
                 dmg += max(0, extra * (100 - res) // 100)
                 if kind == "cold" and extra and res < 100 and not target.is_player:
                     target.effects["chill"] = max(target.effects.get("chill", 0), 1)
+        before_cuts = dmg
         if target.is_player and _mod(target, "dmg_taken") and dmg > 0:
             dmg = max(1, dmg * (100 + _mod(target, "dmg_taken")) // 100)   # Bone Break's price
         if target.is_player and getattr(target, "dr", 0) and not mods["magic"]:
@@ -2163,6 +2170,8 @@ class World(SkillCaster, ItemActions):
             dmg = max(1, dmg * (100 - target.dr_pct) // 100)
         dealt = dmg
         if dmg > 0:
+            if before_cuts > dmg:
+                dmglog.scale_landed(self, dmg / float(before_cuts))
             self._damage(target, dmg, attacker)
         from . import durability, itemfx, monmods
         if attacker.is_player:
@@ -2276,6 +2285,9 @@ class World(SkillCaster, ItemActions):
             to_mana = _mod(unit, "dmg_to_mana")
             if to_mana and unit.mana < unit.max_mana:
                 unit.mana = min(unit.max_mana, unit.mana + max(1, amount * to_mana // 100))
+        if getattr(unit, "is_player", False) and amount > 0:
+            from . import dmglog
+            dmglog.unaccounted(self, source, unit, amount)
         unit.hp -= amount
         self.emit("damage", unit, amount, max(0, unit.hp))
         if unit.hp <= 0:
@@ -2310,6 +2322,9 @@ class World(SkillCaster, ItemActions):
     def _kill(self, unit, source):
         unit.alive = False
         unit.hp = 0
+        if getattr(unit, "is_player", False):
+            from . import dmglog
+            dmglog.died(self, unit)
         self.emit("death", unit)
         if getattr(unit, "special", None) == "tentacle_head":
             from .specialmon import limbs_die

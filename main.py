@@ -1473,6 +1473,13 @@ class Game:
             h.show_cube = False
             if h.show_quests:
                 h.show_char = False
+        elif name in ("combatlog", "deathlog"):
+            on = not getattr(h, "show_" + name, False)
+            h.show_combatlog = h.show_deathlog = False
+            setattr(h, "show_" + name, on)       # one log at a time, both on the left
+            if on:
+                h.show_char = h.show_quests = False
+                h.show_cube = False
 
     def cycle_automap(self):
         h = self.hud
@@ -1542,7 +1549,7 @@ class Game:
                 return
             if action == "end_turn" and self.can_act():
                 w.end_player_turn()
-            elif action in ("inv", "char", "skills", "quests"):
+            elif action in ("inv", "char", "skills", "quests", "combatlog", "deathlog"):
                 self.toggle_panel(action)
             elif action == "cube_close":
                 h.show_cube = False

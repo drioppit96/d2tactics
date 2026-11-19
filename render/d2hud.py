@@ -146,6 +146,9 @@ class D2Hud:
         self.show_char = False
         self.show_skills = False
         self.show_quests = False
+        self.show_combatlog = False   # what your hero's blows were made of
+        self.show_deathlog = False    # what killed a hero
+        self.log_scroll = 0
         self.show_loot = False
         self.loot_list = None
         self.show_automap = False
@@ -302,6 +305,10 @@ class D2Hud:
             self._draw_merc(surf, world)
         elif self.show_quests:
             self._draw_quests(surf, p)
+        elif self.show_combatlog:
+            self._draw_dmg_log(surf, world, deaths=False)
+        elif self.show_deathlog:
+            self._draw_dmg_log(surf, world, deaths=True)
         elif self.show_char:
             self._draw_char(surf, p)
         if self.show_inv:
@@ -316,7 +323,8 @@ class D2Hud:
                 self._draw_inventory(surf, world, hero=mate, ox=0, pre="mate_")
         if getattr(self, "loot_list", None) is not None:
             self._draw_loot(surf, world)
-        self._draw_tracker(surf, world, scene)
+        # the quest tracker in the bottom left corner is gone (the quest log covers it). The
+        # drawing code stays here unused in case it is ever wanted back.
         if self.skill_popup:
             self._draw_skill_popup(surf, p)
         if self.npc_menu is not None and self.store is None:
@@ -525,7 +533,8 @@ class D2Hud:
 
     # ------------------------------------------------------------ message log
     def _other_left_panel(self):
-        return bool(self.show_char or self.show_quests or getattr(self, "show_cube", False)
+        return bool(self.show_char or self.show_quests or self.show_combatlog or self.show_deathlog
+                    or getattr(self, "show_cube", False)
                     or getattr(self, "show_merc", False) or self.store is not None
                     or getattr(self, "show_waypoints", False) or getattr(self, "show_bounties", False))
 
@@ -918,8 +927,11 @@ class D2Hud:
         # mini panel (character, inventory, skills, automap, ...)
         self.region(px0 + 342, py0 + 62, 17, 30, "minipanel")
         if self.show_minipanel and self.frames.get("minipanel"):
-            mpx, mpy = px0 + 262, py0 + 22
-            self.put(surf, self.frames["minipanel"][0], mpx, mpy)
+            # two buttons of our own sit on the end of D2's row, so the panel behind it is
+            # stretched by exactly their width and the row stays one piece
+            extra = [("combatlog", "Combat Log"), ("deathlog", "Death Log")]
+            mpx, mpy = px0 + 262 - 21 * len(extra) / 2.0, py0 + 22
+            self.put(surf, self._wide_minipanel(21 * len(extra)), mpx, mpy)
             btns = self.frames.get("minipanelbtn") or []
             entries = [(0, "char", "Character (C)"), (2, "inv", "Inventory (I)"), (4, "skills", "Skill Tree (T)"),
                        (6, None, "Party"), (8, "automap", "Automap (Tab)"), (10, None, "Message Log"),
@@ -933,6 +945,15 @@ class D2Hud:
                     self.put(surf, btns[fi + (1 if pressed else 0)], bx, mpy + 3)
                 if action:
                     self.region(bx, mpy + 3, 20, 20, action)
+                if pygame.Rect(int(bx), int(mpy + 3), 20, 20).collidepoint((int(mx), int(my))):
+                    self.hover_lines = [(label, WHITE)]
+            for k, (action, label) in enumerate(extra):
+                bx = mpx + 4 + (len(entries) + k) * 21
+                pressed = getattr(self, "show_" + action, False)
+                img = self._panel_icon(action + ("_down" if pressed else ""))
+                if img is not None:
+                    self.put(surf, img, bx, mpy + 3)
+                self.region(bx, mpy + 3, 20, 20, action)
                 if pygame.Rect(int(bx), int(mpy + 3), 20, 20).collidepoint((int(mx), int(my))):
                     self.hover_lines = [(label, WHITE)]
 
@@ -1681,6 +1702,91 @@ class D2Hud:
     BOUNTY_X0, BOUNTY_Y0 = 16, 44
     BOUNTY_PITCH = (92, 112)
 
+    # ------------------------------------------------------------ combat / death log
+    LOG_W, LOG_H = 430, 512
+
+    def _dmg_parts(self, surf, font, x, y, parts, which, lead="", lead_col=None):
+        """"30 + 30 + 30 + 30 = 120", each figure in the colour of the damage it stands for.
+
+        `which` is 1 for what was rolled against the target and 2 for what it actually took.
+        """
+        from game import dmglog
+        cx = x
+        if lead:
+            self.text(surf, font, lead, lead_col or GREY, cx, y)
+            cx += font.width(lead) + 4
+        shown = [(pt[0], pt[which]) for pt in parts if pt[which] > 0]
+        if not shown:
+            self.text(surf, font, "0", GREY, cx, y)
+            return
+        for i, (el, v) in enumerate(shown):
+            if i:
+                self.text(surf, font, "+", GREY, cx, y)
+                cx += font.width("+") + 3
+            t = str(v)
+            self.text(surf, font, t, dmglog.COLORS.get(el, WHITE), cx, y)
+            cx += font.width(t) + 3
+        if len(shown) > 1:
+            total = str(sum(v for _, v in shown))
+            self.text(surf, font, "=", GREY, cx, y)
+            cx += font.width("=") + 3
+            self.text(surf, font, total, GOLD, cx, y)
+
+    def _draw_dmg_log(self, surf, world, deaths=False):
+        """The blows your hero struck, or the ones that killed a hero: one line for what was
+        rolled against the target and one for what it took once its armour and resistances had
+        their say."""
+        from game import dmglog
+        p = world.player
+        W, H = self.LOG_W, self.LOG_H
+        self._panel_frame(surf, self.frames.get("questbackground") or self.frames.get("blank"),
+                          W, H, split=70)
+        title = "Death Log" if deaths else "Combat Log"
+        self.text(surf, self.f30, title, GOLD, 0, 20, "center", W)
+        y = 62
+        if deaths:
+            entries = list(reversed(getattr(world, "death_log", None) or []))
+            if not entries:
+                self.text(surf, self.f16, "No hero has fallen yet.", GREY, 0, y, "center", W)
+            for ent in entries:
+                self.text(surf, self.f16, "%s fell, round %d" % (ent["hero"], ent["round"]),
+                          (230, 90, 80), 24, y)
+                y += 20
+                for h in ent["hits"][-8:]:
+                    y = self._log_hit(surf, h, y, W, "from %s" % h.src)
+                    if y > H - 40:
+                        break
+                y += 6
+                if y > H - 60:
+                    break
+        else:
+            hits = [h for h in dmglog.hits_by(world, p)]
+            self.text(surf, self.f16, "%s's blows (newest first)" % p.name, GREY, 24, y)
+            y += 22
+            if not hits:
+                self.text(surf, self.f16, "Nothing struck yet.", GREY, 0, y + 10, "center", W)
+            for h in reversed(hits):
+                y = self._log_hit(surf, h, y, W, "%s (%s)" % (h.target, h.kind))
+                if y > H - 50:
+                    break
+        self._log_close(surf, W, H, "combatlog" if not deaths else "deathlog")
+
+    def _log_hit(self, surf, h, y, W, head):
+        if h.skill:
+            head += "  -  " + h.skill
+        self.text(surf, self.f16, "R%d  %s" % (h.round, head), WHITE, 24, y)
+        y += 17
+        self._dmg_parts(surf, self.f10, 36, y, h.parts, 1, "dealt", GREY)
+        y += 15
+        self._dmg_parts(surf, self.f10, 36, y, h.parts, 2, "taken", GREY)
+        return y + 20
+
+    def _log_close(self, surf, W, H, action):
+        bx, by = W / 2.0 - 40, H - 44
+        hot = pygame.Rect(int(bx), int(by), 80, 24).collidepoint((int(self.mouse[0]), int(self.mouse[1])))
+        self.text(surf, self.f16, "CLOSE", GOLD if hot else WHITE, bx, by + 5, "center", 80)
+        self.region(bx, by, 80, 24, action)
+
     def _panel_frame(self, surf, bg, w, h, split=None):
         """A D2 panel of any size, built from the quest panel's own art.
 
@@ -1819,6 +1925,36 @@ class D2Hud:
                 img = None
             cache[name] = img
         return cache[name]
+
+    def _panel_icon(self, name):
+        """One of the hand-drawn buttons in assets/ui/panel (the combat and death logs)."""
+        cache = self.__dict__.setdefault("_panel_icons", {})
+        if name not in cache:
+            img = None
+            try:
+                path = os.path.join("assets", "ui", "panel", "%s.png" % name)
+                if os.path.exists(path):
+                    img = pygame.image.load(path).convert_alpha()
+            except Exception:
+                img = None
+            cache[name] = img
+        return cache[name]
+
+    def _wide_minipanel(self, extra):
+        """D2's mini panel with its middle stretched, so a longer row of buttons sits on one
+        unbroken plate: the left part as it is, the right part moved along by that much, and the
+        body behind the join is the same black and the same gold edges either way."""
+        key = ("minipanel", int(extra))
+        img = self.__dict__.setdefault("_bg_cache", {}).get(key)
+        if img is None:
+            src = self.frames["minipanel"][0]
+            w, h = src.get_size()
+            cap = 4
+            img = pygame.Surface((w + int(extra), h), pygame.SRCALPHA)
+            img.blit(src, (0, 0), (0, 0, w - cap, h))                   # everything but the right cap
+            img.blit(src, (int(extra), 0), (cap, 0, w - cap, h))        # the rest, pushed along
+            self._bg_cache[key] = img
+        return img
 
     def _coin_icon(self, name):
         """One of the little currency discs in assets/ui/currency (gold and the four essences)."""

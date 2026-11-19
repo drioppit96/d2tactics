@@ -119,7 +119,8 @@ OVERRIDES = {
     "Bone Wall": dict(kind="wall"), "Bone Prison": dict(kind="wall", prison=True), "Bone Armor": dict(kind="buff"),
     "Raise Skeleton": dict(kind="raise"), "Raise Skeletal Mage": dict(kind="raise"), "Revive": dict(kind="revive"),
     "Clay Golem": dict(kind="golem"), "BloodGolem": dict(kind="golem"), "IronGolem": dict(kind="golem"),
-    "FireGolem": dict(kind="golem"), "Poison Dagger": dict(kind="melee"),
+    # D2's Fire Golem climbs to 260 mana, which no necromancer here can pay: a flat 150.
+    "FireGolem": dict(kind="golem", mana_flat=150), "Poison Dagger": dict(kind="melee"),
     # Paladin
     "Holy Bolt": dict(kind="missile", undead_only=True, pierce=True), "Blessed Hammer": dict(kind="spiral", radius=7, turns=2.0),
     # D2's Fist of the Heavens strikes the spot with lightning and throws holy bolts off it; the
@@ -448,6 +449,9 @@ class SkillEnv:
 
     def mana(self):
         r = self.r
+        flat = self.s.extra.get("mana_flat")   # a cost that does not climb with the skill's level
+        if flat is not None:
+            return flat
         if not r:
             return self.s.mana
         shift = _int(r.get("manashift"), 8)
