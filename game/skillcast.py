@@ -1610,8 +1610,11 @@ class SkillCaster:
             elif st in ("armorclass", "item_armor_percent"):
                 m.defense = m.defense * (100 + v) // 100 if st.endswith("percent") else m.defense + v
         life = env.calc("calc1") if s.data.get("calc1") and s.kind in ("raise", "golem", "summon") else 0
-        if 0 < life < 1000:
+        if life > 0:
+            # a maxed Raise Skeleton is +850% life and a golem with Golem Mastery more still, so
+            # there is no ceiling here: the old one threw the whole bonus away above +1000%
             m.max_hp = m.hp = m.max_hp * (100 + life) // 100
+        self._mastery_bonus(s, env, m)
         k = s.extra.get("hp_mult")            # D2R 2.4 gave the pets a lot more life
         if k:
             m.max_hp = m.hp = max(1, int(m.max_hp * k))
@@ -1627,6 +1630,85 @@ class SkillCaster:
         self.monsters.append(m)
         self.emit("resurrect", m)
         return m
+
+    #: D2's passives that only ever act on somebody else's minions. Nothing reads them from the
+    #: skill tables by itself, because the bonus is written in the mastery's own row and applied
+    #: by the game to the summons of other skills.
+    SKELETONS = ("Raise Skeleton", "Raise Skeletal Mage")
+    GOLEMS = ("Clay Golem", "BloodGolem", "IronGolem", "FireGolem")
+    #: the damage a golem gains for each level of its own skill (Skills.txt: Clay par2,
+    #: Blood par4, Fire par4; the Iron Golem's comes from the item in D2, which is not modelled)
+    GOLEM_DMG_PER_LVL = {"Clay Golem": 35, "BloodGolem": 35, "IronGolem": 35, "FireGolem": 35}
+    #: summons that fight hand to hand but have no attack of their own in the tables
+    FIGHTING_PETS = ("Summon Spirit Wolf", "Summon Fenris", "Summon Grizzly", "Raven",
+                     "Shadow Warrior", "Shadow Master", "Valkyrie")
+
+    def _mastery_bonus(self, s, env, m):
+        """Skeleton Mastery and Golem Mastery, which strengthen what another skill raised.
+
+        Skeleton Mastery gives a skeleton par1 (8) life and par2 (2) damage for each of its
+        levels, both flat, and that flat damage is most of what a skeleton hits for: the bones
+        themselves start at 1-2.
+        """
+        book = getattr(self.player, "skills", None)
+        if book is None:
+            return
+        lvl = env.lvl
+        if s.key in self.SKELETONS:
+            mast = book.level("Skeleton Mastery") if "Skeleton Mastery" in book.tree else 0
+            if mast > 0:
+                e2 = book.env("Skeleton Mastery", mast)
+                hp_per, dmg_per = e2.par(1) or 8, e2.par(2) or 2
+                m.max_hp = m.hp = m.max_hp + hp_per * mast
+                m.dmg = (m.dmg[0] + dmg_per * mast, m.dmg[1] + dmg_per * mast)
+        elif s.key in self.GOLEMS:
+            # one percentage, added up the way D2 adds them: the skill's own head start plus what
+            # each level after the first is worth
+            k = 100 + self.GOLEM_DMG_PER_LVL.get(s.key, 0) * (lvl - 1)
+            if s.key == "FireGolem":
+                k += env.par(3) or 0            # Fire Golem starts at +100% damage
+            if k != 100:
+                m.dmg = (max(1, m.dmg[0] * k // 100), max(1, m.dmg[1] * k // 100))
+            # Golem Mastery's life is already in every golem's own calc1, so only its attack
+            # rating is left to hand out here
+            mast = book.level("Golem Mastery") if "Golem Mastery" in book.tree else 0
+            if mast > 0:
+                e2 = book.env("Golem Mastery", mast)
+                m.ar += ((e2.par(5) or 25) + (e2.par(6) or 25) * mast)
+        # D2 lists no attack at all for the druid's animals, the assassin's shadows and the
+        # Valkyrie's stand-in: in D2 their blows come from elsewhere (a shadow carries its own
+        # gear). Here they hit like a creature of their own level, which the percentages below
+        # then build on. Spirits, vines and traps are left alone: they are not meant to swing.
+        if s.key in self.FIGHTING_PETS and m.dmg[1] <= 1 and self.content is not None:
+            base = self.content.level_damage(getattr(m, "level", None) or self.player.level)
+            if base > 0:
+                m.dmg = (max(1, base * 80 // 100), max(1, base * 160 // 100))
+        # the druid's animals: D2 gives the spirit wolf and the grizzly a head start and a
+        # percentage for every level after the first ("% feral add to attack / damage", "per
+        # level"). The dire wolf has none - its share is life, which is what it is for.
+        feral = {"Summon Spirit Wolf": (1, 2), "Summon Grizzly": (1, 2)}
+        if s.key in feral:
+            a, b = feral[s.key]
+            k = 100 + (env.par(a) or 0) + (env.par(b) or 0) * (lvl - 1)
+            if k != 100:
+                m.dmg = (max(1, m.dmg[0] * k // 100), max(1, m.dmg[1] * k // 100))
+        # D2 hands the Valkyrie strength and dexterity instead of a damage percentage; strength
+        # is what a hero's blows are worth, so it counts the same way here
+        for st, v in env.stats("aurastat", 6):
+            if st == "strength" and v > 0:
+                m.dmg = (max(1, m.dmg[0] * (100 + v) // 100), max(1, m.dmg[1] * (100 + v) // 100))
+                break
+        # Summon Resist: every minion of yours shrugs off the elements
+        if "Summon Resist" in getattr(book, "tree", {}):
+            sr = book.level("Summon Resist")
+            if sr > 0:
+                e2 = book.env("Summon Resist", sr)
+                lo, hi = e2.par(1) or 20, e2.par(2) or 75
+                res = min(hi, lo + (hi - lo) * (sr - 1) // 19)
+                r = dict(getattr(m, "res", None) or {})
+                for el in ("fire", "cold", "ltng", "pois"):
+                    r[el] = max(r.get(el, 0), res)
+                m.res = r
 
     def _petmax(self, s, env):
         if s.data.get("petmax"):

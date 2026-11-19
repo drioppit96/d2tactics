@@ -1127,6 +1127,12 @@ class D2Content:
         k = (mid or "").lower()
         return k if k in self.monstats else None
 
+    def level_damage(self, level):
+        """What an ordinary creature of that level hits for (MonLvl's damage line)."""
+        ml = self.monlvl.get(max(1, int(level))) or self.monlvl.get(1) or {}
+        sfx = self.sfx
+        return _int(ml.get("dm" + sfx) or ml.get("dm"))
+
     def monster_template(self, mid, unique=False, level=None):
         """Everything needed to spawn a monster at its normal-difficulty level (or `level`)."""
         mid = mid.lower()
@@ -1143,8 +1149,18 @@ class D2Content:
         base_th, base_dm = _int(ml.get("th" + sfx) or ml.get("th")), _int(ml.get("dm" + sfx) or ml.get("dm"))
         base_xp = _int(ml.get("xp" + sfx) or ml.get("xp"))
         pct = lambda col: _int(r.get(col + sfx) or r.get(col))
-        hp = (max(1, base_hp * pct("minhp") // 100), max(1, base_hp * pct("maxhp") // 100))
-        dmg = (max(1, base_dm * pct("a1mind") // 100), max(1, base_dm * pct("a1maxd") // 100))
+        # MonStats' numbers are normally a percentage of the MonLvl line for the monster's level.
+        # A row marked "noRatio" (every summoned minion, among others) holds the real figures
+        # instead - a Fire Golem's 10-27 is its damage, not 10-27% of a table value, which is how
+        # the golems and skeletons ended up hitting for 1.
+        noratio = r.get("noratio") == "1"
+        if noratio:
+            hp = (max(1, pct("minhp")), max(1, pct("maxhp")))
+            dmg = (max(1, pct("a1mind")), max(1, pct("a1maxd")))
+
+        else:
+            hp = (max(1, base_hp * pct("minhp") // 100), max(1, base_hp * pct("maxhp") // 100))
+            dmg = (max(1, base_dm * pct("a1mind") // 100), max(1, base_dm * pct("a1maxd") // 100))
         ai_name = r.get("ai", "")
         miss = r.get("missa1", "") or r.get("missa2", "")
         if ai_name in ("FallenShaman",):
@@ -1158,8 +1174,10 @@ class D2Content:
         vel = _int(r.get("velocity"), 3)
         t = {
             "id": mid, "name": self._name(r), "token": r.get("code", "ZM").upper(), "level": lvl,
-            "hp": hp, "dmg": dmg, "ar": max(5, base_th * pct("a1th") // 100),
-            "df": max(0, base_ac * pct("ac") // 100), "xp": max(1, base_xp * pct("exp") // 100),
+            "hp": hp, "dmg": dmg,
+            "ar": max(5, pct("a1th") if noratio else base_th * pct("a1th") // 100),
+            "df": max(0, pct("ac") if noratio else base_ac * pct("ac") // 100),
+            "xp": max(1, pct("exp") if noratio else base_xp * pct("exp") // 100),
             "ap": max(4, min(9, 3 + vel)), "cost": 4 if vel <= 2 else 3,
             "rng": 6 if ai in ("ranged", "shaman") else 1, "ai": ai,
             "missile": miss, "minion": r.get("minion1", "").lower(),
