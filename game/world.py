@@ -712,7 +712,9 @@ class World(SkillCaster, ItemActions):
                         if self._regen_steps % 2 == 0 and h.hp < h.max_hp:
                             h.hp += 1
                         if h.mana < h.max_mana:
-                            h.mana = min(h.max_mana, h.mana + 0.5)
+                            # their own rate, gear and Warmth and all - a hero you are not
+                            # steering used to crawl back at half a point a step
+                            h.mana = min(h.max_mana, h.mana + self.mana_regen(h) / 2.0)
                 if p.mana < p.max_mana:
                     p.mana = min(p.max_mana, p.mana + self.mana_regen() / 2.0)
                 if self._regen_steps % 2 == 0:
@@ -1210,10 +1212,14 @@ class World(SkillCaster, ItemActions):
             p.recalc()
             p.hp = min(p.max_hp, max(1, int(round(p.max_hp * hp_frac))))
 
-    def mana_regen(self):
+    def mana_regen(self, hero=None):
         """Mana back per round: 4% of max mana (D2 refills mana in about two minutes; a round is a
-        couple of seconds, but every cast here is a whole action), more with Warmth / items."""
-        p = self.player
+        couple of seconds, but every cast here is a whole action), more with Warmth / items.
+
+        Any hero can be asked about, not only the one you are steering: the rest of the party
+        fills up at their own rate too, with their own gear and their own Warmth.
+        """
+        p = hero or self.player
         pct = p.mod("mana_regen_pct")
         if getattr(p, "active_aura", None) == "Meditation":
             pct += 100
