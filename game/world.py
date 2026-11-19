@@ -933,6 +933,35 @@ class World(SkillCaster, ItemActions):
     BOSS_WP_BY_NAME = {"The Countess": 25, "Shenk the Overseer": 111, "Toorc Icefist": 83,
                        "Geleb Flamefinger": 83, "Ismail Vilehand": 83, "Pindleskin": 121, "Griswold": 4}
 
+    #: an act boss always leaves something worth picking up
+    ACT_BOSSES = ("andariel", "duriel", "mephisto", "diablo", "baal")
+    BOSS_FLOOR = 2            # pieces of equipment, at the least
+    BOSS_FLOOR_TRIES = 6
+
+    def _boss_floor(self, unit, drops, tc, dl, mf, gf):
+        """An act boss is not killed for a handful of gold.
+
+        Its own treasure class can come up gold, potions and scrolls several picks in a row,
+        which after a long fight reads as nothing at all. If it did, the class is rolled again
+        and only the equipment out of those rolls is kept, until there are two pieces. Nothing
+        else about the drop changes: the odds on what those pieces turn out to be are the ones
+        the table gives.
+        """
+        if (getattr(unit, "boss", "") or "").lower() not in self.ACT_BOSSES:
+            return drops
+        if not tc or self.content is None or not hasattr(self.content, "roll_tc"):
+            return drops
+        gear = lambda it: bool(getattr(it, "slot", None))
+        have = sum(1 for it in drops if gear(it))
+        tries = 0
+        while have < self.BOSS_FLOOR and tries < self.BOSS_FLOOR_TRIES:
+            tries += 1
+            for it in self.content.roll_tc(tc, dl, self.rng, mf=mf, gf=gf):
+                if gear(it) and have < self.BOSS_FLOOR:
+                    drops = list(drops) + [it]
+                    have += 1
+        return drops
+
     #: the act bosses whose death ends the fight outright
     SWEEP_BOSSES = ("andariel", "mephisto", "diablo", "baal")
 
@@ -2453,6 +2482,7 @@ class World(SkillCaster, ItemActions):
             else:
                 for _ in range(rolls):
                     drops += self.content.roll_drop(dl, unit.unique, self.rng, mf=mf, gf=gf)
+            drops = self._boss_floor(unit, drops, tc, dl, mf, gf)
             drops = riftmap.filter_drops(self, drops, unit)
             from . import d2r
             drops += d2r.sunder_drop(self, unit)      # D2R's Sunder Charms, off champions
