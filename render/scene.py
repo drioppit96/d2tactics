@@ -927,7 +927,10 @@ class Scene:
                 b = 1.0 if use_tiles else self.brightness(cell[0], cell[1], light)
                 assets.draw_ground_item(surf, it, cam.cell_to_screen(*cell), s, max(b, 0.4),
                                         t=self.clock - self.drop_time.get(id(it), -100.0))
-                if self.show_labels or getattr(self, "alt_held", False) or (hover_cell == cell):
+                # names only when they are asked for (L, or Alt held). Showing one for
+                # whatever the mouse happens to be over put a label under the cursor in the
+                # middle of a fight, which is clutter and a source of misclicks.
+                if self.show_labels or getattr(self, "alt_held", False):
                     self._labels.append((it, cell_to_world(*cell)))
             else:
                 v = obj
