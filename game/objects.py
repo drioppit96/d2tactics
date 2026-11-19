@@ -540,6 +540,8 @@ def _loot(world, o):
             code = rng.choice(("tsc", "isc"))
             if code in c.base_by_code:
                 drops.append(c.make_item(c.base_by_code[code], lvl, rng))
+    elif o.get("countess"):
+        drops += countess_hoard(world, lvl)       # her chest is its own thing, opened once
     else:
         picks, nothing = {"chest": (2, 0.25), "casket": (2, 0.4)}.get(kind, (1, 0.55))
         if o.get("sparkly"):
@@ -548,13 +550,6 @@ def _loot(world, o):
             it = _pick(c, lvl, rng, mf, gf, nothing)
             if it is not None:
                 drops.append(it)
-    if o.get("countess"):
-        # her hoard: besides the rich chest's loot, a low rune or two (she is the rune farm of D2)
-        for _ in range(rng.choice((1, 1, 2))):
-            n = min(11, 1 + int(rng.expovariate(0.45)))
-            code = "r%02d" % n
-            if code in c.base_by_code:
-                drops.append(c.make_item(c.base_by_code[code], lvl, rng))
     for it in drops:
         cell = world._drop_cell(o["cell"])
         world.ground.setdefault(cell, []).append(it)
@@ -562,6 +557,39 @@ def _loot(world, o):
     if not drops and kind in OPEN_WORD:
         world.log("It's empty.", (160, 160, 160))
     return True
+
+
+def countess_hoard(world, lvl):
+    """What her chest is worth: a rich chest's four picks and a rune or two on top.
+
+    Her kill pays this as well, so the chest is a one-off the quest gives you and every tower
+    run after it is worth the same walk down.
+    """
+    c = world.content
+    if c is None:
+        return []
+    rng = world.rng
+    p = world.player
+    mf = world.team_mf() if hasattr(world, "team_mf") else getattr(p, "mf", 0)
+    gf = getattr(p, "gf", 0)
+    out = []
+    for _ in range(4):
+        it = _pick(c, lvl, rng, mf, gf, 0.0)
+        if it is not None:
+            out.append(it)
+    # the runes come from her own class in D2's table, so they follow the difficulty: El to Ral
+    # on Normal, up to Io on Nightmare, up to Ist on Hell
+    tc = {"normal": "Countess Rune", "nightmare": "Countess Rune (N)",
+          "hell": "Countess Rune (H)"}.get((getattr(c, "difficulty", "normal") or "normal").lower())
+    if tc and hasattr(c, "roll_tc"):
+        out += [it for it in c.roll_tc(tc, lvl, rng, mf=mf, gf=gf)]
+    else:
+        for _ in range(rng.choice((1, 1, 2))):
+            n = min(11, 1 + int(rng.expovariate(0.45)))
+            code = "r%02d" % n
+            if code in c.base_by_code:
+                out.append(c.make_item(c.base_by_code[code], lvl, rng))
+    return out
 
 
 def _trap(world, o, lvl):

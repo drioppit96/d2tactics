@@ -2506,6 +2506,11 @@ class World(SkillCaster, ItemActions):
                 for _ in range(rolls):
                     drops += self.content.roll_drop(dl, unit.unique, self.rng, mf=mf, gf=gf)
             drops = self._boss_floor(unit, drops, tc, dl, mf, gf, qb)
+            if (getattr(unit, "boss", "") or "") == "countess":
+                # every run down the tower is worth the same as the one where you opened her
+                # chest: the chest itself stays a one-off, part of the quest
+                from . import objects as _obj
+                drops = list(drops) + _obj.countess_hoard(self, dl)
             drops = riftmap.filter_drops(self, drops, unit)
             from . import d2r
             drops += d2r.sunder_drop(self, unit)      # D2R's Sunder Charms, off champions
