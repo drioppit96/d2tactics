@@ -365,6 +365,7 @@ SUNDER = [
 ]
 SUNDER_BY_KEY = {s[0]: s for s in SUNDER}
 SUNDER_CHANCE = 0.012          # per champion or unique monster killed, before magic find
+SUNDER_LEVEL = 60              # D2R: you cannot carry one before this, so none drops before it
 SUNDER_RES = 95                # what a sundered immunity drops to
 
 
@@ -385,6 +386,11 @@ def sunder_drop(world, unit):
     if diff == "normal":
         return []                      # D2R: never on Normal
     p = world.player
+    # a Sunder Charm cannot be carried before level 60, so one dropped earlier is a tease and
+    # a wasted drop. The highest hero in the party decides, since the charm is shared.
+    party = [h for h in (getattr(world, "party", None) or [p]) if h is not None]
+    if max([getattr(h, "level", 1) for h in party] + [getattr(p, "level", 1)]) < SUNDER_LEVEL:
+        return []
     mf = world.team_mf() if hasattr(world, "team_mf") else 0
     chance = SUNDER_CHANCE * (1.0 + min(2.0, mf / 300.0))
     if getattr(unit, "unique", False):
@@ -397,7 +403,7 @@ def sunder_drop(world, unit):
     have = {getattr(it, "unique_name", None) for it in _all_carried(p)}
     pool = [s[0] for s in SUNDER if ("Sunder " + s[0]) not in have] or [s[0] for s in SUNDER]
     key = world.rng.choice(pool)
-    it = world.content.make_unique(base, max(60, unit.level), world.rng, identified=False,
+    it = world.content.make_unique(base, max(SUNDER_LEVEL, unit.level), world.rng, identified=False,
                                    which=charm_entry(key))
     return [it] if it is not None else []
 
