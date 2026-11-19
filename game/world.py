@@ -937,10 +937,12 @@ class World(SkillCaster, ItemActions):
 
     #: an act boss always leaves something worth picking up
     ACT_BOSSES = ("andariel", "duriel", "mephisto", "diablo", "baal")
+    #: how much likelier a rare, a set piece or a unique is from one of them
+    ACT_BOSS_QUALITY = 1.8
     BOSS_FLOOR = 2            # pieces of equipment, at the least
     BOSS_FLOOR_TRIES = 6
 
-    def _boss_floor(self, unit, drops, tc, dl, mf, gf):
+    def _boss_floor(self, unit, drops, tc, dl, mf, gf, qb=1.0):
         """An act boss is not killed for a handful of gold.
 
         Its own treasure class can come up gold, potions and scrolls several picks in a row,
@@ -953,15 +955,25 @@ class World(SkillCaster, ItemActions):
             return drops
         if not tc or self.content is None or not hasattr(self.content, "roll_tc"):
             return drops
-        gear = lambda it: bool(getattr(it, "slot", None))
+        def gear(it):
+            # arrows and bolts have a slot of their own but are not a reward: two stacks of
+            # bolts used to satisfy this and the boss still felt empty handed
+            b = getattr(it, "base", None) or {}
+            if not getattr(it, "slot", None) or b.get("quiver") or b.get("normal_only"):
+                return False
+            return True
         have = sum(1 for it in drops if gear(it))
         tries = 0
-        while have < self.BOSS_FLOOR and tries < self.BOSS_FLOOR_TRIES:
-            tries += 1
-            for it in self.content.roll_tc(tc, dl, self.rng, mf=mf, gf=gf):
-                if gear(it) and have < self.BOSS_FLOOR:
-                    drops = list(drops) + [it]
-                    have += 1
+        self.content._q_bonus = qb      # the same odds the boss's own roll had
+        try:
+            while have < self.BOSS_FLOOR and tries < self.BOSS_FLOOR_TRIES:
+                tries += 1
+                for it in self.content.roll_tc(tc, dl, self.rng, mf=mf, gf=gf):
+                    if gear(it) and have < self.BOSS_FLOOR:
+                        drops = list(drops) + [it]
+                        have += 1
+        finally:
+            self.content._q_bonus = 1.0
         return drops
 
     #: the act bosses whose death ends the fight outright
@@ -2477,9 +2489,14 @@ class World(SkillCaster, ItemActions):
             mf, gf = self.team_mf() + riftmap.mf_bonus(self), p.gf + riftmap.gold_bonus(self)
             rolls = 1 + riftmap.extra_picks(self, unit)
             drops = []
+            qb = 1.0
             if tc and hasattr(self.content, "roll_tc"):
-                # Duriel: rares, sets and uniques 5% more often than Andariel's (same boss odds x 1.05)
-                self.content._q_bonus = (1.05 if boss == "duriel" else 1.0) * riftmap.quality_bonus(self)
+                # An act boss is the thing you go back for, so what it leaves is better than
+                # what a super unique leaves: rares, sets and uniques all the more likely.
+                # Duriel keeps his old 5% edge over Andariel on top of that.
+                q = self.ACT_BOSS_QUALITY if boss in self.ACT_BOSSES else 1.0
+                qb = q * (1.05 if boss == "duriel" else 1.0) * riftmap.quality_bonus(self)
+                self.content._q_bonus = qb
                 try:
                     for _ in range(rolls):
                         drops += self.content.roll_tc(tc, dl, self.rng, mf=mf, gf=gf)
@@ -2488,7 +2505,7 @@ class World(SkillCaster, ItemActions):
             else:
                 for _ in range(rolls):
                     drops += self.content.roll_drop(dl, unit.unique, self.rng, mf=mf, gf=gf)
-            drops = self._boss_floor(unit, drops, tc, dl, mf, gf)
+            drops = self._boss_floor(unit, drops, tc, dl, mf, gf, qb)
             drops = riftmap.filter_drops(self, drops, unit)
             from . import d2r
             drops += d2r.sunder_drop(self, unit)      # D2R's Sunder Charms, off champions
