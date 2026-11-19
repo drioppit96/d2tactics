@@ -2358,14 +2358,17 @@ class World(SkillCaster, ItemActions):
                     self.log("%s reached level %d!" % (h.name, h.level), (199, 179, 119))
         from . import hireling
         hireling.gain_xp(self, unit.xp_value)
-        if getattr(p, "life_kill", 0) and p.alive:
-            p.hp = min(p.max_hp, p.hp + p.life_kill)
-        if getattr(unit, "demon", False) and p.alive:      # "+X Life after each Demon Kill"
-            dh = _mod(p, "demon_heal")
+        # "after each Kill" pays the hero who landed the blow, not whoever happens to be the one
+        # you are steering. With a party the two are often not the same unit.
+        killer = source if (getattr(source, "is_player", False) and source in tactics.party(self)) else p
+        if getattr(killer, "life_kill", 0) and killer.alive:
+            killer.hp = min(killer.max_hp, killer.hp + killer.life_kill)
+        if getattr(unit, "demon", False) and killer.alive:      # "+X Life after each Demon Kill"
+            dh = _mod(killer, "demon_heal")
             if dh:
-                p.hp = min(p.max_hp, p.hp + dh)
-        if getattr(p, "mana_kill", 0):
-            p.mana = min(p.max_mana, p.mana + p.mana_kill)
+                killer.hp = min(killer.max_hp, killer.hp + dh)
+        if getattr(killer, "mana_kill", 0) and killer.alive:
+            killer.mana = min(killer.max_mana, killer.mana + killer.mana_kill)
         if gained:
             from . import itemfx
             itemfx.on_levelup(self)

@@ -613,7 +613,12 @@ class D2Assets(AssetProvider):
             arms["S2"] = [tiers[min(2, lk.get("lspad", 0))]]
         if weapon and weapon.gfx:
             from game.items import two_handing
-            wclass = ((weapon.wclass2 if two_handing(p, weapon) else weapon.wclass) or "1hs").upper()
+            # wclass2 is only filled in for D2's "1or2handed" swords, which have an animation
+            # class each way. A plain two-hander (a Giant Axe: "stf") carries its class in
+            # wclass, so falling back on it is what keeps the weapon in his hands - with "1hs"
+            # the game looked for one-handed art of a great axe, found none and drew nothing.
+            wclass = ((weapon.wclass2 if two_handing(p, weapon) else "")
+                      or weapon.wclass or "1hs").upper()
             if wclass in ("BOW", "XBW"):
                 arms["LH"] = [weapon.gfx]
                 hide.discard("LH")
