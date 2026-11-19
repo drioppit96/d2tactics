@@ -1477,6 +1477,7 @@ class Game:
             on = not getattr(h, "show_" + name, False)
             h.show_combatlog = h.show_deathlog = False
             setattr(h, "show_" + name, on)       # one log at a time, both on the left
+            h.log_scroll = 0
             if on:
                 h.show_char = h.show_quests = False
                 h.show_cube = False
@@ -2371,6 +2372,10 @@ class Game:
                 from game.cube import stash_tab
                 st = self.hud.cube_item
                 stash_tab(st, getattr(st, "tab", 1) - (1 if ev.y > 0 else -1))
+            elif ev.type == pygame.MOUSEWHEEL and self.menu is None and \
+                    (getattr(self.hud, "show_combatlog", False) or getattr(self.hud, "show_deathlog", False)) \
+                    and self.hud.logical(pygame.mouse.get_pos())[0] < self.hud.LOG_W:
+                self.hud.log_scroll = max(0, self.hud.log_scroll - ev.y)   # the log scrolls
             elif ev.type == pygame.MOUSEWHEEL and self.menu is None:
                 self.cam.scale = max(1.0, min(3.5, self.cam.scale + ev.y * 0.25))
         if self.state == "create":

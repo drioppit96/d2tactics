@@ -23,7 +23,7 @@ KEEP_DEATH = 30     # hits kept for a death
 class Hit(object):
     """One blow: who swung, who took it, and what it was made of."""
 
-    __slots__ = ("src", "target", "kind", "round", "parts", "skill", "_tok")
+    __slots__ = ("src", "target", "kind", "round", "parts", "skill", "res", "_tok")
 
     def __init__(self, src, target, rnd, skill=""):
         self.src = (getattr(src, "name", "") or "?") if src is not None else "something"
@@ -32,6 +32,9 @@ class Hit(object):
         self.round = rnd
         self.skill = skill
         self.parts = []            # [(element, rolled, landed)]
+        # what the target was shrugging off at that moment, so the line explains itself later
+        r = getattr(target, "res", None) or {}
+        self.res = {k: int(r.get(k, 0) or 0) for k in ELEMENTS if r.get(k)}
 
     def rolled(self):
         return sum(p[1] for p in self.parts)

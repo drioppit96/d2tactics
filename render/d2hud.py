@@ -1733,9 +1733,12 @@ class D2Hud:
             self.text(surf, font, total, GOLD, cx, y)
 
     def _draw_dmg_log(self, surf, world, deaths=False):
-        """The blows your hero struck, or the ones that killed a hero: one line for what was
-        rolled against the target and one for what it took once its armour and resistances had
-        their say."""
+        """The blows your hero struck, or the ones that killed a hero.
+
+        One line a blow: what the target actually took, figure by figure in the colour of the
+        damage it stands for, and beside it what that target was shrugging off at the time - so
+        a line that reads small says why.
+        """
         from game import dmglog
         p = world.player
         W, H = self.LOG_W, self.LOG_H
@@ -1743,43 +1746,82 @@ class D2Hud:
                           W, H, split=70)
         title = "Death Log" if deaths else "Combat Log"
         self.text(surf, self.f30, title, GOLD, 0, 20, "center", W)
-        y = 62
+
+        # every line of the list, worked out first: scrolling and the panel's edges are then
+        # just a window onto it, and nothing can run off the bottom of the frame again
+        rows = []
         if deaths:
             entries = list(reversed(getattr(world, "death_log", None) or []))
             if not entries:
-                self.text(surf, self.f16, "No hero has fallen yet.", GREY, 0, y, "center", W)
+                rows.append(("note", "No hero has fallen yet."))
             for ent in entries:
-                self.text(surf, self.f16, "%s fell, round %d" % (ent["hero"], ent["round"]),
-                          (230, 90, 80), 24, y)
-                y += 20
-                for h in ent["hits"][-8:]:
-                    y = self._log_hit(surf, h, y, W, "from %s" % h.src)
-                    if y > H - 40:
-                        break
-                y += 6
-                if y > H - 60:
-                    break
+                rows.append(("fell", "%s fell, round %d" % (ent["hero"], ent["round"])))
+                for h in reversed(ent["hits"]):
+                    rows.append(("hit", (h, "from %s" % h.src)))
+                rows.append(("gap", None))
         else:
-            hits = [h for h in dmglog.hits_by(world, p)]
-            self.text(surf, self.f16, "%s's blows (newest first)" % p.name, GREY, 24, y)
-            y += 22
+            hits = dmglog.hits_by(world, p)
+            rows.append(("note2", "%s's blows (newest first)" % p.name))
             if not hits:
-                self.text(surf, self.f16, "Nothing struck yet.", GREY, 0, y + 10, "center", W)
+                rows.append(("note", "Nothing struck yet."))
             for h in reversed(hits):
-                y = self._log_hit(surf, h, y, W, "%s (%s)" % (h.target, h.kind))
-                if y > H - 50:
-                    break
+                rows.append(("hit", (h, "%s (%s)" % (h.target, h.kind))))
+
+        top, bottom = 58, H - 78      # the last line clears the frame, footer and all
+        heights = {"hit": 34, "fell": 20, "note": 24, "note2": 22, "gap": 8}
+        page = 0
+        used = 0
+        for kind, _ in rows:
+            used += heights[kind]
+            if used > bottom - top:
+                break
+            page += 1
+        self._log_rows = len(rows)
+        self._log_page = max(1, page)
+        self.log_scroll = max(0, min(self.log_scroll, max(0, len(rows) - self._log_page)))
+        y = top
+        for kind, data in rows[self.log_scroll:]:
+            if y + heights[kind] > bottom:
+                break
+            if kind == "hit":
+                h, head = data
+                self._log_hit(surf, h, y, W, head)
+            elif kind == "fell":
+                self.text(surf, self.f16, data, (230, 90, 80), 24, y)
+            elif kind == "note":
+                self.text(surf, self.f16, data, GREY, 0, y, "center", W)
+            elif kind == "note2":
+                self.text(surf, self.f16, data, GREY, 24, y)
+            y += heights[kind]
+        if len(rows) > self._log_page:
+            self.text(surf, self.f10, "%d-%d of %d   (mouse wheel)" % (
+                self.log_scroll + 1, min(len(rows), self.log_scroll + self._log_page), len(rows)),
+                GREY, 0, bottom + 4, "center", W)
+        self.region(0, top, W, bottom - top, "log_scroll")
         self._log_close(surf, W, H, "combatlog" if not deaths else "deathlog")
 
     def _log_hit(self, surf, h, y, W, head):
+        from game import dmglog
         if h.skill:
             head += "  -  " + h.skill
         self.text(surf, self.f16, "R%d  %s" % (h.round, head), WHITE, 24, y)
-        y += 17
-        self._dmg_parts(surf, self.f10, 36, y, h.parts, 1, "dealt", GREY)
-        y += 15
-        self._dmg_parts(surf, self.f10, 36, y, h.parts, 2, "taken", GREY)
-        return y + 20
+        self._log_res(surf, h, y + 2, W)
+        self._dmg_parts(surf, self.f10, 36, y + 18, h.parts, 2)
+        return y + 34
+
+    def _log_res(self, surf, h, y, W):
+        """What the target shrugs off, in the colours of the damage: 75 means three quarters of
+        it never landed. Only the ones that are not zero are worth the room."""
+        from game import dmglog
+        res = getattr(h, "res", None) or {}
+        shown = [(el, v) for el in dmglog.ELEMENTS for v in (res.get(el, 0),) if v]
+        if not shown:
+            return
+        widths = [self.f10.width("%d%%" % v) + 8 for _, v in shown]
+        x = W - 20 - sum(widths)
+        for (el, v), w in zip(shown, widths):
+            self.text(surf, self.f10, "%d%%" % v, dmglog.COLORS.get(el, WHITE), x, y)
+            x += w
 
     def _log_close(self, surf, W, H, action):
         bx, by = W / 2.0 - 40, H - 44
