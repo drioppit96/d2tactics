@@ -162,14 +162,22 @@ BOSS_WAYPOINTS = {25: 24, 37: 36, 49: 48, 73: None, 102: 101, 108: 107, 121: Non
 
 
 def _boss_waypoints(world, grid, rng):
-    """Waypoints at the entrance of the boss floors (the Countess, Andariel, Radament, Duriel,
-    Mephisto, Diablo, Pindleskin, Nihlathak, Baal), so they can be farmed."""
+    """Waypoints on the boss floors (the Countess, Andariel, Radament, Duriel, Mephisto, Diablo,
+    Pindleskin, Nihlathak, Baal), so they can be farmed.
+
+    It goes where the boss stands, not at the floor's entrance: that is where the fight ends and
+    where you want to come back to, and it saves walking the whole floor again. The floor's
+    entrance is the fallback when the boss is not placed there.
+    """
     for lid, prev in BOSS_WAYPOINTS.items():
         if lid not in world.areas or lid in world.waypoints.values():
             continue
         x0, y0, x1, y1 = world.areas[lid]
         inside = lambda c: x0 <= c[0] < x1 and y0 <= c[1] < y1
-        start = world.entries.get(prev) if prev is not None else None
+        start = next((m.pos for m in getattr(world, "monsters", None) or ()
+                      if getattr(m, "boss", None) and inside(m.pos)), None)
+        if start is None and prev is not None:
+            start = world.entries.get(prev)
         if start is None or not inside(start):
             cands = [c for c in world.entries.values() if c is not None and inside(c)]
             start = cands[0] if cands else None
@@ -313,7 +321,6 @@ def setup(world, built, grid, rng, info, level_key):
             world.entries.setdefault(oid, arrival_cell(grid, [c], set(world.exits), rng, dist=2))
         else:
             world.objects.append(dict(kind=kind, cell=c, level=owner, oid=oid, used=False))
-    _boss_waypoints(world, grid, rng)
     # ---- NPCs
     world.npcs = []
     monsters = []
@@ -404,6 +411,9 @@ def setup(world, built, grid, rng, info, level_key):
     safe = list(world.entries.values()) + list(world.waypoints)
     for name, cell, owner in b.presets:
         _spawn_preset(world, name, cell, owner, taken, info)
+    # now that the bosses stand on the map, the farming waypoints can be put beside them
+    _boss_waypoints(world, grid, rng)
+    safe = list(world.entries.values()) + list(world.waypoints)
     from .acts import TOWN_IDS
     world._reach = reach_tiles(grid, [c for c in safe if c] + ([world._default_start()] if world.npcs else []))
     from . import objects as gobjects
