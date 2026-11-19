@@ -933,6 +933,45 @@ class World(SkillCaster, ItemActions):
     BOSS_WP_BY_NAME = {"The Countess": 25, "Shenk the Overseer": 111, "Toorc Icefist": 83,
                        "Geleb Flamefinger": 83, "Ismail Vilehand": 83, "Pindleskin": 121, "Griswold": 4}
 
+    #: the act bosses whose death ends the fight outright
+    SWEEP_BOSSES = ("andariel", "mephisto", "diablo", "baal")
+
+    def _act_boss_sweep(self, unit):
+        """An act boss falls and what it commanded falls with it.
+
+        Everything hostile that was in the fight - awake, or standing where you can see it -
+        dies on the spot. They are not killed by anyone, so they pay no experience and leave
+        nothing behind: this is the fight ending, not a harvest. Monsters asleep elsewhere on
+        the floor are left where they are, so there is still a level to clear afterwards.
+        """
+        boss = (getattr(unit, "boss", "") or "").lower()
+        if boss not in self.SWEEP_BOSSES or getattr(unit, "ally", False):
+            return
+        from . import rift
+        if rift.is_rift(getattr(self, "level_id", None)):
+            return                       # a rift's copy of a boss is just a floor guardian
+        grid = self.grid
+        gone = 0
+        for m in self.monsters:
+            if not m.alive or m is unit or m.is_player or getattr(m, "ally", False):
+                continue
+            if getattr(m, "ai", "") == "npc" or getattr(m, "invulnerable", False):
+                continue
+            seen = False
+            try:
+                seen = bool(grid.visible[m.y][m.x])
+            except Exception:
+                seen = False
+            if not (m.aware or seen):
+                continue
+            m.alive = False
+            m.hp = 0
+            self.corpses.append(m)
+            self.emit("death", m)
+            gone += 1
+        if gone:
+            self.log("%s falls, and %d of its own fall with it." % (unit.name, gone), (199, 179, 119))
+
     def _boss_waypoint(self, unit):
         if getattr(unit, "ally", False) or unit.is_player:
             return
@@ -2436,6 +2475,7 @@ class World(SkillCaster, ItemActions):
                 self.log("%s is slain!" % unit.name, (199, 179, 119))
         from . import quests, itemfx
         self._boss_waypoint(unit)
+        self._act_boss_sweep(unit)
         quests.on_monster_killed(self, unit)
         if source is p:
             itemfx.on_kill(self, unit)
