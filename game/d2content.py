@@ -1006,7 +1006,12 @@ class D2Content:
         """D2's TreasureClassEx: picks (negative = each entry in turn), NoDrop, nested classes, gold
         with a multiplier, item codes and the weapNN / armoNN auto classes. Bosses' classes carry
         their better quality ratios (Unique/Set/Rare/Magic)."""
-        if depth > 12 or not name:
+        # D2's higher difficulties chain their classes a long way down - Hell's Act 2 equipment
+        # points at Nightmare's, which points at Normal's, each one a step - and a pick that ran
+        # out of depth used to come back empty handed. On Nightmare that threw away one pick in
+        # six, on Hell one in three, which is why a boss could be killed for nothing. The chains
+        # are finite, so the limit is only here to survive a loop in a hand-edited table.
+        if depth > 64 or not name:
             return []
         name = name.strip().strip('"')
         row = self.tc_rows().get(name.lower())
