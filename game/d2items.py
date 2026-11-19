@@ -121,7 +121,11 @@ class SocketRules:
         self.runewords = []
         try:
             for r in read_table(content.src, "Runes"):
-                if r.get("complete") != "1" or r.get("server") == "1":
+                # "server" marks a runeword as ladder only. Blizzard turned those on for single
+                # player and open games in 1.13, and this is a single player game, so Spirit,
+                # Insight, Call to Arms and the rest belong here. "complete" is the real filter:
+                # it marks the rows D2 actually uses, the others being unfinished leftovers.
+                if r.get("complete") != "1":
                     continue
                 runes = [r.get("rune%d" % i) for i in range(1, 7) if r.get("rune%d" % i)]
                 if not runes:
