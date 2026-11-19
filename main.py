@@ -1118,33 +1118,75 @@ class Game:
         if last and self.walk_action:
             self._arrive()
 
-    def monster_under_mouse(self, pos, slack=0):
-        """A monster whose sprite is under the mouse (front-most first), else None.
-
-        With `slack`, a click that lands just off a sprite still counts as that monster, the
-        nearest one winning. A sprite is drawn above the cell it stands on, so a click a few
-        pixels wide of one lands on the ground behind it and would otherwise be a walk order
-        into the middle of a fight.
-        """
+    def _world_at(self, pos):
+        """Mouse point -> world coordinates, the same frame the hit rects are recorded in."""
         W, H = self.screen.get_size()
-        wx = (pos[0] - W / 2) / self.cam.scale + self.cam.wx
-        wy = (pos[1] - H / 2) / self.cam.scale + self.cam.wy
+        return ((pos[0] - W / 2) / self.cam.scale + self.cam.wx,
+                (pos[1] - H / 2) / self.cam.scale + self.cam.wy)
+
+    def _on_sprite(self, u, wx, wy):
+        """True if that point is on a painted part of the monster's picture.
+
+        None if the picture is not known, so the caller can fall back to the box.
+        """
+        spr = getattr(self.scene, "unit_pixels", {}).get(id(u))
+        if spr is None:
+            return None
+        img, (sx, sy, sw, sh) = spr
+        if not (sx <= wx < sx + sw and sy <= wy < sy + sh):
+            return False
+        px = int((wx - sx) * self.cam.scale)
+        py = int((wy - sy) * self.cam.scale)
+        try:
+            a = img.get_at((min(px, img.get_width() - 1), min(py, img.get_height() - 1)))
+        except Exception:
+            return None
+        return (a[3] if len(a) > 3 else 255) > 24
+
+    def monster_under_mouse(self, pos, slack=0, pixel=False):
+        """The monster whose sprite is under the mouse, front-most first, else None.
+
+        "Front-most" is what the eye means: the units are recorded in the order they were
+        painted, so the last one to cover a pixel is the one actually visible there.
+
+        With `pixel`, the painted picture decides rather than the box drawn round it, which is
+        what you see; the box is still there as the second pass, for the gaps between a
+        monster's legs and for anything whose picture was not recorded.
+
+        With `slack`, a click that lands just off a sprite still counts as that monster - but
+        only when it is the one candidate. In a pack several sprites are within a few pixels of
+        each other and the help turns into a guess, so there it stands aside and the exact tests
+        decide.
+        """
+        wx, wy = self._world_at(pos)
         hits = getattr(self.scene, "unit_hits", [])
         for rect, u in reversed(hits):
-            if u.alive and rect.collidepoint((int(wx), int(wy))):
-                return u
+            if not (u.alive and rect.collidepoint((int(wx), int(wy)))):
+                continue
+            if pixel:
+                on = self._on_sprite(u, wx, wy)
+                if on is False:
+                    continue        # the box covers this pixel, the monster does not
+            return u
         if slack <= 0:
             return None
-        best = None
-        for rect, u in reversed(hits):
-            if not u.alive:
-                continue
-            if not rect.inflate(slack * 2, slack * 2).collidepoint((int(wx), int(wy))):
-                continue
-            d = (rect.centerx - wx) ** 2 + (rect.centery - wy) ** 2
-            if best is None or d < best[0]:
-                best = (d, u)
-        return best[1] if best else None
+        near = [u for rect, u in hits
+                if u.alive and rect.inflate(slack * 2, slack * 2).collidepoint((int(wx), int(wy)))]
+        return near[0] if len(near) == 1 else None
+
+    def target_under(self, pos, cell=None):
+        """Which monster a click at this point means, by the rules in that order.
+
+        1. the picture actually painted there, front-most, so what you see is what you get;
+        2. failing that, a monster standing on the tile under the cursor - tiles never overlap,
+           so this is exact, and it covers the feet and the ground the sprite lets go of;
+        3. failing that, one just off the cursor, and only if there is no other it could be.
+        """
+        if cell is None:
+            cell = self.cam.screen_to_cell(*pos)
+        return (self.monster_under_mouse(pos, pixel=True)
+                or self.monster_at(cell)
+                or self.monster_under_mouse(pos, slack=MOUSE_SLACK))
 
     def object_under_mouse(self, pos):
         """A chest / shrine / door ... whose picture is under the mouse (front-most first)."""
@@ -1809,7 +1851,7 @@ class Game:
             w.drop_held()
             return
         cell = self.cam.screen_to_cell(*pos)
-        m = self.monster_under_mouse(pos, slack=MOUSE_SLACK) or self.monster_at(cell)
+        m = self.target_under(pos, cell)
         if m is not None and getattr(m, "ally", False):
             if getattr(m, "hireling", False) and button == 1:
                 self.toggle_merc()        # click your hireling: its inventory
@@ -2070,8 +2112,7 @@ class Game:
         if w.mode != "explore" or self.hud.over_ui(mouse) or getattr(w, "held", None) is not None:
             return
         cell = self.cam.screen_to_cell(*mouse)
-        if self.monster_under_mouse(mouse, slack=MOUSE_SLACK) or not w.grid.walkable(*cell) \
-                or cell == w.player.pos:
+        if self.target_under(mouse, cell) or not w.grid.walkable(*cell) or cell == w.player.pos:
             return
         if self.walk_action is None and cell != self.walk_goal:
             self.walk_to(cell)
@@ -2103,8 +2144,8 @@ class Game:
             highlight = self._path_cache[hk]
             if not self.opts.get("show_move_range", True):
                 highlight = None
-        # the same reach the click uses, so the cursor always shows what a click would do
-        m = self.monster_under_mouse(mouse, slack=MOUSE_SLACK) or self.monster_at(cell)
+        # the same rules the click uses, so the cursor always shows what a click would do
+        m = self.target_under(mouse, cell)
         self.scene.skill_area = self._skill_area(m.pos if m is not None and m.ai != "npc" else cell)
         tip = None
         preview = None

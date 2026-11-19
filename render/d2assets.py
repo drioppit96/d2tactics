@@ -962,7 +962,11 @@ class D2Assets(AssetProvider):
                     ent = tc[k] = (img, t_img)
                 img = ent[1]
         surf.blit(img, (int(cx + x0), int(cy + y0)))
-        return pygame.Rect(int(cx + x0), int(cy + y0), img.get_width(), img.get_height())
+        r = pygame.Rect(int(cx + x0), int(cy + y0), img.get_width(), img.get_height())
+        # the picture and where it landed, so the mouse can ask what is actually painted on a
+        # pixel rather than guessing from a box drawn round the whole sprite
+        self.last_sprite = (img, r)
+        return r
 
     OBJECT_TOKENS = {"cairn": ["S1", "S2", "S3", "S4", "S5"], "inifuss": ["IT"], "tome": ["TT"], "malus": ["HM"],
                      "cage": ["GI"], "waypoint": ["WN", "WP", "W7"], "portal": ["PP", "TP"], "tp": ["TP"], "tp_back": ["TP"],

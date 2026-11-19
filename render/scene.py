@@ -882,6 +882,7 @@ class Scene:
         far = []                 # enemies outside your light: drawn again, dimmed, above the darkness
         self._labels = []
         self.unit_hits = []      # (world-space rect, unit) for mouse picking, back to front
+        self.unit_pixels = {}    # id(unit) -> (sprite, world-space rect of the sprite as painted)
         self.object_hits = []    # (world-space rect, object) the same for chests, shrines, doors ...
         # where the player is on screen: scenery drawn after him that covers him goes see-through
         ppx, ppy = cam.cell_to_screen(pv.rx, pv.ry)
@@ -961,10 +962,10 @@ class Scene:
                     if rect is None:
                         rect = pygame.Rect(0, 0, int(22 * s), int(38 * s))
                         rect.midbottom = (int(feet[0]), int(feet[1] + 4 * s))
-                    # Keep the sprite, trimming only its empty margins. This used to keep the
-                    # middle 60% of the width, which on a sprite seventeen world units across
-                    # left a target ten wide on a tile thirty-two wide: a click on a monster's
-                    # arm missed it, fell through to the ground behind, and became a walk order.
+                    # the sprite, less its empty margins. Trimming the top third was tried and
+                    # measured: it cost fifteen points of accuracy, because the head and
+                    # shoulders are a large part of what you actually aim at, and the tile
+                    # underneath belongs to the monster behind.
                     r = pygame.Rect(rect.x + rect.w * 0.07, rect.y + rect.h * 0.08,
                                     rect.w * 0.86, rect.h * 0.92)
                     if r.w < 24 * s:            # a narrow sprite still gets a target worth aiming at
@@ -972,6 +973,12 @@ class Scene:
                     wx = (r.x - cam.sw / 2) / s + cam.wx
                     wy = (r.y - cam.sh / 2) / s + cam.wy
                     self.unit_hits.append((pygame.Rect(int(wx), int(wy), int(r.w / s), int(r.h / s)), u))
+                    # the picture itself, so the mouse can ask what was painted on a pixel
+                    spr = getattr(assets, "last_sprite", None)
+                    if spr is not None and spr[1] == rect:
+                        sx = (rect.x - cam.sw / 2) / s + cam.wx
+                        sy = (rect.y - cam.sh / 2) / s + cam.wy
+                        self.unit_pixels[id(u)] = (spr[0], (sx, sy, rect.w / s, rect.h / s))
 
         self._draw_tomb_symbols(surf, cam, g)
         # roofs go on top of the walls and of whatever stands under them (D2 draws them last)
