@@ -135,7 +135,7 @@ Fallout). Each turn you get **Action Points** (the stamina bar shows them).
 | Throw (javelins, throwing knives / axes) | choose "Throw" on the right skill button: same AP as an attack, range 14. Left click stabs / swings in melee, like D2 |
 | Right click | your selected right skill (choose it on the right skill button, or F1-F8) |
 | Left click a monster | your left skill if you picked one on the left skill button, else a normal attack |
-| Drink potion (right click in the belt, or keys 1-4) | 2 AP; that potion then rests 8 turns |
+| Drink potion (right click in the belt, or keys 1-4) | 2 AP |
 | Pick up item | 1 AP (free outside combat) |
 
 **Skills:** one skill point per level, D2's full tree of your class (T). Right click a learned skill in
@@ -242,17 +242,15 @@ first time a sound or song is heard it can come a moment late. Volumes: Esc > Op
 
 ## Potions
 
-Healing and mana potions restore part of your maximum life / mana at once, then more every turn for
-5 turns: Minor 60% + 2%/turn, Light 70% + 3%, standard 80% + 4%, Greater 90% + 5%, Super 100% + 6%.
-Full Rejuvenation: 100% life and mana + 6%/turn. You drink only from the belt, and in combat the belt
+Healing and mana potions restore D2's own amount, all of it the moment you drink: 30 / 60 / 100 /
+180 / 320 life and 20 / 40 / 80 / 150 / 250 mana. Rejuvenations go by your maximum: 35% of life and
+mana, 100% for a Full one. You drink only from the belt, and in combat the belt
 is locked (no refilling it). The belt has 4 slots (keys 1-4); its rows come from the belt you wear,
 like D2: none 1, Sash / Light Belt 2, Belt / Heavy Belt 3, Plated Belt 4 (and their exceptional and
 elite versions). You drink the bottom potion of a slot; hover over the belt to open the rows above.
-Healing and mana potions are permanent: drinking one in combat puts it on an 8-turn cooldown
-instead of using it up (out of combat they are always ready). Rejuvenation potions are used up.
+Every potion is used up when you drink it.
 Skill hotkeys (like D2's F-keys): open the skill list, point at a skill and press Num 0-9 to bind it;
 pressing that key later makes it your right click skill.
-Quality of Life > Used-Up Potions switches to D2's potions (every potion used up, no cooldown).
 Siege on Harrogath (Shenk): Larzuk sockets an item and gives you a skill point, in each difficulty.
 
 Potions don't drop from monsters or chests: the potion sellers stock them, the two best tiers for

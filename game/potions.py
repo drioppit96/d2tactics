@@ -1,18 +1,15 @@
 """Turn-based potions (the potion system specification):
 
-- Healing / mana potions restore a burst at once and then a little every turn for 5 turns, as a
-  share of your maximum life / mana:
-      Minor 60% + 2%/turn, Light 70% + 3%, (standard) 80% + 4%, Greater 90% + 5%, Super 100% + 6%.
-  Full Rejuvenation: 100% life and mana at once + 6%/turn for 5 turns (130% in all).
+- Healing / mana potions restore D2's own flat amount, all of it the moment you drink:
+      30 / 60 / 100 / 180 / 320 life, and 20 / 40 / 80 / 150 / 250 mana.
+  Rejuvenations work in shares of your maximum: 35% of life and mana, 100% for a Full one.
 - You drink only from the belt. In combat the belt is locked: no drinking from the backpack and no
   putting potions into the belt (they go to the backpack).
 - The belt has 4 slots (columns, keys 1-4) and 2 rows at first (8 potions); Siege on Harrogath (killing
   Shenk) adds a row in Normal and one in Nightmare (4 rows, 16 potions at most); in Hell it gives
   4 Full Rejuvenation potions, the only way to get them. You drink the bottom potion of a column and
   the ones above slide down; the rows above open up when you hover over the belt, like D2.
-- Healing and mana potions are permanent: drinking one doesn't use it up, it goes on an 8-turn
-  cooldown in combat (each potion counts down on its own; out of combat they are always ready).
-  Rejuvenation potions (and antidote, thawing, stamina) are still used up.
+- Every potion is used up when you drink it, as in D2.
 - The Horadric Cube infuses a potion with a gem (potion + gem): the gem adds a buff for 2 (chipped)
   to 6 (perfect) turns, and the bottle gets an outline in the gem's colour.
 """
@@ -20,15 +17,24 @@ import random
 
 from .d2items import GRADES
 
-REGEN_TURNS = 5
-SLOT_COOLDOWN = 8
 MAX_SLOTS = 4
 MAX_ROWS = 4
 
-# potion code -> (instant %, % per turn for REGEN_TURNS turns)
-TIERS = {"hp1": (60, 2), "hp2": (70, 3), "hp3": (80, 4), "hp4": (90, 5), "hp5": (100, 6),
-         "mp1": (60, 2), "mp2": (70, 3), "mp3": (80, 4), "mp4": (90, 5), "mp5": (100, 6),
-         "rvs": (35, 0), "rvl": (100, 6)}
+#: potion code -> life or mana restored, D2's own figures. The same numbers sit on the bases
+#: themselves (d2content.POTIONS), which is where a bottle gets its own; this is the fallback
+#: and the list of what counts as a potion. A rejuvenation is the exception and works in
+#: percent of your maximum, as it does in D2.
+TIERS = {"hp1": 30, "hp2": 60, "hp3": 100, "hp4": 180, "hp5": 320,
+         "mp1": 20, "mp2": 40, "mp3": 80, "mp4": 150, "mp5": 250}
+REJUV_PCT = {"rvs": 35, "rvl": 100}
+
+
+def restores(it):
+    """(flat amount, percent) - a potion restores one or the other."""
+    code = getattr(it, "code", "")
+    if getattr(it, "potion", "") == "rejuv":
+        return 0, REJUV_PCT.get(code, getattr(it, "amount", 0) or 35)
+    return (getattr(it, "amount", 0) or TIERS.get(code, 0)), 0
 FULL_REJUV = "rvl"
 
 
@@ -112,12 +118,10 @@ def outline_color(it):
 def describe(it):
     """Tooltip lines for a healing / mana / rejuvenation potion."""
     WHITE, GREY = (255, 255, 255), (170, 170, 170)
-    burst, per = TIERS.get(it.code, (0, 0))
     what = {"heal": "life", "mana": "mana", "rejuv": "life and mana"}.get(it.potion, "life")
     out = [(it.shown_name if hasattr(it, "shown_name") else it.name, WHITE)]
-    out.append(("Restores %d%% %s at once" % (burst, what), WHITE))
-    if per:
-        out.append(("+%d%% %s per turn for %d turns" % (per, what, REGEN_TURNS), WHITE))
+    flat, pct = restores(it)
+    out.append(("Restores %d%% %s" % (pct, what) if pct else "Restores %d %s" % (flat, what), WHITE))
     inf = infusion(it)
     if inf:
         turns, _, _, _, lines = infusion_stats(*inf)
@@ -126,10 +130,6 @@ def describe(it):
                                                   GEM_TITLES[inf[0]], turns), col))
         out += [(t, col) for t in lines]
     out.append(("Right click in the belt (or keys 1-4) to drink: 2 AP", GREY))
-    if permanent(it):
-        out.append(("Permanent: never used up, rests %d turns after a drink in combat" % SLOT_COOLDOWN, GREY))
-    else:
-        out.append(("Used up when you drink it", GREY))
     return out
 
 
@@ -173,21 +173,14 @@ def column(p, c):
     return [it for it in p.belt if getattr(it, "belt_col", None) == c]
 
 
-CLASSIC = False          # Quality of Life "USED-UP POTIONS": D2's potions, gone when you drink them (no cooldown)
-
-
 def permanent(it):
-    """Healing and mana potions are never used up (they go on cooldown); rejuvenations are.
-    With the Used-up Potions option every potion is used up, D2 style, and none has a cooldown."""
-    if CLASSIC:
-        return False
-    return getattr(it, "kind", "") == "potion" and getattr(it, "potion", "") in ("heal", "mana")
+    """Nothing is: every potion is used up when you drink it, the way D2 does it."""
+    return False
 
 
 def cooldown_of(it):
-    if CLASSIC:
-        return 0                  # (used-up potions have no cooldown)
-    return getattr(it, "cd", 0) or 0
+    """Kept so the rest of the game can ask; no potion rests any more."""
+    return 0
 
 
 def _free_column(p, it):
@@ -298,20 +291,10 @@ def drink(world, c, row=None):
     col = column(p, c)
     if not col:
         return False
-    if row is None:                          # keys 1-4: the lowest potion of the slot that is ready
-        ready = [x for x in col if not (combat and cooldown_of(x))]
-        if not ready:
-            n = min(cooldown_of(x) for x in col)
-            world.log("No potion in that slot is ready (%d more turn%s)." % (n, "" if n == 1 else "s"),
-                      (170, 170, 170))
-            return False
-        pot = ready[0]
+    if row is None:                          # keys 1-4: the lowest potion of the slot
+        pot = col[0]
     else:
         pot = col[min(max(0, row), len(col) - 1)]
-    if combat and cooldown_of(pot):
-        n = cooldown_of(pot)
-        world.log("That potion needs %d more turn%s." % (n, "" if n == 1 else "s"), (170, 170, 170))
-        return False
     if not drinkable(pot):
         if not world.player_can_act():
             return False
@@ -324,10 +307,7 @@ def drink(world, c, row=None):
             world.log("Not enough AP to drink.", (170, 170, 170))
             return False
         p.ap -= POTION_AP
-        if permanent(pot):
-            pot.cd = SLOT_COOLDOWN
-    if not permanent(pot):
-        belt_remove(p, pot)                  # rejuvenations are used up
+    belt_remove(p, pot)                      # every potion is used up
     world.emit("sound", "item_potion_drink")
     apply(world, pot)
     world._maybe_auto_end()
@@ -336,21 +316,20 @@ def drink(world, c, row=None):
 
 def apply(world, pot):
     p = world.player
-    burst, per = TIERS.get(pot.code, (pot.amount if pot.potion == "rejuv" else 50, 0))
     kind = pot.potion
     life = kind in ("heal", "rejuv")
     mana = kind in ("mana", "rejuv")
+    flat, pct = restores(pot)
     healed = got = 0
     if life:
-        healed = min(p.max_hp * burst // 100, p.max_hp - p.hp)
+        want = p.max_hp * pct // 100 if pct else flat
+        healed = min(want, p.max_hp - p.hp)
         p.hp += healed
         world.emit("heal", p, healed)
     if mana:
-        got = min(p.max_mana * burst // 100, p.max_mana - p.mana)
+        want = p.max_mana * pct // 100 if pct else flat
+        got = min(want, p.max_mana - p.mana)
         p.mana += got
-    if per:
-        regen = p.__dict__.setdefault("potion_regen", [])
-        regen.append(dict(hp=per if life else 0, mana=per if mana else 0, turns=REGEN_TURNS))
     msg = "You drink a %s (" % pot.name + ", ".join(
         x for x in (("+%d life" % healed) if life else "", ("+%d mana" % got) if mana else "") if x) + ")."
     world.log(msg, (120, 140, 255) if kind == "mana" else (110, 220, 110))
@@ -390,18 +369,10 @@ def buff_stat(p, stat):
 
 
 def tick(world, regen=True, buffs=True, cooldowns=True):
-    """A turn passes: regeneration streams, infusion buffs and slot cooldowns."""
+    """A turn passes: infusion buffs count down."""
     p = world.player
-    if regen:
-        left = []
-        for r in getattr(p, "potion_regen", None) or []:
-            if p.alive:
-                p.hp = min(p.max_hp, p.hp + p.max_hp * r["hp"] // 100)
-                p.mana = min(p.max_mana, p.mana + p.max_mana * r["mana"] // 100)
-            r["turns"] -= 1
-            if r["turns"] > 0:
-                left.append(r)
-        p.potion_regen = left
+    if regen and getattr(p, "potion_regen", None):
+        p.potion_regen = []          # potions heal all at once now; old saves may still carry one
     if buffs and getattr(p, "potion_buffs", None):
         gone = []
         for gem, b in p.potion_buffs.items():
@@ -415,10 +386,7 @@ def tick(world, regen=True, buffs=True, cooldowns=True):
             hp_frac = p.hp / float(max(1, p.max_hp))
             p.recalc()
             p.hp = min(p.max_hp, max(1, int(round(p.max_hp * hp_frac))))
-    if cooldowns:
-        for it in list(p.belt) + [x for x in p.inventory if getattr(x, "kind", "") == "potion"]:
-            if cooldown_of(it):
-                it.cd = cooldown_of(it) - 1
+
 
 
 def combat_over(p):
