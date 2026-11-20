@@ -163,6 +163,7 @@ class D2Hud:
         self.minimaps = {}
         self.regions = []
         self.hover_lines = None
+        self.hover_badge = None
         self.hover_item = None
         self.skill_page = 1
         self.scaled = {}
@@ -281,6 +282,7 @@ class D2Hud:
         self.lw = W / self.s
         self.regions = []
         self.hover_lines = None
+        self.hover_badge = None
         self.hover_item = None
         self.mouse = self.logical(mouse)
         self.world = world
@@ -351,15 +353,16 @@ class D2Hud:
             else:
                 self.tooltip(surf, list(zip(texts, list(cols) + [WHITE] * len(texts))), self.mouse)
         if self.hover_lines:
-            r = self.tooltip(surf, self.hover_lines, self.mouse)
-            for n, cmp_lines in enumerate(self._equipped_compare(p)):
+            r = self.tooltip(surf, self.hover_lines, self.mouse, badge=self.hover_badge)
+            for n, (cmp_lines, cmp_badge) in enumerate(self._equipped_compare(p)):
                 # D2 never showed you what you were already wearing: this does, in a grey box
                 # beside it, so the one you are wearing is never mistaken for the one you hover
                 w2 = max((self.f16.width(t) for t, _ in cmp_lines), default=10) + 14
                 x2 = r.right + 8 + n * (w2 + 8)
                 if x2 + w2 > self.lw - 4:
                     x2 = r.x - 8 - w2 - n * (w2 + 8)
-                self.tooltip(surf, cmp_lines, None, at_xy=(x2, r.y), bg=(46, 45, 43, 236))
+                self.tooltip(surf, cmp_lines, None, at_xy=(x2, r.y), bg=(46, 45, 43, 236),
+                             badge=cmp_badge)
         held = getattr(world, "held", None)
         if held is not None:
             self._draw_held(surf, held)
@@ -380,7 +383,8 @@ class D2Hud:
             if cur is None or cur is it:
                 continue
             try:
-                out.append(list(cur.describe_lines(p)))   # the blue box says what it is
+                from game import items as _items
+                out.append((list(cur.describe_lines(p)), _items.tier_mark(cur)))
             except Exception:
                 pass
         return out
@@ -735,7 +739,8 @@ class D2Hud:
         from game import potions
         bx0, by0, rows, pop_rect = geom
         if pop_rect.collidepoint((int(self.mouse[0]), int(self.mouse[1]))):
-            self.hover_lines = None          # (not the tooltips of what lies under the open belt)
+            self.hover_lines = None
+        self.hover_badge = None          # (not the tooltips of what lies under the open belt)
         bg = pygame.Surface((int(pop_rect.w * self.s), int(pop_rect.h * self.s)), pygame.SRCALPHA)
         bg.fill((12, 10, 8, 240))
         surf.blit(bg, self.P(pop_rect.x, pop_rect.y))
@@ -755,7 +760,7 @@ class D2Hud:
                     if getattr(self.world, "mode", "") == "combat":
                         self._cooldown_mark(surf, potions.cooldown_of(col[r]), bx, by)
                     if pygame.Rect(int(bx), int(by), 29, 29).collidepoint((int(mx), int(my))):
-                        self.hover_lines = col[r].describe_lines(p)
+                        self.hover_lines = self.item_tip(col[r], p)
                         self.hover_item = col[r]
                 self.region(bx, by, 29, 29, "potion", (i, r))
 
@@ -798,13 +803,25 @@ class D2Hud:
                 self.text(surf, self.f16, t, c, self.lw / 2.0 - tw / 2.0, ly, "center", tw)
                 ly += 15
 
-    def tooltip(self, surf, lines, at, left_of=None, top=False, bg=None, at_xy=None):
-        """lines: [(text, colour)] - drawn like D2's item description box."""
+    def item_tip(self, it, p, extra=None):
+        """The lines of an item's description, and its tier remembered for the corner mark."""
+        from game import items as _items
+        self.hover_badge = _items.tier_mark(it)
+        return list(it.describe_lines(p)) + list(extra or [])
+
+    def tooltip(self, surf, lines, at, left_of=None, top=False, bg=None, at_xy=None, badge=None):
+        """lines: [(text, colour)] - drawn like D2's item description box.
+
+        `badge` is the little mark in the top left corner: I, II or III for a normal,
+        exceptional or elite piece of equipment.
+        """
         if lines and isinstance(lines, tuple) and len(lines) == 2 and isinstance(lines[0], list):
             texts, cols = lines
             lines = list(zip(texts, cols + [WHITE] * (len(texts) - len(cols))))
         lh = 15
         w = max((self.f16.width(t) for t, _ in lines), default=10) + 14
+        if badge:
+            w = max(w, self.f16.width(badge) * 2 + 40)      # room for the mark beside the name
         h = len(lines) * lh + 8
         if top:
             x, y = self.lw / 2.0 - w / 2.0, 6          # monster info: the top centre of the screen
@@ -832,6 +849,8 @@ class D2Hud:
             pygame.draw.rect(surf, (128, 124, 116), self.R(x, y, w, h), 1)
         for i, (t, c) in enumerate(lines):
             self.text(surf, self.f16, t, c, x, y + 4 + i * lh, "center", w)
+        if badge:
+            self.text(surf, self.f16, badge, GOLD, x + 5, y + 4)
         return pygame.Rect(int(x), int(y), int(w), int(h))
 
     # ------------------------------------------------------------ control panel
@@ -916,7 +935,7 @@ class D2Hud:
             if col:
                 self._icon(surf, col[0], bx, by, 29, 29)
                 if pygame.Rect(int(bx), int(by), 29, 29).collidepoint(mpos):
-                    self.hover_lines = col[0].describe_lines(p)
+                    self.hover_lines = self.item_tip(col[0], p)
                     self.hover_item = col[0]
             bx, by = bx0 + i * 31, by0
             if col and combat:
@@ -1554,7 +1573,7 @@ class D2Hud:
             self._icon(surf, it, x, y, w * CELL - 1, h * CELL - 1)
             self.region(x, y, w * CELL, h * CELL, "store_item", it)
             if held is None and pygame.Rect(int(x), int(y), w * CELL, h * CELL).collidepoint((int(mx), int(my))):
-                lines = list(it.describe_lines(p)) if not getattr(it, "gamble", False) else \
+                lines = self.item_tip(it, p) if not getattr(it, "gamble", False) else \
                     [(it.base.get("name", it.name), WHITE), ("Gamble: a random magic item of this kind", GREY)]
                 cost = world.price_of(it)
                 lines.append(("Cost: %d" % cost, WHITE if p.gold >= cost else RED))
@@ -2288,7 +2307,7 @@ class D2Hud:
             if it is not None:
                 self._icon(surf, it, x, y, w, h)
                 if hot and held is None:
-                    self.hover_lines = it.describe_lines(p)
+                    self.hover_lines = self.item_tip(it, p)
                     self.hover_item = it
             self.region(x, y, w, h, "merc_slot", slot)
         st = hireling.stats(world.content, merc) or {}
@@ -2450,7 +2469,7 @@ class D2Hud:
                 self.put(surf, img, x + sz - tw - 4, y + sz - th - 3)
             self.region(x, y, sz, sz, "bank_take", code)
             if held is None and pygame.Rect(int(x), int(y), sz, sz).collidepoint((int(mx), int(my))) and it is not None:
-                lines = list(it.describe_lines(p))
+                lines = self.item_tip(it, p)
                 lines.insert(1, ("In stash: %d" % n, WHITE if n else GREY))
                 if n:
                     lines += [("Left click: take one", GREY), ("Right click: one to your backpack", GREY)]
@@ -2548,7 +2567,7 @@ class D2Hud:
             surf.blit(tint, self.P(x + 1, y + 1))
             self._icon(surf, it, x + 1, y + 1, w * C - 1, h * C - 1)
             if held is None and pygame.Rect(int(x), int(y), w * C, h * C).collidepoint((int(mx), int(my))):
-                self.hover_lines = list(it.describe_lines(p))
+                self.hover_lines = self.item_tip(it, p)
                 self.hover_item = it
         if held is not None and self.cube_cell_at((mx * self.s, my * self.s)) is not None:
             ax, ay = self.cube_anchor(held)
@@ -2660,7 +2679,7 @@ class D2Hud:
                     surf.blit(tint, self.P(ox + x, y))
                 self._icon(surf, it, ox + x, y, w, h)
                 if hot and held is None:
-                    self.hover_lines = list(it.describe_lines(p)) + self._socket_cost_lines(it)
+                    self.hover_lines = self.item_tip(it, p, self._socket_cost_lines(it))
                     self.hover_item = it
                     self._draw_sockets(surf, it, ox + x, y, w, h)
                 elif hot and held is not None and getattr(held, "gem", None) and getattr(it, "sockets", 0):
@@ -2689,7 +2708,7 @@ class D2Hud:
             if hot and (held is None or (getattr(held, "gem", None) and getattr(it, "sockets", 0))):
                 self._draw_sockets(surf, it, x, y, w * CELL - 1, h * CELL - 1)
             if held is None and hot:
-                lines = list(it.describe_lines(p))
+                lines = self.item_tip(it, p)
                 self.hover_item = it            # what is worn in its slot, in its own box beside
                 if self.store is not None:
                     from game.d2items import sell_price
@@ -3004,7 +3023,7 @@ class D2Hud:
                 self._icon(surf, it, rx + 1, ry + 1, w * C - 1, h * C - 1)
             self.region(rx, ry, w * C, h * C, "loot_pick", (cell, it))
             if pygame.Rect(int(rx), int(ry), w * C, h * C).collidepoint((int(mx), int(my))):
-                lines = list(it.describe_lines(p)) if it.kind != "gold" and hasattr(it, "describe_lines") \
+                lines = self.item_tip(it, p) if it.kind != "gold" and hasattr(it, "describe_lines") \
                     else [("%d Gold" % it.amount, GOLD)]
                 lines.append(("%d cells away" % chebyshev(cell, p.pos) +
                               (" - too far in combat" if far else ""), GREY))
@@ -3057,7 +3076,7 @@ class D2Hud:
                 hl.fill((90, 80, 50, 120))
                 surf.blit(hl, self.P(x0 + 4, y))
                 if it.kind != "gold" and hasattr(it, "describe_lines"):
-                    self.hover_lines = it.describe_lines(p)
+                    self.hover_lines = self.item_tip(it, p)
                     self.hover_item = it
             self.text(surf, self.f16, name, it.color, x0 + 10, y + 1)
             self.text(surf, self.f16, "%d" % d, (150, 150, 150), x0 + w - 40, y + 1, "right", 30)

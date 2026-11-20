@@ -379,6 +379,33 @@ class Item:
 SPEED_TIERS = ((-20, 1, "Very Fast"), (-10, 2, "Fast"), (5, 3, "Normal"), (15, 4, "Slow"), (999, 5, "Very Slow"))
 
 
+#: D2 builds every piece of equipment three times over: the normal item, its exceptional
+#: counterpart and its elite one. A base carries all three codes, so where its own code sits in
+#: that row is its tier. Rings, amulets, jewels, charms and the rest have no such row at all.
+TIER_MARK = ("I", "II", "III")
+
+
+def tier_index(it):
+    """0, 1 or 2 for normal, exceptional and elite; None for anything built only once."""
+    b = getattr(it, "base", None)
+    if not isinstance(b, dict):
+        return None
+    tiers = b.get("tiers") or ()
+    if len([t for t in tiers if t]) < 2:
+        return None
+    code = getattr(it, "code", None) or b.get("code")
+    for i, c in enumerate(tiers):
+        if c and c == code:
+            return i
+    return None
+
+
+def tier_mark(it):
+    """"I", "II" or "III", or None - the corner mark on an item's description."""
+    i = tier_index(it)
+    return TIER_MARK[i] if i is not None else None
+
+
 def speed_tier(wsm):
     """Weapon speed modifier (Weapons.txt 'speed', lower = faster) -> (AP per attack, D2 speed name)."""
     for limit, ap, label in SPEED_TIERS:
