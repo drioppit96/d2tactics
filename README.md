@@ -270,6 +270,20 @@ Each difficulty has its own quests, waypoints and progress (a new difficulty sta
 Encampment); your character, items and skills carry over. Monsters use D2's Nightmare / Hell stats and
 levels, and your resistances get D2's penalty: -40% in Nightmare, -100% in Hell.
 
+## Skip Campaign
+
+A box beside the name on the new-character screen, for a hero who does not want to walk the story
+again. Ticked, the hero is created with every quest finished, every waypoint, all three
+difficulties open, and standing in Sanctuary. The quest points come with it: +4 skill points and
++5 stat points, which is the Den of Evil, Radament's Book of Skill, Izual and Lam Esen's Tome
+together. Each difficulty is its own run in D2, so this happens again the first time such a hero
+walks into Nightmare and into Hell.
+
+Three rewards are deliberately left standing, because you choose what they land on: Charsi's
+imbue, Larzuk's sockets (and the skill point that comes with them) and Anya's item. Two more are
+held by Sanctuary's Tyrael - Malah's Scroll of Resistance and Alkor's Potion of Life - and he
+hands over a pair at level 20 in Normal, 40 in Nightmare and 60 in Hell. Until then he says so.
+
 ## Resurrected changes
 
 The tables come out of a 1.14d install, so the game would play by 1.14d rules. Diablo II:

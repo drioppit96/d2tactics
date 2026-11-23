@@ -201,6 +201,7 @@ class CharCreate(FrontEnd):
         self.selected = None
         self.hover = None
         self.name = ""
+        self.skip = False          # Skip Campaign: start at the end of the story instead
         self.buttons = self._frames(FE + "mediumbuttonblank.dc6", pal=self.unit_palette) or \
             self._frames("data\\global\\ui\\PANEL\\mediumbuttonblank.dc6", pal=self.unit_palette)
 
@@ -230,6 +231,10 @@ class CharCreate(FrontEnd):
     def exit_rect(self):
         return pygame.Rect(33, 552, 128, 35)
 
+    def skip_rect(self):
+        """The Skip Campaign box, beside the name field."""
+        return pygame.Rect(498, 506, 262, 30)
+
     # ------------------------------------------------------------ input
     def handle(self, ev):
         if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
@@ -239,6 +244,9 @@ class CharCreate(FrontEnd):
                 return
             if self.exit_rect().collidepoint((lx, ly)):
                 self.leave()
+                return
+            if self.selected and self.skip_rect().collidepoint((lx, ly)):
+                self.skip = not self.skip
                 return
             for code, _, _, pos in sorted(HEROES, key=lambda h: -h[3][1]):
                 if self._hero_rect(code, pos).collidepoint((lx, ly)):
@@ -280,7 +288,7 @@ class CharCreate(FrontEnd):
             return
         name = self.name.strip() or NAMES[self.selected]
         name = name[:1].upper() + name[1:]
-        self.game.create_hero(self.selected, name)      # saved, then back to the select screen
+        self.game.create_hero(self.selected, name, skip=self.skip)
 
     # ------------------------------------------------------------ drawing
     def update(self, dt):
@@ -345,6 +353,20 @@ class CharCreate(FrontEnd):
             pygame.draw.rect(canvas, (120, 110, 80), box, 1)
             cursor = "_" if int(self.t * 2) % 2 == 0 else ""
             self._text(canvas, self.f16, self.name + cursor, WHITE, box.x + 6, box.y + 5)
+            # Skip Campaign: the whole story behind you before the first step
+            sb = self.skip_rect()
+            on = self.skip
+            pygame.draw.rect(canvas, (0, 0, 0), sb)
+            pygame.draw.rect(canvas, GOLD if on else (120, 110, 80), sb, 1)
+            tick = pygame.Rect(sb.x + 6, sb.y + 8, 14, 14)
+            pygame.draw.rect(canvas, (120, 110, 80), tick, 1)
+            if on:
+                pygame.draw.line(canvas, GOLD, (tick.x + 3, tick.centery), (tick.centerx, tick.bottom - 4), 2)
+                pygame.draw.line(canvas, GOLD, (tick.centerx, tick.bottom - 4), (tick.right - 2, tick.y + 2), 2)
+            self._text(canvas, self.f16, "Skip Campaign", GOLD if on else WHITE, sb.x + 28, sb.y + 7)
+            if on:
+                self._text(canvas, self.f16, "Every quest, every waypoint, all difficulties - you start in Sanctuary",
+                           (170, 170, 170), 400, 468, center=True)
         for rect, label in ((self.exit_rect(), "EXIT"), (self.ok_rect(), "OK")) if self.selected else \
                 ((self.exit_rect(), "EXIT"),):
             self._button(canvas, self.buttons, rect, label)

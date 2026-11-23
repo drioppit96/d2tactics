@@ -904,6 +904,11 @@ class World(SkillCaster, ItemActions):
         from .acts import SUMMIT as _SUM
         quiet = npc.npc == "tyrael3" and getattr(self, "level_id", None) == _SUM
         pages = None if quiet else self.talk_to(npc, menu=False)
+        if quiet:
+            from . import skipcampaign
+            line = skipcampaign.waiting_line(self)      # "come back at level 20" and so on
+            if line:
+                self.log(line, (220, 210, 170))
         from .acts import SUMMIT
         up_top = getattr(self, "level_id", None) == SUMMIT
         if npc.npc in HEALERS and (npc.npc != "tyrael3" or up_top):

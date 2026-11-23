@@ -225,6 +225,11 @@ def switch_difficulty(data, new):
     state[cur] = {k: d.get(k) for k in PER_DIFF}
     fresh = dict(quests={}, waypoints=[1], visited=[1], cain=False, act=1, quest_stats={}, boss_kills=[],
                  map_explored={}, tracked_quest=None, cairn_order=None, rift_depth=0)
+    if data.get("skip_campaign") and new not in state:
+        # a hero who skipped the campaign skips it in every difficulty, and D2 hands out the
+        # quest points again in each one
+        from . import skipcampaign
+        fresh = skipcampaign.fresh_run(d)
     d.update(state.pop(new, None) or fresh)
     d["diff_state"] = state
     d["difficulty"] = new
@@ -249,6 +254,10 @@ def switch_mode(data, new):
     fresh = dict(quests={}, waypoints=[1], visited=[1], cain=False, act=1, quest_stats={}, boss_kills=[],
                  map_explored={}, tracked_quest=None, cairn_order=None, rift_depth=0, difficulty="normal",
                  diff_state={}, unlocked=["normal"])
+    if data.get("skip_campaign") and new not in state:
+        from . import skipcampaign          # the other mode starts past the campaign as well
+        fresh.update(skipcampaign.fresh_run(d))
+        fresh["unlocked"] = ["normal", "nightmare", "hell"]
     d.update(state.pop(new, None) or fresh)
     d["mode_state"] = state
     d["mode"] = new
@@ -289,6 +298,7 @@ def save_character(player, difficulty="normal"):
         bounty_board=(dict(getattr(p, "bounty_board", None)) if getattr(p, "bounty_board", None) else None),
         bounty_done=int(getattr(p, "bounty_done", 0) or 0),
         bounty_wipe=int(getattr(p, "bounty_wipe", 0) or 0),
+        skip_campaign=bool(getattr(p, "skip_campaign", False)),
         cairn_order=getattr(p, "cairn_order", None), map_explored=dict(getattr(p, "map_explored", None) or {}), quest_stats=dict(getattr(p, "quest_stats", {}) or {}), act=int(getattr(p, "current_act", 1) or 1),
         equipment={k: _item_dict(v) for k, v in p.equipment.items()},
         inventory=[_item_dict(it) for it in p.inventory], belt=[_item_dict(it) for it in p.belt],
@@ -399,6 +409,7 @@ def build_player(data, content):
     p.bounty_done = int(data.get("bounty_done", 0) or 0)
     p.bounty_wipe = int(data.get("bounty_wipe", 0) or 0)
     p.current_act = data.get("act", 1)
+    p.skip_campaign = bool(data.get("skip_campaign", False))
     for k in p.equipment:
         p.equipment[k] = _item_from(data.get("equipment", {}).get(k), content)
     p.inventory = [it for it in (_item_from(d, content) for d in data.get("inventory", [])) if it is not None]

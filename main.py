@@ -183,9 +183,12 @@ class Game:
     def create_tactics_hero(self, cls, name):
         return self.create_hero(cls, name)
 
-    def create_hero(self, cls, name):
+    def create_hero(self, cls, name, skip=False):
         """Create New Character: a fresh hero (with D2's starting kit) saved to this mode's roster,
-        then back to the select screen with them selected - you start the game from there."""
+        then back to the select screen with them selected - you start the game from there.
+
+        With `skip` the campaign is behind them: every quest finished, every waypoint, all three
+        difficulties open and a start in Sanctuary (game/skipcampaign.py)."""
         import random as _rnd
         import types
         from game.save import set_mode, save_character, list_saves
@@ -206,6 +209,10 @@ class Game:
             import traceback
             traceback.print_exc()
         p.map_seed = _rnd.randrange(1 << 30)
+        if skip:
+            from game import quests, skipcampaign
+            quests.init(p)
+            skipcampaign.apply_to(p)
         save_character(p)
         self.open_frontend(select=True)
         cs = getattr(self, "creator", None)
@@ -595,6 +602,9 @@ class Game:
             w.cursor_mode = ("imbue", npc.npc)
             h.show_inv = True
             w.log("Charsi: Click the plain item you want me to imbue (right click to cancel).", (220, 210, 170))
+        elif opt == "Claim Gifts":
+            from game import skipcampaign
+            skipcampaign.claim(w)
         elif opt == "Recharge":
             from game import durability
             durability.recharge_all(w)
@@ -688,9 +698,13 @@ class Game:
         return act_of(w.level_id if getattr(w, "level_id", None) else getattr(w, "level_key", 1))
 
     def town_world(self, act):
-        """The (built) world holding the town of an act."""
-        from game.acts import TOWNS, world_of
-        town = TOWNS.get(act, 1)
+        """The (built) world holding the town of an act.
+
+        Act 6 is Sanctuary, which lives in a world of its own: a hero who skipped the campaign
+        starts there, and that is the only way an act of 6 is ever asked for.
+        """
+        from game.acts import TOWNS, world_of, SUMMIT
+        town = SUMMIT if act == 6 else TOWNS.get(act, 1)
         key = world_of(town)
         w = self.levels.get(key)
         if w is None:

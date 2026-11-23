@@ -103,9 +103,11 @@ def npc_options(world, npc_id):
     from .acts import SUMMIT
     up_top = getattr(world, "level_id", None) == SUMMIT
     if npc_id == "tyrael3" and up_top:
-        # Sanctuary's Tyrael keeps the shelves and mends you as you walk up; he has nothing to
-        # say and no road onward, because the road onward is Harrogath's Tyrael, down below
-        return ["Trade"]
+        # Sanctuary's Tyrael keeps the shelves and mends you as you walk up; he has no road
+        # onward, because the road onward is Harrogath's Tyrael, down below. For a hero who
+        # skipped the campaign he also holds two gifts of the story until they are old enough.
+        from . import skipcampaign
+        return ["Trade", "Claim Gifts"] if skipcampaign.claimable(world) else ["Trade"]
     if npc_id == "difficulty" or (npc_id == "tyrael3" and not up_top):
         # once Baal is dead: travel on to the next difficulty (or back to one you have played)
         cur = getattr(p, "difficulty", "normal")
