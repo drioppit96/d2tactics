@@ -351,6 +351,22 @@ def test_full_bag_trip():
     r.finish("stopped")
 
 
+def test_d2_difficulty():
+    """D2's own monsters: /players 1 for one hero, +50% life and experience per extra hero."""
+    import types
+    from game import actworld, rift, tactics
+    from autobattler.runs import scale_for_players
+    config.apply_d2_rules()
+    check(actworld.BOSS_LIFE_NORMAL == 1.0 and rift.KEEPER_LIFE == 1.0 and not tactics.ACTIVE,
+          "no D2 Tactics life changes on bosses, keepers or parties")
+    mk = lambda: types.SimpleNamespace(max_hp=100, hp=100, xp_value=10, ally=False, is_player=False, ai="")
+    one, three = [mk()], [mk()]
+    scale_for_players(types.SimpleNamespace(monsters=one), 1)
+    scale_for_players(types.SimpleNamespace(monsters=three), 3)
+    check(one[0].max_hp == 100 and three[0].max_hp == 200 and three[0].xp_value == 20,
+          "one hero: /players 1; three heroes: /players 3 (x2 life and experience)")
+
+
 def test_cast_breakpoints():
     from autobattler.brain import CAST_FRAMES0
     sor = [timing.cast_frames(CAST_FRAMES0["sor"] + 1, f) for f in (0, 9, 20, 37, 63, 105, 200)]
@@ -561,6 +577,7 @@ if __name__ == "__main__":
     test_town_and_back()
     test_belt_columns()
     test_full_bag_trip()
+    test_d2_difficulty()
     test_inventory_screen()
     print("\n%s" % ("all passed" if not FAILS else "%d FAILED" % len(FAILS)))
     sys.exit(1 if FAILS else 0)

@@ -34,6 +34,12 @@ update never overwrites them.
 - Diablo II's own odds: the D2 Tactics adjustments in settings.ini (min_hit_chance,
   monster_hit_chance, normal_monster_damage, normal_monster_hit_bonus) are not used. Tactics
   mode is always off.
+- Monsters and bosses are D2's own for one player (/players 1) when a hero runs alone: MonStats
+  and MonLvl numbers for the difficulty, with none of D2 Tactics' changes (its party life of
+  x2.5-x3.5 and damage x1.35, act bosses -40% on Normal, a floor keeper's extra x2.5 life, the
+  +50% normal-monster damage and +15% hit bonus). A group of N heroes plays as D2's /players N:
+  each monster gets (N + 1) / 2 times the life and experience (`runs.scale_for_players`).
+  Rift monsters still take the hero's level (MonLvl), except the act bosses, which are D2's own.
 - The D2R changes in `game/d2r.py` apply as in D2 Tactics.
 - Real time at 25 frames a second. Attack, hit recovery and movement follow D2's formulas
   (`autobattler/timing.py`):

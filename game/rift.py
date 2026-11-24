@@ -58,6 +58,8 @@ PLACES = [
     ("baal", 5, "Worldstone Halls"),
 ]
 PLANS = {}                 # level id -> the floor's plan
+#: a floor keeper's life on top of D2's unique monster (the D2 Autobattler sets 1: D2's own)
+KEEPER_LIFE = 2.5
 _SEED = None               # the seed of the run being played (the hero's, once one is known)
 _POOL = []                 # every monster kind the game spawns, across all acts
 
@@ -433,7 +435,7 @@ def after_build(world):
         return
     monmods.make_unique(world, boss)
     boss.rift_boss = True
-    boss.max_hp = int(boss.max_hp * 2.5)        # a floor's keeper: it takes a fight
+    boss.max_hp = int(boss.max_hp * KEEPER_LIFE)    # a floor's keeper: it takes a fight
     boss.hp = boss.max_hp
     boss.name = "%s, Keeper of the Rift" % boss.name
     for c in actworld._spots(world, spot, 5, taken, radius=5):

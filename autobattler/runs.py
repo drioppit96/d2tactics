@@ -92,6 +92,7 @@ class Run:
         w = self._built
         self._built = None
         self._place_group(w)
+        scale_for_players(w, len(self.heroes))
         w.mode = "explore"
         self.world = w
         self.sim = realtime.Sim(w, self.heroes, self.timings, self.cfg.get("move_scale", 1.0))
@@ -380,6 +381,22 @@ class Run:
             roster.save(h)
         self.world = None
         self.sim = None
+
+
+def scale_for_players(w, players):
+    """D2's /players setting: each player past the first gives monsters +50% life and +50%
+    experience ((players + 1) / 2). One hero plays /players 1: D2's own numbers, untouched."""
+    if players <= 1:
+        return
+    k = (players + 1) / 2.0
+    for m in w.monsters:
+        if getattr(m, "ally", False) or getattr(m, "is_player", False) or getattr(m, "ai", "") == "npc" \
+                or getattr(m, "_players_scaled", False):
+            continue
+        m._players_scaled = True
+        m.max_hp = max(1, int(m.max_hp * k))
+        m.hp = m.max_hp
+        m.xp_value = max(1, int(getattr(m, "xp_value", 1) * k))
 
 
 def sell_magic_and_rare(h):

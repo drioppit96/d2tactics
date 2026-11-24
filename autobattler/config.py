@@ -79,6 +79,11 @@ def apply_d2_rules():
     (min_hit_chance, monster_hit_chance, normal_monster_damage, normal_monster_hit_bonus)."""
     from game import essences
     essences.DROPS = False          # the account currencies are D2 Tactics' own: none here
+    # monsters and bosses as D2 makes them for one player (/players 1); a group is scaled the D2
+    # way by the run (runs.scale_for_players), not by D2 Tactics' party life
+    from game import actworld, rift
+    actworld.BOSS_LIFE_NORMAL = 1.0  # (D2 Tactics: act bosses -40% on Normal)
+    rift.KEEPER_LIFE = 1.0           # (D2 Tactics: a floor keeper x2.5 on top of a unique)
     from game import potions
     # the belt: healing potions in columns 1-2, mana in 3-4, rejuvenation wherever there is room
     potions.COLUMN_RULE = {"heal": (0, 1), "mana": (2, 3), "rejuv": (0, 1, 2, 3)}
