@@ -9,15 +9,21 @@ every floor and when the run ends.
 
 RunManager holds every run of the account and plays at most max_active heroes at once.
 
-The rift module keeps the plan of each floor in module globals (PLANS, _SEED). Several runs share
-them, so each run keeps its own floor's plan and puts it back before each of its frames.
+Floors are built on a background thread, one at a time, so the game keeps playing (and drawing)
+while a run builds its next floor. The rift's floor plans are kept in module globals keyed by
+depth; all runs of a session share one rift seed, so two runs on the same depth agree on what that
+floor is (its act, place and monsters) while their maps are still built from their own seeds.
 
 Without Diablo II files (placeholder art) a run plays on the engine's simple generated cave
 instead, with the monster farthest from the start as its boss. That is also how the tests run.
 """
 import random
+import threading
 
 from . import brain, realtime, roster, timing
+
+BUILD_LOCK = threading.Lock()       # one floor built at a time
+SESSION_SEED = random.randrange(1, 1 << 30)
 
 STATES = ("build", "fight", "pause", "over")
 
@@ -43,9 +49,6 @@ class Run:
         self.stop_requested = False
         self.result = None
         self.log = []
-        self._plan = None
-        self._seed = None
-        self._lid = None
 
     @property
     def leader(self):
@@ -61,40 +64,63 @@ class Run:
 
     # ------------------------------------------------------------ floors
     def build(self):
-        from game import rift
-        a = self.assets
-        for h in self.heroes:
-            q = getattr(h, "qol", None)
-            if not isinstance(q, dict):
-                q = h.qol = {}
-            q["big_inv"] = True             # the D2 Tactics bigger backpack (10 x 7)
-            brain.spend_points(h)
-            h._ab_level = h.level
-            self._refill_belt(h)
-            h.hp, h.alive = h.max_hp, True
-            h.mana = getattr(h, "max_mana", getattr(h, "mana", 0))
-        if getattr(a, "act_kit", None) is not None:
-            rift.BIG = bool(self.cfg.get("big_maps", True))
-            rift.CONTENT = a.content
-            rift.forget(None)
-            rift.rift_seed(self.leader)
-            lid = rift.level_id(self.depth)
-            from game.actworld import make_world
-            w = make_world(a.act_kit, a.act_info, a.content, lid, player=self.leader,
-                           seed=random.randrange(1 << 30))
-            self._lid = lid
-            self._plan = dict(rift.PLANS.get(lid) or {})
-            self._seed = rift._SEED
-        else:
-            from game.world import World
-            w = World(seed=random.randrange(1 << 30), depth_level=self.depth, player=self.leader)
-            self._mark_boss(w)
+        """Start building the floor in the background; finish setting it up once it's built."""
+        if getattr(self, "_thread", None) is None:
+            for h in self.heroes:
+                q = getattr(h, "qol", None)
+                if not isinstance(q, dict):
+                    q = h.qol = {}
+                q["big_inv"] = True             # the D2 Tactics bigger backpack (10 x 7)
+                brain.spend_points(h)
+                h._ab_level = h.level
+                self._refill_belt(h)
+                h.hp, h.alive = h.max_hp, True
+                h.mana = getattr(h, "max_mana", getattr(h, "mana", 0))
+                h.rift_seed = SESSION_SEED      # (see the module notes)
+            self._built, self._error = None, None
+            self._thread = threading.Thread(target=self._build_world, name="floor-%d" % self.id, daemon=True)
+            self._thread.start()
+            return
+        if self._thread.is_alive():
+            return                              # still building: the other runs play on
+        self._thread = None
+        if self._error is not None or self._built is None:
+            self.note("This floor could not be built (see errors.log).")
+            self.finish("error")
+            return
+        w = self._built
+        self._built = None
         self._place_group(w)
         w.mode = "explore"
         self.world = w
         self.sim = realtime.Sim(w, self.heroes, self.timings, self.cfg.get("move_scale", 1.0))
         self.state = "fight"
         self.note("Floor %d: %s" % (self.depth, getattr(w, "level_name", "") or "rift"))
+
+    def _build_world(self):
+        try:
+            with BUILD_LOCK:
+                a = self.assets
+                if getattr(a, "act_kit", None) is not None:
+                    from game import rift
+                    from game.actworld import make_world
+                    lid = rift.level_id(self.depth)
+                    w = make_world(a.act_kit, a.act_info, a.content, lid, player=self.leader,
+                                   seed=random.randrange(1 << 30))
+                else:
+                    from game.world import World
+                    w = World(seed=random.randrange(1 << 30), depth_level=self.depth, player=self.leader)
+                    self._mark_boss(w)
+                self._built = w
+        except Exception as e:
+            import traceback
+            self._error = e
+            traceback.print_exc()
+            try:
+                from main import log_error
+                log_error(traceback.format_exc())
+            except Exception:
+                pass
 
     def _mark_boss(self, w):
         foes = [m for m in w.monsters if not getattr(m, "ally", False)]
@@ -124,13 +150,6 @@ class Run:
             from game import tactics
             tactics._as_follower(w, h)      # the fields the engine expects of a party hero
 
-    def _restore_rift(self):
-        if self._lid is None:
-            return
-        from game import rift
-        rift.PLANS[self._lid] = self._plan
-        rift._SEED = self._seed
-
     # ------------------------------------------------------------ frames
     def tick(self):
         if self.state == "build":
@@ -149,7 +168,6 @@ class Run:
             return
         if self.state != "fight":
             return
-        self._restore_rift()
         xp0 = self.leader.xp
         self.sim.tick()
         self._share_xp(self.leader.xp - xp0)
@@ -276,6 +294,12 @@ class RunManager:
         self.cfg = cfg
         self.timings = timings
         self.runs = []
+        if getattr(assets, "act_kit", None) is not None:
+            from game import rift
+            rift.BIG = bool(cfg.get("big_maps", True))
+            rift.CONTENT = assets.content
+            rift.forget(None)
+            rift._SEED = SESSION_SEED
 
     def active(self):
         return [r for r in self.runs if r.state != "over"]
@@ -302,12 +326,7 @@ class RunManager:
         return r
 
     def tick(self):
-        built = False
         for r in self.active():
-            if r.state == "build":
-                if built:
-                    continue                 # one new floor per frame: no pile-up of building
-                built = True
             try:
                 r.tick()
             except Exception:

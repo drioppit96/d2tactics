@@ -49,6 +49,8 @@ REPATH = 12             # frames between two path searches while chasing
 THINK = 6               # frames between two decisions while a hero is walking
 MONSTER_THINK = 4       # the same for monsters
 DIRECT = 12             # cells: closer than this, walk straight at the goal (no path search)
+PATH_BUDGET = 3         # full path searches per run per frame; the rest wait a frame or two
+CROWD = 3               # cells: a monster this close whose way in is blocked waits for a gap
 HERO_WALK = 6.0         # CharStats WalkVelocity
 HERO_RUN = 9.0          # CharStats RunVelocity (heroes run while on a run)
 MONSTER_VEL = 4.0       # when MonStats can't be read
@@ -90,6 +92,10 @@ class Sim:
         self.watched = False        # while False the engine's animation events are thrown away
         self.brains = {}
         self.errors = 0
+        self._foes, self._foes_frame = [], -1
+        self._cut_short = False
+        self._paths_left = PATH_BUDGET
+        self.occ = {}
         self.phase = "fight"        # fight | loot (boss dead, picking up) | portal (walking to it)
         self.portal = None          # the cell of the red portal to the next floor
         self.loot_until = 0
@@ -135,8 +141,31 @@ class Sim:
         return [h for h in self.heroes if h.alive]
 
     def foes(self):
-        return [m for m in self.w.monsters
-                if m.alive and not getattr(m, "ally", False) and getattr(m, "ai", "") != "npc"]
+        """The living monsters, worked out once per frame."""
+        if self._foes_frame != self.frame:
+            self._foes = [m for m in self.w.monsters
+                          if m.alive and not getattr(m, "ally", False) and getattr(m, "ai", "") != "npc"]
+            self._foes_frame = self.frame
+        return self._foes
+
+    def _rebuild_occ(self):
+        """Who stands where, once per frame (the engine's unit_at looks through every monster)."""
+        occ = {}
+        for m in self.w.monsters:
+            if m.alive:
+                occ[m.pos] = m
+                r = getattr(m, "radius", 0)
+                if r:
+                    for dx in range(-r, r + 1):
+                        for dy in range(-r, r + 1):
+                            occ.setdefault((m.x + dx, m.y + dy), m)
+        for h in self.heroes:
+            if h.alive:
+                occ[h.pos] = h
+        self.occ = occ
+
+    def _at(self, cell):
+        return self.occ.get(cell)
 
     # ------------------------------------------------------------ one frame
     def tick(self):
@@ -144,9 +173,12 @@ class Sim:
         heroes = self.living_heroes()
         if not heroes:
             return
-        for m in self.foes():
-            if not getattr(m, "aware", False) and any(chebyshev(m.pos, h.pos) <= AGGRO for h in heroes):
-                m.aware = True
+        self._rebuild_occ()
+        self._paths_left = PATH_BUDGET
+        if self.frame % 5 == 0:                  # (five times a second is plenty to wake up)
+            for m in self.foes():
+                if not getattr(m, "aware", False) and any(chebyshev(m.pos, h.pos) <= AGGRO for h in heroes):
+                    m.aware = True
         if self.frame % ROUND == 0:
             self._round()
         if self.phase == "loot" and (self.frame >= self.loot_until or not any(self._next_item(h) for h in heroes)):
@@ -389,7 +421,7 @@ class Sim:
         for dx in range(-4, 5):
             for dy in range(-4, 5):
                 c = (h.x + dx, h.y + dy)
-                if c == h.pos or not g.walkable(*c) or self.w.unit_at(c) is not None:
+                if c == h.pos or not g.walkable(*c) or c in self.occ:
                     continue
                 d = min([chebyshev(c, m.pos) for m in foes] or [99])
                 if d > bd:
@@ -483,15 +515,15 @@ class Sim:
             return None
         key = ("goal", id(h))
         cached = self.st.get(key)
-        if cached is not None and cached[0] > self.frame and cached[1] is not None and cached[1].alive:
-            return cached[1].pos
+        if cached is not None and cached[0] > self.frame and (cached[1] is None or cached[1].alive):
+            return cached[1].pos if cached[1] is not None else None
         foe = self._nearest_reachable(h)
-        self.st[key] = (self.frame + timing.FPS, foe)
-        if foe is None and self.foes():
+        self.st[key] = (self.frame + 2 * timing.FPS, foe)
+        if foe is None and self.foes() and not self._cut_short:
             self.stranded = True             # monsters left, none of them reachable: floor done
         return foe.pos if foe is not None else None
 
-    def _nearest_reachable(self, h, cap=40000):
+    def _nearest_reachable(self, h, cap=12000):
         at = {}
         for m in self.foes():
             for dx in (-1, 0, 1):
@@ -502,7 +534,11 @@ class Sim:
         g = self.w.grid
         seen = {h.pos}
         q = deque([h.pos])
-        while q and len(seen) < cap:
+        self._cut_short = False
+        while q:
+            if len(seen) >= cap:
+                self._cut_short = True       # (too far to tell: head for the nearest one instead)
+                break
             c = q.popleft()
             m = at.get(c)
             if m is not None:
@@ -511,6 +547,8 @@ class Sim:
                 if nb not in seen:
                     seen.add(nb)
                     q.append(nb)
+        if self._cut_short:
+            return min(self.foes(), key=lambda m: chebyshev(m.pos, h.pos), default=None)
         return None
 
     # ------------------------------------------------------------ actions
@@ -575,7 +613,16 @@ class Sim:
                 s.mode = "walk"
                 self._advance(u, s)
                 return True
+        if not u.is_player and d <= CROWD + target_r:
+            s.path = []
+            s.mode = "idle"
+            s.next_think = self.frame + 6        # boxed in by its own pack: wait for a gap
+            return True
         if not s.path or self.frame >= s.next_path or (s.path and s.path[-1] != goal and d <= DIRECT):
+            if self._paths_left <= 0:
+                s.next_think = self.frame + 1     # (this frame's searches are used up: next frame)
+                return True
+            self._paths_left -= 1
             limit = 6000 if u.is_player else 1500
             path = self.w.path_near(u, goal, reach=reach, target_r=target_r, limit=limit)
             s.next_path = self.frame + (REPATH * 3 if u.is_player and d > DIRECT else REPATH)
@@ -594,7 +641,7 @@ class Sim:
         g = self.w.grid
         best, bd = None, (chebyshev(u.pos, goal), 0.0)
         for nb in g.neighbors(*u.pos):
-            if self.w.unit_at(nb) is not None:
+            if nb in self.occ:
                 continue
             dd = (chebyshev(nb, goal), (nb[0] - goal[0]) ** 2 + (nb[1] - goal[1]) ** 2)
             if dd < bd:
@@ -607,7 +654,7 @@ class Sim:
         moved = []
         while s.prog >= 1.0 and s.path:
             nxt = s.path[0]
-            other = self.w.unit_at(nxt)
+            other = self.occ.get(nxt)
             if other is not None and other is not u:
                 s.path = []              # someone stepped in the way: look again next frame
                 s.next_path = self.frame
@@ -616,7 +663,10 @@ class Sim:
             s.path.pop(0)
             s.prog -= 1.0
             u.face(*nxt)
+            if self.occ.get(u.pos) is u:
+                del self.occ[u.pos]
             u.x, u.y = nxt
+            self.occ[nxt] = u
             moved.append(nxt)
         if moved:
             if u.is_player and u is getattr(self.w, "player", None):

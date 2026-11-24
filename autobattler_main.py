@@ -12,7 +12,8 @@ Screens:
     Watch       the selected hero's run full screen
 
 Keys: S start run, X stop, W watch, T style, L loot, I inventory, P pickup, + / - speed,
-Esc back. Ctrl+click adds heroes to a group.
+F3 timings (also written to perf.log every 30 seconds), Esc back. Ctrl+click adds heroes to a
+group.
 """
 import os
 import sys
@@ -38,6 +39,52 @@ FILTERS = [("All", None), ("Gold", {"gold"}), ("Potions", {"potions"}), ("Runes"
            ("Rare", {"rare"}), ("Magic", {"magic"}), ("Bases", {"sockets", "normal"})]
 CELL = 22                      # item grid cell on the 800 x 600 canvas (the stash's cell size)
 LOOT_COLS, LOOT_ROWS = 12, 14
+
+
+class Perf:
+    """Where the time goes: F3 shows it on screen, and perf.log gets it every 30 seconds."""
+
+    def __init__(self):
+        self.t = {}
+        self.n = {}
+        self.worst = {}
+        self.frames = 0
+        self.since = time.time()
+        self.written = time.time()
+
+    def add(self, key, secs, count):
+        self.t[key] = self.t.get(key, 0.0) + secs
+        self.n[key] = self.n.get(key, 0) + count
+        self.worst[key] = max(self.worst.get(key, 0.0), secs)
+        if key == "draw":
+            self.frames += 1
+
+    def lines(self, mgr):
+        el = max(1e-6, time.time() - self.since)
+        out = ["%.0f screen frames/s" % (self.frames / el)]
+        g, d = self.t.get("game", 0.0), self.t.get("draw", 0.0)
+        gn = max(1, self.n.get("game", 0))
+        out.append("game: %.1f ms per game frame (D2 allows 40), worst burst %.0f ms" % (1000 * g / gn, 1000 * self.worst.get("game", 0)))
+        out.append("drawing: %.1f ms per screen frame, worst %.0f ms" % (1000 * d / max(1, self.frames), 1000 * self.worst.get("draw", 0)))
+        for r in mgr.active():
+            w = r.world
+            out.append("run %d: %s, floor %d, %d monsters, %s" % (r.id, r.state, r.depth,
+                                                               len(w.monsters) if w is not None else 0,
+                                                               "%dx%d cells" % (w.grid.w, w.grid.h) if w is not None else "building"))
+        if el > 5:
+            self.since = time.time()
+            self.t, self.n, self.worst, self.frames = {}, {}, {}, 0
+        return out
+
+    def maybe_write(self, mgr):
+        if time.time() - self.written < 30:
+            return
+        self.written = time.time()
+        try:
+            with open(os.path.join(HERE, "perf.log"), "a") as f:
+                f.write(time.strftime("%Y-%m-%d %H:%M:%S") + "\n  " + "\n  ".join(self.lines(mgr)) + "\n")
+        except OSError:
+            pass
 
 
 class App:
@@ -75,6 +122,8 @@ class App:
         self.down = None
         self.acc = 0.0
         self._dt = 0.0
+        self.show_perf = False
+        self.perf = Perf()
         self.reload_heroes()
         self.running = True
 
@@ -302,6 +351,9 @@ class App:
             elif h is not None:
                 brain.pickup_rules(h)["words"] = cur
             return
+        if ev.key == pygame.K_F3:
+            self.show_perf = not self.show_perf
+            return
         if ev.key == pygame.K_ESCAPE:
             if self.screen_name != "roster":
                 if self.screen_name == "pickup" and self.hero() and self.hero().name not in self.mgr.busy_names():
@@ -323,17 +375,23 @@ class App:
                 act()
 
     # ------------------------------------------------------------ the frame
+    MAX_CATCH_UP = 6       # game frames per screen frame at most: a slow PC slows the game, never freezes it
+
     def step(self, dt):
+        t0 = time.perf_counter()
         self.acc += dt * FPS * self.cfg["speed"]
         n = 0
-        while self.acc >= 1.0 and n < FPS * 4:
+        limit = self.MAX_CATCH_UP * max(1, int(round(self.cfg["speed"])))
+        while self.acc >= 1.0 and n < limit:
             self.mgr.tick()
             self.acc -= 1.0
             n += 1
-        if self.acc > FPS:
-            self.acc = 0.0
+        if self.acc > 2:
+            self.acc = 0.0                       # (behind: drop the backlog)
+        self.perf.add("game", time.perf_counter() - t0, n)
 
     def draw(self):
+        t0 = time.perf_counter()
         self.regions = []
         self.canvas.fill((0, 0, 0))
         {"roster": self.draw_roster, "create": self.draw_create, "loot": self.draw_loot,
@@ -344,7 +402,12 @@ class App:
         if getattr(self, "_tip", None):
             self.look.tooltip(self.canvas, self._tip, self.mouse)
         self._tip = None
+        if self.show_perf:
+            for i, line in enumerate(self.perf.lines(self.mgr)):
+                self.look.text(self.canvas, "small", line, (120, 255, 120), 8, 40 + i * 13)
+        self.perf.add("draw", time.perf_counter() - t0, 1)
         self._present()
+        self.perf.maybe_write(self.mgr)
 
     def _title(self, text):
         self.look.text(self.canvas, "big", text, GOLD, 0, 6, "center", W)

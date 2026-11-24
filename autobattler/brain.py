@@ -272,6 +272,7 @@ class Brain:
         self.cool = {}               # skill -> frame it can be used again (D2 casting delay, failures)
         self.rebuff = {}             # buff / warcry / aura -> frame to renew it
         self.last = ""               # what he decided last (shown on the watch screen)
+        self._info = {}              # skill -> its numbers, worked out again every 10 seconds
 
     # ------------------------------------------------------------ helpers
     def _book(self):
@@ -383,16 +384,51 @@ class Brain:
         self.last = best.why
         return best
 
+    def info(self, name, s):
+        """A skill's numbers (damage, element, radius, duration, cast frames): working them out is
+        the slow part of a decision, so they are kept for 10 seconds (or until a level up)."""
+        frame = self.sim.frame
+        key = (name, getattr(self.h, "level", 1))
+        got = self._info.get(key)
+        if got is not None and got["until"] > frame:
+            return got
+        out = dict(until=frame + 250, env=None, elem=None, eavg=0.0, pavg=0.0, radius=0, dur=0,
+                   frames=self.cast_frames(s))
+        try:
+            from game.skills import SkillEnv
+            env = SkillEnv(self._book(), s)
+            out["env"] = env
+            try:
+                e = env.elem_damage()
+                if e:
+                    out["elem"], out["eavg"] = e[0], (e[1] + e[2]) / 2.0
+            except Exception:
+                pass
+            try:
+                pd = env.phys_damage()
+                if pd:
+                    out["pavg"] = (pd[0] + pd[1]) / 2.0
+            except Exception:
+                pass
+            try:
+                out["radius"] = env.radius() or 0
+            except Exception:
+                pass
+            try:
+                out["dur"] = env.duration_frames() or 0
+            except Exception:
+                pass
+        except Exception:
+            pass
+        self._info[key] = out
+        return out
+
     def _score(self, name, s, target, near, boss, frame):
         h = self.h
         k = s.kind
-        book = self._book()
-        try:
-            from game.skills import SkillEnv
-            env = SkillEnv(book, s)
-        except Exception:
-            env = None
-        frames = self.cast_frames(s)
+        inf = self.info(name, s)
+        env = inf["env"]
+        frames = inf["frames"]
         per_sec = timing.FPS / float(max(1, frames))
 
         # ---- auras: switched on, not cast
@@ -431,7 +467,7 @@ class Brain:
 
         # ---- curses: packs of 3+, or a boss, not cursed yet
         if k == "curse":
-            r = (env.radius() if env else 3) or 3
+            r = inf["radius"] or 3
             centre, n = self._best_cluster(near, r, uncursed=name)
             if centre is None:
                 return None
@@ -449,30 +485,16 @@ class Brain:
 
         # ---- damage
         if k in DAMAGE_KINDS or k in ("move", "teleport"):
-            return self._damage_plan(name, s, env, frames, per_sec, target, near, boss)
+            return self._damage_plan(name, s, inf, frames, per_sec, target, near, boss)
         return None
 
     def _offensive_cry(self, s):
         return getattr(s, "title", s.key) in ("Howl", "Taunt", "Battle Cry", "War Cry", "Grim Ward")
 
-    def _damage_plan(self, name, s, env, frames, per_sec, target, near, boss):
+    def _damage_plan(self, name, s, inf, frames, per_sec, target, near, boss):
         h = self.h
         k = s.kind
-        elem, eavg, pavg = None, 0.0, 0.0
-        if env is not None:
-            try:
-                e = env.elem_damage()
-                if e:
-                    elem, lo, hi = e[0], e[1], e[2]
-                    eavg = (lo + hi) / 2.0
-            except Exception:
-                pass
-            try:
-                pd = env.phys_damage()
-                if pd:
-                    pavg = (pd[0] + pd[1]) / 2.0
-            except Exception:
-                pass
+        elem, eavg, pavg = inf["elem"], inf["eavg"], inf["pavg"]
         weapon = getattr(s, "weapon", False) or k in ("attack", "melee")
         if weapon:
             bonus = 0
@@ -490,12 +512,7 @@ class Brain:
                 reach = max(reach, int(getattr(h, "range", 1) or 1), 8)
         else:
             reach = SPELL_RANGE
-        radius = 0
-        if env is not None:
-            try:
-                radius = env.radius()
-            except Exception:
-                radius = 0
+        radius = inf["radius"]
         if k == "nova":
             hit = self.foes_near(h.pos, max(2, radius or 4), near)
             cell = h.pos
@@ -574,10 +591,5 @@ class Brain:
         if s is not None and s.kind == "aura":
             self.rebuff["@aura"] = frame + 125
         elif s is not None and s.kind in ("buff", "cry", "curse") or (s is not None and self._offensive_cry(s)):
-            dur = 0
-            try:
-                from game.skills import SkillEnv
-                dur = SkillEnv(book, s).duration_frames()
-            except Exception:
-                dur = 0
+            dur = self.info(plan.skill, s)["dur"]
             self.rebuff[plan.skill] = frame + max(100, int(dur * 0.85) if dur else 500)

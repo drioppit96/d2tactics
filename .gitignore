@@ -43,3 +43,4 @@ maps/*.json
 # the autobattler's heroes and settings
 saves_auto/
 autobattler.ini
+perf.log

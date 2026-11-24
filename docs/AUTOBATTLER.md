@@ -129,36 +129,29 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
 
 ## Speed
 
-- A hero decides at most every 6 frames while walking (monsters every 4), and keeps walking in
-  between.
-- Within 12 cells of where it is going, a unit steps straight at it when a free neighbouring cell
-  gets it closer; the path search is only used when that doesn't work (monsters search 1500
-  cells at most, heroes 6000).
-- One run builds its new floor per frame, so several runs reaching a new floor at once don't
-  pile up.
-- A hero who can't reach his target (a wall between, or boxed in by its pack) leaves it for two
-  seconds. With nothing in sight he heads for the nearest monster he can walk to (searched over
-  the floor's cells, once a second). If none of the monsters left can be reached, the floor counts
-  as done, so a run can't hang.
-- Measured without Diablo II files: 8 runs together take about 3 ms per game frame (D2's frame is
-  40 ms); the watch view draws a frame in about 8 ms.
-
-## Acts, bosses, death and potions
-
-- Floors follow the acts: 1-10 Act 1, 11-20 Act 2, 21-30 Act 3, 31-40 Act 4, 41-50 Act 5, then
-  round again (51-60 Act 1 ...). A floor is built from its act's dungeons or outdoor terrain
-  (Act 4 has only outdoor ones) and filled with monsters from that act's areas (Levels.txt).
-- The tenth floor of each act is guarded by the act's boss: Andariel (10), Duriel (20),
-  Mephisto (30), Diablo (40), Baal (50). Act bosses are as D2 makes them: their own MonStats
-  level, life and damage. Every other monster is at the hero's level (the first hero's in a group).
-- When every hero on a run is dead, the run starts again from floor 1 (after floor_pause seconds),
-  and the heroes' floor progress goes back to 0. Each hero's best floor is kept in his profile.
-  A run stopped with Stop run ends after the current floor, or at the death.
-- Before each floor every hero fills his belt from his gold, at the vendors' best potion tier for
-  that act and difficulty (potions.vendor_tiers), at the potion's own price: healing mostly, about
-  half mana for Sorceresses, Necromancers, Druids and Assassins, a quarter for the others.
-- Every hero of a group drinks from his own belt (through the engine's potion code, as him):
-  healing below his potion_at life, mana below 25% mana.
+- Floors are built on a background thread, one at a time, so the other runs and the screen keep
+  going while a run builds its next floor. All runs of a session share one rift seed, so two runs
+  on the same depth agree on what that floor is (act, place, monsters); their maps still come from
+  their own seeds.
+- A hero decides at most every 6 frames while walking (monsters every 4). Each hero's skill
+  numbers (damage, element, radius, duration, cast time) are worked out every 10 seconds, not at
+  every decision.
+- Who stands where is worked out once per frame (the engine's unit_at looks through every
+  monster), and so is the list of living monsters. Monsters wake up on a check five times a
+  second.
+- Within 12 cells of where it is going a unit steps straight at it when a free cell gets it
+  closer. A monster within 3 cells of its target whose way in is blocked by its own pack waits for
+  a gap instead of searching a path. Full path searches are limited to 3 per run per frame (monsters
+  search 1500 cells at most, heroes 6000); the rest wait a frame.
+- With nothing in sight a hero heads for the nearest monster he can walk to (searched over at most
+  12000 cells, once every two seconds); if the search is cut short he heads for the nearest one in
+  a straight line. Only a search that wasn't cut short can decide that the monsters left are out
+  of reach (the floor then counts as done).
+- At most 6 game frames are played per screen frame (more at higher speeds): a slow PC slows the
+  game down instead of freezing it.
+- F3 shows the timings on screen; perf.log in the game folder gets them every 30 seconds.
+- Measured without Diablo II files, 8 runs at 25 frames a second: 3 ms per game frame on average,
+  under 10 ms for 99% of frames (D2's frame is 40 ms).
 
 ## Floors, portals and loot
 

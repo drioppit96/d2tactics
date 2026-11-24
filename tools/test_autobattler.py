@@ -17,6 +17,16 @@ from autobattler.runs import RunManager         # noqa: E402
 FAILS = []
 
 
+def _tick(mgr):
+    """One game frame; floors are built on a background thread, so wait for one being built
+    (in the game, frames take real time while it builds)."""
+    mgr.tick()
+    for r in mgr.active():
+        th = getattr(r, "_thread", None)
+        if th is not None:
+            th.join()
+
+
 def check(cond, what):
     print(("ok    " if cond else "FAIL  ") + what)
     if not cond:
@@ -78,7 +88,7 @@ def test_runs():
     frames = 0
     floors_seen = 0
     while frames < 25 * 60 * 6:              # six minutes of game time
-        mgr.tick()
+        _tick(mgr)
         frames += 1
         floors_seen = max(floors_seen, r.floors)
         if r.state == "over" and g.state == "over" and full.state == "over":
@@ -103,7 +113,7 @@ def test_floor_progress():
     h.hp = h.max_hp
     r = mgr.start([h])
     for _ in range(25 * 60 * 8):
-        mgr.tick()
+        _tick(mgr)
         if r.floors >= 2 or r.state == "over":
             break
     check(r.floors >= 2, "floor cleared -> next floor: %d floors, depth %d, %d kills, %s" % (r.floors, r.depth, r.kills, r.state))
@@ -135,7 +145,7 @@ def test_brain():
     r = mgr.start([h])
     used = {}
     for _ in range(25 * 60 * 4):
-        mgr.tick()
+        _tick(mgr)
         if r.sim is not None:
             for k, v in r.sim.casts.items():
                 used[k] = max(used.get(k, 0), v)
@@ -178,12 +188,12 @@ def test_death_and_potions():
     h.rift_depth = 4
     r = mgr.start([h])
     check(r.depth == 5, "a run starts after the deepest floor cleared (%d)" % r.depth)
-    mgr.tick()                                   # builds the floor (fills the belt)
+    _tick(mgr)                                   # starts building the floor (fills the belt)
     check(len(h.belt) > 0, "the belt is filled before the floor: %d potions" % len(h.belt))
     drunk = 0
     belt_before = len(h.belt)
     for _ in range(25 * 60 * 3):
-        mgr.tick()
+        _tick(mgr)
         if r.sim is not None and len(h.belt) < belt_before:
             drunk += belt_before - len(h.belt)
         belt_before = len(h.belt)
