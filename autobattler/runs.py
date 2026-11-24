@@ -522,6 +522,10 @@ class RunManager:
             rift.BIG = bool(cfg.get("big_maps", True))
             rift.CONTENT = assets.content
             rift.ACT_LEVELS = True           # monsters by the act's own levels, not the hero's
+            # Diablo II's own drops: every monster's own treasure classes, ItemRatio.txt quality
+            # with D2's magic find, no D2 Tactics boosts (act bosses' x1.8, the two-piece floor,
+            # the Countess's chest hoard every kill)
+            assets.content.D2_DROPS = True
             rift.forget(None)
             rift._SEED = SESSION_SEED
 

@@ -2483,6 +2483,14 @@ class World(SkillCaster, ItemActions):
         if self.content:
             tc = getattr(unit, "tc", None)
             boss = getattr(unit, "boss", None)
+            d2 = getattr(self.content, "D2_DROPS", False)
+            if d2:
+                # D2: every monster drops from its own class - normal, champion or unique
+                tcs = getattr(unit, "tcs", None) or ()
+                if not tc and tcs:
+                    tc = tcs[2] if getattr(unit, "unique", False) and len(tcs) > 2 and tcs[2] else \
+                        tcs[1] if getattr(unit, "champion", False) and len(tcs) > 1 and tcs[1] else tcs[0]
+                self.content._players = max(1, len(getattr(self, "party", None) or [self.player]))
             if tc and getattr(unit, "tc_quest", None) and boss:
                 # D2: the first kill of a quest boss uses its quest treasure class (better odds)
                 done = p.__dict__.setdefault("boss_kills", [])
@@ -2499,8 +2507,8 @@ class World(SkillCaster, ItemActions):
                 # An act boss is the thing you go back for, so what it leaves is better than
                 # what a super unique leaves: rares, sets and uniques all the more likely.
                 # Duriel keeps his old 5% edge over Andariel on top of that.
-                q = self.ACT_BOSS_QUALITY if boss in self.ACT_BOSSES else 1.0
-                qb = q * (1.05 if boss == "duriel" else 1.0) * riftmap.quality_bonus(self)
+                q = self.ACT_BOSS_QUALITY if boss in self.ACT_BOSSES and not d2 else 1.0
+                qb = q * (1.05 if boss == "duriel" and not d2 else 1.0) * riftmap.quality_bonus(self)
                 self.content._q_bonus = qb
                 try:
                     for _ in range(rolls):
@@ -2510,8 +2518,9 @@ class World(SkillCaster, ItemActions):
             else:
                 for _ in range(rolls):
                     drops += self.content.roll_drop(dl, unit.unique, self.rng, mf=mf, gf=gf)
-            drops = self._boss_floor(unit, drops, tc, dl, mf, gf, qb)
-            if (getattr(unit, "boss", "") or "") == "countess":
+            if not d2:
+                drops = self._boss_floor(unit, drops, tc, dl, mf, gf, qb)
+            if (getattr(unit, "boss", "") or "") == "countess" and not d2:
                 # every run down the tower is worth the same as the one where you opened her
                 # chest: the chest itself stays a one-off, part of the quest
                 from . import objects as _obj

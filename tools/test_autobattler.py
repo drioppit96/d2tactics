@@ -476,6 +476,36 @@ def test_farms():
     brain.profile(h)["farm"] = "rift"
 
 
+def test_d2_quality():
+    """D2's item quality (ItemRatio.txt): rates, magic find with diminishing returns, TC ratios."""
+    import types
+    from game.d2content import D2Content
+    c = D2Content.__new__(D2Content)
+    c.src = None
+    c.D2_DROPS = True
+    c.uniques_for = lambda b, l: [1]
+    c.set_items_for = lambda b, l: [1]
+    base = {"code": "cap", "qlvl": 1, "tiers": ("cap", "xap", "uap")}
+    rng = random.Random(1)
+
+    def rates(mf, tcq=(0, 0, 0, 0), n=40000):
+        c._tcq = tcq
+        out = {}
+        for _ in range(n):
+            q = c.roll_quality(base, 1, rng, mf)
+            out[q] = out.get(q, 0) + 1
+        c._tcq = (0, 0, 0, 0)
+        return {k: v / float(n) for k, v in out.items()}
+    r0, r3 = rates(0), rates(300)
+    check(0.001 < r0.get("unique", 0) < 0.005 and r0.get("magic", 0) > r0.get("rare", 0) > r0.get("unique", 0),
+          "D2 base rates: %s" % {k: round(v, 4) for k, v in sorted(r0.items())})
+    check(r3.get("magic", 0) > 2.5 * r0.get("magic", 0) and 1.6 * r0.get("unique", 0) < r3.get("unique", 0) < 3.2 * r0.get("unique", 0),
+          "300 MF: magic x%.1f, unique x%.1f (diminishing)" % (r3.get("magic", 0) / max(1e-9, r0.get("magic", 0)),
+                                                            r3.get("unique", 0) / max(1e-9, r0.get("unique", 0))))
+    rb = rates(0, (983, 983, 983, 1024))
+    check(rb.get("unique", 0) > 10 * r0.get("unique", 0), "a boss class's ratios: far better odds")
+
+
 def test_cast_breakpoints():
     from autobattler.brain import CAST_FRAMES0
     sor = [timing.cast_frames(CAST_FRAMES0["sor"] + 1, f) for f in (0, 9, 20, 37, 63, 105, 200)]
@@ -692,6 +722,7 @@ if __name__ == "__main__":
     test_charm_inventory()
     test_skill_animations()
     test_farms()
+    test_d2_quality()
     test_inventory_screen()
     print("\n%s" % ("all passed" if not FAILS else "%d FAILED" % len(FAILS)))
     sys.exit(1 if FAILS else 0)

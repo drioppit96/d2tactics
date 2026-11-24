@@ -538,6 +538,7 @@ def _spawn(world, mid, cell, lvl, taken, unique=False, name=None, champion=False
     m.unique = unique
     m.champion = False
     m.tc = t.get("tc")                # D2 treasure class (act / quest bosses)
+    m.tcs = t.get("tcs")              # its normal / champion / unique classes (MonStats)
     m.tc_quest = t.get("tc_quest")
     if name:
         m.name = name

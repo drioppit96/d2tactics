@@ -826,12 +826,92 @@ class D2Content:
         it.set_bonus = list(si["aprops"])
         it.set_def = self.sets.get(si["set"])
 
+    #: the D2 Autobattler: item quality by D2's own ItemRatio.txt and the treasure class's ratios,
+    #: monsters dropping from their own MonStats treasure classes, NoDrop by player count
+    D2_DROPS = False
+    _tcq = (0, 0, 0, 0)          # the treasure class quality ratios of the roll under way
+    _players = 1
+
+    #: ItemRatio.txt (LoD rows: normal, exceptional/elite, class specific), if it can't be read
+    RATIO_FALLBACK = {
+        (0, 0): dict(unique=(400, 1, 6400), set=(160, 2, 5600), rare=(100, 2, 3200), magic=(34, 3, 192),
+                     hiquality=(12, 8), normal=(2, 2)),
+        (1, 0): dict(unique=(400, 1, 6400), set=(160, 2, 5600), rare=(100, 2, 3200), magic=(34, 3, 192),
+                     hiquality=(12, 8), normal=(2, 2)),
+        (0, 1): dict(unique=(240, 3, 6400), set=(120, 3, 5600), rare=(80, 3, 3200), magic=(17, 6, 192),
+                     hiquality=(9, 8), normal=(2, 2)),
+        (1, 1): dict(unique=(240, 3, 6400), set=(120, 3, 5600), rare=(80, 3, 3200), magic=(17, 6, 192),
+                     hiquality=(9, 8), normal=(2, 2)),
+    }
+
+    def _item_ratios(self, uber, cls):
+        cache = self.__dict__.setdefault("_ratio_rows", {})
+        key = (int(uber), int(cls))
+        if key in cache:
+            return cache[key]
+        got = None
+        try:
+            from d2.source import read_table
+            for r in read_table(self.src, "ItemRatio"):
+                if _int(r.get("version")) == 1 and _int(r.get("uber")) == key[0] and \
+                        _int(r.get("class specific")) == key[1]:
+                    def tri(n):
+                        return (_int(r.get(n)), max(1, _int(r.get(n + "divisor"), 1)), _int(r.get(n + "min")))
+                    got = dict(unique=tri("unique"), set=tri("set"), rare=tri("rare"), magic=tri("magic"),
+                               hiquality=(_int(r.get("hiquality")), max(1, _int(r.get("hiqualitydivisor"), 1))),
+                               normal=(_int(r.get("normal")), max(1, _int(r.get("normaldivisor"), 1))))
+                    break
+        except Exception:
+            got = None
+        cache[key] = got or self.RATIO_FALLBACK[key]
+        return cache[key]
+
+    def roll_quality_d2(self, base, ilvl, rng, mf=0):
+        """D2's own quality roll (ItemRatio.txt): for unique, set, rare, magic and superior in turn,
+        chance = (ratio - (monster level - item level) / divisor) * 128, cut by magic find
+        (x 100 / (100 + MF), MF with diminishing returns: 250 for uniques, 500 for sets, 600 for
+        rares), never below the minimum, then cut by the treasure class's own ratio (/1024); the
+        item is that quality when a roll of that many comes up under 128."""
+        tiers = base.get("tiers") or ("", "", "")
+        uber = bool(base.get("code")) and base.get("code") in (tiers[1], tiers[2])
+        cls = bool(base.get("class") or base.get("classspecific"))
+        rows = self._item_ratios(uber, cls)
+        qlvl = max(0, _int(base.get("qlvl")))
+        diff = max(0, int(ilvl) - qlvl)
+        tu, ts, tr, tm = self._tcq
+
+        def hit(name, eff_mf, tc_ratio):
+            row = rows[name]
+            ratio, div = row[0], row[1]
+            c = (ratio - diff // div) * 128
+            if eff_mf:
+                c = c * 100 // (100 + eff_mf)
+            if len(row) > 2:
+                c = max(c, row[2])
+            c = c - c * tc_ratio // 1024
+            return c <= 128 or rng.randrange(max(1, int(c))) < 128
+
+        mf = max(0, int(mf or 0))
+        if hit("unique", mf * 250 // (mf + 250) if mf else 0, tu):
+            return "unique" if self.uniques_for(base, ilvl) else "rare"     # (D2: a failed unique is rare)
+        if hit("set", mf * 500 // (mf + 500) if mf else 0, ts):
+            return "set" if self.set_items_for(base, ilvl) else "magic"     # (a failed set is magic)
+        if hit("rare", mf * 600 // (mf + 600) if mf else 0, tr):
+            return "rare"
+        if hit("magic", mf, tm):
+            return "magic"
+        if base.get("magic_only"):
+            return "magic"             # rings and amulets are never plain
+        return "normal"
+
     def roll_quality(self, base, ilvl, rng, mf=0, boss=False):
         """normal / magic / rare / set / unique, roughly D2's odds (better with magic find)."""
         if base.get("normal_only"):
             return "normal"
         if base.get("charm"):
             return "magic"
+        if self.D2_DROPS:
+            return self.roll_quality_d2(base, ilvl, rng, mf)
         # D2's magic find has diminishing returns for uniques and sets
         mf_u = mf * 250.0 / (mf + 250) if mf > 0 else mf
         mf_s = mf * 500.0 / (mf + 500) if mf > 0 else mf
@@ -1020,12 +1100,32 @@ class D2Content:
         boss_q = boss_q or _int(row.get("unique")) >= 800
         picks = _int(row.get("picks"), 1)
         nodrop = max(0, _int(row.get("nodrop")))
+        prev_q = self._tcq
+        if self.D2_DROPS:
+            # D2: the quality ratios of the classes a pick passes through, the best of each
+            self._tcq = tuple(max(a, _int(row.get(k))) for a, k in zip(prev_q, ("unique", "set", "rare", "magic")))
         entries = []
         for i in range(1, 11):
             it = (row.get("item%d" % i) or "").strip()
             pr = _int(row.get("prob%d" % i))
             if it and pr > 0:
                 entries.append((it, pr))
+        if self.D2_DROPS and nodrop and self._players > 1:
+            # D2's NoDrop for more players: (NoDrop share) ^ n, n = 1 + (players - 1) / 2
+            probs = sum(pr for _, pr in entries)
+            if probs > 0:
+                share = nodrop / float(nodrop + probs)
+                n = 1 + (self._players - 1) // 2
+                new = share ** n
+                nodrop = int(probs * new / (1.0 - new)) if new < 1 else nodrop
+        out = []
+        try:
+            out = self._roll_tc_picks(picks, nodrop, entries, mlvl, rng, mf, gf, boss_q, depth)
+        finally:
+            self._tcq = prev_q
+        return out
+
+    def _roll_tc_picks(self, picks, nodrop, entries, mlvl, rng, mf, gf, boss_q, depth):
         out = []
         if picks < 0:
             left = -picks
@@ -1197,6 +1297,10 @@ class D2Content:
         if d2boss:
             t["tc"] = r.get("treasureclass1" + sfx) or r.get("treasureclass1") or None
             t["tc_quest"] = r.get("treasureclass4" + sfx) or r.get("treasureclass4") or None
+        # every monster's own classes - normal, champion, unique (MonStats TreasureClass1-3); the
+        # D2 Autobattler drops from these (D2_DROPS), D2 Tactics keeps its own simpler roll
+        t["tcs"] = tuple((r.get("treasureclass%d" % i + sfx) or r.get("treasureclass%d" % i) or None)
+                         for i in (1, 2, 3))
         from .monskills import skills_of, is_caster
         t["skills"] = skills_of(r)
         t["d2ai"] = ai_name

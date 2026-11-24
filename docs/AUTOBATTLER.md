@@ -46,6 +46,19 @@ update never overwrites them.
   floor are D2's own.
 - A stopped run is picked up again: the next run starts one floor below the deepest he cleared
   (kept on the hero and in his profile); only dying sends him back to floor 1.
+- Drops are Diablo II's own (D2Content.D2_DROPS, set by the run manager; D2 Tactics keeps its
+  own):
+  - every monster drops from its own MonStats treasure class: TreasureClass1 for a normal
+    monster, 2 for a champion, 3 for a unique (D2 Tactics rolls a simpler table for monsters that
+    aren't bosses, with gems and runes four times as often);
+  - item quality is D2's ItemRatio.txt roll (read from the player's files): for unique, set,
+    rare and magic in turn, (ratio - (monster level - item level) / divisor) x 128, cut by magic
+    find (x 100 / (100 + MF); MF counts with D2's diminishing returns: 250 for uniques, 500 for
+    sets, 600 for rares, in full for magic), never below the minimum, then cut by the treasure
+    class's own quality ratios (/1024); a failed unique is rare, a failed set magic;
+  - NoDrop by player count for groups (D2: the NoDrop share to the power 1 + (players - 1) / 2);
+  - none of D2 Tactics' boosts: act bosses' x1.8 quality (Duriel x1.05 more), the second roll
+    until a boss leaves two pieces of equipment, the Countess's chest hoard on every kill.
 - The D2R changes in `game/d2r.py` apply as in D2 Tactics.
 - Real time at 25 frames a second. Attack, hit recovery and movement follow D2's formulas
   (`autobattler/timing.py`):
