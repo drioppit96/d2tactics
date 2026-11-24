@@ -249,6 +249,12 @@ is drawn with plain boxes and a system font.
   - + beside a stat puts a point in it (Shift + click: all of them). New life and mana are there
     at once, as in D2. Reset Stats gives every spent stat point back, free.
   - Click a skill to learn it (the game's rules: a point left, his level, the skills before it).
+  - The skills show D2's own icons (the class's Skillicon.DC6, on the class's skill tree art) and
+    D2's tooltip: name, description, required level and skills, the current and next level's
+    numbers from SkillDesc / Skills, durations in seconds, and the skills it gets bonuses from
+    (points.skill_tooltip). The turn-based game's AP costs and turn counts are left out.
+  - If one of the two D2 panels can't be drawn, that panel alone falls back to plain boxes and
+    the error goes to errors.log once.
     The tree's tabs change pages; Reset Skills gives every skill point back, free.
   - Points: by hand / by class plan. By hand (the default) the points wait for you; by class plan
     they go by his class's build (brain.BUILDS, brain.STATS) at each level up and before each

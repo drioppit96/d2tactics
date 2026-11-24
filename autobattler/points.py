@@ -67,3 +67,70 @@ def reset_skills(hero):
     hero.shape = None
     hero.recalc()
     return n
+
+
+# ------------------------------------------------------------------ the skill tooltip, as D2 shows it
+GREEN = (0, 220, 0)
+WHITE = (255, 255, 255)
+BLUE = (105, 105, 255)
+RED = (255, 80, 80)
+GOLD = (199, 179, 119)
+GREY = (140, 140, 140)
+
+
+def _real_time(lines, book, name, lv):
+    """The engine's lines in real time: durations in seconds (it counts 2-second turns for the
+    turn-based game), and nothing about the turn-based game's right-click aura slot."""
+    from game.skills import SkillEnv, _seconds
+    out = []
+    for x in lines:
+        if not x or x.startswith("Active while selected"):
+            continue
+        if x.startswith("Lasts ") and x.endswith(" turns"):
+            s = book.tree[name]
+            try:
+                frames = SkillEnv(book, s, lv).duration_frames()
+            except Exception:
+                frames = 0
+            if not frames or any(y.startswith("Duration") for y in lines):
+                continue
+            x = "Duration: %s seconds" % _seconds(frames)
+        out.append(x)
+    return out
+
+
+def skill_tooltip(hero, name):
+    """D2's skill tree tooltip: name, description, required level and skills, then this level and
+    the next, then what it gets bonuses from. Numbers from D2's own SkillDesc / Skills tables."""
+    from render.d2hud import _wrap
+    book = hero.skills
+    s = book.tree[name]
+    lv = book.levels.get(name, 0)
+    lines = [(s.title, GREEN)]
+    for chunk in _wrap((s.long or "")[:1].upper() + (s.long or "")[1:], 46) if s.long else []:
+        lines.append((chunk, WHITE))
+    lines.append(("", WHITE))
+    if not lv:
+        lines.append(("Required Level: %d" % s.reqlevel, WHITE if hero.level >= s.reqlevel else RED))
+        for pre in s.prereqs:
+            q = book.tree.get(pre)
+            if q is not None:
+                lines.append(("Requires %s" % q.title, WHITE if book.levels.get(pre) else RED))
+        lines.append(("First Level", WHITE))
+        lines += [(x, WHITE) for x in _real_time(book.describe_next(name), book, name, 1)]
+    else:
+        cur = book.level(name)
+        lines.append(("Current Skill Level: %d" % cur, WHITE))
+        lines += [(x, WHITE) for x in _real_time(book.describe(name), book, name, cur)]
+        if lv < s.maxlvl:
+            lines.append(("", WHITE))
+            lines.append(("Next Level", WHITE))
+            lines += [(x, BLUE) for x in _real_time(book.describe_next(name), book, name, cur + 1)]
+    syn = book.synergy_lines(name)
+    if syn:
+        lines.append(("", WHITE))
+        lines += [(x, GREEN if i == 0 else WHITE) for i, x in enumerate(syn)]
+    if book.can_learn(name, hero.level):
+        lines.append(("", WHITE))
+        lines.append(("Click to learn" if not lv else "Click to add a point", GOLD))
+    return lines

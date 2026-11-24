@@ -1322,17 +1322,20 @@ class App:
             self.button((640, 540, 140, 30), "Back", lambda: self.go("roster"))
             return
         hud = L.hud
-        drawn = False
+        drawn = [False, False]
         if hud is not None:
-            try:
-                self._draw_char_panel(hud, h)
-                self._draw_tree_panel(hud, h)
-                drawn = True
-            except Exception:
-                import traceback
-                traceback.print_exc()
-        if not drawn:
-            self._draw_char_plain(h)
+            for i, part in enumerate((self._draw_char_panel, self._draw_tree_panel)):
+                try:
+                    part(hud, h)
+                    drawn[i] = True
+                except Exception:
+                    import traceback
+                    traceback.print_exc()
+                    if not getattr(self, "_char_error_logged", False):
+                        self._char_error_logged = True
+                        log_error(traceback.format_exc())
+        if not all(drawn):
+            self._draw_char_plain(h, *drawn)
         # below the panels
         by_hand = points.by_hand(h)
         self.button((80, 486, 320, 30), "Points: by hand" if by_hand else "Points: by class plan", self.char_auto)
@@ -1341,7 +1344,7 @@ class App:
         L.text(c, "small", "Click + for one stat point, Shift + click for all. Click a skill to learn it.", GREY, 80, 538)
         self.button((560, 486, 160, 30), "Back", lambda: self.go("roster"))
 
-    def _hud_panel(self, hud, ox, draw):
+    def _hud_panel(self, hud, ox, draw, tip=None):
         """Let the game's HUD draw one 320 x 432 panel at (ox, PANEL_Y); -> its click regions."""
         sub = self.canvas.subsurface(pygame.Rect(ox, self.PANEL_Y, 320, 432))
         keep = (hud.lw, hud.mouse, hud.regions)
@@ -1349,11 +1352,12 @@ class App:
             hud.lw, hud.regions, hud.hover_lines = 320, [], None
             hud.mouse = (self.mouse[0] - ox, self.mouse[1] - self.PANEL_Y)
             draw(sub)
-            regions, tip = hud.regions, hud.hover_lines
+            regions, lines = hud.regions, hud.hover_lines
         finally:
             hud.lw, hud.mouse, hud.regions = keep
-        if tip:
-            self._tip = [(t, col) for t, col in tip if not (t.startswith("Costs ") and t.endswith(" AP"))]
+        if lines:
+            self._tip = tip(regions) if tip is not None else lines
+            self._tip = self._tip or lines
         return regions
 
     def _draw_char_panel(self, hud, h):
@@ -1420,10 +1424,23 @@ class App:
 
     def _draw_tree_panel(self, hud, h):
         """D2's skill tree, drawn by the game's HUD; a click on a skill learns it."""
-        self._tree_regions = self._hud_panel(hud, self.TREE_X, lambda surf: hud._draw_skill_tree(surf, h))
+        def tip(regions):
+            # the skill under the mouse gets D2's own tooltip, not the turn-based game's
+            mx, my = self.mouse[0] - self.TREE_X, self.mouse[1] - self.PANEL_Y
+            for rect, action, arg in regions:
+                if action == "learn" and rect.collidepoint((int(mx), int(my))):
+                    return points.skill_tooltip(h, arg)
+            return None
+        self._tree_regions = self._hud_panel(hud, self.TREE_X, lambda surf: hud._draw_skill_tree(surf, h), tip)
 
-    def _draw_char_plain(self, h):
+    def _draw_char_plain(self, h, char_done=False, tree_done=False):
         """Without D2 files: the same choices in plain boxes."""
+        if not char_done:
+            self._draw_stats_plain(h)
+        if not tree_done:
+            self._draw_tree_plain(h)
+
+    def _draw_stats_plain(self, h):
         c, L = self.canvas, self.look
         L.panel(c, (self.CHAR_X, self.PANEL_Y, 320, 432))
         L.text(c, "med", "%s  level %d" % (h.name, h.level), GOLD, self.CHAR_X, self.PANEL_Y + 12, "center", 320)
@@ -1434,6 +1451,9 @@ class App:
                 self.button((self.CHAR_X + 250, yy - 4, 40, 26), "+", self.char_stat, key)
         L.text(c, "med", "Stat points: %d" % h.stat_points, GOLD, self.CHAR_X + 20, self.PANEL_Y + 200)
         self.button((self.CHAR_X + 20, self.PANEL_Y + 390, 140, 28), "Reset stats", self.char_reset, "stats")
+
+    def _draw_tree_plain(self, h):
+        c, L = self.canvas, self.look
         L.panel(c, (self.TREE_X, self.PANEL_Y, 320, 432))
         book = h.skills
         L.text(c, "med", "Skill points: %d" % book.points, GOLD, self.TREE_X, self.PANEL_Y + 12, "center", 320)
@@ -1444,6 +1464,8 @@ class App:
             lv = book.levels.get(n, 0)
             self.button(r, "%s %d" % (book.tree[n].title[:14], lv), self.char_learn, n,
                         enabled=book.can_learn(n, h.level))
+            if self.hot(r):
+                self._tip = points.skill_tooltip(h, n)
         self.button((self.TREE_X + 170, self.PANEL_Y + 400, 140, 26), "Reset skills", self.char_reset, "skills")
 
     def draw_pickup(self):
