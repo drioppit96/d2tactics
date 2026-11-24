@@ -321,6 +321,8 @@ def test_full_bag_trip():
             it.gem, it.base = ("gem", "ruby", 0), {"code": "gcr"}
         elif i % 3 == 1:
             it = Item("Unique Cap", "cap", "helm", rarity="unique")
+        elif i % 2:
+            it = Item("Magic Cap", "cap", "helm", rarity="magic")
         else:
             it = Item("Stone", "sto", "helm")
         if not h.inv_add(it):
@@ -330,11 +332,16 @@ def test_full_bag_trip():
     for _ in range(60):
         _tick(mgr)
     bank0, items0 = st.bank.get("gcr", 0), sum(len(p) for p in st.pages)
+    worn = Item("Magic Boots", "lbt", "boots", rarity="magic")
+    h.equipment["boots"] = worn
+    gold0 = h.gold
     r.sim.no_room = True
     _tick(mgr)
     check(r.state == "town", "a full backpack sends him home")
     check(st.bank.get("gcr", 0) > bank0 and sum(len(p) for p in st.pages) > items0
           and not any(stash.keeps(it) for it in h.inventory), "gems and unique items go to the stash")
+    check(not any(it.rarity in ("magic", "rare") for it in h.inventory) and h.gold > gold0
+          and h.equipment["boots"] is worn, "magic and rare items in the backpack are sold, worn ones kept")
     for _ in range(int(r.AUTO_TOWN_SECONDS * 25) + 2):
         _tick(mgr)
     check(r.state == "fight", "and he goes back to the floor by himself")

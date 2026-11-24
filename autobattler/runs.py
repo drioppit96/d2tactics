@@ -180,6 +180,10 @@ class Run:
             stored += n
             if n:
                 self.note("%s puts %d item%s in the stash." % (h.name, n, "" if n == 1 else "s"))
+            if auto:
+                sold, gold = sell_magic_and_rare(h)
+                if sold:
+                    self.note("%s sells %d magic and rare item%s for %d gold." % (h.name, sold, "" if sold == 1 else "s", gold))
             roster.save(h)
         if stored:
             stash.save()
@@ -190,9 +194,10 @@ class Run:
 
     def _should_empty_bag(self):
         """A hero had no room for something he wanted: home, if that would make room (he carries
-        gems, runes, unique or set items the stash takes)."""
+        gems, runes, unique or set items the stash takes, or magic or rare items to sell)."""
         from . import stash
-        if not any(stash.keeps(it) for h in self.heroes for it in h.inventory):
+        if not any(stash.keeps(it) or getattr(it, "rarity", "") in ("magic", "rare")
+                   for h in self.heroes for it in h.inventory):
             self.sim.no_room = False
             return False
         return True
@@ -375,6 +380,26 @@ class Run:
             roster.save(h)
         self.world = None
         self.sim = None
+
+
+def sell_magic_and_rare(h):
+    """The automatic trip home: every magic (blue) and rare (yellow) item in his backpack is sold
+    at D2's sell price; what he wears is kept. -> (items sold, gold)."""
+    from game.d2items import sell_price
+    sold = gold = 0
+    for it in list(h.inventory):
+        if getattr(it, "rarity", "") not in ("magic", "rare") or getattr(it, "kind", "") == "quest":
+            continue
+        try:
+            value = sell_price(it)
+        except Exception:
+            continue
+        h.inventory.remove(it)
+        it.inv_pos = None
+        h.gold += value
+        sold += 1
+        gold += value
+    return sold, gold
 
 
 def _probe(kind):

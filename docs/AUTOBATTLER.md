@@ -197,9 +197,11 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
   gems, runes, unique or set items, his run goes to town on its own (the floor waits). Every
   return to town, automatic or by the To town button, puts the gems and runes from the backpack on
   their stacks in the stash's gems & runes tab and the unique and set items into the first stash
-  tabs with room (autobattler/stash.py). After an automatic trip he goes back to the floor by
-  himself 3 seconds later; after To town, Continue run takes him back. With nothing the stash
-  takes in his backpack he stays on the floor and leaves the item lying.
+  tabs with room (autobattler/stash.py). On an automatic trip he also sells every magic (blue)
+  and rare (yellow) item in his backpack at D2's sell price (runs.sell_magic_and_rare); what he
+  wears is kept, and a trip by the To town button sells nothing. After an automatic trip he goes
+  back to the floor by himself 3 seconds later; after To town, Continue run takes him back. With
+  nothing in his backpack to stash or sell he stays on the floor and leaves the item lying.
 - The belt: healing potions go in columns 1-2, mana potions in 3-4, rejuvenation potions wherever
   there is room (potions.COLUMN_RULE, set by config.apply_d2_rules; D2 Tactics keeps D2's own
   rule). Heroes pick up healing, mana and rejuvenation potions on their own whenever their belt has
