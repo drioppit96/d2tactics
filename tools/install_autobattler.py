@@ -8,9 +8,9 @@ code. It has its own heroes (saves_auto), its own autobattler.ini and its own er
 "Update D2 Autobattler.bat" keeps it up to date from GitHub on its own.
 
 Copied: the code, the launchers, assets, docs, and settings.ini (only if the folder has none yet,
-so it starts with the same Diablo II path). Also the decoded-art cache, if this folder has one,
-so the first start is not slow.
-Never copied: your D2 Tactics heroes (saves), .git, errors.log, extracted Diablo II files.
+so it starts with the same Diablo II path).
+Never copied: your D2 Tactics heroes (saves), .git, errors.log, the decoded-art cache (it can be
+gigabytes; the autobattler builds its own on its first start) and extracted Diablo II files.
 """
 import os
 import shutil
@@ -19,19 +19,22 @@ import sys
 SRC = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_NAME = "Diablo 2 Auto battler"
 
-SKIP_DIRS = {".git", "saves", "saves_auto", "saves_test", "__pycache__", "d2monsters"}
-SKIP_PREFIXES = ("d2samples", "d2act", "d2tables", "d2monsters")
+SKIP_DIRS = {".git", "saves", "saves_auto", "saves_test", "__pycache__", "cache"}
+SKIP_PREFIXES = ("d2",)        # d2samples*, d2monsters*, d2tables, d2ui ...: extracted Diablo II files
 SKIP_FILES = {"errors.log", "options.ini", "autobattler.ini", "github_token.txt", "numpy_skip.txt"}
 ONLY_IF_MISSING = {"settings.ini"}
 
 
-def _skip_dir(name):
-    return name in SKIP_DIRS or name.lower().startswith(SKIP_PREFIXES)
+def _skip_dir(name, top=False):
+    if name in SKIP_DIRS:
+        return True
+    # (only at the top: the engine's own "d2" code folder is kept)
+    return top and name.lower().startswith(SKIP_PREFIXES) and name.lower() != "d2"
 
 
 def _skip_file(name):
     low = name.lower()
-    return name in SKIP_FILES or low.endswith((".zip", ".pyc", ".mpq")) or low.startswith(SKIP_PREFIXES)
+    return name in SKIP_FILES or low.endswith((".zip", ".pyc", ".mpq", ".dcc", ".dc6", ".dt1", ".ds1", ".cof"))
 
 
 def install(dest):
@@ -42,7 +45,7 @@ def install(dest):
     copied = 0
     for base, dirs, files in os.walk(SRC):
         rel = os.path.relpath(base, SRC)
-        dirs[:] = [d for d in dirs if not _skip_dir(d)]
+        dirs[:] = [d for d in dirs if not _skip_dir(d, top=(rel == "."))]
         out_dir = dest if rel == "." else os.path.join(dest, rel)
         os.makedirs(out_dir, exist_ok=True)
         for fn in files:
@@ -53,6 +56,10 @@ def install(dest):
                 continue
             shutil.copy2(os.path.join(base, fn), target)
             copied += 1
+            if copied % 25 == 0:
+                sys.stdout.write("\r  %d files..." % copied)
+                sys.stdout.flush()
+    sys.stdout.write("\r")
     os.makedirs(os.path.join(dest, "saves_auto"), exist_ok=True)
     return dest, copied
 
