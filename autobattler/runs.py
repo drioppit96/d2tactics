@@ -127,6 +127,10 @@ class Run:
         w.mode = "explore"
         self.world = w
         self.sim = realtime.Sim(w, self.heroes, self.timings, self.cfg.get("move_scale", 1.0))
+        for h in self.heroes:
+            n = self.sim.prefill_summons(h)
+            if n:
+                self.note("%s starts the floor with %d raised." % (h.name, n))
         self.state = "fight"
         self.note("%s: %s" % (self.where()[:1].upper() + self.where()[1:], getattr(w, "level_name", "") or "rift"))
 

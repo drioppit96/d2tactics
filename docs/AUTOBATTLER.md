@@ -116,6 +116,9 @@ best one, or a normal attack, or backs off, or drinks.
   is below half.
 - Buffs and warcries that buff: cast again when 85% of their duration has passed.
   Offensive warcries (Howl, Taunt, Battle Cry, War Cry): with two or more monsters within 5 cells.
+- A necromancer starts every floor with his skeletons and skeletal mages already raised, as many
+  as his skill levels allow (Skills.txt petmax), beside him (Sim.prefill_summons); the run's log
+  says how many.
 - Summons that walk and fight (skeletons, mages, golems, revives, wolves, bears, Valkyries,
   shadows) are played frame by frame like the heroes (Sim.pets): each goes after the monsters within
   12 cells of its summoner (or 6 of itself) and otherwise keeps within 3 cells of him; monsters fight

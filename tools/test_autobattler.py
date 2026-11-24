@@ -546,6 +546,24 @@ def test_summons_fight():
     r.finish("stopped")
 
 
+def test_ready_skeletons():
+    """A necromancer starts every floor with his skeletons already raised, as many as he may have."""
+    from game.skills import Skill
+    config.apply_d2_rules()
+    h = _hero("Necro2")
+    sk = Skill("Raise Skeleton", 1, 1, 1, 1, [], 6, 0, "raise")
+    sk.data = {"summon": "skeleton1", "petmax": "3"}
+    h.skills.tree["Raise Skeleton"] = sk
+    h.skills.levels["Raise Skeleton"] = 4
+    mgr = RunManager(_NoAssets(), _cfg())
+    r = mgr.start([h])
+    _tick(mgr)
+    _tick(mgr)
+    pets = [a for a in r.world.monsters if getattr(a, "ally", False) and a.alive and getattr(a, "summoner", None) is h]
+    check(len(pets) == 3, "the floor starts with his 3 skeletons up (%d)" % len(pets))
+    r.finish("stopped")
+
+
 def test_cast_breakpoints():
     from autobattler.brain import CAST_FRAMES0
     sor = [timing.cast_frames(CAST_FRAMES0["sor"] + 1, f) for f in (0, 9, 20, 37, 63, 105, 200)]
@@ -764,6 +782,7 @@ if __name__ == "__main__":
     test_farms()
     test_d2_quality()
     test_summons_fight()
+    test_ready_skeletons()
     test_inventory_screen()
     print("\n%s" % ("all passed" if not FAILS else "%d FAILED" % len(FAILS)))
     sys.exit(1 if FAILS else 0)

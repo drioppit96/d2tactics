@@ -635,6 +635,45 @@ class Sim:
                 out.append(m)
         return out
 
+    #: summons a hero has up from the start of every floor, as many as his skill level allows
+    READY_SUMMONS = ("Raise Skeleton", "Raise Skeletal Mage")
+
+    def prefill_summons(self, h):
+        """A necromancer starts each floor with his skeletons and skeletal mages already raised:
+        as many as his skill levels allow (Skills.txt petmax), beside him. -> how many rose."""
+        from game import tactics
+        w = self.w
+        book = getattr(h, "skills", None)
+        if book is None:
+            return 0
+        n = 0
+        for name in self.READY_SUMMONS:
+            s = book.tree.get(name)
+            if s is None or s.data is None or book.level(name) <= 0:
+                continue
+            with self._Guard(w):
+                with tactics.acting_as(w, h):
+                    try:
+                        env = w._skill_env(name)
+                        cap = w._petmax(s, env)
+                        have = sum(1 for a in w._owned(name) if getattr(a, "summoner", h) is h)
+                        for _ in range(max(0, cap - have)):
+                            a = w._spawn_ally(s, env, h.pos)
+                            if a is None:
+                                break
+                            a.summoner = h
+                            if name == "Raise Skeletal Mage":
+                                a.range = 6
+                                a.ai = "ally_ranged"
+                                a.missile_elem = w.rng.choice(("fire", "cold", "ltng", "pois"))
+                            n += 1
+                    except Exception:
+                        import traceback
+                        traceback.print_exc()
+            if not self.watched:
+                del w.events[:]
+        return n
+
     def _owner(self, a):
         o = getattr(a, "summoner", None)
         if o is not None and o.alive:
