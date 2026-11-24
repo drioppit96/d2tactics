@@ -46,13 +46,13 @@ STYLES = {
     "careful": dict(potion_at=60, mana_reserve=25, back_off_at=95),
 }
 DEFAULT_PROFILE = dict(style="balanced", potion_at=None, mana_reserve=None, keep_distance="auto",
-                       favourite="", never=[], auto_points=False,
-                       slots=["", "", "", "", "", "", "", ""])
-SLOTS = 8
-#: what a slot can hold besides his skills: the normal attack (a melee swing, or a shot with a bow
-#: or crossbow) and Throw (a javelin, throwing knife or axe in hand)
-BASIC = ("attack", "throw")
+                       favourite="", never=[], auto_points=False)
 THROW_RANGE = 14
+
+#: how a build fights (Brain.role): how far he keeps from melee monsters, in cells
+ROLE_DISTANCE = {"melee": 0, "ranged": 5, "thrower": 4, "caster": 5, "summoner": 6}
+ROLE_NAMES = {"melee": "Melee", "ranged": "Bow / crossbow", "thrower": "Thrower",
+              "caster": "Caster", "summoner": "Summoner"}
 
 DAMAGE_KINDS = ("missile", "nova", "area", "line", "chain", "charge", "spiral", "corpse_blast", "melee", "attack")
 SUMMON_KINDS = ("summon", "golem", "raise", "revive", "turret", "wall")
@@ -344,6 +344,55 @@ class Brain:
         except Exception:
             return 0.75
 
+    def role(self):
+        """What his build is, from what he holds and where his skill points are:
+            ranged     a bow or crossbow in hand
+            thrower    a javelin, throwing knife or axe in hand (Throw comes first)
+            summoner   a third or more of his points in summons
+            caster     more points in damage spells than in weapon skills
+            melee      everything else
+        Worked out again when his level, weapon or skills change."""
+        h = self.h
+        book = self._book()
+        wpn = (getattr(h, "equipment", None) or {}).get("weapon")
+        key = (getattr(h, "level", 1), id(wpn), tuple(sorted((book.levels or {}).items())) if book else ())
+        if getattr(self, "_role_key", None) == key:
+            return self._role
+        if getattr(h, "ranged", False):
+            role = "ranged"
+        elif getattr(h, "throwing", False):
+            role = "thrower"
+        else:
+            summon = spell = weapon = total = 0
+            for name, lv in ((book.levels or {}).items() if book else ()):
+                sk = book.tree.get(name)
+                if sk is None or not lv:
+                    continue
+                total += lv
+                if sk.kind in SUMMON_KINDS:
+                    summon += lv
+                elif getattr(sk, "weapon", False) or sk.kind in ("attack", "melee"):
+                    weapon += lv
+                elif sk.kind in DAMAGE_KINDS:
+                    spell += lv
+            if summon >= max(3, total / 3.0):
+                role = "summoner"
+            elif spell > weapon and spell >= 2:
+                role = "caster"
+            else:
+                role = "melee"
+        self._role_key, self._role = key, role
+        return role
+
+    def keep_distance(self):
+        """Cells he keeps from melee monsters (0: he goes in). The profile's keep_distance can
+        force it on or off."""
+        ks = profile(self.h).get("keep_distance", "auto")
+        if ks == "no":
+            return 0
+        d = ROLE_DISTANCE.get(self.role(), 0)
+        return d or (4 if ks == "yes" else 0)
+
     def ranged_hero(self, best_reach):
         ks = profile(self.h).get("keep_distance", "auto")
         if ks == "yes":
@@ -370,12 +419,16 @@ class Brain:
         # the normal attack: the baseline every skill has to beat
         if target is not None:
             frames = self.attack_frames("A1")
-            dps = self.weapon_avg() * self.hit_chance(target) * self.res_factor(target, "phys") * timing.FPS / max(1, frames)
+            hit = self.weapon_avg() * self.hit_chance(target) * self.res_factor(target, "phys")
+            dps = hit * timing.FPS / max(1, frames)
+            if target.hp <= hit * 1.2:
+                dps *= 3.0                    # it dies to one blow: no mana spent on it
+            if getattr(h, "throwing", False) and frame >= self.cool.get("throw", 0):
+                # a javelin, knife or axe in hand: Throw is his main attack, from a distance
+                far = chebyshev(target.pos, h.pos) >= 2
+                plans.append(Plan("skill", "throw", target, None, frames, dps * (1.6 if far else 1.2), "throw"))
+                dps *= 0.8
             plans.append(Plan("attack", None, target, None, frames, dps, "attack"))
-
-        slots = [x for x in (profile(h).get("slots") or []) if x]
-        if slots and book is not None:
-            return self._decide_slots(slots, book, target, near, boss, frame, plans)
 
         if book is not None:
             for name in book.actives():
@@ -396,8 +449,12 @@ class Brain:
                 left = 100.0 * (h.mana - mana) / max(1, getattr(h, "max_mana", 1))
                 if mana > 0 and left < reserve and p.what == "skill":
                     p.score *= 0.25            # it would eat into the reserve
-                if mana_left_pct < 30 and mana > 0:
-                    p.score *= 0.7
+                if mana > 0 and p.what == "skill" and p.score < 4e4:
+                    # damage skills: the lower his mana, the more they must be worth it, so
+                    # some is always left for what saves him (buffs, summons are not touched)
+                    p.score *= min(1.0, 0.3 + mana_left_pct / 100.0)
+                    if target is not None and target.hp <= self.weapon_avg() * 1.2 and len(near) <= 2:
+                        p.score *= 0.3        # a nearly dead monster isn't worth a spell
                 if name == fav or getattr(s, "title", "") == fav:
                     p.score *= 1.25
                 plans.append(p)
@@ -407,52 +464,6 @@ class Brain:
         best = max(plans, key=lambda p: p.score)
         self.last = best.why
         return best
-
-    def _decide_slots(self, slots, book, target, near, boss, frame, plans):
-        """The player's skill bar: buffs, auras and warcries that buff come first whenever one
-        needs casting; then the first skill in the bar's order that makes sense now (enough mana,
-        a target in reach, not a curse already on it, room for another summon ...); then the
-        normal attack. Skills not on the bar are not used."""
-        h = self.h
-        usable = []
-        attack = next((p for p in plans if p.what == "attack"), None)
-        for name in slots:
-            if name == "attack":
-                if attack is not None:
-                    usable.append((None, attack))
-                continue
-            if name == "throw":
-                if target is not None and getattr(h, "throwing", False) and \
-                        chebyshev(target.pos, h.pos) <= getattr(h, "throw_range", THROW_RANGE):
-                    usable.append((None, Plan("skill", "throw", target, None, self.attack_frames("A1"), 1.0, "throw")))
-                continue
-            s = book.tree.get(name)
-            if s is None or s.kind == "passive" or not book.level(name) or frame < self.cool.get(name, 0):
-                continue
-            try:
-                mana = float(book.mana_cost(name)) if not book.charged_only(name) else 0.0
-            except Exception:
-                continue
-            if mana > h.mana:
-                continue
-            p = self._score(name, s, target, near, boss, frame)
-            if p is None or p.score <= 0:
-                continue
-            usable.append((s, p))
-        for s, p in usable:
-            if s is None:
-                continue
-            if s.kind in ("aura", "buff") or (s.kind == "cry" and not self._offensive_cry(s)):
-                self.last = p.why
-                return p
-        if usable:
-            p = usable[0][1]
-            self.last = p.why
-            return p
-        if plans:
-            self.last = plans[0].why
-            return plans[0]
-        return None
 
     GOLEMS = ("Clay Golem", "BloodGolem", "IronGolem", "FireGolem")
 

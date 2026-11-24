@@ -61,6 +61,29 @@ update never overwrites them.
 
 ## Each hero's brain (autobattler/brain.py)
 
+How a hero fights is worked out from his build; there are no priority settings to fill in.
+
+- Build (Brain.role), worked out again when his level, weapon or skills change:
+  - Bow / crossbow: a bow or crossbow in hand. Keeps 5 cells from melee monsters.
+  - Thrower: a javelin, throwing knife or axe in hand. Throw is his main attack (scored above the
+    normal attack, more so at a distance); his javelin skills are scored as usual. Keeps 4 cells.
+  - Summoner: a third or more of his skill points in summons. Keeps 6 cells.
+  - Caster: more points in damage spells than in weapon skills. Keeps 5 cells.
+  - Melee: everything else. Goes in close.
+- Staying alive comes before everything else, at every decision:
+  - below 30% life a rejuvenation potion first if he has one, else healing;
+  - below his potion_at life (by style) a healing potion;
+  - below 25% mana a mana potion, only in a fight (casters and summoners also out of one);
+  - below 25% life with no healing or rejuvenation potion left and monsters about: he backs away
+    and the run takes him home (Tyrael mends him, the belt is refilled from his gold, nothing is
+    sold) and back to the floor 3 seconds later;
+  - below 50% life with three or more melee monsters on him: he backs out of the ring.
+- Kiting: every build but melee steps away when a melee monster reaches him, at most twice a
+  second so he still gets his attacks and spells in; cornered, he fights for a second.
+- Mana: damage spells count for less the lower his mana (x0.3 at empty, up to x1 at full), and a
+  monster one blow would kill isn't worth a spell; buffs, auras, curses and summons are not cut,
+  so mana is kept for them. The normal attack is scored x3 on a monster it kills in one blow.
+
 Every time a hero is free to act, his brain scores every skill he can use right now and does the
 best one, or a normal attack, or backs off, or drinks.
 
@@ -238,12 +261,7 @@ is drawn with plain boxes and a system font.
   run, To town, Watch, Style, Inventory / Loot, Abilities, Pickup, Shop, Stash. A hero not on a
   run is in town (Sanctuary, the Act 6 town). The speed buttons are gone; `speed` in
   autobattler.ini still sets the game speed.
-- Skill bar (on the hero card, 8 slots): click a slot to choose one of his learned skills for it
-  (D2's icon and tooltip), right click to empty it. With any slot filled, his brain uses only the
-  bar: a buff, aura or warcry that buffs is cast first whenever it needs casting; otherwise the
-  first skill in slot order that makes sense at that moment (enough mana, a target in reach, a
-  curse not already on it, room for another summon, its cooldown over); otherwise his normal
-  attack. With every slot empty he picks his skills himself, as before (brain.decide).
+- The hero card shows his build (as his brain sees it) and how he fights with it.
 - To town / Continue run: To town takes the hero (and his group) to town as a town portal would:
   the run waits on its floor, frozen as it is, and he is in Sanctuary, where Tyrael mends him and
   the traders restock; Shop and Stash work. The button then reads Continue run, which takes him

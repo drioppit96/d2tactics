@@ -71,7 +71,7 @@ MONSTER_VEL = 4.0       # when MonStats can't be read
 class State:
     __slots__ = ("mode", "frames", "hit_at", "target", "path", "prog", "next_path", "next_drink",
                  "speed", "kind", "plan", "stunned", "total", "next_think", "skip", "path_goal",
-                 "last_pos", "moved_at")
+                 "last_pos", "moved_at", "next_kite")
 
     def __init__(self):
         self.mode = "idle"          # idle | walk | attack | gethit
@@ -92,6 +92,7 @@ class State:
         self.path_goal = None       # the cell the current path was searched for
         self.last_pos = None        # where it stood when it last moved, and when (stuck check)
         self.moved_at = 0
+        self.next_kite = 0          # the frame he may step away from melee monsters again
 
 
 class Sim:
@@ -115,6 +116,7 @@ class Sim:
         self._was_watched = False
         self.phase = "fight"        # fight | loot (boss dead, picking up) | portal (walking to it)
         self.no_room = False        # a hero found something he wanted and had no room for it
+        self.need_town = False      # a hero is nearly dead with no healing potion left
         self.portal = None          # the cell of the red portal to the next floor
         self.loot_until = 0
         self.at_portal = False
@@ -309,14 +311,8 @@ class Sim:
     def _hero_think(self, h, s):
         b = self.brain(h)
         self._unstick(h, s)
-        if self.frame >= s.next_drink and getattr(h, "max_mana", 0) and \
-                h.mana * 100 < h.max_mana * MANA_DRINK_AT and self._drink(h, ("mana", "rejuv")):
-            s.next_drink = self.frame + DRINK_COOLDOWN
-            b.last = "drinks a mana potion"
-        if h.hp * 100 < h.max_hp * brains.setting(h, "potion_at") and self.frame >= s.next_drink:
-            if self._drink(h):
-                s.next_drink = self.frame + DRINK_COOLDOWN
-                b.last = "drinks a healing potion"
+        if self._survive(h, s, b):
+            return
         if self._loot_or_leave(h, s, b):
             return
         tgt = s.target if (s.target is not None and s.target.alive) else None
@@ -330,12 +326,9 @@ class Sim:
             tgt = self._nearest(h, seen, HERO_SIGHT)
             s.target = tgt
         awake = [m for m in self.foes() if getattr(m, "aware", False) or chebyshev(m.pos, h.pos) <= HERO_SIGHT]
+        if self._kite(h, s, b):
+            return
         plan = b.decide(tgt, awake)
-        if plan is not None and plan.what == "skill" and tgt is not None and \
-                b.ranged_hero(brains.SPELL_RANGE) and self._should_back_off(h, b):
-            if self._back_off(h, s):
-                b.last = "backing off"
-                return
         if plan is None or plan.what == "attack":
             if tgt is None:
                 if self.phase != "fight":
@@ -457,6 +450,60 @@ class Sim:
             self.skip_items.add(id(it))      # no room: leave it (it stays in the loot window)
             self.no_room = True              # (the run may send him home to empty his bag)
         return ok
+
+    # ------------------------------------------------------------ staying alive
+    RETREAT_AT = 25             # life %: no healing potion left -> home to Tyrael and the traders
+    EMERGENCY_AT = 30           # life %: a rejuvenation potion first, if he has one
+
+    def _melee_on(self, h, r=1):
+        """Awake melee monsters within r cells of him (their size counted)."""
+        return [m for m in self.foes() if getattr(m, "aware", False) and getattr(m, "range", 1) <= 1
+                and chebyshev(m.pos, h.pos) <= r + getattr(m, "radius", 0)]
+
+    def _survive(self, h, s, b):
+        """Potions and getting out of trouble, before anything else. -> True when that is what he
+        does this moment."""
+        from game import potions
+        pct = 100.0 * h.hp / max(1, h.max_hp)
+        fighting = bool(self._awake_near(h, HERO_SIGHT))
+        if self.frame >= s.next_drink:
+            if pct < self.EMERGENCY_AT and self._drink(h, ("rejuv", "heal")):
+                s.next_drink = self.frame + DRINK_COOLDOWN
+                b.last = "drinks a potion (life low)"
+            elif pct < brains.setting(h, "potion_at") and self._drink(h, ("heal", "rejuv")):
+                s.next_drink = self.frame + DRINK_COOLDOWN
+                b.last = "drinks a healing potion"
+            elif getattr(h, "max_mana", 0) and h.mana * 100 < h.max_mana * MANA_DRINK_AT and \
+                    (fighting or b.role() in ("caster", "summoner")) and self._drink(h, ("mana", "rejuv")):
+                s.next_drink = self.frame + DRINK_COOLDOWN
+                b.last = "drinks a mana potion"
+        has_heal = any(getattr(x, "potion", "") in ("heal", "rejuv") for x in (getattr(h, "belt", None) or []))
+        if pct < self.RETREAT_AT and not has_heal and fighting:
+            self.need_town = True              # (the run takes him home to be mended)
+            b.last = "retreats: no potions left"
+            self._back_off(h, s)
+            return True
+        crowd = self._melee_on(h)
+        if pct < 50 and len(crowd) >= 3 and self.frame >= s.next_kite:
+            if self._back_off(h, s):           # surrounded and hurt: out of the ring first
+                s.next_kite = self.frame + 20
+                b.last = "backs out of the crowd"
+                return True
+        return False
+
+    def _kite(self, h, s, b):
+        """Ranged heroes, throwers, casters and summoners keep melee monsters off: when one
+        reaches him he steps away (at most twice a second, so he still gets his attacks in)."""
+        if b.keep_distance() <= 0 or self.frame < s.next_kite:
+            return False
+        if not self._melee_on(h, 1):
+            return False
+        if self._back_off(h, s):
+            s.next_kite = self.frame + 12
+            b.last = "kiting"
+            return True
+        s.next_kite = self.frame + 25           # (cornered: he fights for a second)
+        return False
 
     def _should_back_off(self, h, b):
         limit = brains.setting(h, "back_off_at")
@@ -898,12 +945,15 @@ class Sim:
         return 0
 
     def _drink(self, h, kinds=("heal", "rejuv")):
-        """A potion of one of `kinds` from his belt, by the engine's own potion code (as him, so
-        every hero of a group drinks from his own belt)."""
+        """A potion of the first of `kinds` he has in his belt, by the engine's own potion code (as
+        him, so every hero of a group drinks from his own belt)."""
         from game import potions, tactics
         w = self.w
         try:
-            for c in range(potions.belt_slots(h)):
+            cols = [c for c in range(potions.belt_slots(h)) if potions.column(h, c)]
+            cols.sort(key=lambda c: kinds.index(getattr(potions.column(h, c)[0], "potion", ""))
+                      if getattr(potions.column(h, c)[0], "potion", "") in kinds else 99)
+            for c in cols:
                 col = potions.column(h, c)
                 if col and getattr(col[0], "potion", "") in kinds:
                     with self._Guard(w):

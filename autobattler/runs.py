@@ -162,7 +162,7 @@ class Run:
     # ------------------------------------------------------------ town and back
     AUTO_TOWN_SECONDS = 3       # how long an automatic trip home takes before he goes back
 
-    def go_town(self, auto=False):
+    def go_town(self, auto=False, sell=True, why="backpack full"):
         """To town (a town portal): the floor waits as it is, the heroes are in Sanctuary, where
         Tyrael mends them and the traders have new stock, and they put their gems, runes, unique
         and set items in the account's stash. With auto (a full backpack) they go back to the
@@ -181,7 +181,7 @@ class Run:
             stored += n
             if n:
                 self.note("%s puts %d item%s in the stash." % (h.name, n, "" if n == 1 else "s"))
-            if auto:
+            if auto and sell:
                 sold, gold = sell_magic_and_rare(h)
                 if sold:
                     self.note("%s sells %d magic and rare item%s for %d gold." % (h.name, sold, "" if sold == 1 else "s", gold))
@@ -189,8 +189,8 @@ class Run:
         if stored:
             stash.save()
         self._auto_back = int(self.AUTO_TOWN_SECONDS * timing.FPS) if auto else 0
-        self.note(("Backpack full: to town from floor %d." if auto else
-                   "To town from floor %d; the floor waits.") % self.depth)
+        self.note(("To town from floor %d (" + why + ").") % self.depth if auto else
+                  "To town from floor %d; the floor waits." % self.depth)
         return True
 
     def _should_empty_bag(self):
@@ -276,6 +276,9 @@ class Run:
                 self.state = "pause"
                 self.pause = int(self.cfg.get("floor_pause", 1) * timing.FPS)
                 self._restart = True
+        elif self.sim.need_town:
+            self.sim.need_town = False
+            self.go_town(auto=True, sell=False, why="out of healing potions")
         elif self.sim.no_room and self._should_empty_bag():
             self.sim.no_room = False
             self.go_town(auto=True)

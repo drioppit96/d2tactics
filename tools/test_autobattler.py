@@ -219,45 +219,59 @@ def test_no_essences():
     check(not essences.DROPS and essences.roll_drop(None, None) is None, "no essences drop in the autobattler")
 
 
-def test_skill_bar():
-    """The 8-slot skill bar: buffs first, then the slots in order; skills not on it unused."""
-    from autobattler import brain, points
+def test_smart_ai():
+    """Builds, Throw first with a javelin, kiting, and the retreat home with no potions left."""
+    import types
+    from autobattler import brain
     config.apply_d2_rules()
-    random.seed(5)
-    h = _hero("Barred")
-    h.level = 12
-    h.skills.points = 10
-    for n in ("Bash", "Howl", "Shout", "Double Swing"):
-        points.learn(h, n)
-    h.base_eng = 200
+    random.seed(9)
+
+    def fake_book(levels, kinds):
+        tree = {n: types.SimpleNamespace(kind=k, weapon=(k == "melee")) for n, k in kinds.items()}
+        return types.SimpleNamespace(levels=levels, tree=tree)
+
+    def role(levels, kinds, **kw):
+        b = brain.Brain.__new__(brain.Brain)
+        b.h = types.SimpleNamespace(level=10, equipment={}, skills=fake_book(levels, kinds), **kw)
+        b.sim = types.SimpleNamespace(frame=0)
+        return b.role()
+    check(role({"Bash": 5}, {"Bash": "melee"}) == "melee", "points in weapon skills: melee")
+    check(role({"Fire Bolt": 6, "Warmth": 1}, {"Fire Bolt": "missile", "Warmth": "passive"}) == "caster",
+          "points in damage spells: caster")
+    check(role({"Raise Skeleton": 8, "Teeth": 1}, {"Raise Skeleton": "raise", "Teeth": "missile"}) == "summoner",
+          "points in summons: summoner")
+    check(role({"Jab": 5}, {"Jab": "melee"}, throwing=True) == "thrower", "a javelin in hand: thrower")
+    check(role({}, {}, ranged=True) == "ranged", "a bow in hand: ranged")
+    # a run: Throw first for a thrower, kiting, and home with no potions
+    h = _hero("Clever")
+    h.base_vit = 150
     h.recalc()
-    h.mana = h.max_mana
-    brain.profile(h)["slots"] = ["Double Swing", "Shout", "", "", "", "", "", ""]
+    h.hp = h.max_hp
     mgr = RunManager(_NoAssets(), _cfg())
     r = mgr.start([h])
-    used = {}
-    for _ in range(25 * 60):
+    for _ in range(30):
         _tick(mgr)
-        if r.sim is not None:
-            for k, v in r.sim.casts.items():
-                used[k] = max(used.get(k, 0), v)
-        if r.state == "over":
-            break
-    check(used.get("Shout", 0) >= 1 and used.get("Double Swing", 0) >= 1, "the bar's skills are used: %s" % used)
-    check(not used.get("Bash") and not used.get("Howl"), "skills not on the bar are not used")
-    # Attack ahead of the skills: he swings instead of casting Double Swing (buffs still first)
-    brain.profile(h)["slots"] = ["Shout", "attack", "Double Swing", "", "", "", "", ""]
-    r.finish("stopped")
-    h.mana = h.max_mana
-    r = mgr.start([h])
-    used = {}
-    for _ in range(25 * 30):
-        _tick(mgr)
-        if r.sim is not None:
-            for k, v in r.sim.casts.items():
-                used[k] = max(used.get(k, 0), v)
-    check(not used.get("Double Swing") and used.get("Shout", 0) >= 1,
-          "Attack in an earlier slot comes before the skills after it: %s" % used)
+    sim = r.sim
+    foe = min(sim.foes(), key=lambda m: abs(m.x - h.x) + abs(m.y - h.y))
+    h.throwing = True
+    b = sim.brain(h)
+    b._role_key = None
+    far = types.SimpleNamespace(pos=(h.x + 4, h.y), hp=999, max_hp=999, alive=True, res={}, defense=0,
+                                radius=0, curses={}, level=1)
+    plan = b.decide(far, [far])
+    check(plan is not None and plan.skill == "throw", "with a javelin, Throw comes first at range: %s" % (plan and plan.why))
+    h.throwing = False
+    b._role_key = None
+    del h.belt[:]
+    h.hp = max(1, h.max_hp // 10)
+    foe.aware = True
+    foe.x, foe.y = h.x + 1, h.y
+    sim._rebuild_occ()
+    st = sim._state(h)
+    sim._survive(h, st, b)
+    check(sim.need_town, "nearly dead with no potions: he retreats")
+    _tick(mgr)
+    check(r.state == "town" and h.hp == h.max_hp, "and the run takes him home to be mended")
     r.finish("stopped")
 
 
@@ -588,7 +602,7 @@ if __name__ == "__main__":
     test_points_by_hand()
     test_town_stash()
     test_no_essences()
-    test_skill_bar()
+    test_smart_ai()
     test_town_and_back()
     test_belt_columns()
     test_full_bag_trip()

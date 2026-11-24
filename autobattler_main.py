@@ -366,11 +366,6 @@ class App:
                 if rect.collidepoint(pos):
                     action(*args)
                     return
-        elif ev.type == pygame.MOUSEBUTTONUP and ev.button == 3 and self.screen_name == "roster":
-            self.mouse = self.logical(ev.pos)
-            for i, r in (getattr(self, "_slot_rects", None) or {}).items():
-                if r.collidepoint(self.mouse) and getattr(self, "slot_pick", None) is None:
-                    self.clear_slot(i)
         elif ev.type == pygame.MOUSEBUTTONUP and ev.button == 3 and self.screen_name in ("inventory", "town"):
             self.mouse = self.logical(ev.pos)
             if self.screen_name == "town" and self.town_right():
@@ -453,14 +448,6 @@ class App:
          "inventory": self.draw_inventory, "pickup": self.draw_pickup, "watch": self.draw_watch,
          "character": self.draw_character, "town": self.draw_town
          }.get(self.screen_name, self.draw_roster)()
-        pick = getattr(self, "slot_pick", None)
-        if pick is not None and self.screen_name == "roster":
-            h = self.hero()
-            if h is not None and h.name == pick[0]:
-                self._tip = None
-                self._draw_slot_picker(h)
-            else:
-                self.slot_pick = None
         if self.message and self.screen_name != "watch":
             self.look.text(self.canvas, "small", self.message, GOLD, 12, 580)
         if getattr(self, "_tip", None):
@@ -554,7 +541,17 @@ class App:
             mp_n = sum(1 for it in belt if getattr(it, "potion", "") == "mana")
             L.text(c, "small", "Belt: %d healing, %d mana potions" % (hp_n, mp_n),
                    WHITE if belt else RED, x, y + 52)
-            self._draw_skill_bar(h, x, y + 72)
+            role = None
+            if run is not None and run.sim is not None and h in run.heroes:
+                role = run.sim.brain(h).role()
+            if role is None:
+                role = self._role_of(h)
+            dist = brain.ROLE_DISTANCE.get(role, 0)
+            L.text(c, "small", "Build: %s" % brain.ROLE_NAMES.get(role, role), GOLD, x, y + 76)
+            L.text(c, "small", ("keeps %d cells from melee monsters, kites when they reach him" % dist) if dist
+                   else "goes in close; backs out of a crowd when hurt", GREY, x + 130, y + 76)
+            L.text(c, "small", "Drinks below %d%% life, retreats to town with no potions left" %
+                   brain.setting(h, "potion_at"), GREY, x, y + 92)
         # buttons
         has = h is not None
         on_run = has and run is not None
@@ -577,148 +574,16 @@ class App:
             for i, (label, act, en) in enumerate(row):
                 self.button((10 + i * (bw + gap), 476 + j * (bh + 6), bw, bh), label, act, enabled=en)
 
-    # ------------------------------------------------------------ the skill bar (8 slots)
-    SLOT = 34
-
-    BASIC_NAMES = {"attack": "Attack", "throw": "Throw"}
-
-    def _basic_icon(self, name):
-        """D2's own icon for Attack or Throw: Skillicon.DC6, at the IconCel Skills.txt gives it."""
-        cache = self.__dict__.setdefault("_basic_icons", {})
-        if name in cache:
-            return cache[name]
-        img = None
-        hud = self.look.hud
-        if hud is not None:
-            try:
-                from render.d2hud import SPELLS
-                from d2.source import read_table
-                frames = hud._load(SPELLS + "Skillicon.DC6") or hud._load(SPELLS + "skillicon.dc6")
-                row = next((r for r in read_table(hud.src, "Skills")
-                            if (r.get("skill") or "").strip().lower() == name), None)
-                cel = int(row.get("iconcel") or row.get("IconCel") or 0) if row else 0
-                img = frames[cel] if frames and cel < len(frames) else None
-            except Exception:
-                img = None
-        cache[name] = img
-        return img
-
-    def _basic_tip(self, h, name):
-        if name == "attack":
-            how = "shoots with his bow or crossbow" if getattr(h, "ranged", False) else "swings his weapon"
-            return [("Attack", GREEN), ("His normal attack: he %s" % how, WHITE)]
-        lines = [("Throw", GREEN), ("Throws the javelin, knife or axe in his hand", WHITE),
-                 ("Range: %d" % getattr(h, "throw_range", brain.THROW_RANGE), WHITE)]
-        if not getattr(h, "throwing", False):
-            lines.append(("Needs a throwing weapon in hand", RED))
-        return lines
-
-    def _skill_icon(self, h, name, x, y, size):
-        """D2's icon of one of his skills (or its name in plain letters without the art)."""
-        c, L = self.canvas, self.look
-        if name in self.BASIC_NAMES:
-            img = self._basic_icon(name)
-            if img is not None:
-                c.blit(L.hud.S(img, size / float(img.get_width())), (x, y))
-            else:
-                L.text(c, "small", self.BASIC_NAMES[name], WHITE, x, y + 10, "center", size)
-            return
-        s = h.skills.tree.get(name) if getattr(h, "skills", None) else None
-        hud = L.hud
-        if s is not None and hud is not None:
-            try:
-                if getattr(hud, "_art_class", None) != h.cls:
-                    hud.use_class(h.cls)
-                icons = hud.skill_icons
-                if icons and s.icon < len(icons) and icons[s.icon] is not None:
-                    img = icons[s.icon]
-                    c.blit(hud.S(img, size / float(img.get_width())), (x, y))
-                    return
-            except Exception:
-                pass
-        title = getattr(s, "title", name) if s is not None else name
-        for i, word in enumerate(title.split()[:2]):
-            L.text(c, "small", word[:6], WHITE, x, y + 3 + i * 13, "center", size)
-
-    def _draw_skill_bar(self, h, x, y):
-        """Eight slots for the skills he uses, in this order of priority (buffs first)."""
-        c, L = self.canvas, self.look
-        slots = brain.profile(h).setdefault("slots", [""] * brain.SLOTS)
-        while len(slots) < brain.SLOTS:
-            slots.append("")
-        L.text(c, "small", "Skills", GOLD, x, y + 4)
-        L.text(c, "small", "(priority)", GREY, x, y + 18)
-        k = self.SLOT
-        for i in range(brain.SLOTS):
-            r = pygame.Rect(x + 70 + i * (k + 4), y, k, k)
-            L.inset(c, r)
-            name = slots[i]
-            if name and (name in self.BASIC_NAMES or (name in h.skills.tree and h.skills.levels.get(name))):
-                self._skill_icon(h, name, r.x + 1, r.y + 1, k - 2)
-                L.text(c, "small", str(i + 1), GOLD, r.x + 2, r.y + 1)
-                if self.hot(r):
-                    tip = self._basic_tip(h, name) if name in self.BASIC_NAMES else points.skill_tooltip(h, name)
-                    self._tip = tip + [("", WHITE), ("Slot %d. Click: change.  Right click: empty it" % (i + 1), GREY)]
-            else:
-                L.text(c, "small", str(i + 1), DARK_TEXT, r.x, r.y + 10, "center", r.w)
-                if self.hot(r):
-                    self._tip = [("Slot %d: empty" % (i + 1), WHITE), ("Click: choose a skill for it", GREY),
-                                 ("With every slot empty he picks his skills himself", GREY)]
-            self.region(r, self.pick_slot, i)
-            self._slot_rects = getattr(self, "_slot_rects", {})
-            self._slot_rects[i] = r
-        if any(slots):
-            L.text(c, "small", "buffs first", GREY, x + 70 + brain.SLOTS * (k + 4) + 4, y + 10)
-
-    def pick_slot(self, i):
-        h = self.hero()
-        if h is not None:
-            self.slot_pick = (h.name, i)
-
-    def clear_slot(self, i):
-        h = self.hero()
-        if h is None:
-            return
-        brain.profile(h)["slots"][i] = ""
-        self._char_saved(h)
-
-    def set_slot(self, name):
-        h = self.hero()
-        pick = getattr(self, "slot_pick", None)
-        self.slot_pick = None
-        if h is None or pick is None or pick[0] != h.name:
-            return
-        slots = brain.profile(h)["slots"]
-        if name and name in slots:
-            slots[slots.index(name)] = ""            # (a skill sits in one slot only)
-        slots[pick[1]] = name or ""
-        self._char_saved(h)
-
-    def _draw_slot_picker(self, h):
-        """The skills he has learned that he can use, to choose one for the slot."""
-        c, L = self.canvas, self.look
-        book = h.skills
-        names = [n for n in book.tree if book.levels.get(n) and book.tree[n].kind != "passive"]
-        names.sort(key=lambda n: (book.tree[n].page, book.tree[n].row, book.tree[n].col))
-        names = list(brain.BASIC) + names
-        cols = 2
-        rows = max(1, (len(names) + cols - 1) // cols)
-        w, hh = 420, 70 + rows * 40
-        box = pygame.Rect((W - w) // 2, max(40, (H - hh) // 2), w, hh)
-        self.regions.append((pygame.Rect(0, 0, W, H), lambda: setattr(self, "slot_pick", None), ()))
-        L.panel(c, box)
-        L.text(c, "med", "Slot %d" % (self.slot_pick[1] + 1), GOLD, box.x, box.y + 14, "center", box.w)
-        for i, n in enumerate(names):
-            r = pygame.Rect(box.x + 20 + (i % cols) * 195, box.y + 44 + (i // cols) * 40, 190, 36)
-            basic = n in self.BASIC_NAMES
-            if self.hot(r):
-                pygame.draw.rect(c, (52, 42, 26), r)
-                self._tip = self._basic_tip(h, n) if basic else points.skill_tooltip(h, n)
-            self._skill_icon(h, n, r.x + 2, r.y + 2, 32)
-            label = self.BASIC_NAMES[n] if basic else "%s (%d)" % (book.tree[n].title, book.level(n))
-            L.text(c, "small", label, WHITE, r.x + 40, r.y + 11)
-            self.region(r, self.set_slot, n)
-        self.button((box.right - 110, box.bottom - 30, 90, 22), "Empty", self.set_slot, "")
+    def _role_of(self, h):
+        """His build as his brain sees it (for a hero not on a floor)."""
+        import types
+        b = brain.Brain.__new__(brain.Brain)
+        b.h = h
+        b.sim = types.SimpleNamespace(w=None, frame=0)
+        try:
+            return b.role()
+        except Exception:
+            return "melee"
 
     def draw_create(self):
         c, L = self.canvas, self.look
