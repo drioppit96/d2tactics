@@ -74,8 +74,11 @@ best one, or a normal attack, or backs off, or drinks.
   is below half.
 - Buffs and warcries that buff: cast again when 85% of their duration has passed.
   Offensive warcries (Howl, Taunt, Battle Cry, War Cry): with two or more monsters within 5 cells.
-- Summons, golems, traps, walls: cast whenever the engine allows another; raising needs a corpse
-  within 10 cells. When the engine says no (full, no corpse), the skill waits 3 seconds.
+- Summons, golems, traps, walls: cast only while he has fewer of them up than the skill allows
+  (Skills.txt petmax at his skill level: one golem of any kind, one Valkyrie, as many skeletons
+  as the level gives). A summon that is up is not cast again; when it dies, it is. Each summon is
+  tagged with the hero who cast it, so in a group only his own count. Raising needs a corpse
+  within 10 cells. When the engine says no anyway, the skill waits 3 seconds.
 - Casting delay (Skills.txt delay: Meteor, Blizzard, Frozen Orb ...) is kept as a cooldown.
 - Mana: a skill that would leave the hero below his mana reserve scores a quarter.
 - Ranged heroes and casters back off a few cells from melee monsters next to them when their life

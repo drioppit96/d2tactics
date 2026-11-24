@@ -521,7 +521,11 @@ class Sim:
             with tactics.acting_as(w, h):
                 h.ap = max(getattr(h, "ap", 0), 20)
                 n0 = len(w.events)
+                before = set(id(m) for m in w.monsters)
                 ok = bool(self._engine(w.use_skill, plan.skill, plan.target, plan.cell))
+                for m in w.monsters:
+                    if id(m) not in before and getattr(m, "ally", False):
+                        m.summoner = h               # (whose it is: his brain counts his own)
                 if not self.watched:
                     del w.events[n0:]
         self.brain(h).done(plan, ok)

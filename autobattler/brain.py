@@ -454,6 +454,27 @@ class Brain:
             return plans[0]
         return None
 
+    GOLEMS = ("Clay Golem", "BloodGolem", "IronGolem", "FireGolem")
+
+    def _mine(self):
+        """His living summons (the run tags each with its summoner when it is cast)."""
+        h = self.h
+        return [a for a in self.sim.w.monsters if a.alive and getattr(a, "ally", False)
+                and getattr(a, "summon_skill", None) and getattr(a, "summoner", h) is h]
+
+    def _summons_full(self, name, s):
+        mine = self._mine()
+        if name in self.GOLEMS:
+            return any(getattr(a, "summon_skill", "") in self.GOLEMS for a in mine)
+        have = sum(1 for a in mine if a.summon_skill == name)
+        cap = 1
+        try:
+            if s.data is not None and s.data.get("petmax"):
+                cap = max(1, int(self.info(name, s)["env"].calc("petmax")))
+        except Exception:
+            cap = 1
+        return have >= cap
+
     def info(self, name, s):
         """A skill's numbers (damage, element, radius, duration, cast frames): working them out is
         the slow part of a decision, so they are kept for 10 seconds (or until a level up)."""
@@ -522,8 +543,11 @@ class Brain:
                 pass                       # (warcries are fine before a fight too)
             return Plan("skill", name, None, h.pos, frames, 5e5, "buff %s" % getattr(s, "title", name))
 
-        # ---- summons: while the engine lets him
+        # ---- summons: only while he has fewer than the skill allows (one golem, one Valkyrie,
+        # as many skeletons as its level gives); a summon that is up is not cast again
         if k in SUMMON_KINDS:
+            if self._summons_full(name, s):
+                return None
             if k in ("raise", "revive"):
                 corpse = self._corpse_near(h.pos, 10)
                 if corpse is None:

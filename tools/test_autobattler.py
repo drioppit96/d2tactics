@@ -367,6 +367,21 @@ def test_d2_difficulty():
           "one hero: /players 1; three heroes: /players 3 (x2 life and experience)")
 
 
+def test_summons_once():
+    """A summon that is up is not cast again; once it dies, it is."""
+    import types
+    from autobattler import brain
+    b = brain.Brain.__new__(brain.Brain)
+    h = types.SimpleNamespace()
+    golem = types.SimpleNamespace(alive=True, ally=True, summon_skill="Clay Golem", summoner=h)
+    other = types.SimpleNamespace(alive=True, ally=True, summon_skill="Clay Golem", summoner=object())
+    b.h, b.sim = h, types.SimpleNamespace(w=types.SimpleNamespace(monsters=[golem, other]))
+    s = types.SimpleNamespace(data=None)
+    check(b._summons_full("IronGolem", s), "his golem is up: no other golem")
+    golem.alive = False
+    check(not b._summons_full("Clay Golem", s), "his golem died: he summons one (another hero's golem doesn't count)")
+
+
 def test_cast_breakpoints():
     from autobattler.brain import CAST_FRAMES0
     sor = [timing.cast_frames(CAST_FRAMES0["sor"] + 1, f) for f in (0, 9, 20, 37, 63, 105, 200)]
@@ -578,6 +593,7 @@ if __name__ == "__main__":
     test_belt_columns()
     test_full_bag_trip()
     test_d2_difficulty()
+    test_summons_once()
     test_inventory_screen()
     print("\n%s" % ("all passed" if not FAILS else "%d FAILED" % len(FAILS)))
     sys.exit(1 if FAILS else 0)
