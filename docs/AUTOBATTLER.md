@@ -258,20 +258,17 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
   wears is kept, and a trip by the To town button sells nothing. After an automatic trip he goes
   back to the floor by himself 3 seconds later; after To town, Continue run takes him back. With
   nothing in his backpack to stash or sell he stays on the floor and leaves the item lying.
-- The belt: each row holds one kind of potion, counted from the bottom (Healing, Mana,
-  Rejuvenation or Any; a healing row also takes rejuvenation potions), set per hero on the
-  Inventory screen; new heroes have rows 1-2 healing, 3-4 mana (potions.ROW_RULE, from his profile
-  through config.apply_d2_rules; D2 Tactics keeps D2's own rule). A belt shows as many rows as D2
-  gives it: none 1, Sash / Light Belt 2, Belt / Heavy Belt 3, Plated Belt 4. He drinks a potion of
-  the kind he needs from any row (as a right click in D2's open belt), and after each drink the
-  stacks are put back in their rows' order. Heroes pick up healing, mana and rejuvenation potions
-  on their own whenever a row for that kind has room, whatever their pickup rules say.
+- The belt: every hero's belt has four rows whatever belt he wears (potions.ROWS_OVERRIDE): rows
+  1-2 from the bottom hold healing potions (and rejuvenation), rows 3-4 mana potions
+  (potions.ROW_RULE; D2 Tactics keeps D2's own rules). He drinks a potion of the kind he needs from
+  any row (as a right click in D2's open belt), and after each drink the stacks are put back in
+  their rows' order. Heroes pick up healing, mana and rejuvenation potions on their own whenever a
+  row for that kind has room, whatever their pickup rules say.
   Before each floor, and when he comes back from town, the belt is filled the same way from his
   gold: the best tier the traders sell for the act that he can pay for, down to Minor potions for a
   poor hero. He drinks below his potion_at life, also while picking things up or walking to the
   portal. The Inventory screen shows the belt opened (above the charm inventory), with the kind
-  of each row beside it: click to change; the hero card shows how many healing and mana potions he
-  has.
+  of each row beside it; the hero card shows how many healing and mana potions he has.
 - Pickup rules, per hero (Pickup screen): gold, potions, runes, gems, charms, jewelry, unique,
   set, rare and crafted, magic, plain items with sockets, plain items, everything else, and a
   list of words: an item whose name contains one of them is always picked up.

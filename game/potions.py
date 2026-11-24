@@ -160,9 +160,16 @@ for _codes, _rows in ((("lbl", "zlb", "ulc"), 2), (("vbl", "zvb", "uvc"), 2), ((
         BELT_ROWS[_c] = _rows
 
 
+#: a fixed number of belt rows for every hero, whatever belt he wears (the D2 Autobattler: 4), or
+#: None for D2's own (by the belt)
+ROWS_OVERRIDE = None
+
+
 def belt_rows(p):
     """Rows of potions, from the belt you wear (D2): none 1, Sash / Light Belt 2, Belt / Heavy Belt 3,
     Plated Belt 4 (and their exceptional and elite versions)."""
+    if ROWS_OVERRIDE:
+        return ROWS_OVERRIDE
     belt = (getattr(p, "equipment", None) or {}).get("belt")
     if belt is None:
         return 1

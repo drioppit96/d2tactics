@@ -120,11 +120,9 @@ DEFAULT_BELT = ["heal", "heal", "mana", "mana"]
 
 
 def belt_rows(hero):
-    """What each of his belt rows holds, from the bottom (rows 1-4)."""
-    rows = profile(hero).setdefault("belt_rows", list(DEFAULT_BELT))
-    while len(rows) < 4:
-        rows.append("any")
-    return rows
+    """What each of his belt rows holds, from the bottom: rows 1-2 healing (and rejuvenation),
+    rows 3-4 mana."""
+    return DEFAULT_BELT
 
 
 def setting(hero, key):

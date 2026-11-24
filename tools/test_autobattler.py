@@ -297,34 +297,34 @@ def test_town_and_back():
 
 
 def test_belt_columns():
-    """Belt rows by kind, counted from the bottom (his choice); any row can be drunk from."""
+    """Four belt rows: 1-2 healing, 3-4 mana; any row can be drunk from."""
+    import types
     from autobattler import brain
     from game import potions
     from game.items import Item
     config.apply_d2_rules()
     h = _hero("Belted")
-    belt = Item("Plated Belt", "hbl", "belt")
-    h.equipment["belt"] = belt
 
     def pot(kind, code):
         it = Item(kind, code, None, kind="potion")
         it.potion = kind
         return it
-    brain.belt_rows(h)[:] = ["heal", "heal", "mana", "mana"]
+    check(potions.belt_rows(h) == 4, "every hero's belt has 4 rows")
     for _ in range(8):
         potions.belt_add(h, pot("mana", "mp1"))
         potions.belt_add(h, pot("heal", "hp1"))
     rows = [[getattr(x, "potion", "") for x in potions.column(h, c)] for c in range(4)]
     check(all(col == ["heal", "heal", "mana", "mana"] for col in rows), "rows 1-2 healing, 3-4 mana: %s" % rows)
     check(not potions.has_room(h, pot("mana", "mp1")), "full belt: no more room")
-    brain.belt_rows(h)[:] = ["mana", "any", "any", "any"]
-    del h.belt[:]
-    for _ in range(4):
-        potions.belt_add(h, pot("heal", "hp1"))
-    check(potions.column(h, 0) and potions.column(h, 0)[0].potion == "heal" and len(potions.column(h, 0)) == 1
-          or all(len(potions.column(h, c)) <= 3 for c in range(4)),
-          "a mana bottom row keeps healing potions above it")
+    potions.drink(types.SimpleNamespace(player=h, mode="explore", player_can_act=lambda: True,
+                                        emit=lambda *a: None, log=lambda *a: None,
+                                        _maybe_auto_end=lambda: None), 0, 2)
+    col = [x.potion for x in potions.column(h, 0)]
+    check(col == ["heal", "heal", "mana"], "after drinking a mana potion the rows stay in order: %s" % col)
+    check(potions.has_room(h, pot("mana", "mp1")) and not potions.has_room(h, pot("heal", "hp1")),
+          "and the free place takes mana only")
     potions.ROW_RULE = None
+    potions.ROWS_OVERRIDE = None
 
 
 def test_full_bag_trip():

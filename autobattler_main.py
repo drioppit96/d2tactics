@@ -955,9 +955,8 @@ class App:
     ROW_COLOR = {"heal": (200, 60, 50), "mana": (70, 90, 220), "rejuv": (170, 70, 190), "any": (150, 140, 120)}
 
     def _draw_belt(self, h):
-        """His belt above the charm inventory, as D2 draws it opened: four slots (keys 1-4), the
-        rows stacked from the bottom. Beside each row, what kind of potion it holds: click to
-        change (Healing, Mana, Rejuvenation, Any)."""
+        """His belt above the charm inventory, as D2 draws it opened: four slots (keys 1-4), four
+        rows stacked from the bottom - rows 1-2 healing, rows 3-4 mana."""
         c, L = self.canvas, self.look
         from game import potions
         rows_have = potions.belt_rows(h)
@@ -984,41 +983,10 @@ class App:
                     c.blit(dim, rect.topleft)
             sel = pygame.Rect(x0 + 4 * (k + 1) + 3, y, 28, k)
             kind = kinds[r] if r < len(kinds) else "any"
-            pygame.draw.rect(c, (20, 18, 16), sel)
-            pygame.draw.rect(c, self.ROW_COLOR[kind] if open_row else DARK_TEXT, sel, 1)
-            L.text(c, "small", self.ROW_SHORT[kind], self.ROW_COLOR[kind] if open_row else DARK_TEXT,
-                   sel.x, sel.y + 5, "center", sel.w)
-            self.region(sel, self.belt_row_kind, r)
+            L.text(c, "small", self.ROW_SHORT[kind], self.ROW_COLOR[kind], sel.x, sel.y + 5, "center", sel.w)
             if self.hot(sel):
-                self._tip = [("Row %d (from the bottom): %s" % (r + 1, brain.BELT_NAMES[kind]), WHITE),
-                             ("Click: Healing, Mana, Rejuvenation, Any", GREY)] + \
-                    ([("His belt has %d row%s; a better belt opens this one" % (rows_have, "" if rows_have == 1 else "s"), RED)]
-                     if not open_row else [])
+                self._tip = [("Row %d (from the bottom): %s potions" % (r + 1, brain.BELT_NAMES[kind]), WHITE)]
         L.text(c, "small", "1  2  3  4", DARK_TEXT, x0 + 6, bottom + 2)
-
-    def belt_row_kind(self, r):
-        """Cycle what a belt row holds; the potions already in the belt are put in order again."""
-        h = self.hero()
-        if h is None:
-            return
-        rows = brain.belt_rows(h)
-        order = list(brain.BELT_KINDS)
-        rows[r] = order[(order.index(rows[r]) + 1) % len(order)] if rows[r] in order else "heal"
-        from game import potions
-        potions.arrange(h)
-        # potions that no longer fit their column go back in where they can, else to the backpack
-        loose = []
-        for c in range(potions.belt_slots(h)):
-            col = potions.column(h, c)
-            while col and not potions._fits_rows([getattr(x, "potion", "") for x in col], potions._row_kinds(h)):
-                it = col.pop()
-                potions.belt_remove(h, it)
-                loose.append(it)
-        for it in loose:
-            if not potions.belt_add(h, it) and not h.inv_add(it):
-                h.belt.append(it)          # (nowhere else: it stays, out of order)
-        if h.name not in self.mgr.on_floor_names():
-            roster.save(h)
 
     def _inventory_right(self, b):
         c, L, h = self.canvas, self.look, b.player
