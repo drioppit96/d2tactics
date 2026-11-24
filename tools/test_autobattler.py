@@ -131,6 +131,9 @@ def test_brain():
     h.stat_points = 55
     s0 = (h.base_str, h.base_vit)
     brain.spend_points(h)
+    check(h.skills.points == 12 and h.stat_points == 55, "points wait for the player by default")
+    from autobattler import points
+    points.set_auto(h, True)
     learned = {k: v for k, v in h.skills.levels.items() if v}
     check(h.skills.points == 0 and len(learned) >= 3, "skill points spent by the plan: %s" % learned)
     check(h.stat_points == 0 and h.base_str > s0[0] and h.base_vit > s0[1], "stat points spent")
@@ -153,6 +156,27 @@ def test_brain():
             break
     check(sum(used.values()) > 0, "skills cast during the run: %s" % used)
     check(r.result in (None, "died", "stopped"), "no errors in the run (%s), kills %d" % (r.result, r.kills))
+
+
+def test_points_by_hand():
+    """The Character screen's stat and skill spending (autobattler/points.py)."""
+    from autobattler import points
+    h = _hero("Chooser")
+    h.level = 6
+    h.skills.points = 3
+    h.stat_points = 10
+    s0, hp0 = h.base_str, h.max_hp
+    check(points.add_stat(h, "str") == 1 and h.base_str == s0 + 1 and h.stat_points == 9, "one point into Strength")
+    check(points.add_stat(h, "vit", 99) == 9 and h.stat_points == 0 and h.max_hp > hp0, "the rest into Vitality")
+    check(points.add_stat(h, "dex") == 0, "no points, nothing added")
+    check(points.reset_stats(h) == 10 and h.stat_points == 10 and h.base_str == s0, "stats reset")
+    first = next(n for n, s in h.skills.tree.items() if s.reqlevel <= 1 and not s.prereqs)
+    late = next((n for n, s in h.skills.tree.items() if s.reqlevel > h.level), None)
+    check(points.learn(h, first) and h.skills.levels[first] == 1 and h.skills.points == 2, "a skill learned")
+    check(late is None or not points.learn(h, late), "a skill above his level is refused")
+    check(points.reset_skills(h) == 1 and h.skills.points == 3 and not h.skills.levels.get(first), "skills reset")
+    points.set_auto(h, True)
+    check(h.skills.points == 0 and h.stat_points == 0, "turning the class plan on spends them")
 
 
 def test_cast_breakpoints():
@@ -323,6 +347,7 @@ def test_inventory_screen():
     app.views = {}
     app.focus = None
     app.loot_page = 0
+    app.search, app.filter = "", "All"
     app.draw_inventory()
     first = next((it for it in p.inventory if it.inv_pos), None)
     slots, gx, gy, ic = app._inv_geometry()
@@ -357,6 +382,7 @@ if __name__ == "__main__":
     test_acts()
     test_death_and_potions()
     test_gear()
+    test_points_by_hand()
     test_inventory_screen()
     print("\n%s" % ("all passed" if not FAILS else "%d FAILED" % len(FAILS)))
     sys.exit(1 if FAILS else 0)

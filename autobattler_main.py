@@ -6,13 +6,14 @@ Everything is drawn on one 800 x 600 canvas in Diablo II's own fonts, panels and
 Screens:
     Heroes      the roster, a small live view of the selected hero's run, his status, the buttons
     New hero    class and name
-    Loot        what lies on the selected hero's floor: filters, search, click to take it
-    Inventory   D2's inventory panel: the hero's gear and his 10 x 8 backpack (twice D2's);
-                equip, take off, move, identify, belt potions, sell
+    Inventory   the loot window (what lies on his floor: filters, search, click to take it) beside
+                D2's inventory panel: his gear and his 10 x 8 backpack (twice D2's); equip, take
+                off, move, identify, belt potions, sell
+    Character   D2's character panel (stats, left) and skill tree (right): spend the points
     Pickup      what the selected hero picks up on his own
     Watch       the selected hero's run full screen
 
-Keys: S start run, X stop, W watch, T style, L loot, I inventory, P pickup, + / - speed,
+Keys: S start run, X stop, W watch, T style, I or L inventory and loot, C character, P pickup, + / - speed,
 F3 timings (also written to perf.log every 30 seconds), Esc back. Ctrl+click adds heroes to a
 group.
 """
@@ -26,7 +27,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 from main import load_settings, load_assets, log_error          # noqa: E402  (the same engine)
-from autobattler import brain, config, gear, roster             # noqa: E402
+from autobattler import brain, config, gear, points, roster     # noqa: E402
 from autobattler.runs import RunManager                         # noqa: E402
 from autobattler.timing import FPS, Timings                     # noqa: E402
 from autobattler.ui import Look, GOLD, WHITE, GREY, RED, GREEN, BLUE, W, H   # noqa: E402
@@ -39,7 +40,13 @@ FILTERS = [("All", None), ("Gold", {"gold"}), ("Potions", {"potions"}), ("Runes"
            ("Charms", {"charms"}), ("Jewelry", {"jewelry"}), ("Unique", {"unique"}), ("Set", {"set"}),
            ("Rare", {"rare"}), ("Magic", {"magic"}), ("Bases", {"sockets", "normal"})]
 CELL = 22                      # item grid cell on the 800 x 600 canvas (the stash's cell size)
-LOOT_COLS, LOOT_ROWS = 12, 14
+LOOT_COLS, LOOT_ROWS = 18, 10      # the floor's items, beside the inventory panel
+
+
+def unspent(h):
+    """(stat points, skill points) a hero has not spent."""
+    book = getattr(h, "skills", None)
+    return int(getattr(h, "stat_points", 0) or 0), int(getattr(book, "points", 0) or 0) if book else 0
 
 
 class Perf:
@@ -248,7 +255,7 @@ class App:
         if name != "inventory":
             self._close_bench()          # the cursor item goes back in the backpack
         self.screen_name = name
-        self.focus = {"create": "name", "loot": "search", "pickup": "words"}.get(name)
+        self.focus = {"create": "name", "pickup": "words"}.get(name)    # (the loot search: on a click)
         self.loot_page = 0
 
     def select(self, name):
@@ -332,6 +339,10 @@ class App:
         elif ev.type == pygame.MOUSEBUTTONUP and ev.button == 1:
             pos = self.logical(ev.pos)
             self.down = None
+            if self.screen_name == "character" and self.char_click(pos):
+                return
+            if self.screen_name == "inventory":
+                self.focus = None                # (a click on the search field gives it back)
             for rect, action, args in reversed(self.regions):
                 if rect.collidepoint(pos):
                     action(*args)
@@ -379,12 +390,18 @@ class App:
             self.cfg["speed"] = min(8.0, self.cfg["speed"] * 2)
         elif ev.key in (pygame.K_MINUS, pygame.K_KP_MINUS):
             self.cfg["speed"] = max(0.25, self.cfg["speed"] / 2)
-        elif self.screen_name == "inventory" and ev.key == pygame.K_w:
-            self.inv_swap()
+        elif self.screen_name == "inventory" and ev.key in (pygame.K_w, pygame.K_l, pygame.K_i):
+            if ev.key == pygame.K_w:
+                self.inv_swap()
+            else:
+                self.go("roster")             # (I / L close it again, like D2's I)
+        elif self.screen_name == "character" and ev.key == pygame.K_c:
+            self.go("roster")
         elif self.screen_name == "roster":
             act = {pygame.K_s: self.start_run, pygame.K_x: self.stop_run, pygame.K_t: self.cycle_style,
-                   pygame.K_w: lambda: self.go("watch"), pygame.K_l: lambda: self.go("loot"),
-                   pygame.K_i: lambda: self.go("inventory"), pygame.K_p: lambda: self.go("pickup")}.get(ev.key)
+                   pygame.K_w: lambda: self.go("watch"), pygame.K_l: lambda: self.go("inventory"),
+                   pygame.K_i: lambda: self.go("inventory"), pygame.K_p: lambda: self.go("pickup"),
+                   pygame.K_c: lambda: self.go("character")}.get(ev.key)
             if act is not None and (self.hero() is not None or ev.key == pygame.K_s):
                 act()
 
@@ -408,8 +425,9 @@ class App:
         t0 = time.perf_counter()
         self.regions = []
         self.canvas.fill((0, 0, 0))
-        {"roster": self.draw_roster, "create": self.draw_create, "loot": self.draw_loot,
-         "inventory": self.draw_inventory, "pickup": self.draw_pickup, "watch": self.draw_watch
+        {"roster": self.draw_roster, "create": self.draw_create,
+         "inventory": self.draw_inventory, "pickup": self.draw_pickup, "watch": self.draw_watch,
+         "character": self.draw_character
          }.get(self.screen_name, self.draw_roster)()
         if self.message and self.screen_name != "watch":
             self.look.text(self.canvas, "small", self.message, GOLD, 12, 580)
@@ -451,6 +469,8 @@ class App:
                                                      int(getattr(h, "rift_depth", 0) or 0)), GREY, row.x + 6, row.y + 16)
             if n in busy:
                 L.text(c, "small", "on a run", GREEN, row.x, row.y + 9, "right", row.w - 6)
+            if unspent(h):
+                L.text(c, "med", "+", RED, row.x, row.y + 2, "right", row.w - 64)
             self.region(row, self.select, n)
         # the selected hero's run, live
         h = self.hero()
@@ -490,23 +510,27 @@ class App:
                 L.text(c, "small", "Now: %s" % (run.sim.brain(h).last or "..."), GOLD, x, y + 36)
                 L.text(c, "small", "This run: %d floors, %d kills, %d deaths" % (run.floors, run.kills + run.sim.kills,
                                                                                 getattr(run, "deaths", 0)), WHITE, x + 250, y + 36)
+            st, sk = unspent(h)
+            if st or sk:
+                L.text(c, "small", "Points to spend: %d stat, %d skill" % (st, sk), RED, x + 250, y + 56)
             for i, line in enumerate((run.log if run else [])[-3:]):
                 L.text(c, "small", line, GREY, x, y + 56 + i * 14)
         # buttons
         has = h is not None
         on_run = has and run is not None
-        bw, bh, gap = 150, 32, 8
+        bh, gap = 32, 8
         row1 = [("New hero", lambda: self.go("create"), roster.count() < self.cfg["max_heroes"]),
                 ("Start run", self.start_run, has and not on_run),
                 ("Stop run", self.stop_run, on_run),
                 ("Watch", lambda: self.go("watch"), on_run),
                 ("Style", self.cycle_style, has)]
-        row2 = [("Loot", lambda: self.go("loot"), on_run),
-                ("Inventory", lambda: self.go("inventory"), has),
+        row2 = [("Inventory / Loot", lambda: self.go("inventory"), has),
+                ("Character", lambda: self.go("character"), has),
                 ("Pickup", lambda: self.go("pickup"), has),
                 ("Speed -", lambda: self.cfg.__setitem__("speed", max(0.25, self.cfg["speed"] / 2)), True),
                 ("Speed +", lambda: self.cfg.__setitem__("speed", min(8.0, self.cfg["speed"] * 2)), True)]
         for j, row in enumerate((row1, row2)):
+            bw = (W - 20 + gap) // len(row) - gap
             for i, (label, act, en) in enumerate(row):
                 self.button((10 + i * (bw + gap), 476 + j * (bh + 6), bw, bh), label, act, enabled=en)
 
@@ -566,60 +590,54 @@ class App:
                 pages.append({"occ": {(i, j) for i in range(w) for j in range(h)}, "items": [(cell, it, 0, 0, w, h)]})
         return [p["items"] for p in pages] or [[]]
 
-    def draw_loot(self):
+    def _draw_loot_area(self, h, run, x0, y0):
+        """The floor's items beside the inventory: filters, search, a stash-like grid with pages.
+        Click an item and he takes it (the engine's rule: outside a fight, from anywhere on the
+        floor); it goes to the first free place in the backpack."""
         c, L = self.canvas, self.look
-        h = self.hero()
-        run = self.run_of(h.name) if h else None
-        self._title("Loot")
-        L.panel(c, (6, 40, 788, 432))
-        # filters and search
         for i, (label, _t) in enumerate(FILTERS):
-            r = pygame.Rect(22 + (i % 6) * 64, 58 + (i // 6) * 26, 60, 22)
+            r = pygame.Rect(x0 + (i % 6) * 72, y0 + (i // 6) * 26, 68, 22)
             self.button(r, label, self.set_filter, label)
             if label == self.filter:
                 pygame.draw.rect(c, GOLD, r.inflate(2, 2), 1)
-        field = pygame.Rect(420, 60, 240, 22)
-        L.text(c, "small", "Search", GOLD, 420, 46)
+        field = pygame.Rect(x0 + 56, y0 + 56, 260, 22)
+        L.text(c, "small", "Search", GOLD, x0, y0 + 60)
         L.inset(c, field)
-        L.text(c, "med", self.search + ("_" if int(time.time() * 2) % 2 else ""), WHITE, field.x + 6, field.y + 3)
-        self.button((668, 60, 100, 22), "Clear", lambda: setattr(self, "search", ""))
+        typing = self.focus == "search"
+        L.text(c, "med", self.search + ("_" if typing and int(time.time() * 2) % 2 else ""), WHITE, field.x + 6, field.y + 3)
+        if not self.search and not typing:
+            L.text(c, "small", "click to type", GREY, field.x + 6, field.y + 5)
+        self.region(field, lambda: setattr(self, "focus", "search"))
+        self.button((field.right + 8, field.y, 84, 22), "Clear", lambda: setattr(self, "search", ""))
         items = self._loot_items(run)
         pages = self._pack(items)
         self.loot_page = max(0, min(self.loot_page, len(pages) - 1))
-        gx, gy = 22, 116
-        grid = pygame.Rect(gx - 1, gy - 1, LOOT_COLS * CELL + 2, LOOT_ROWS * CELL + 2)
-        L.inset(c, grid)
+        gx, gy = x0, y0 + 88
+        L.inset(c, (gx - 1, gy - 1, LOOT_COLS * CELL + 2, LOOT_ROWS * CELL + 2))
         for i in range(LOOT_COLS + 1):
             pygame.draw.line(c, (34, 32, 28), (gx + i * CELL, gy), (gx + i * CELL, gy + LOOT_ROWS * CELL))
         for j in range(LOOT_ROWS + 1):
             pygame.draw.line(c, (34, 32, 28), (gx, gy + j * CELL), (gx + LOOT_COLS * CELL, gy + j * CELL))
+        held = self.bench is not None and self.bench.held is not None
         for cell, it, x, y, w, hh in pages[self.loot_page]:
             r = pygame.Rect(gx + x * CELL, gy + y * CELL, w * CELL, hh * CELL)
             tint = pygame.Surface((r.w - 1, r.h - 1), pygame.SRCALPHA)
-            wanted = h is not None and brain.wants(h, it)
-            tint.fill((10, 40, 10, 120) if wanted else (10, 10, 40, 120))
+            tint.fill((10, 40, 10, 120) if brain.wants(h, it) else (10, 10, 40, 120))
             c.blit(tint, (r.x + 1, r.y + 1))
             L.icon(c, it, r.x + 1, r.y + 1, r.w - 1, r.h - 1)
-            self.region(r, self.take, cell, it)
-            if self.hot(r):
-                lines = L.item_lines(it, h)
-                lines.append(("Click: %s takes it" % h.name if h else "", GREY))
-                self._tip = lines
+            if not held:
+                self.region(r, self.take, cell, it)
+                if self.hot(r):
+                    self._tip = L.item_lines(it, h) + [("Click: %s takes it" % h.name, GREY)]
         n_all = len(run.ground_items()) if run is not None else 0
-        L.text(c, "small", "%d of %d items on floor %d" % (len(items), n_all, run.depth) if run else "No run: nothing on the ground",
-               WHITE, gx, gy + LOOT_ROWS * CELL + 6)
+        ty = gy + LOOT_ROWS * CELL + 6
+        L.text(c, "small", ("%d of %d items on floor %d  (green: his pickup rules want it)" % (len(items), n_all, run.depth))
+               if run else "Not on a run: nothing on the ground", WHITE, gx, ty)
         if len(pages) > 1:
-            self.button((gx + 150, gy + LOOT_ROWS * CELL + 4, 40, 20), "<", self.page, -1, len(pages))
-            L.text(c, "small", "%d / %d" % (self.loot_page + 1, len(pages)), WHITE, gx + 194, gy + LOOT_ROWS * CELL + 8)
-            self.button((gx + 230, gy + LOOT_ROWS * CELL + 4, 40, 20), ">", self.page, 1, len(pages))
-        # the hero's backpack, to see the room he has
-        if h is not None:
-            L.text(c, "med", "%s's backpack" % h.name, GOLD, 330, 110)
-            self._backpack(h, 330, 132)
-            L.text(c, "small", "Green: his pickup rules want it.  Blue: they don't.", GREY, 330, 300)
-            L.text(c, "small", "Click any item to take it with %s." % h.name, GREY, 330, 316)
-            L.text(c, "small", "Items stay here until the floor ends.", GREY, 330, 332)
-        self.button((640, 430, 140, 30), "Back", lambda: self.go("roster"))
+            px = gx + LOOT_COLS * CELL - 120
+            self.button((px, ty - 2, 36, 18), "<", self.page, -1, len(pages))
+            L.text(c, "small", "%d / %d" % (self.loot_page + 1, len(pages)), WHITE, px + 40, ty)
+            self.button((px + 84, ty - 2, 36, 18), ">", self.page, 1, len(pages))
 
     def _backpack(self, h, x0, y0):
         c, L = self.canvas, self.look
@@ -787,49 +805,17 @@ class App:
             self.button((640, 540, 140, 30), "Back", lambda: self.go("roster"))
             return
         run = self.run_of(h.name)
-        # ---- left: who he is, what he has, the buttons
+        # ---- left: what lies on his floor (the loot window)
         L.panel(c, (6, 40, 456, 534))
-        L.text(c, "med", "%s - level %d %s" % (h.name, h.level, CLASS_NAMES.get(h.cls, h.cls)), GOLD, 6, 54, "center", 456)
-        L.text(c, "small", ("On a run: rift floor %d" % run.depth) if run else "In town", GREY, 6, 74, "center", 456)
-        res = getattr(h, "res", {}) or {}
-        try:
-            dmg = "%d-%d" % tuple(h.dmg)
-        except Exception:
-            dmg = "-"
-        left = [("Strength", h.strength), ("Dexterity", h.dexterity), ("Vitality", h.vitality),
-                ("Energy", h.energy), ("Life", "%d / %d" % (h.hp, h.max_hp)),
-                ("Mana", "%d / %d" % (h.mana, h.max_mana)), ("Gold", h.gold)]
-        right = [("Damage", dmg), ("Attack Rating", getattr(h, "ar", 0)), ("Defense", getattr(h, "defense", 0)),
-                 ("Fire Resist", res.get("fire", 0)), ("Cold Resist", res.get("cold", 0)),
-                 ("Lightning Resist", res.get("ltng", 0)), ("Poison Resist", res.get("pois", 0))]
-        for col, rows in ((24, left), (244, right)):
-            for i, (label, val) in enumerate(rows):
-                y = 98 + i * 20
-                L.text(c, "small", label, GOLD, col, y)
-                v = val if isinstance(val, str) else "%d" % val
-                colr = RED if (not isinstance(val, str) and label.endswith("Resist") and val < 0) else WHITE
-                L.text(c, "small", v, colr, col + 196, y, "right")
-        # the belt, as the bottom of D2's screen shows it
-        from game import potions
-        by = 252
-        L.text(c, "small", "Belt", GOLD, 24, by)
-        nrows = potions.belt_rows(h)
-        for col in range(4):
-            stack = potions.column(h, col)
-            for r in range(nrows):
-                rect = pygame.Rect(70 + col * 32, by - 4 + (nrows - 1 - r) * 30, 30, 28)
-                L.inset(c, rect)
-                if r < len(stack):
-                    L.icon(c, stack[r], rect.x + 1, rect.y + 1, rect.w - 2, rect.h - 2)
-                    if self.hot(rect):
-                        self._tip = L.item_lines(stack[r], h)
+        L.text(c, "med", "%s - level %d %s" % (h.name, h.level, CLASS_NAMES.get(h.cls, h.cls)), GOLD, 6, 50, "center", 456)
+        self._draw_loot_area(h, run, 18, 72)
         # the buttons
-        y0 = 384
+        y0 = 404
         n_unid = b.unidentified()
         self.button((24, y0, 200, 30), "Identify all (%d)" % n_unid, self.inv_identify_all, enabled=n_unid > 0)
         self.button((240, y0, 200, 30), "Swap weapons (W)", self.inv_swap, enabled=b.held is None)
         # the sell box and the floor (things put down, or pushed out with no room)
-        sell = pygame.Rect(24, y0 + 40, 200, 56)
+        sell = pygame.Rect(24, y0 + 36, 200, 50)
         L.inset(c, sell)
         if b.held is not None and b.sellable(b.held):
             from game.d2items import sell_price
@@ -837,24 +823,26 @@ class App:
         else:
             L.text(c, "small", "Sell: drop an item here", GREY, sell.x, sell.y + 12, "center", sell.w)
             L.text(c, "small", "(or Ctrl + right click it)", GREY, sell.x, sell.y + 28, "center", sell.w)
-        floor = pygame.Rect(240, y0 + 40, 200, 56)
+        floor = pygame.Rect(240, y0 + 36, 200, 50)
         L.inset(c, floor)
         loose = b.floor()
         if not loose:
             L.text(c, "small", "Floor: put items down here", GREY, floor.x, floor.y + 20, "center", floor.w)
         for i, it in enumerate(loose[:7]):
-            r = pygame.Rect(floor.x + 4 + i * 28, floor.y + 6, 26, 44)
+            r = pygame.Rect(floor.x + 4 + i * 28, floor.y + 4, 26, 42)
             L.icon(c, it, r.x, r.y, r.w, r.h)
             if self.hot(r) and b.held is None:
                 self._tip = L.item_lines(it, h)
             self.region(r, self.inv_floor, it)
         # what happened last, and how it works
         for i, (text, colr) in enumerate(b.messages[-2:]):
-            L.text(c, "small", text, colr or GREY, 24, y0 + 104 + i * 15)
-        hint = "Click the item to identify (right click cancels)" if b.cursor_mode else \
-            "Click: pick up / place / wear.  Right click: wear, belt, identify; on a worn item, take it off."
-        L.text(c, "small", hint, GOLD if b.cursor_mode else GREY, 24, y0 + 136)
-        self.button((330, 536, 120, 28), "Back", lambda: self.go("roster"))
+            L.text(c, "small", text, colr or GREY, 24, y0 + 90 + i * 14)
+        hint = ["Click the item to identify", "(right click cancels)"] if b.cursor_mode else \
+            ["Click: pick up, put down, wear", "Right click: wear, belt, identify;",
+             "on a worn item: take it off. Ctrl: sell"]
+        for i, line in enumerate(hint):
+            L.text(c, "small", line, GOLD if b.cursor_mode else GREY, 24, y0 + 122 + i * 14)
+        self.button((340, 538, 110, 28), "Back", lambda: self.go("roster"))
         # held item: anywhere outside the panel puts it on the floor
         if b.held is not None:
             self.regions.insert(0, (pygame.Rect(0, 0, W, H), self.inv_floor, ()))
@@ -930,6 +918,208 @@ class App:
             if r.collidepoint((mx, my)) and b.held is None:
                 self._tip = L.item_lines(it, h)
         L.text(sub, "med", "Gold  %d" % h.gold, GOLD, 60, gy + rows * ic + 20)
+
+    # ------------------------------------------------------------ character: stats and skills
+    CHAR_X, TREE_X, PANEL_Y = 80, 400, 40      # D2's two 320 x 432 panels side by side
+    STAT_ROWS = [("Strength", "str", "strength", "base_str", 83), ("Dexterity", "dex", "dexterity", "base_dex", 145),
+                 ("Vitality", "vit", "vitality", "base_vit", 231), ("Energy", "eng", "energy", "base_eng", 293)]
+
+    def _char_saved(self, h):
+        if h.name not in self.mgr.busy_names():
+            roster.save(h)
+
+    def char_stat(self, key):
+        h = self.hero()
+        if h is None:
+            return
+        n = int(getattr(h, "stat_points", 0) or 0) if pygame.key.get_mods() & pygame.KMOD_SHIFT else 1
+        if points.add_stat(h, key, n):
+            self._char_saved(h)
+
+    def char_learn(self, name):
+        h = self.hero()
+        if h is None:
+            return
+        if points.learn(h, name):
+            self.message = "%s learned %s (level %d)." % (h.name, h.skills.tree[name].title, h.skills.levels[name])
+            self._char_saved(h)
+        elif h.skills.points <= 0:
+            self.message = "No skill points left."
+        else:
+            s = h.skills.tree[name]
+            self.message = "%s needs level %d and the skills before it." % (s.title, s.reqlevel)
+
+    def char_reset(self, what):
+        h = self.hero()
+        if h is None:
+            return
+        n = points.reset_stats(h) if what == "stats" else points.reset_skills(h)
+        self.message = "%s: %d %s point%s back to spend." % (h.name, n, "stat" if what == "stats" else "skill",
+                                                             "" if n == 1 else "s")
+        self._char_saved(h)
+
+    def char_auto(self):
+        h = self.hero()
+        if h is None:
+            return
+        points.set_auto(h, points.by_hand(h))
+        self.message = "%s: points go %s." % (h.name, "by the class plan" if not points.by_hand(h) else "by hand")
+        self._char_saved(h)
+
+    def char_click(self, pos):
+        """Clicks on the two D2 panels go by the regions their drawing left (the game's own names)."""
+        hud = self.look.hud
+        for ox, regions in ((self.CHAR_X, getattr(self, "_char_regions", [])),
+                            (self.TREE_X, getattr(self, "_tree_regions", []))):
+            lx, ly = pos[0] - ox, pos[1] - self.PANEL_Y
+            for rect, action, arg in reversed(regions):
+                if not rect.collidepoint((int(lx), int(ly))):
+                    continue
+                if action == "stat":
+                    self.char_stat(arg)
+                elif action == "learn":
+                    self.char_learn(arg)
+                elif action == "skill_page" and hud is not None:
+                    hud.skill_page = arg
+                elif action in ("reset_stats", "reset_skills"):
+                    self.char_reset("stats" if action == "reset_stats" else "skills")
+                elif action in ("char", "skills"):
+                    self.go("roster")
+                return True
+        return False
+
+    def draw_character(self):
+        c, L = self.canvas, self.look
+        h = self.hero()
+        self._title("Character")
+        self._char_regions, self._tree_regions = [], []
+        if h is None:
+            self.button((640, 540, 140, 30), "Back", lambda: self.go("roster"))
+            return
+        hud = L.hud
+        drawn = False
+        if hud is not None:
+            try:
+                self._draw_char_panel(hud, h)
+                self._draw_tree_panel(hud, h)
+                drawn = True
+            except Exception:
+                import traceback
+                traceback.print_exc()
+        if not drawn:
+            self._draw_char_plain(h)
+        # below the panels
+        by_hand = points.by_hand(h)
+        self.button((80, 486, 320, 30), "Points: by hand" if by_hand else "Points: by class plan", self.char_auto)
+        L.text(c, "small", "By hand: you spend them here. By class plan: they go by his class's build"
+               if by_hand else "His points go by his class's build at each level up.", GREY, 80, 522)
+        L.text(c, "small", "Click + for one stat point, Shift + click for all. Click a skill to learn it.", GREY, 80, 538)
+        self.button((560, 486, 160, 30), "Back", lambda: self.go("roster"))
+
+    def _hud_panel(self, hud, ox, draw):
+        """Let the game's HUD draw one 320 x 432 panel at (ox, PANEL_Y); -> its click regions."""
+        sub = self.canvas.subsurface(pygame.Rect(ox, self.PANEL_Y, 320, 432))
+        keep = (hud.lw, hud.mouse, hud.regions)
+        try:
+            hud.lw, hud.regions, hud.hover_lines = 320, [], None
+            hud.mouse = (self.mouse[0] - ox, self.mouse[1] - self.PANEL_Y)
+            draw(sub)
+            regions, tip = hud.regions, hud.hover_lines
+        finally:
+            hud.lw, hud.mouse, hud.regions = keep
+        if tip:
+            self._tip = [(t, col) for t, col in tip if not (t.startswith("Costs ") and t.endswith(" AP"))]
+        return regions
+
+    def _draw_char_panel(self, hud, h):
+        """D2's character panel (invchar6) with this hero's numbers; the + buttons spend points."""
+        def draw(surf):
+            hud._panel_bg(surf, 0, hud.frames["invchar6"], 0)
+            hud._respec_button(surf)
+            t, f10, f16 = hud.text, hud.f10, hud.f16
+            t(surf, f16, h.name, GOLD, 11, 12, "center", 171)
+            t(surf, f16, CLASS_NAMES.get(h.cls, h.cls), GOLD, 193, 12, "center", 117)
+            t(surf, f10, "Level", GOLD, 10, 34, "center", 44)
+            t(surf, f16, str(h.level), WHITE, 10, 50, "center", 44)
+            t(surf, f10, "Experience", GOLD, 66, 34, "center", 116)
+            t(surf, f16, str(h.xp), WHITE, 66, 50, "center", 116)
+            t(surf, f10, "Next Level", GOLD, 192, 34, "center", 118)
+            t(surf, f16, str(h.xp_to_next()), WHITE, 192, 50, "center", 118)
+            plus = (hud.frames.get("level") or [None])[0]
+            mx, my = hud.mouse
+            for label, key, cur, base, y in self.STAT_ROWS:
+                val, b = getattr(h, cur), getattr(h, base)
+                t(surf, f10, label, GOLD, 10, y + 2, "center", 65)
+                t(surf, f16, str(val), BLUE if val > b else WHITE, 76, y + 1, "center", 39)
+                if h.stat_points:
+                    if plus is not None:
+                        k = hud.s * 20.0 / plus.get_width()
+                        surf.blit(hud.S(plus, k), hud.P(124, y - 2))
+                    else:
+                        pygame.draw.rect(surf, GOLD, (124, y - 2, 20, 20), 1)
+                        t(surf, f16, "+", GOLD, 124, y, "center", 20)
+                    hud.region(124, y - 2, 20, 20, "stat", key)
+                    if pygame.Rect(124, y - 2, 20, 20).collidepoint((int(mx), int(my))):
+                        hud.hover_lines = [("Add a point to %s" % label, WHITE), ("Shift + click: all of them", GREY)]
+            res = getattr(h, "res", {}) or {}
+            try:
+                dmg = "%d-%d" % tuple(h.dmg)
+            except Exception:
+                dmg = "-"
+            right = [("Damage", dmg, 83, 98, 260), ("Attack Speed", "%d%%" % int(h.mod("ias") if hasattr(h, "mod") else 0), 107, 98, 260),
+                     ("Attack Rating", str(h.ar), 145, 108, 271), ("Defense", str(h.defense), 169, 109, 271),
+                     ("Chance to Block", "%d%%" % getattr(h, "block_chance", 0), 193, 109, 271)]
+            for label, val, y, lw_, vx in right:
+                t(surf, f10, label, GOLD, 161, y + 2, "center", lw_)
+                t(surf, f16, val, WHITE, vx, y + 1, "center", 310 - vx)
+            fcr = int(getattr(getattr(h, "skills", None), "fcr", 0) or 0)
+            for label, cur, mx_, y in (("Cast Rate", "%d%%" % fcr, "", 231), ("Life", int(h.hp), h.max_hp, 255),
+                                       ("Mana", int(h.mana), h.max_mana, 293)):
+                t(surf, f10, label, GOLD, 161, y + 2, "center", 69)
+                t(surf, f16, str(cur), WHITE, 231, y + 1, "center", 39)
+                t(surf, f16, str(mx_), WHITE, 271, y + 1, "center", 39)
+            for i, (label, key) in enumerate((("Fire Resist", "fire"), ("Cold Resist", "cold"),
+                                              ("Lightning Resist", "ltng"), ("Poison Resist", "pois"))):
+                y = 332 + i * 24
+                v = res.get(key, 0)
+                cap = (getattr(h, "res_cap", None) or {}).get(key, 75)
+                t(surf, f10, label, GOLD, 174, y + 2, "center", 96)
+                t(surf, f16, str(v), RED if v < 0 else GOLD if v >= cap else WHITE, 271, y + 1, "center", 39)
+            if h.stat_points:
+                t(surf, f10, "Stat Points", RED, 10, 340, "center", 110)
+                t(surf, f10, "Remaining", RED, 10, 354, "center", 110)
+                t(surf, f16, str(h.stat_points), WHITE, 10, 370, "center", 110)
+            from render.d2hud import CHAR_CLOSE
+            hud._close_button(surf, CHAR_CLOSE, 0, "char")
+        self._char_regions = self._hud_panel(hud, self.CHAR_X, draw)
+
+    def _draw_tree_panel(self, hud, h):
+        """D2's skill tree, drawn by the game's HUD; a click on a skill learns it."""
+        self._tree_regions = self._hud_panel(hud, self.TREE_X, lambda surf: hud._draw_skill_tree(surf, h))
+
+    def _draw_char_plain(self, h):
+        """Without D2 files: the same choices in plain boxes."""
+        c, L = self.canvas, self.look
+        L.panel(c, (self.CHAR_X, self.PANEL_Y, 320, 432))
+        L.text(c, "med", "%s  level %d" % (h.name, h.level), GOLD, self.CHAR_X, self.PANEL_Y + 12, "center", 320)
+        for i, (label, key, cur, base, y) in enumerate(self.STAT_ROWS):
+            yy = self.PANEL_Y + 50 + i * 36
+            L.text(c, "med", "%s  %d" % (label, getattr(h, cur)), WHITE, self.CHAR_X + 20, yy)
+            if h.stat_points:
+                self.button((self.CHAR_X + 250, yy - 4, 40, 26), "+", self.char_stat, key)
+        L.text(c, "med", "Stat points: %d" % h.stat_points, GOLD, self.CHAR_X + 20, self.PANEL_Y + 200)
+        self.button((self.CHAR_X + 20, self.PANEL_Y + 390, 140, 28), "Reset stats", self.char_reset, "stats")
+        L.panel(c, (self.TREE_X, self.PANEL_Y, 320, 432))
+        book = h.skills
+        L.text(c, "med", "Skill points: %d" % book.points, GOLD, self.TREE_X, self.PANEL_Y + 12, "center", 320)
+        names = sorted(book.tree, key=lambda n: (book.tree[n].page, book.tree[n].row, book.tree[n].col))
+        for i, n in enumerate(names[:30]):
+            col, row = i // 15, i % 15
+            r = pygame.Rect(self.TREE_X + 10 + col * 152, self.PANEL_Y + 40 + row * 23, 148, 21)
+            lv = book.levels.get(n, 0)
+            self.button(r, "%s %d" % (book.tree[n].title[:14], lv), self.char_learn, n,
+                        enabled=book.can_learn(n, h.level))
+        self.button((self.TREE_X + 170, self.PANEL_Y + 400, 140, 26), "Reset skills", self.char_reset, "skills")
 
     def draw_pickup(self):
         c, L = self.canvas, self.look

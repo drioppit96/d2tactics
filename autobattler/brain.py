@@ -27,7 +27,8 @@ Each hero has a profile (saved with him, in mode_state["autobattler"]):
     keep_distance   auto (ranged heroes and casters back off from melee monsters) | yes | no
     favourite       a skill he prefers when it is close to the best (+25%%)
     never           skills he doesn't use
-    auto_points     spend skill and stat points by his class build plan (BUILDS, STATS)
+    auto_points     spend skill and stat points by his class build plan (BUILDS, STATS); off by
+                    default: the player spends them on the Character screen
 
 The class build plans are only what a new hero learns by default; any skill he has points in is
 used, whatever the plan.
@@ -45,7 +46,7 @@ STYLES = {
     "careful": dict(potion_at=60, mana_reserve=25, back_off_at=95),
 }
 DEFAULT_PROFILE = dict(style="balanced", potion_at=None, mana_reserve=None, keep_distance="auto",
-                       favourite="", never=[], auto_points=True)
+                       favourite="", never=[], auto_points=False)
 
 DAMAGE_KINDS = ("missile", "nova", "area", "line", "chain", "charge", "spiral", "corpse_blast", "melee", "attack")
 SUMMON_KINDS = ("summon", "golem", "raise", "revive", "turret", "wall")
@@ -100,6 +101,10 @@ def profile(hero):
         prof.setdefault(k, list(v) if isinstance(v, list) else v)
     if prof["style"] not in STYLES:
         prof["style"] = "balanced"
+    if not prof.get("points_by_hand_v1"):
+        # points are the player's now (Character screen); heroes from before switch over once
+        prof["points_by_hand_v1"] = True
+        prof["auto_points"] = False
     return prof
 
 
@@ -209,8 +214,8 @@ def _learn_chain(book, key, clvl, depth=0):
 
 def spend_points(hero):
     """Skill points by the class build plan, stat points by the class stat plan."""
-    if not profile(hero).get("auto_points", True):
-        return
+    if not profile(hero).get("auto_points", False):
+        return                              # the player spends them (Character screen)
     book = getattr(hero, "skills", None)
     clvl = getattr(hero, "level", 1)
     changed = False

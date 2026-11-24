@@ -194,17 +194,19 @@ wide and medium buttons (up and pressed frames), D2's item graphics and descript
 read from the player's install by the engine's loaders. Without Diablo II files the same layout
 is drawn with plain boxes and a system font.
 
-- Heroes: the roster; a live view of the selected hero's floor (click it to watch full screen);
-  his life, mana, level, style, gold, what his brain is doing and the run's last events; buttons
-  New hero, Start run, Stop run, Watch, Style, Loot, Inventory, Pickup, Speed - / +.
-- Loot: every item on the selected hero's floor laid out like the stash (12 x 14, pages), with
-  filters (All, Gold, Potions, Runes, Gems, Charms, Jewelry, Unique, Set, Rare, Magic, Bases) and a
-  search field that matches the name and the item's description lines. Green items are ones his
-  pickup rules want. Click an item to take it with him (the engine's rule: outside a fight, from
-  anywhere on the floor). His backpack is shown beside it.
-- Inventory: D2's own inventory panel (invchar6), drawn by the game's HUD code, with the
-  equipment slots, the I / II weapon tabs and the backpack grown to 8 rows. Beside it: his stats,
-  his belt, and the buttons. The item handling is `autobattler/gear.py`, which uses the World's
+- Heroes: the roster (a red + marks a hero with points to spend); a live view of the selected
+  hero's floor (click it to watch full screen); his life, mana, level, style, gold, points to
+  spend, what his brain is doing and the run's last events; buttons New hero, Start run, Stop
+  run, Watch, Style, Inventory / Loot, Character, Pickup, Speed - / +.
+- Inventory / Loot: the loot window on the left, D2's own inventory panel (invchar6) on the right,
+  drawn by the game's HUD code, with the equipment slots, the I / II weapon tabs and the backpack
+  grown to 8 rows.
+  - Loot: every item on the selected hero's floor laid out like the stash (18 x 10, pages), with
+    filters (All, Gold, Potions, Runes, Gems, Charms, Jewelry, Unique, Set, Rare, Magic, Bases) and
+    a search field (click it to type) that matches the name and the item's description lines.
+    Green items are ones his pickup rules want. Click an item to take it with him (the engine's
+    rule: outside a fight, from anywhere on the floor); it goes to the first free place in the
+    backpack. Not on a run, the loot window is empty. The item handling is `autobattler/gear.py`, which uses the World's
   own item methods, so the game's rules apply (requirements, two-handed weapons and shields, rings,
   off-hand weapons for Barbarians and Assassins).
   - Click: pick an item up onto the cursor, put it down in the backpack (swapping with one item
@@ -221,11 +223,21 @@ is drawn with plain boxes and a system font.
     not fit is sold, and the screen says so.
   - A hero who is not on a run is saved after each change; one on a run is saved by the run at
     the end of the floor.
+- Character: D2's character panel on the left and the skill tree on the right, both drawn by the
+  game's HUD code (`autobattler/points.py` does the spending).
+  - + beside a stat puts a point in it (Shift + click: all of them). New life and mana are there
+    at once, as in D2. Reset Stats gives every spent stat point back, free.
+  - Click a skill to learn it (the game's rules: a point left, his level, the skills before it).
+    The tree's tabs change pages; Reset Skills gives every skill point back, free.
+  - Points: by hand / by class plan. By hand (the default) the points wait for you; by class plan
+    they go by his class's build (brain.BUILDS, brain.STATS) at each level up and before each
+    floor. Heroes made before this switch to by hand once.
 - Pickup: his pickup rules and words.
 - Watch: his floor full screen at 1:1, with each hero's life, mana and decision.
 
-Keys: S start, X stop, W watch, T style, L loot, I inventory, P pickup, + / - speed, Esc back,
-Ctrl+click adds heroes to a group. On the Inventory screen W swaps weapons.
+Keys: S start, X stop, W watch, T style, I or L inventory and loot, C character, P pickup,
++ / - speed, Esc back, Ctrl+click adds heroes to a group. On the Inventory screen W swaps weapons
+and I / L close it; C closes the Character screen.
 
 ## Not done yet
 
