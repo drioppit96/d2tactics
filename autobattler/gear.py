@@ -19,11 +19,27 @@ from game.itemactions import ItemActions
 from game.world import World
 
 ROWS = 8
+CHARM_W, CHARM_H = 4, 8     # the charm inventory beside the backpack
 GREY = (170, 170, 170)
 
 
+def is_charm(it):
+    return bool(getattr(it, "charm", False))
+
+
+class CharmBox:
+    """The charm inventory as a grid the cube helpers understand (positions in it.cube_pos)."""
+    def __init__(self, hero):
+        if getattr(hero, "charm_inv", None) is None:
+            hero.charm_inv = []
+        self.contents = hero.charm_inv
+        self.grid_size = (CHARM_W, CHARM_H)
+        self.code = "charms"
+
+
 def prepare(p):
-    """Give an autobattler hero the double backpack."""
+    """Give an autobattler hero the double backpack and the charm inventory (only charms in it
+    work). The first time, the charms in his backpack move into it."""
     if p is None:
         return p
     q = getattr(p, "qol", None)
@@ -31,6 +47,22 @@ def prepare(p):
         q = p.qol = {}
     q["big_inv"] = True
     q["inv_rows"] = ROWS
+    if getattr(p, "charm_inv", None) is None:
+        p.charm_inv = []
+    if not q.get("charm_grid"):
+        q["charm_grid"] = True
+        from game import cube as cb
+        box = CharmBox(p)
+        for it in [x for x in p.inventory if is_charm(x)]:
+            p.inventory.remove(it)
+            pos, it.inv_pos = it.inv_pos, None
+            if not cb.cube_add(box, it):
+                it.inv_pos = pos
+                p.inventory.append(it)
+        try:
+            p.recalc()
+        except Exception:
+            pass
     return p
 
 
@@ -140,6 +172,8 @@ class Bench:
             return False
         if sell:
             return self.sell(it)
+        if is_charm(it):
+            return self.backpack_to_charms(it)
         if it.kind == "potion":
             ok = self.use_inventory_potion(it)
         elif getattr(it, "use", None) == "id":
@@ -249,6 +283,76 @@ class Bench:
         hp = p.hp / float(max(1, p.max_hp))
         p.recalc()
         p.hp = min(p.max_hp, max(1, int(round(p.max_hp * hp))))
+        self.changed = True
+        return True
+
+    # ------------------------------------------------------------ the charm inventory
+    def charm_box(self):
+        return CharmBox(self.player)
+
+    def charm_click(self, cx, cy):
+        """Click on the charm inventory: pick up the charm there, or put the cursor charm down
+        (centred on the mouse, the caller gives its top-left cell). Only charms go in."""
+        from game import cube as cb
+        box = self.charm_box()
+        p = self.player
+        if self.held is None:
+            it = cb.at(box, cx, cy)
+            if it is None:
+                return False
+            box.contents.remove(it)
+            it.cube_pos = None
+            self.held = it
+            p.recalc()
+            self.changed = True
+            return True
+        if not is_charm(self.held):
+            self.log("Only charms go in the charm inventory.", GREY)
+            return False
+        ok, over = cb.fits(box, self.held, cx, cy)
+        if not ok or len(over) > 1:
+            self.log("No room there.", GREY)
+            return False
+        swap = over[0] if over else None
+        if swap is not None:
+            box.contents.remove(swap)
+            swap.cube_pos = None
+        self.held.cube_pos = (cx, cy)
+        box.contents.append(self.held)
+        self.held = swap
+        p.recalc()
+        self.changed = True
+        return True
+
+    def charm_to_backpack(self, it):
+        p = self.player
+        box = self.charm_box()
+        if it not in box.contents or self.held is not None:
+            return False
+        box.contents.remove(it)
+        pos, it.cube_pos = it.cube_pos, None
+        if not p.inv_add(it):
+            it.cube_pos = pos
+            box.contents.append(it)
+            self.log("The backpack is full.", GREY)
+            return False
+        p.recalc()
+        self.changed = True
+        return True
+
+    def backpack_to_charms(self, it):
+        from game import cube as cb
+        p = self.player
+        if it not in p.inventory or not is_charm(it):
+            return False
+        p.inventory.remove(it)
+        pos, it.inv_pos = it.inv_pos, None
+        if not cb.cube_add(self.charm_box(), it):
+            it.inv_pos = pos
+            p.inventory.append(it)
+            self.log("The charm inventory is full.", GREY)
+            return False
+        p.recalc()
         self.changed = True
         return True
 
@@ -410,8 +514,11 @@ class Bench:
         loose = ([self.held] if self.held is not None else []) + self.floor()
         self.held, self.ground = None, {}
         sold = 0
+        from game import cube as cb
         for it in loose:
             it.inv_pos = None
+            if is_charm(it) and cb.cube_add(self.charm_box(), it):
+                continue
             if p.inv_add(it):
                 continue
             if self._into_stash(it):

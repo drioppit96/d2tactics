@@ -43,7 +43,7 @@ FILTERS = [("All", None), ("Gold", {"gold"}), ("Potions", {"potions"}), ("Runes"
            ("Charms", {"charms"}), ("Jewelry", {"jewelry"}), ("Unique", {"unique"}), ("Set", {"set"}),
            ("Rare", {"rare"}), ("Magic", {"magic"}), ("Bases", {"sockets", "normal"})]
 CELL = 22                      # item grid cell on the 800 x 600 canvas (the stash's cell size)
-LOOT_COLS, LOOT_ROWS = 18, 10      # the floor's items, beside the inventory panel
+LOOT_COLS, LOOT_ROWS = 13, 10      # the floor's items, beside the inventory panel
 
 
 def unspent(h):
@@ -647,23 +647,23 @@ class App:
         floor); it goes to the first free place in the backpack."""
         c, L = self.canvas, self.look
         for i, (label, _t) in enumerate(FILTERS):
-            r = pygame.Rect(x0 + (i % 6) * 72, y0 + (i // 6) * 26, 68, 22)
+            r = pygame.Rect(x0 + (i % 4) * 75, y0 + (i // 4) * 24, 72, 21)
             self.button(r, label, self.set_filter, label)
             if label == self.filter:
                 pygame.draw.rect(c, GOLD, r.inflate(2, 2), 1)
-        field = pygame.Rect(x0 + 56, y0 + 56, 260, 22)
-        L.text(c, "small", "Search", GOLD, x0, y0 + 60)
+        field = pygame.Rect(x0 + 50, y0 + 76, 180, 22)
+        L.text(c, "small", "Search", GOLD, x0, y0 + 80)
         L.inset(c, field)
         typing = self.focus == "search"
         L.text(c, "med", self.search + ("_" if typing and int(time.time() * 2) % 2 else ""), WHITE, field.x + 6, field.y + 3)
         if not self.search and not typing:
             L.text(c, "small", "click to type", GREY, field.x + 6, field.y + 5)
         self.region(field, lambda: setattr(self, "focus", "search"))
-        self.button((field.right + 8, field.y, 84, 22), "Clear", lambda: setattr(self, "search", ""))
+        self.button((field.right + 6, field.y, 64, 22), "Clear", lambda: setattr(self, "search", ""))
         items = self._loot_items(run)
         pages = self._pack(items)
         self.loot_page = max(0, min(self.loot_page, len(pages) - 1))
-        gx, gy = x0, y0 + 88
+        gx, gy = x0, y0 + 106
         L.inset(c, (gx - 1, gy - 1, LOOT_COLS * CELL + 2, LOOT_ROWS * CELL + 2))
         for i in range(LOOT_COLS + 1):
             pygame.draw.line(c, (34, 32, 28), (gx + i * CELL, gy), (gx + i * CELL, gy + LOOT_ROWS * CELL))
@@ -682,7 +682,7 @@ class App:
                     self._tip = L.item_lines(it, h) + [("Click: %s takes it" % h.name, GREY)]
         n_all = len(run.ground_items()) if run is not None else 0
         ty = gy + LOOT_ROWS * CELL + 6
-        L.text(c, "small", ("%d of %d items on floor %d  (green: his pickup rules want it)" % (len(items), n_all, run.depth))
+        L.text(c, "small", ("%d of %d items on floor %d" % (len(items), n_all, run.depth))
                if run else "In town: nothing on the ground", WHITE, gx, ty)
         if len(pages) > 1:
             px = gx + LOOT_COLS * CELL - 120
@@ -713,7 +713,9 @@ class App:
                 self._tip = L.item_lines(it, h)
 
     # ------------------------------------------------------------ inventory (D2's own panel)
-    INV_X, INV_Y = 470, 40          # where D2's 320-wide inventory panel sits on the canvas
+    INV_X, INV_Y = 336, 40          # where D2's 320-wide inventory panel sits on the canvas
+    LEFT_W = 324                    # the left-hand panel (loot, shop, stash), from x 6
+    CHARM_X = 660                   # the charm inventory, right of the panel
 
     def gear_bench(self):
         """The item bench for the selected hero (made again when the selection changes)."""
@@ -821,7 +823,13 @@ class App:
             b.cursor_mode = None
             return
         slot = self._inv_slot()
-        if slot is not None:
+        ccell = self._charm_cell(b.player)
+        if ccell is not None:
+            from game import cube as cb
+            it = cb.at(b.charm_box(), *ccell)
+            if it is not None:
+                b.charm_to_backpack(it)
+        elif slot is not None:
             b.unequip(slot)
         else:
             cell = self._inv_cell()
@@ -872,45 +880,43 @@ class App:
             return
         run = self.run_of(h.name)
         # ---- left: what lies on his floor (the loot window)
-        L.panel(c, (6, 40, 456, 534))
-        L.text(c, "med", "%s - level %d %s" % (h.name, h.level, CLASS_NAMES.get(h.cls, h.cls)), GOLD, 6, 50, "center", 456)
-        self._draw_loot_area(h, run if run is not None and run.state != "town" else None, 18, 72)
+        LW = self.LEFT_W
+        L.panel(c, (6, 40, LW, 534))
+        L.text(c, "med", "%s - level %d %s" % (h.name, h.level, CLASS_NAMES.get(h.cls, h.cls)), GOLD, 6, 50, "center", LW)
+        self._draw_loot_area(h, run if run is not None and run.state != "town" else None, 18, 70)
         # the buttons
-        y0 = 404
+        y0 = 418
         n_unid = b.unidentified()
-        self.button((24, y0, 200, 30), "Identify all (%d)" % n_unid, self.inv_identify_all, enabled=n_unid > 0)
-        self.button((240, y0, 200, 30), "Swap weapons (W)", self.inv_swap, enabled=b.held is None)
+        self.button((18, y0, 146, 26), "Identify all (%d)" % n_unid, self.inv_identify_all, enabled=n_unid > 0)
+        self.button((170, y0, 146, 26), "Swap weapons", self.inv_swap, enabled=b.held is None)
         # the sell box and the floor (things put down, or pushed out with no room)
-        sell = pygame.Rect(24, y0 + 36, 124, 50)
+        sell = pygame.Rect(18, y0 + 32, 146, 42)
         L.inset(c, sell)
         if b.held is not None and b.sellable(b.held):
             from game.d2items import sell_price
-            L.text(c, "small", "Sell: %d gold" % sell_price(b.held), GOLD, sell.x, sell.y + 20, "center", sell.w)
+            L.text(c, "small", "Sell: %d gold" % sell_price(b.held), GOLD, sell.x, sell.y + 14, "center", sell.w)
         else:
-            L.text(c, "small", "Sell: drop here", GREY, sell.x, sell.y + 12, "center", sell.w)
-            L.text(c, "small", "(Ctrl + right click)", GREY, sell.x, sell.y + 28, "center", sell.w)
-        floor = pygame.Rect(154, y0 + 36, 140, 50)
+            L.text(c, "small", "Sell: drop here", GREY, sell.x, sell.y + 6, "center", sell.w)
+            L.text(c, "small", "(Ctrl + right click)", GREY, sell.x, sell.y + 22, "center", sell.w)
+        floor = pygame.Rect(170, y0 + 32, 146, 42)
         L.inset(c, floor)
         loose = b.floor()
         if not loose:
-            L.text(c, "small", "Floor: put items", GREY, floor.x, floor.y + 12, "center", floor.w)
-            L.text(c, "small", "down here", GREY, floor.x, floor.y + 28, "center", floor.w)
-        self._draw_belt(h, 302, y0 + 36)
+            L.text(c, "small", "Floor: put items", GREY, floor.x, floor.y + 6, "center", floor.w)
+            L.text(c, "small", "down here", GREY, floor.x, floor.y + 22, "center", floor.w)
+        self._draw_belt(h, 18, y0 + 80)
         for i, it in enumerate(loose[:5]):
-            r = pygame.Rect(floor.x + 4 + i * 28, floor.y + 4, 26, 42)
+            r = pygame.Rect(floor.x + 4 + i * 28, floor.y + 3, 26, 36)
             L.icon(c, it, r.x, r.y, r.w, r.h)
             if self.hot(r) and b.held is None:
                 self._tip = L.item_lines(it, h)
             self.region(r, self.inv_floor, it)
-        # what happened last, and how it works
+        # what happened last
         for i, (text, colr) in enumerate(b.messages[-2:]):
-            L.text(c, "small", text, colr or GREY, 24, y0 + 90 + i * 14)
-        hint = ["Click the item to identify", "(right click cancels)"] if b.cursor_mode else \
-            ["Click: pick up, put down, wear", "Right click: wear, belt, identify;",
-             "on a worn item: take it off. Ctrl: sell"]
-        for i, line in enumerate(hint):
-            L.text(c, "small", line, GOLD if b.cursor_mode else GREY, 24, y0 + 122 + i * 14)
-        self.button((340, 538, 110, 28), "Back", lambda: self.go("roster"))
+            L.text(c, "small", text, colr or GREY, 172, y0 + 96 + i * 14)
+        if b.cursor_mode:
+            L.text(c, "small", "Click the item to identify", GOLD, 172, y0 + 124)
+        self.button((226, 546, 90, 22), "Back", lambda: self.go("roster"))
         # held item: anywhere outside the panel puts it on the floor
         if b.held is not None:
             self.regions.insert(0, (pygame.Rect(0, 0, W, H), self.inv_floor, ()))
@@ -944,6 +950,7 @@ class App:
         c, L, h = self.canvas, self.look, b.player
         self._draw_d2_inventory(b)
         self.region((self.INV_X, self.INV_Y, 320, 548), self.inv_click)
+        self._draw_charms(b)
         if b.held is not None:
             w, hh = h._size(b.held)
             ic = self._inv_geometry()[3]
@@ -951,6 +958,102 @@ class App:
             self._tip = None
         elif b.cursor_mode:
             L.text(c, "small", "?", GOLD, self.mouse[0] + 10, self.mouse[1] - 4)
+
+    # ------------------------------------------------------------ the charm inventory
+    def _charm_geometry(self, h):
+        """(x, y) of the charm grid's first cell: level with his backpack, right of the panel."""
+        slots, gx, gy, ic = self._inv_geometry()
+        return self.CHARM_X + 10, self.INV_Y + gy, ic
+
+    def _grid_art(self):
+        """The backpack's own cell art, cut from D2's inventory panel (4 x 4 cells), or None."""
+        if "_grid_art_img" in self.__dict__:
+            return self._grid_art_img
+        img = None
+        hud = self.look.hud
+        if hud is not None:
+            try:
+                slots, gx, gy, ic = self._inv_geometry()
+                panel = pygame.Surface((320, 432))
+                keep = hud.regions
+                hud.regions = []
+                hud._panel_bg(panel, 0, hud.frames["invchar6"], 4, region=False)
+                hud.regions = keep
+                img = panel.subsurface(pygame.Rect(gx, gy, 4 * ic, 4 * ic)).copy()
+            except Exception:
+                img = None
+        self._grid_art_img = img
+        return img
+
+    def _charm_cell(self, h, item=None):
+        from autobattler.gear import CHARM_W, CHARM_H
+        x0, y0, k = self._charm_geometry(h)
+        mx, my = self.mouse[0] - x0, self.mouse[1] - y0
+        if not (0 <= mx < CHARM_W * k and 0 <= my < CHARM_H * k):
+            return None
+        if item is None:
+            return int(mx // k), int(my // k)
+        w, hh = max(1, item.invw or 1), max(1, item.invh or 1)
+        cx = int(round(mx / float(k) - w / 2.0))
+        cy = int(round(my / float(k) - hh / 2.0))
+        return max(0, min(CHARM_W - w, cx)), max(0, min(CHARM_H - hh, cy))
+
+    def _draw_charms(self, b):
+        """The charm inventory: 4 x 8 cells beside the backpack, in the panel's own stone and cell
+        art. Only charms go in, and only the charms in it work."""
+        from autobattler.gear import CHARM_W, CHARM_H
+        c, L, h = self.canvas, self.look, b.player
+        x0, y0, k = self._charm_geometry(h)
+        frame = pygame.Rect(x0 - 10, y0 - 34, CHARM_W * k + 20, CHARM_H * k + 44)
+        L.panel(c, frame)
+        L.text(c, "med", "Charms", GOLD, frame.x, frame.y + 8, "center", frame.w)
+        art = self._grid_art()
+        for by in range(0, CHARM_H, 4):
+            if art is not None:
+                c.blit(art, (x0, y0 + by * k), pygame.Rect(0, 0, CHARM_W * k, min(4, CHARM_H - by) * k))
+        if art is None:
+            L.inset(c, (x0 - 1, y0 - 1, CHARM_W * k + 2, CHARM_H * k + 2))
+            for i in range(CHARM_W + 1):
+                pygame.draw.line(c, (34, 32, 28), (x0 + i * k, y0), (x0 + i * k, y0 + CHARM_H * k))
+            for j in range(CHARM_H + 1):
+                pygame.draw.line(c, (34, 32, 28), (x0, y0 + j * k), (x0 + CHARM_W * k, y0 + j * k))
+        for it in getattr(h, "charm_inv", None) or []:
+            pos = getattr(it, "cube_pos", None)
+            if pos is None:
+                continue
+            w, hh = max(1, it.invw or 1), max(1, it.invh or 1)
+            r = pygame.Rect(x0 + pos[0] * k, y0 + pos[1] * k, w * k, hh * k)
+            tint = pygame.Surface((r.w - 1, r.h - 1), pygame.SRCALPHA)
+            ok = it.mod_list is None or h.level >= getattr(it, "levelreq", 0)
+            tint.fill((10, 10, 40, 120) if ok else (150, 0, 0, 70))
+            c.blit(tint, (r.x, r.y))
+            L.icon(c, it, r.x, r.y, r.w - 1, r.h - 1)
+            if self.hot(r) and b.held is None:
+                self._tip = L.item_lines(it, h) + [("Right click: into the backpack", GREY)]
+        if b.held is not None:
+            cell = self._charm_cell(h, b.held)
+            if cell is not None:
+                from game import cube as cb
+                from autobattler.gear import is_charm
+                ok, over = cb.fits(b.charm_box(), b.held, *cell)
+                good = is_charm(b.held) and ok and len(over) <= 1
+                w, hh = max(1, b.held.invw or 1), max(1, b.held.invh or 1)
+                tint = pygame.Surface((w * k, hh * k), pygame.SRCALPHA)
+                tint.fill((0, 120, 0, 70) if good else (140, 0, 0, 70))
+                c.blit(tint, (x0 + cell[0] * k, y0 + cell[1] * k))
+        elif self.hot(frame) and not getattr(h, "charm_inv", None):
+            self._tip = [("Charm inventory", WHITE), ("Only charms go here, and only the charms", GREY),
+                         ("here work. They are never sold.", GREY)]
+        self.region(frame, self.charm_click)
+
+    def charm_click(self):
+        b = self.gear_bench()
+        if b is None:
+            return
+        cell = self._charm_cell(b.player, b.held)
+        if cell is not None:
+            b.charm_click(*cell)
+            self._gear_saved(b)
 
     # ------------------------------------------------------------ town: shop and stash
     SHOP_TABS = [("tyrael3", "Tyrael"), ("malachai", "Hadriel"), ("izualghost", "Izual"), ("gamble", "Gamble")]
@@ -1098,11 +1201,11 @@ class App:
         if b.stash is None:
             b.stash = self.shared_stash()
         tab = getattr(self, "town_tab", "tyrael3")
-        L.panel(c, (6, 40, 456, 534))
-        L.text(c, "med", "%s - gold %d" % (h.name, h.gold), GOLD, 6, 50, "center", 456)
+        L.panel(c, (6, 40, self.LEFT_W, 534))
+        L.text(c, "med", "%s - gold %d" % (h.name, h.gold), GOLD, 6, 50, "center", self.LEFT_W)
         if tab != "stash":
             for i, (key, label) in enumerate(self.SHOP_TABS):
-                r = pygame.Rect(18 + i * 108, 72, 104, 24)
+                r = pygame.Rect(18 + i * 75, 72, 72, 24)
                 self.button(r, label, self.town_set_tab, key)
                 if key == tab:
                     pygame.draw.rect(c, GOLD, r.inflate(2, 2), 1)
@@ -1112,7 +1215,7 @@ class App:
             self._draw_store(b)
         for i, (text, colr) in enumerate(b.messages[-2:]):
             L.text(c, "small", text, colr or GREY, 18, 520 + i * 14)
-        self.button((340, 540, 110, 28), "Back", lambda: self.go("roster"))
+        self.button((226, 546, 90, 22), "Back", lambda: self.go("roster"))
         self._inventory_right(b)
 
     def _draw_store(self, b):
@@ -1123,13 +1226,13 @@ class App:
             return
         names = {"armo": "Armor", "weap": "Weapons", "misc": "Misc", "maps": "Maps", "gamble": "Gamble"}
         for i, (page, _items) in enumerate(store.tabs):
-            r = pygame.Rect(18 + i * 90, 104, 86, 22)
+            r = pygame.Rect(18 + i * 75, 104, 72, 22)
             self.button(r, names.get(page, page), self.store_page, i)
             if i == store.tab:
                 pygame.draw.rect(c, GOLD, r.inflate(2, 2), 1)
         from game.itemactions import STORE_W, STORE_H
         k = self.STORE_CELL
-        gx, gy = 18 + (432 - STORE_W * k) // 2, 134
+        gx, gy = 18 + (300 - STORE_W * k) // 2, 134
         grid = pygame.Rect(gx - 1, gy - 1, STORE_W * k + 2, STORE_H * k + 2)
         L.inset(c, grid)
         self.region(grid, self.store_click, None)       # (an item dropped on the shelves is sold)
@@ -1151,8 +1254,9 @@ class App:
         if b.held is not None and grid.collidepoint(self.mouse) and b.sellable(b.held):
             self._tip = [("Sell for %d gold" % d2items_sell(b.held), GOLD)]
         y = gy + STORE_H * k + 8
-        L.text(c, "small", "Click or right click: buy.  Drop an item on the shelves, or Ctrl +", GREY, 18, y)
-        L.text(c, "small", "right click it in the backpack: sell.  New stock each visit to town.", GREY, 18, y + 14)
+        L.text(c, "small", "Click: buy.  Drop an item on the shelves,", GREY, 18, y)
+        L.text(c, "small", "or Ctrl + right click it: sell.", GREY, 18, y + 14)
+        L.text(c, "small", "New stock each visit to town.", GREY, 18, y + 28)
 
     def _draw_stash(self, b):
         c, L, h = self.canvas, self.look, b.player
@@ -1167,13 +1271,13 @@ class App:
         if st.tab != 0:
             pygame.draw.rect(c, GOLD, pygame.Rect(184, 72, 96, 22).inflate(2, 2), 1)
         self.button((284, 72, 30, 22), ">", self.stash_set_tab, cur + 1 if cur < STASH_TABS - 1 else 1)
-        L.text(c, "small", "Shared by every hero", GREY, 322, 76)
+
         if st.tab == 0:
             self._draw_bank(b, st)
             return
         k = self.STASH_CELL
         gw, gh = st.grid_size
-        gx, gy = 18 + (432 - gw * k) // 2, 104
+        gx, gy = 18 + (300 - gw * k) // 2, 104
         self._stash_xy = (gx, gy)
         grid = pygame.Rect(gx - 1, gy - 1, gw * k + 2, gh * k + 2)
         L.inset(c, grid)
@@ -1204,12 +1308,13 @@ class App:
                 tint = pygame.Surface((w * k, hh * k), pygame.SRCALPHA)
                 tint.fill((0, 120, 0, 70) if ok and len(over) <= 1 else (140, 0, 0, 70))
                 c.blit(tint, (gx + cell[0] * k, gy + cell[1] * k))
-        L.text(c, "small", "Ctrl + click in the backpack: straight into the stash", GREY, 18, gy + gh * k + 4)
+        L.text(c, "small", "Shared by every hero. Ctrl + click in the", GREY, 18, gy + gh * k + 4)
+        L.text(c, "small", "backpack: straight into the stash.", GREY, 18, gy + gh * k + 18)
 
     def _draw_bank(self, b, st):
         """The gem & rune tab: one stack per kind, with how many."""
         c, L = self.canvas, self.look
-        area = pygame.Rect(18, 104, 432, 400)
+        area = pygame.Rect(18, 104, 300, 400)
         L.inset(c, area)
         self.region(area, self.bank_click, None)        # (a gem or rune dropped here goes on its stack)
         if self.content is None:
@@ -1247,8 +1352,8 @@ class App:
             for i, code in enumerate(row):
                 slot(code, area.x + 10 + i * k, area.y + 10 + j * k)
         for i, code in enumerate(runes):
-            slot(code, area.x + 10 + (i % 12) * k, area.y + 170 + (i // 12) * k)
-        L.text(c, "small", "Drop a gem or rune here to put it on its stack.", GREY, area.x + 10, area.bottom - 18)
+            slot(code, area.x + 10 + (i % 9) * k, area.y + 162 + (i // 9) * k)
+        L.text(c, "small", "Drop a gem or rune here: onto its stack.", GREY, area.x + 10, area.bottom - 18)
 
     def _draw_d2_inventory(self, b):
         """D2's inventory panel (invchar6) with the hero's gear, drawn by the game's own HUD code;

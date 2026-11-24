@@ -296,7 +296,12 @@ is drawn with plain boxes and a system font.
 - Inventory / Loot: the loot window on the left, D2's own inventory panel (invchar6) on the right,
   drawn by the game's HUD code, with the equipment slots, the I / II weapon tabs and the backpack
   grown to 8 rows.
-  - Loot: every item on the selected hero's floor laid out like the stash (18 x 10, pages), with
+  - Charms: a 4 x 8 charm inventory right of the panel, level with the backpack, in the panel's own
+    cell art. Only charms go in it, and only the charms in it work (Player._charm_items, through
+    qol["charm_grid"]); a charm in the backpack does nothing. Right click moves a charm between the
+    backpack and the charm inventory. Charms are never sold on the trip home. The first time, the
+    charms a hero carries move into it.
+  - Loot: every item on the selected hero's floor laid out like the stash (13 x 10, pages), with
     filters (All, Gold, Potions, Runes, Gems, Charms, Jewelry, Unique, Set, Rare, Magic, Bases) and
     a search field (click it to type) that matches the name and the item's description lines.
     Green items are ones his pickup rules want. Click an item to take it with him (the engine's

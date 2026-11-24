@@ -201,7 +201,7 @@ class Run:
         """A hero had no room for something he wanted: home, if that would make room (he carries
         gems, runes, unique or set items the stash takes, or magic or rare items to sell)."""
         from . import stash
-        if not any(stash.keeps(it) or getattr(it, "rarity", "") in ("magic", "rare")
+        if not any(stash.keeps(it) or (getattr(it, "rarity", "") in ("magic", "rare") and not getattr(it, "charm", False))
                    for h in self.heroes for it in h.inventory):
             self.sim.no_room = False
             return False
@@ -430,7 +430,8 @@ def sell_magic_and_rare(h):
     from game.d2items import sell_price
     sold = gold = 0
     for it in list(h.inventory):
-        if getattr(it, "rarity", "") not in ("magic", "rare") or getattr(it, "kind", "") == "quest":
+        if getattr(it, "rarity", "") not in ("magic", "rare") or getattr(it, "kind", "") == "quest" \
+                or getattr(it, "charm", False):          # (charms are never sold)
             continue
         try:
             value = sell_price(it)

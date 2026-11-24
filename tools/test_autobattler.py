@@ -405,6 +405,37 @@ def test_act_levels():
     check(all(rift.act_level(d) <= rift.act_level(d + 1) for d in range(1, 99)), "they never go down")
 
 
+def test_charm_inventory():
+    """Only charms go in the charm inventory, only the charms there work, and they aren't sold."""
+    from autobattler import gear
+    from autobattler.runs import sell_magic_and_rare
+    from game.items import Item
+    h = _hero("Charmed")
+    charm = Item("Small Charm of Life", "cm1", None, rarity="magic", kind="misc")
+    charm.charm, charm.mod_list, charm.levelreq = True, [], 1
+    h.inv_add(charm)
+    h.qol = {}
+    h.charm_inv = None
+    gear.prepare(h)
+    check(charm in h.charm_inv and charm not in h.inventory, "charms in the backpack move to the charm inventory")
+    check(charm in h._charms(), "a charm in the charm inventory works")
+    b = gear.Bench(h)
+    check(b.charm_to_backpack(charm) and charm in h.inventory and charm not in h._charms(),
+          "a charm in the backpack doesn't work")
+    check(b.right_click(charm) and charm in h.charm_inv, "right click puts it back in the charm inventory")
+    ring = Item("Ring", "rin", "ring", rarity="magic")
+    h.inv_add(ring)
+    b.click_cell(*ring.inv_pos)
+    check(not b.charm_click(0, 4) and b.held is ring, "only charms go in")
+    b.finish()
+    loose = Item("Grand Charm", "cm3", None, rarity="magic", kind="misc")
+    loose.charm = True
+    h.inv_add(loose)
+    sold, _ = sell_magic_and_rare(h)
+    check(loose in h.inventory and ring not in h.inventory and charm in h.charm_inv,
+          "the trip home sells the ring, never a charm")
+
+
 def test_cast_breakpoints():
     from autobattler.brain import CAST_FRAMES0
     sor = [timing.cast_frames(CAST_FRAMES0["sor"] + 1, f) for f in (0, 9, 20, 37, 63, 105, 200)]
@@ -618,6 +649,7 @@ if __name__ == "__main__":
     test_d2_difficulty()
     test_summons_once()
     test_act_levels()
+    test_charm_inventory()
     test_inventory_screen()
     print("\n%s" % ("all passed" if not FAILS else "%d FAILED" % len(FAILS)))
     sys.exit(1 if FAILS else 0)

@@ -182,13 +182,18 @@ class Player(Unit):
                                                and have_dex >= it.dexterity_req())):
                 out.append(it)
         # charms work from the backpack (D2: not from the stash or the cube)
-        for it in getattr(self, "inventory", []):
-            if getattr(it, "charm", False) and it.mod_list is not None and self.level >= it.levelreq:
-                out.append(it)
+        out += self._charms()
         return out
 
+    def _charm_items(self):
+        """Where his charms work from: the backpack (D2), or only the charm inventory beside it
+        when he has one (the D2 Autobattler's heroes: qol["charm_grid"])."""
+        if (getattr(self, "qol", None) or {}).get("charm_grid"):
+            return list(getattr(self, "charm_inv", None) or [])
+        return list(getattr(self, "inventory", []))
+
     def _charms(self):
-        return [it for it in getattr(self, "inventory", [])
+        return [it for it in self._charm_items()
                 if getattr(it, "charm", False) and it.mod_list is not None
                 and self.level >= it.levelreq]
 
