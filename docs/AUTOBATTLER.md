@@ -217,8 +217,12 @@ is drawn with plain boxes and a system font.
   first skill in slot order that makes sense at that moment (enough mana, a target in reach, a
   curse not already on it, room for another summon, its cooldown over); otherwise his normal
   attack. With every slot empty he picks his skills himself, as before (brain.decide).
-- To town: the selected hero's run ends at once and he is back in town (Stop run waits for the
-  end of the floor). The traders restock each time a hero comes back.
+- To town / Continue run: To town takes the hero (and his group) to town as a town portal would:
+  the run waits on its floor, frozen as it is, and he is in Sanctuary, where Tyrael mends him and
+  the traders restock; Shop and Stash work. The button then reads Continue run, which takes him
+  back to the same floor, where he was, with whatever he changed in town. The hero list shows him
+  "in town" in gold while his run waits. Stop run in town ends the run at once; on a floor it
+  waits for the end of the floor.
 - Shop and Stash (heroes in town only) are two windows, each with D2's inventory panel on the
   right, as on the Inventory screen. The Shop window has four tabs (Tyrael, Hadriel, Izual,
   Gamble); the Stash window has only the stash.

@@ -247,6 +247,27 @@ def test_skill_bar():
     check(not used.get("Bash") and not used.get("Howl"), "skills not on the bar are not used")
 
 
+def test_town_and_back():
+    """To town: the run waits on its floor; Continue run goes on from the same floor."""
+    h = _hero("Traveller")
+    mgr = RunManager(_NoAssets(), _cfg())
+    r = mgr.start([h])
+    for _ in range(100):
+        _tick(mgr)
+    w, depth = r.world, r.depth
+    h.hp = 1
+    check(r.go_town() and r.state == "town" and h.hp == h.max_hp, "to town: the run waits, Tyrael mends him")
+    check(h.name in mgr.busy_names() and h.name not in mgr.on_floor_names(), "he is in town, his run still going")
+    f0 = r.sim.frame
+    for _ in range(50):
+        _tick(mgr)
+    check(r.sim.frame == f0 and r.state == "town", "the floor waits while he is in town")
+    check(r.resume() and r.state == "fight" and r.world is w and r.depth == depth, "continue: the same floor")
+    _tick(mgr)
+    check(r.sim.frame == f0 + 1, "and it plays on")
+    r.finish("stopped")
+
+
 def test_cast_breakpoints():
     from autobattler.brain import CAST_FRAMES0
     sor = [timing.cast_frames(CAST_FRAMES0["sor"] + 1, f) for f in (0, 9, 20, 37, 63, 105, 200)]
@@ -454,6 +475,7 @@ if __name__ == "__main__":
     test_town_stash()
     test_no_essences()
     test_skill_bar()
+    test_town_and_back()
     test_inventory_screen()
     print("\n%s" % ("all passed" if not FAILS else "%d FAILED" % len(FAILS)))
     sys.exit(1 if FAILS else 0)

@@ -234,6 +234,10 @@ class App:
         r = pygame.Rect(rect)
         lv = self.view_of(run)
         self.look.inset(self.canvas, r)
+        if run is not None and run.state == "town":
+            self.look.text(self.canvas, "med", "In town. Floor %d waits (Continue run)." % run.depth, GOLD,
+                           r.x, r.centery - 8, "center", r.w)
+            return
         if run is not None and run.state in ("pause", "build") and lv is not None:
             # between floors: the old floor is over (and the heroes already stand on the new one)
             self.look.text(self.canvas, "med", "Next: floor %d..." % run.depth, GOLD,
@@ -285,7 +289,11 @@ class App:
     def stop_run(self):
         for n in self.selected:
             r = self.run_of(n)
-            if r is not None:
+            if r is not None and r.state == "town":
+                r.note("Run ended in town.")
+                r.finish("stopped")              # (in town already: it ends now)
+                self.message = "%s: run ended." % ", ".join(h.name for h in r.heroes)
+            elif r is not None:
                 r.stop_requested = True
                 self.message = "%s will stop after this floor." % ", ".join(h.name for h in r.heroes)
 
@@ -294,7 +302,7 @@ class App:
             h = self.heroes.get(n)
             if h is not None:
                 st = brain.cycle_style(h)
-                if n not in self.mgr.busy_names():
+                if n not in self.mgr.on_floor_names():
                     roster.save(h)
                 self.message = "%s: %s" % (n, STYLE_NAMES[st])
 
@@ -327,7 +335,7 @@ class App:
             return
         r = brain.pickup_rules(h)
         r[key] = not r.get(key)
-        if h.name not in self.mgr.busy_names():
+        if h.name not in self.mgr.on_floor_names():
             roster.save(h)
 
     def set_filter(self, name):
@@ -396,7 +404,7 @@ class App:
             return
         if ev.key == pygame.K_ESCAPE:
             if self.screen_name != "roster":
-                if self.screen_name == "pickup" and self.hero() and self.hero().name not in self.mgr.busy_names():
+                if self.screen_name == "pickup" and self.hero() and self.hero().name not in self.mgr.on_floor_names():
                     roster.save(self.hero())
                 self.go("roster")
             return
@@ -489,8 +497,10 @@ class App:
             L.text(c, "med", n, GOLD if n in self.selected else WHITE, row.x + 6, row.y + 2)
             L.text(c, "small", "Lv %d %s - floor %d" % (h.level, CLASS_NAMES.get(h.cls, h.cls),
                                                      int(getattr(h, "rift_depth", 0) or 0)), GREY, row.x + 6, row.y + 16)
-            if n in busy:
+            if n in busy and not self.in_town(n):
                 L.text(c, "small", "on a run", GREEN, row.x, row.y + 9, "right", row.w - 6)
+            elif n in busy:
+                L.text(c, "small", "in town", GOLD, row.x, row.y + 9, "right", row.w - 6)     # (his run waits)
             else:
                 L.text(c, "small", "in town", GREY, row.x, row.y + 9, "right", row.w - 6)
             if unspent(h):
@@ -531,7 +541,8 @@ class App:
                                                             int(brain.profile(h).get("best", 0) or 0)),
                    WHITE, x + 250, y + 16)
             if run is not None and run.sim is not None:
-                L.text(c, "small", "Now: %s" % (run.sim.brain(h).last or "..."), GOLD, x, y + 36)
+                now = "in town, floor %d waits" % run.depth if run.state == "town" else (run.sim.brain(h).last or "...")
+                L.text(c, "small", "Now: %s" % now, GOLD, x, y + 36)
                 L.text(c, "small", "This run: %d floors, %d kills, %d deaths" % (run.floors, run.kills + run.sim.kills,
                                                                                 getattr(run, "deaths", 0)), WHITE, x + 250, y + 36)
             st, sk = unspent(h)
@@ -543,18 +554,20 @@ class App:
         # buttons
         has = h is not None
         on_run = has and run is not None
+        town_run = on_run and run.state == "town"
         bh, gap = 32, 8
         row1 = [("New hero", lambda: self.go("create"), roster.count() < self.cfg["max_heroes"]),
                 ("Start run", self.start_run, has and not on_run),
                 ("Stop run", self.stop_run, on_run),
-                ("To town", self.to_town, on_run),
-                ("Watch", lambda: self.go("watch"), on_run),
+                ("Continue run", self.continue_run, True) if town_run else
+                ("To town", self.to_town, on_run and run.state == "fight"),
+                ("Watch", lambda: self.go("watch"), on_run and not town_run),
                 ("Style", self.cycle_style, has)]
         row2 = [("Inventory / Loot", lambda: self.go("inventory"), has),
                 ("Abilities", lambda: self.go("character"), has),
                 ("Pickup", lambda: self.go("pickup"), has),
-                ("Shop", lambda: self.open_town("shop"), has and not on_run),
-                ("Stash", lambda: self.open_town("stash"), has and not on_run)]
+                ("Shop", lambda: self.open_town("shop"), has and (not on_run or town_run)),
+                ("Stash", lambda: self.open_town("stash"), has and (not on_run or town_run))]
         for j, row in enumerate((row1, row2)):
             bw = (W - 20 + gap) // len(row) - gap
             for i, (label, act, en) in enumerate(row):
@@ -759,7 +772,7 @@ class App:
         n_all = len(run.ground_items()) if run is not None else 0
         ty = gy + LOOT_ROWS * CELL + 6
         L.text(c, "small", ("%d of %d items on floor %d  (green: his pickup rules want it)" % (len(items), n_all, run.depth))
-               if run else "Not on a run: nothing on the ground", WHITE, gx, ty)
+               if run else "In town: nothing on the ground", WHITE, gx, ty)
         if len(pages) > 1:
             px = gx + LOOT_COLS * CELL - 120
             self.button((px, ty - 2, 36, 18), "<", self.page, -1, len(pages))
@@ -800,7 +813,7 @@ class App:
             b = None
         if b is None and h is not None:
             gear.prepare(h)
-            in_town = h.name not in self.mgr.busy_names()
+            in_town = h.name not in self.mgr.on_floor_names()
             b = self.bench = gear.Bench(h, self.content, stash=self.shared_stash() if in_town else None)
         return b
 
@@ -817,7 +830,7 @@ class App:
 
     def _gear_saved(self, b):
         """Idle heroes are saved after each change; a hero on a run is saved by the run."""
-        if b is not None and b.changed and b.player.name not in self.mgr.busy_names():
+        if b is not None and b.changed and b.player.name not in self.mgr.on_floor_names():
             roster.save(b.player)
             b.changed = False
 
@@ -944,7 +957,7 @@ class App:
         # ---- left: what lies on his floor (the loot window)
         L.panel(c, (6, 40, 456, 534))
         L.text(c, "med", "%s - level %d %s" % (h.name, h.level, CLASS_NAMES.get(h.cls, h.cls)), GOLD, 6, 50, "center", 456)
-        self._draw_loot_area(h, run, 18, 72)
+        self._draw_loot_area(h, run if run is not None and run.state != "town" else None, 18, 72)
         # the buttons
         y0 = 404
         n_unid = b.unidentified()
@@ -1030,20 +1043,33 @@ class App:
             traceback.print_exc()
 
     def to_town(self):
-        """The selected heroes on runs come back to town now (the floor is left as it is)."""
+        """The selected heroes go to town; their run waits on its floor (Continue run)."""
         names = []
         for n in list(self.selected):
             r = self.run_of(n)
-            if r is not None:
-                names += [h.name for h in r.heroes]
-                r.note("Back to town from floor %d." % r.depth)
+            if r is not None and r.state == "fight":
                 if self.bench is not None and self.bench.player in r.heroes:
                     self._close_bench()
-                r.finish("town")
-                for h in r.heroes:
-                    h._town_visit = int(getattr(h, "_town_visit", 0) or 0) + 1   # (the traders restock)
+                if r.go_town():
+                    names += [h.name for h in r.heroes]
         if names:
-            self.message = "%s back in town." % ", ".join(names)
+            self.message = "%s in town. Continue run takes them back to the floor." % ", ".join(names)
+
+    def continue_run(self):
+        names = []
+        for n in list(self.selected):
+            r = self.run_of(n)
+            if r is not None and r.state == "town":
+                if self.bench is not None and self.bench.player in r.heroes:
+                    self._close_bench()
+                if r.resume():
+                    names += [h.name for h in r.heroes]
+        if names:
+            self.message = "%s back on the floor." % ", ".join(names)
+
+    def in_town(self, name):
+        r = self.run_of(name)
+        return r is None or r.state == "town"
 
     def open_town(self, tab):
         """Shop and Stash are two windows: the shop's traders, or the account's stash."""
@@ -1143,7 +1169,7 @@ class App:
         h = b.player if b else None
         self._title("Stash" if getattr(self, "town_tab", "") == "stash" else "Shop")
         self._town_hot = []
-        if h is None or self.run_of(h.name) is not None:
+        if h is None or not self.in_town(h.name):
             L.text(c, "med", "Only a hero in town can trade or use the stash.", GOLD, 0, 280, "center", W)
             self.button((340, 540, 120, 28), "Back", lambda: self.go("roster"))
             return
@@ -1368,7 +1394,7 @@ class App:
                  ("Vitality", "vit", "vitality", "base_vit", 231), ("Energy", "eng", "energy", "base_eng", 293)]
 
     def _char_saved(self, h):
-        if h.name not in self.mgr.busy_names():
+        if h.name not in self.mgr.on_floor_names():
             roster.save(h)
 
     def char_stat(self, key):
@@ -1613,7 +1639,7 @@ class App:
 
     def _key_escape(self):
         h = self.hero()
-        if h is not None and h.name not in self.mgr.busy_names():
+        if h is not None and h.name not in self.mgr.on_floor_names():
             roster.save(h)
         self.go("roster")
 

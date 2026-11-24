@@ -26,7 +26,7 @@ from . import brain, gear, realtime, roster, timing
 BUILD_LOCK = threading.Lock()       # one floor built at a time
 SESSION_SEED = random.randrange(1, 1 << 30)
 
-STATES = ("build", "fight", "pause", "over")
+STATES = ("build", "fight", "pause", "town", "over")
 
 
 class Run:
@@ -158,6 +158,34 @@ class Run:
             from game import tactics
             tactics._as_follower(w, h)      # the fields the engine expects of a party hero
 
+    # ------------------------------------------------------------ town and back
+    def go_town(self):
+        """To town (a town portal): the floor waits as it is, the heroes are in Sanctuary, where
+        Tyrael mends them and the traders have new stock. -> True if they went."""
+        if self.state != "fight" or self.sim is None:
+            return False
+        self.state = "town"
+        for h in self.heroes:
+            if h.alive:
+                h.hp, h.mana = h.max_hp, getattr(h, "max_mana", getattr(h, "mana", 0))
+            h._town_visit = int(getattr(h, "_town_visit", 0) or 0) + 1
+            roster.save(h)
+        self.note("To town from floor %d; the floor waits." % self.depth)
+        return True
+
+    def resume(self):
+        """Back through the portal: the run goes on where it was left."""
+        if self.state != "town":
+            return False
+        for h in self.heroes:
+            h.recalc()                          # (gear changed in town)
+            h.hp = min(h.hp, h.max_hp)
+            h.mana = min(h.mana, getattr(h, "max_mana", h.mana))
+            gear.prepare(h)
+        self.state = "fight"
+        self.note("Back on floor %d." % self.depth)
+        return True
+
     # ------------------------------------------------------------ frames
     def tick(self):
         if self.state == "build":
@@ -182,7 +210,7 @@ class Run:
                 self.state = "build"
             return
         if self.state != "fight":
-            return
+            return                              # (town: the floor waits)
         xp0 = self.leader.xp
         self.sim.tick()
         self._share_xp(self.leader.xp - xp0)
@@ -320,7 +348,12 @@ class RunManager:
         return [r for r in self.runs if r.state != "over"]
 
     def busy_names(self):
+        """Heroes with a run going (on a floor, or in town between its floors)."""
         return {h.name for r in self.active() for h in r.heroes}
+
+    def on_floor_names(self):
+        """Heroes on a rift floor now (not in town)."""
+        return {h.name for r in self.active() if r.state != "town" for h in r.heroes}
 
     def free_slots(self):
         return self.cfg["max_active"] - sum(len(r.heroes) for r in self.active())
