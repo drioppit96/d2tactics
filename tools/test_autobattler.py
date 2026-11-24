@@ -564,6 +564,20 @@ def test_ready_skeletons():
     r.finish("stopped")
 
 
+def test_line_of_fire():
+    """A shot needs open floor all the way: a pillar between stops it, so he walks round."""
+    import types
+    from autobattler.realtime import Sim
+    from game.grid import Grid, FLOOR, WALL
+    g = Grid(20, 20, FLOOR)
+    g.cells[5][7] = WALL                       # a pillar between (5, 5) and (9, 5)
+    sim = Sim.__new__(Sim)
+    sim.w = types.SimpleNamespace(grid=g)
+    a, b, c = (types.SimpleNamespace(pos=p) for p in ((5, 5), (9, 5), (5, 9)))
+    check(not sim._can_shoot(a, b), "a pillar in the way: no shot")
+    check(sim._can_shoot(a, c), "open floor: a clear shot")
+
+
 def test_cast_breakpoints():
     from autobattler.brain import CAST_FRAMES0
     sor = [timing.cast_frames(CAST_FRAMES0["sor"] + 1, f) for f in (0, 9, 20, 37, 63, 105, 200)]
@@ -783,6 +797,7 @@ if __name__ == "__main__":
     test_d2_quality()
     test_summons_fight()
     test_ready_skeletons()
+    test_line_of_fire()
     test_inventory_screen()
     print("\n%s" % ("all passed" if not FAILS else "%d FAILED" % len(FAILS)))
     sys.exit(1 if FAILS else 0)

@@ -97,6 +97,11 @@ How a hero fights is worked out from his build; there are no priority settings t
     and the run takes him home (Tyrael mends him, the belt is refilled from his gold, nothing is
     sold) and back to the floor 3 seconds later;
   - below 50% life with three or more melee monsters on him: he backs out of the ring.
+- Shots, thrown weapons and aimed spells need open floor all the way to the target (a pillar or a
+  wall corner stops them, as in D2): in range but blocked, he walks round until the way is open,
+  instead of standing and shooting the pillar. Summons that shoot do the same.
+- Potions are checked every frame, in the middle of a swing, a cast or a hit as D2 allows, not
+  only when he makes his next decision.
 - Kiting: every build but melee steps away when a melee monster reaches him, at most twice a
   second so he still gets his attacks and spells in; cornered, he fights for a second.
 - Mana: damage spells count for less the lower his mana (x0.3 at empty, up to x1 at full), and a

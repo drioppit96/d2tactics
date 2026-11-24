@@ -209,6 +209,8 @@ class Sim:
             self._round()
         if self.phase == "loot" and (self.frame >= self.loot_until or not any(self._next_item(h) for h in heroes)):
             self.phase = "portal"
+        for h in heroes:
+            self._quaff(h)
         for u in heroes + self.pets() + [m for m in self.foes() if getattr(m, "aware", False) and not getattr(m, "caster", False)]:
             if u.alive:
                 self._step(u)
@@ -473,23 +475,35 @@ class Sim:
         return [m for m in self.foes() if getattr(m, "aware", False) and getattr(m, "range", 1) <= 1
                 and chebyshev(m.pos, h.pos) <= r + getattr(m, "radius", 0)]
 
+    def _quaff(self, h):
+        """Potions, every frame: D2 lets you drink in the middle of a swing, a cast or a hit, and
+        a hero who waited for his next decision could die first."""
+        s = self._state(h)
+        if self.frame < s.next_drink:
+            return
+        pct = 100.0 * h.hp / max(1, h.max_hp)
+        b = self.brain(h)
+        if pct >= brains.setting(h, "potion_at") and not (
+                getattr(h, "max_mana", 0) and h.mana * 100 < h.max_mana * MANA_DRINK_AT):
+            return
+        fighting = bool(self._awake_near(h, HERO_SIGHT))
+        if pct < self.EMERGENCY_AT and self._drink(h, ("rejuv", "heal")):
+            s.next_drink = self.frame + DRINK_COOLDOWN
+            b.last = "drinks a potion (life low)"
+        elif pct < brains.setting(h, "potion_at") and self._drink(h, ("heal", "rejuv")):
+            s.next_drink = self.frame + DRINK_COOLDOWN
+            b.last = "drinks a healing potion"
+        elif getattr(h, "max_mana", 0) and h.mana * 100 < h.max_mana * MANA_DRINK_AT and \
+                (fighting or b.role() in ("caster", "summoner")) and self._drink(h, ("mana", "rejuv")):
+            s.next_drink = self.frame + DRINK_COOLDOWN
+            b.last = "drinks a mana potion"
+
     def _survive(self, h, s, b):
-        """Potions and getting out of trouble, before anything else. -> True when that is what he
-        does this moment."""
+        """Getting out of trouble, before anything else (potions: _quaff, every frame). -> True
+        when that is what he does this moment."""
         from game import potions
         pct = 100.0 * h.hp / max(1, h.max_hp)
         fighting = bool(self._awake_near(h, HERO_SIGHT))
-        if self.frame >= s.next_drink:
-            if pct < self.EMERGENCY_AT and self._drink(h, ("rejuv", "heal")):
-                s.next_drink = self.frame + DRINK_COOLDOWN
-                b.last = "drinks a potion (life low)"
-            elif pct < brains.setting(h, "potion_at") and self._drink(h, ("heal", "rejuv")):
-                s.next_drink = self.frame + DRINK_COOLDOWN
-                b.last = "drinks a healing potion"
-            elif getattr(h, "max_mana", 0) and h.mana * 100 < h.max_mana * MANA_DRINK_AT and \
-                    (fighting or b.role() in ("caster", "summoner")) and self._drink(h, ("mana", "rejuv")):
-                s.next_drink = self.frame + DRINK_COOLDOWN
-                b.last = "drinks a mana potion"
         has_heal = any(getattr(x, "potion", "") in ("heal", "rejuv") for x in (getattr(h, "belt", None) or []))
         if pct < self.RETREAT_AT and not has_heal and fighting:
             self.need_town = True              # (the run takes him home to be mended)
@@ -553,6 +567,14 @@ class Sim:
         if plan.skill == "throw":
             reach = int(getattr(h, "throw_range", brains.THROW_RANGE))
         aim = plan.target.pos if plan.target is not None else plan.cell
+        aimed = (sk is not None and sk.kind not in ("aura", "buff", "cry", "nova", "passive")
+                 and sk.kind not in brains.SUMMON_KINDS) or plan.skill == "throw"
+        if aim is not None and aimed and chebyshev(h.pos, aim) <= reach and not self._can_shoot(h, aim):
+            # a pillar or a wall between: walk round until the way is open
+            if not self._walk_to(h, s, aim, reach=1) and plan.target is not None:
+                s.skip[id(plan.target)] = self.frame + 2 * timing.FPS
+                s.target = None
+            return
         if aim is not None and sk is not None and sk.kind not in ("aura", "buff", "cry") and \
                 sk.kind not in brains.SUMMON_KINDS and chebyshev(h.pos, aim) > reach:
             if not self._walk_to(h, s, aim, reach=reach) and plan.target is not None:
@@ -717,8 +739,20 @@ class Sim:
             return max(1, int(getattr(u, "reach", 1)))
         return max(1, int(getattr(u, "range", 1)))
 
+    def _can_shoot(self, a, b):
+        """A shot or a missile from a reaches b: next to it, or open floor all the way (a pillar
+        or a wall corner between them stops it, as in D2)."""
+        apos, bpos = getattr(a, "pos", a), getattr(b, "pos", b)
+        return chebyshev(apos, bpos) <= 1 + getattr(b, "radius", 0) or self._line_clear(apos, bpos)
+
     def _engage(self, u, s, tgt, reach):
         r = getattr(u, "radius", 0) + getattr(tgt, "radius", 0)
+        if reach > 1 and chebyshev(u.pos, tgt.pos) <= reach + r and not self._can_shoot(u, tgt):
+            # in range but something in the way: closer, until the way is open
+            if not self._walk_to(u, s, tgt.pos, reach=1, target_r=getattr(tgt, "radius", 0)):
+                s.skip[id(tgt)] = self.frame + 2 * timing.FPS
+                s.target = None
+            return
         if chebyshev(u.pos, tgt.pos) <= reach + r:
             self._start_attack(u, s, tgt, ranged=reach > 1)
         elif not self._walk_to(u, s, tgt.pos, reach=reach, target_r=getattr(tgt, "radius", 0)):
