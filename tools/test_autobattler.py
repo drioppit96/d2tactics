@@ -213,6 +213,12 @@ def test_town_stash():
           "with a full backpack the cursor item goes to the stash, not sold")
 
 
+def test_no_essences():
+    from game import essences
+    config.apply_d2_rules()
+    check(not essences.DROPS and essences.roll_drop(None, None) is None, "no essences drop in the autobattler")
+
+
 def test_cast_breakpoints():
     from autobattler.brain import CAST_FRAMES0
     sor = [timing.cast_frames(CAST_FRAMES0["sor"] + 1, f) for f in (0, 9, 20, 37, 63, 105, 200)]
@@ -418,6 +424,7 @@ if __name__ == "__main__":
     test_gear()
     test_points_by_hand()
     test_town_stash()
+    test_no_essences()
     test_inventory_screen()
     print("\n%s" % ("all passed" if not FAILS else "%d FAILED" % len(FAILS)))
     sys.exit(1 if FAILS else 0)

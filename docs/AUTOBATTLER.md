@@ -216,6 +216,9 @@ is drawn with plain boxes and a system font.
     Ctrl + click in the backpack moves one into the stash. Gold stays each hero's own.
   - Leaving the screen with an item on the cursor puts it in the backpack, or in the stash when
     the backpack is full.
+- No essences: the three account currencies of D2 Tactics (game/essences.py) don't drop in the
+  autobattler (essences.DROPS is turned off by config.apply_d2_rules) and aren't shown anywhere.
+  D2's own boss essences (the Token of Absolution's) are untouched.
 - Inventory / Loot: the loot window on the left, D2's own inventory panel (invchar6) on the right,
   drawn by the game's HUD code, with the equipment slots, the I / II weapon tabs and the backpack
   grown to 8 rows.

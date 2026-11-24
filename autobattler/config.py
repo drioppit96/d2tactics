@@ -77,6 +77,8 @@ def _update_old_file():
 def apply_d2_rules():
     """Diablo II's own odds and damage, not the D2 Tactics adjustments in settings.ini
     (min_hit_chance, monster_hit_chance, normal_monster_damage, normal_monster_hit_bonus)."""
+    from game import essences
+    essences.DROPS = False          # the account currencies are D2 Tactics' own: none here
     import game.world as gw
     gw.PLAYER_HIT_FLOOR = 0.05
     gw.MONSTER_HIT_FLOOR = 0.05

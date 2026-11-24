@@ -18,6 +18,9 @@ character on the account, and it is still there in the next session.
 """
 import random
 
+#: off in the D2 Autobattler (autobattler/config.py), which has no use for them: nothing drops one
+DROPS = True
+
 DAMNED = "damned"          # demons
 DEAD = "dead"              # the walking dead
 BEAST = "beast"            # beasts
@@ -132,6 +135,8 @@ def kind_for(world, unit):
 
 def roll_drop(world, unit, rng=None):
     """Called when something dies. What it leaves lying there, or None."""
+    if not DROPS:
+        return None
     kind = kind_for(world, unit)
     if kind is None:
         return None
