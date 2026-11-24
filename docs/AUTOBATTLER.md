@@ -39,7 +39,13 @@ update never overwrites them.
   x2.5-x3.5 and damage x1.35, act bosses -40% on Normal, a floor keeper's extra x2.5 life, the
   +50% normal-monster damage and +15% hit bonus). A group of N heroes plays as D2's /players N:
   each monster gets (N + 1) / 2 times the life and experience (`runs.scale_for_players`).
-  Rift monsters still take the hero's level (MonLvl), except the act bosses, which are D2's own.
+  Monster levels follow the acts (rift.act_level): the ten floors of an act climb from just above
+  the previous act boss's level to this act's boss's level (Normal: Act 1 1-12, Act 2 13-22,
+  Act 3 23-26, Act 4 27-30, Act 5 31-40; Nightmare and Hell by their MonStats levels), and after
+  floor 50 the acts come round again 40 levels higher (at most 99). The act bosses on every tenth
+  floor are D2's own.
+- A stopped run is picked up again: the next run starts one floor below the deepest he cleared
+  (kept on the hero and in his profile); only dying sends him back to floor 1.
 - The D2R changes in `game/d2r.py` apply as in D2 Tactics.
 - Real time at 25 frames a second. Attack, hit recovery and movement follow D2's formulas
   (`autobattler/timing.py`):

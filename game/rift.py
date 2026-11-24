@@ -34,6 +34,42 @@ OPEN_FLOORS = [("wild", 1, "Wild Moors"), ("desert", 2, "Scorched Waste"), ("jun
 OPEN_SHARE = 0.35          # about a third of the BIG floors are outdoors
 
 
+#: the D2 Autobattler: a floor's monsters take their level from the act, not from the hero
+ACT_LEVELS = False
+#: the act bosses' own levels on Normal, when MonStats can't be read
+BOSS_LEVELS = {"andariel": 12, "duriel": 22, "mephisto": 26, "diablo": 30, "baalcrab": 40}
+
+
+def _boss_level(act):
+    mid = ACT_BOSSES[max(1, min(5, act)) - 1]
+    c = CONTENT
+    row = (getattr(c, "monstats", None) or {}).get(mid) if c is not None else None
+    if row:
+        sfx = getattr(c, "sfx", "") or ""
+        try:
+            v = int((row.get("level" + sfx) or row.get("level") or "").strip())
+            if v > 0:
+                return v
+        except (ValueError, AttributeError):
+            pass
+    return BOSS_LEVELS[mid]
+
+
+def act_level(depth):
+    """The monsters' level on a floor: the ten floors of an act climb from just above the last
+    act boss's level to this act's boss's level (Normal: Act 1 1-12, Act 2 13-22, Act 3 23-26,
+    Act 4 27-30, Act 5 31-40; Nightmare and Hell by their own MonStats levels). After floor 50 the
+    acts come round again, 40 levels higher each time round (at most 99)."""
+    depth = max(1, int(depth))
+    act = act_of_depth(depth)
+    hi = _boss_level(act)
+    lo = _boss_level(act - 1) + 1 if act > 1 else max(1, hi - 11)
+    i = (depth - 1) % 10
+    lvl = lo + (max(lo, hi) - lo) * i / 9.0
+    lap = (depth - 1) // 50
+    return max(1, min(99, int(round(lvl)) + 40 * lap))
+
+
 def act_of_depth(depth):
     """BIG floors follow the acts: 1-10 Act 1, 11-20 Act 2, 21-30 Act 3, 31-40 Act 4, 41-50 Act 5,
     then round again (51-60 Act 1 ...). The tenth floor of each is that act's boss."""
@@ -218,7 +254,9 @@ def monster_level(lid):
 def build_level(kit, lid, seed=None, player=None):
     from . import act1, tactics
     p = plan(lid, player)
-    if player is not None:
+    if ACT_LEVELS:
+        p["mlvl"] = act_level(p["depth"])      # the act's own monster levels (the autobattler)
+    elif player is not None:
         p["mlvl"] = max(1, getattr(player, "level", 1))
     rooms = p["rooms"]
     if tactics.ACTIVE:

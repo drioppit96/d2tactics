@@ -40,7 +40,7 @@ class Run:
         self.cfg = cfg
         self.timings = timings
         self.state = "build"
-        self.depth = max(1, max(int(getattr(h, "rift_depth", 0) or 0) for h in self.heroes) + 1)
+        self.depth = max(1, max(cleared(h) for h in self.heroes) + 1)
         self.deaths = 0
         self.world = None
         self.sim = None
@@ -116,6 +116,10 @@ class Run:
                     rift.PLANS.pop(lid, None)
                     w = make_world(a.act_kit, a.act_info, a.content, lid, player=self.leader,
                                    seed=random.randrange(1 << 30))
+                    for h in self.heroes:
+                        # (the engine ends a rift run when its hero "leaves the rift"; here only
+                        # the run decides that, so it never sees him as having been in one)
+                        h._in_rift = False
                 else:
                     from game.world import World
                     w = World(seed=random.randrange(1 << 30), depth_level=self.depth, player=self.leader)
@@ -267,6 +271,7 @@ class Run:
                 prof = brain.profile(h)        # (saved with him; his best floor ever)
                 prof["best"] = max(int(prof.get("best", 0) or 0), int(getattr(h, "rift_depth", 0) or 0))
                 h.rift_depth = 0
+                prof["cleared"] = 0
                 h.alive = True
                 roster.save(h)
             if self.stop_requested:
@@ -291,6 +296,7 @@ class Run:
             for h in self.heroes:
                 h.rift_depth = max(int(getattr(h, "rift_depth", 0) or 0), self.depth)
                 prof = brain.profile(h)
+                prof["cleared"] = h.rift_depth    # (kept in his profile too: the next run goes on from here)
                 prof["best"] = max(int(prof.get("best", 0) or 0), h.rift_depth)
                 roster.save(h)
             for who, what in self.sim.picked:
@@ -397,6 +403,11 @@ class Run:
         self.sim = None
 
 
+def cleared(h):
+    """The deepest floor he has cleared since he last died: the next run starts one deeper."""
+    return max(int(getattr(h, "rift_depth", 0) or 0), int(brain.profile(h).get("cleared", 0) or 0))
+
+
 def scale_for_players(w, players):
     """D2's /players setting: each player past the first gives monsters +50% life and +50%
     experience ((players + 1) / 2). One hero plays /players 1: D2's own numbers, untouched."""
@@ -451,6 +462,7 @@ class RunManager:
             from game import rift
             rift.BIG = bool(cfg.get("big_maps", True))
             rift.CONTENT = assets.content
+            rift.ACT_LEVELS = True           # monsters by the act's own levels, not the hero's
             rift.forget(None)
             rift._SEED = SESSION_SEED
 

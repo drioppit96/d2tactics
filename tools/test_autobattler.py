@@ -396,6 +396,15 @@ def test_summons_once():
     check(not b._summons_full("Clay Golem", s), "his golem died: he summons one (another hero's golem doesn't count)")
 
 
+def test_act_levels():
+    """Monster levels follow the acts: each act climbs to its boss's level."""
+    from game import rift
+    lv = [rift.act_level(d) for d in (1, 10, 11, 20, 21, 30, 31, 40, 41, 50, 51)]
+    check(lv[:10] == [1, 12, 13, 22, 23, 26, 27, 30, 31, 40] and lv[10] == 41,
+          "floor levels (1, 10, 11, 20, 21, 30, 31, 40, 41, 50, 51): %s" % lv)
+    check(all(rift.act_level(d) <= rift.act_level(d + 1) for d in range(1, 99)), "they never go down")
+
+
 def test_cast_breakpoints():
     from autobattler.brain import CAST_FRAMES0
     sor = [timing.cast_frames(CAST_FRAMES0["sor"] + 1, f) for f in (0, 9, 20, 37, 63, 105, 200)]
@@ -608,6 +617,7 @@ if __name__ == "__main__":
     test_full_bag_trip()
     test_d2_difficulty()
     test_summons_once()
+    test_act_levels()
     test_inventory_screen()
     print("\n%s" % ("all passed" if not FAILS else "%d FAILED" % len(FAILS)))
     sys.exit(1 if FAILS else 0)
