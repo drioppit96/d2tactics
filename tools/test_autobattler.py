@@ -309,6 +309,41 @@ def test_belt_columns():
     potions.COLUMN_RULE = None
 
 
+def test_full_bag_trip():
+    """A full backpack: home, gems / runes / unique / set items into the stash, back to the floor."""
+    from autobattler import stash
+    from game.items import Item
+    h = _hero("Hoarder")
+    st = stash.get(None)
+    for i in range(80):
+        if i % 3 == 0:
+            it = Item("Chipped Ruby", "gcr", None, kind="misc")
+            it.gem, it.base = ("gem", "ruby", 0), {"code": "gcr"}
+        elif i % 3 == 1:
+            it = Item("Unique Cap", "cap", "helm", rarity="unique")
+        else:
+            it = Item("Stone", "sto", "helm")
+        if not h.inv_add(it):
+            break
+    mgr = RunManager(_NoAssets(), _cfg())
+    r = mgr.start([h])
+    for _ in range(60):
+        _tick(mgr)
+    bank0, items0 = st.bank.get("gcr", 0), sum(len(p) for p in st.pages)
+    r.sim.no_room = True
+    _tick(mgr)
+    check(r.state == "town", "a full backpack sends him home")
+    check(st.bank.get("gcr", 0) > bank0 and sum(len(p) for p in st.pages) > items0
+          and not any(stash.keeps(it) for it in h.inventory), "gems and unique items go to the stash")
+    for _ in range(int(r.AUTO_TOWN_SECONDS * 25) + 2):
+        _tick(mgr)
+    check(r.state == "fight", "and he goes back to the floor by himself")
+    r.sim.no_room = True
+    _tick(mgr)
+    check(r.state == "fight", "nothing the stash takes: he stays on the floor")
+    r.finish("stopped")
+
+
 def test_cast_breakpoints():
     from autobattler.brain import CAST_FRAMES0
     sor = [timing.cast_frames(CAST_FRAMES0["sor"] + 1, f) for f in (0, 9, 20, 37, 63, 105, 200)]
@@ -518,6 +553,7 @@ if __name__ == "__main__":
     test_skill_bar()
     test_town_and_back()
     test_belt_columns()
+    test_full_bag_trip()
     test_inventory_screen()
     print("\n%s" % ("all passed" if not FAILS else "%d FAILED" % len(FAILS)))
     sys.exit(1 if FAILS else 0)

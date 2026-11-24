@@ -30,6 +30,7 @@ sys.path.insert(0, HERE)
 
 from main import load_settings, load_assets, log_error          # noqa: E402  (the same engine)
 from autobattler import brain, config, gear, points, roster     # noqa: E402
+from autobattler import stash as abstash                        # noqa: E402
 from autobattler.runs import RunManager                         # noqa: E402
 from autobattler.timing import FPS, Timings                     # noqa: E402
 from autobattler.ui import Look, GOLD, WHITE, GREY, RED, GREEN, BLUE, W, H   # noqa: E402
@@ -957,7 +958,13 @@ class App:
         else:
             cell = self._inv_cell()
             it = b.player.inv_at(*cell) if cell else None
-            b.right_click(it, sell=bool(pygame.key.get_mods() & pygame.KMOD_CTRL))
+            from game.cube import bankable
+            if it is not None and bankable(it) and self.screen_name == "town" and \
+                    getattr(self, "town_tab", "") == "stash":
+                if b.backpack_to_stash(it):              # a gem or rune onto its stack
+                    self.save_stash()
+            else:
+                b.right_click(it, sell=bool(pygame.key.get_mods() & pygame.KMOD_CTRL))
         self._gear_saved(b)
 
     def inv_sell_held(self):
@@ -1060,29 +1067,11 @@ class App:
     STASH_CELL = 22
 
     def shared_stash(self):
-        """The account's chest: every hero in town uses the same one (saves_auto/_stash.json).
-        Gold stays each hero's own."""
-        st = getattr(self, "_stash", None)
-        if st is None:
-            from game import save as gsave
-            try:
-                st = gsave.load_shared_stash(self.content)
-            except Exception:
-                import traceback
-                traceback.print_exc()
-                from game.cube import make_stash
-                st = make_stash()
-            st.purse = None
-            self._stash = st
-        return st
+        """The account's chest: every hero in town uses the same one (autobattler/stash.py)."""
+        return abstash.get(self.content)
 
     def save_stash(self):
-        from game import save as gsave
-        try:
-            gsave.save_shared_stash(self.shared_stash())
-        except Exception:
-            import traceback
-            traceback.print_exc()
+        abstash.save()
 
     def to_town(self):
         """The selected heroes go to town; their run waits on its floor (Continue run)."""

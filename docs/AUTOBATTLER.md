@@ -193,6 +193,13 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
   fit is left lying.
 - Autobattler heroes have a 10 x 8 backpack, twice D2's 10 x 4 (`qol["inv_rows"] = 8`, read by
   `Player.INV_H`; heroes saved with a 10 x 7 backpack keep their items where they were).
+- A full backpack: when a hero finds something he wants and has no room for it, and he carries
+  gems, runes, unique or set items, his run goes to town on its own (the floor waits). Every
+  return to town, automatic or by the To town button, puts the gems and runes from the backpack on
+  their stacks in the stash's gems & runes tab and the unique and set items into the first stash
+  tabs with room (autobattler/stash.py). After an automatic trip he goes back to the floor by
+  himself 3 seconds later; after To town, Continue run takes him back. With nothing the stash
+  takes in his backpack he stays on the floor and leaves the item lying.
 - The belt: healing potions go in columns 1-2, mana potions in 3-4, rejuvenation potions wherever
   there is room (potions.COLUMN_RULE, set by config.apply_d2_rules; D2 Tactics keeps D2's own
   rule). Heroes pick up healing, mana and rejuvenation potions on their own whenever their belt has
@@ -240,7 +247,8 @@ is drawn with plain boxes and a system font.
     and runes tab (one stack per kind; click takes one onto the cursor, right click puts one in the
     backpack, a gem or rune dropped on it goes on its stack) and 29 tabs of 12 x 16. Click picks up
     and puts down (swapping with one item, like D2); right click moves an item to the backpack;
-    Ctrl + click in the backpack moves one into the stash. Gold stays each hero's own.
+    Ctrl + click in the backpack moves one into the stash; with the stash open, a right click on a
+    gem or rune in the backpack puts it on its stack. Gold stays each hero's own.
   - Leaving the screen with an item on the cursor puts it in the backpack, or in the stash when
     the backpack is full.
 - No essences: the three account currencies of D2 Tactics (game/essences.py) don't drop in the

@@ -114,6 +114,7 @@ class Sim:
         self.flow = {}              # id(hero) -> (frame, his cell, {cell: steps to him})
         self._was_watched = False
         self.phase = "fight"        # fight | loot (boss dead, picking up) | portal (walking to it)
+        self.no_room = False        # a hero found something he wanted and had no room for it
         self.portal = None          # the cell of the red portal to the next floor
         self.loot_until = 0
         self.at_portal = False
@@ -453,6 +454,7 @@ class Sim:
             self.brain(h).last = "picked up %s" % self._item_name(it)
         else:
             self.skip_items.add(id(it))      # no room: leave it (it stays in the loot window)
+            self.no_room = True              # (the run may send him home to empty his bag)
         return ok
 
     def _should_back_off(self, h, b):

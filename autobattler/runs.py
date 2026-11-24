@@ -159,24 +159,51 @@ class Run:
             tactics._as_follower(w, h)      # the fields the engine expects of a party hero
 
     # ------------------------------------------------------------ town and back
-    def go_town(self):
+    AUTO_TOWN_SECONDS = 3       # how long an automatic trip home takes before he goes back
+
+    def go_town(self, auto=False):
         """To town (a town portal): the floor waits as it is, the heroes are in Sanctuary, where
-        Tyrael mends them and the traders have new stock. -> True if they went."""
+        Tyrael mends them and the traders have new stock, and they put their gems, runes, unique
+        and set items in the account's stash. With auto (a full backpack) they go back to the
+        floor on their own a moment later. -> True if they went."""
         if self.state != "fight" or self.sim is None:
             return False
         self.state = "town"
+        from . import stash
+        st = stash.get(getattr(self.assets, "content", None))
+        stored = 0
         for h in self.heroes:
             if h.alive:
                 h.hp, h.mana = h.max_hp, getattr(h, "max_mana", getattr(h, "mana", 0))
             h._town_visit = int(getattr(h, "_town_visit", 0) or 0) + 1
+            n = stash.deposit(h, st)
+            stored += n
+            if n:
+                self.note("%s puts %d item%s in the stash." % (h.name, n, "" if n == 1 else "s"))
             roster.save(h)
-        self.note("To town from floor %d; the floor waits." % self.depth)
+        if stored:
+            stash.save()
+        self._auto_back = int(self.AUTO_TOWN_SECONDS * timing.FPS) if auto else 0
+        self.note(("Backpack full: to town from floor %d." if auto else
+                   "To town from floor %d; the floor waits.") % self.depth)
+        return True
+
+    def _should_empty_bag(self):
+        """A hero had no room for something he wanted: home, if that would make room (he carries
+        gems, runes, unique or set items the stash takes)."""
+        from . import stash
+        if not any(stash.keeps(it) for h in self.heroes for it in h.inventory):
+            self.sim.no_room = False
+            return False
         return True
 
     def resume(self):
         """Back through the portal: the run goes on where it was left."""
         if self.state != "town":
             return False
+        self._auto_back = 0
+        if self.sim is not None:
+            self.sim.skip_items.clear()          # (with room again, what he left is worth a look)
         for h in self.heroes:
             h.recalc()                          # (gear changed in town)
             h.hp = min(h.hp, h.max_hp)
@@ -209,6 +236,11 @@ class Run:
                 self._next_set = False
                 self.state = "build"
             return
+        if self.state == "town" and getattr(self, "_auto_back", 0):
+            self._auto_back -= 1               # (an automatic trip home: back by himself)
+            if self._auto_back <= 0:
+                self.resume()
+            return
         if self.state != "fight":
             return                              # (town: the floor waits)
         xp0 = self.leader.xp
@@ -237,6 +269,9 @@ class Run:
                 self.state = "pause"
                 self.pause = int(self.cfg.get("floor_pause", 1) * timing.FPS)
                 self._restart = True
+        elif self.sim.no_room and self._should_empty_bag():
+            self.sim.no_room = False
+            self.go_town(auto=True)
         elif self.sim.cleared() and self.sim.phase == "fight":
             self.sim.open_portal(self.sim.boss_cell())
             self.note("Floor %d: the boss is dead, a portal opens." % self.depth)
