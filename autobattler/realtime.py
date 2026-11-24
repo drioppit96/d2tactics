@@ -69,7 +69,8 @@ MONSTER_VEL = 4.0       # when MonStats can't be read
 
 class State:
     __slots__ = ("mode", "frames", "hit_at", "target", "path", "prog", "next_path", "next_drink",
-                 "speed", "kind", "plan", "stunned", "total", "next_think", "skip")
+                 "speed", "kind", "plan", "stunned", "total", "next_think", "skip", "path_goal",
+                 "last_pos", "moved_at")
 
     def __init__(self):
         self.mode = "idle"          # idle | walk | attack | gethit
@@ -87,6 +88,9 @@ class State:
         self.total = 0              # frames of the current swing / cast / hit recovery
         self.next_think = 0         # while walking: the frame of the next decision
         self.skip = {}              # id(monster) -> frame: no way to reach it (a wall between), leave it be
+        self.path_goal = None       # the cell the current path was searched for
+        self.last_pos = None        # where it stood when it last moved, and when (stuck check)
+        self.moved_at = 0
 
 
 class Sim:
@@ -303,6 +307,7 @@ class Sim:
     # ------------------------------------------------------------ decisions
     def _hero_think(self, h, s):
         b = self.brain(h)
+        self._unstick(h, s)
         if self.frame >= s.next_drink and getattr(h, "max_mana", 0) and \
                 h.mana * 100 < h.max_mana * MANA_DRINK_AT and self._drink(h, ("mana", "rejuv")):
             s.next_drink = self.frame + DRINK_COOLDOWN
@@ -314,7 +319,13 @@ class Sim:
                 s.next_drink = self.frame + DRINK_COOLDOWN
         tgt = s.target if (s.target is not None and s.target.alive) else None
         if tgt is None or chebyshev(h.pos, tgt.pos) > HERO_SIGHT or s.skip.get(id(tgt), 0) > self.frame:
-            tgt = self._nearest(h, [m for m in self.foes() if s.skip.get(id(m), 0) <= self.frame], HERO_SIGHT)
+            # what he can see: in the open in front of him, not behind a wall (one behind a wall
+            # is found by the route below, by walking - so he doesn't turn back and forth
+            # between a monster he sees through the wall and the way round to another)
+            seen = [m for m in self.foes() if s.skip.get(id(m), 0) <= self.frame
+                    and chebyshev(m.pos, h.pos) <= HERO_SIGHT
+                    and (chebyshev(m.pos, h.pos) <= 2 or self._line_clear(h.pos, m.pos))]
+            tgt = self._nearest(h, seen, HERO_SIGHT)
             s.target = tgt
         awake = [m for m in self.foes() if getattr(m, "aware", False) or chebyshev(m.pos, h.pos) <= HERO_SIGHT]
         plan = b.decide(tgt, awake)
@@ -325,11 +336,17 @@ class Sim:
                 return
         if plan is None or plan.what == "attack":
             if tgt is None:
+                if self.phase != "fight":
+                    return                       # (the boss is dead: no hunting for more, the portal waits)
                 route = self.goal_route(h)
                 if route is None:
                     s.next_think = self.frame + 1     # (this frame's searches are used up)
                 elif route:
                     b.last = "looking for monsters"
+                    if self.occ.get(route[0]) not in (None, h):
+                        self.st.pop(("route", id(h)), None)    # someone in the way: a new route
+                        s.next_think = self.frame + 1
+                        return
                     s.path = list(route)
                     s.mode = "walk"
                     self._advance(h, s)
@@ -359,7 +376,8 @@ class Sim:
         from picking things up or going to the portal)."""
         skip = self._state(h).skip
         return [m for m in self.foes() if getattr(m, "aware", False) and chebyshev(m.pos, h.pos) <= r
-                and skip.get(id(m), 0) <= self.frame]
+                and skip.get(id(m), 0) <= self.frame
+                and (chebyshev(m.pos, h.pos) <= 2 or self._line_clear(h.pos, m.pos))]
 
     def ground_items(self):
         out = []
@@ -465,7 +483,9 @@ class Sim:
         aim = plan.target.pos if plan.target is not None else plan.cell
         if aim is not None and sk is not None and sk.kind not in ("aura", "buff", "cry") and \
                 sk.kind not in brains.SUMMON_KINDS and chebyshev(h.pos, aim) > reach:
-            self._walk_to(h, s, aim, reach=reach)
+            if not self._walk_to(h, s, aim, reach=reach) and plan.target is not None:
+                s.skip[id(plan.target)] = self.frame + 2 * timing.FPS     # no way to it: another one
+                s.target = None
             return
         if aim is not None and aim != h.pos:
             h.face(*aim)
@@ -571,7 +591,8 @@ class Sim:
         """Breadth-first over the floor from the hero. -> (monster, cells to it) for the nearest
         one he can walk to; when the search stops at `cap` cells, (nearest monster, cells to the
         searched cell closest to it); (None, []) when there is none."""
-        foes = self.foes()
+        skip = self._state(h).skip
+        foes = [m for m in self.foes() if skip.get(id(m), 0) <= self.frame]
         at = {}
         for m in foes:
             for dx in (-1, 0, 1):
@@ -582,6 +603,7 @@ class Sim:
             return None, []
         g = self.w.grid
         start = h.pos
+        occ = self.occ
         came = {start: None}
         q = deque([start])
         found = end = None
@@ -597,6 +619,8 @@ class Sim:
             for nb in g.neighbors(*c):
                 if nb not in came:
                     came[nb] = c
+                    if nb in occ and nb not in at:
+                        continue             # (someone stands there: the way goes round him)
                     q.append(nb)
         if found is None and self._cut_short:
             found = min(foes, key=lambda m: chebyshev(m.pos, start))
@@ -667,7 +691,7 @@ class Sim:
         if d <= want:
             s.path = []
             return True
-        if d <= DIRECT:
+        if d <= DIRECT and self._line_clear(u.pos, goal):
             step = self._direct_step(u, goal)
             if step is not None:
                 s.path = [step]              # close by and nothing in the way: straight at it
@@ -698,7 +722,8 @@ class Sim:
             s.mode = "idle"
             s.next_think = self.frame + 6        # boxed in by its own pack: wait for a gap
             return True
-        if not s.path or self.frame >= s.next_path or (s.path and s.path[-1] != goal and d <= DIRECT):
+        moved = s.path_goal is None or chebyshev(s.path_goal, goal) > 1
+        if not s.path or self.frame >= s.next_path or (moved and d <= DIRECT):
             if self._paths_left <= 0 or BUDGET["paths"] >= FRAME_PATHS:
                 s.next_think = self.frame + 1     # (this frame's searches are used up: next frame)
                 return True
@@ -706,6 +731,7 @@ class Sim:
             BUDGET["paths"] += 1
             limit = 3000 if u.is_player else 1500
             path = self.w.path_near(u, goal, reach=reach, target_r=target_r, limit=limit)
+            s.path_goal = goal
             s.next_path = self.frame + (REPATH * 3 if u.is_player and d > DIRECT else REPATH)
             s.path = list(path or [])
             if not s.path:
@@ -759,6 +785,43 @@ class Sim:
             if d is not None and d < bd and nb not in self.occ:
                 best, bd = nb, d
         return best
+
+    def _line_clear(self, a, b):
+        """Nothing but open floor on the straight line from a to b (no wall, no corner cut), so
+        stepping straight at b can't walk into a dead end."""
+        g = self.w.grid
+        x, y = a
+        bx, by = b
+        n = max(abs(bx - x), abs(by - y))
+        if n <= 1:
+            return True
+        px, py = x, y
+        for i in range(1, n + 1):
+            cx = x + int(round((bx - x) * i / float(n)))
+            cy = y + int(round((by - y) * i / float(n)))
+            if (cx, cy) != (bx, by) and not g.walkable(cx, cy):
+                return False
+            if cx != px and cy != py and (not g.walkable(cx, py) or not g.walkable(px, cy)):
+                return False
+            px, py = cx, cy
+        return True
+
+    def _unstick(self, h, s):
+        """A hero who hasn't moved for 3 seconds while he means to go somewhere (and isn't
+        fighting): drop his path and route, leave his target be for a while, and look again."""
+        if s.last_pos != h.pos:
+            s.last_pos, s.moved_at = h.pos, self.frame
+            return False
+        if s.mode in ("attack", "cast", "gethit") or self.frame - s.moved_at < 3 * timing.FPS:
+            return False
+        s.moved_at = self.frame
+        s.path, s.path_goal = [], None
+        self.st.pop(("route", id(h)), None)
+        if s.target is not None:
+            s.skip[id(s.target)] = self.frame + 5 * timing.FPS
+            s.target = None
+        self.brain(h).last = "stuck: looking for another way"
+        return True
 
     def _direct_step(self, u, goal):
         """The free neighbouring cell that gets closest to `goal`, if it gets closer at all."""

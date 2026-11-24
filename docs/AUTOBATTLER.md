@@ -154,8 +154,19 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
   search carries on from there. At most 2 of these searches run per frame for all runs together.
   Only a search that wasn't cut short can decide that the monsters left are out of reach (the
   floor then counts as done).
-- Awake monsters a hero can't get to (no path) don't keep him from picking things up or going to
-  the portal; after the boss he leaves such a monster alone for 10 seconds at a time.
+- A hero only takes on monsters he can see: within 18 cells with open floor on the straight line
+  between them (or within 2 cells). One behind a wall is reached by the route over the floor
+  instead, so he doesn't turn back and forth between the two.
+- He steps straight at a goal only when the straight line to it is open floor; otherwise he
+  follows a searched path, which is searched again only when the goal has moved by more than a
+  cell. Routes go round anyone standing in the way.
+- A hero who hasn't moved for 3 seconds without fighting drops his path, route and target and
+  looks again ("stuck: looking for another way").
+- Awake monsters a hero can't get to (no path) or can't see don't keep him from picking things
+  up or going to the portal; after the boss he leaves such a monster alone for 10 seconds at a
+  time, and he no longer goes looking for more monsters once the boss is dead.
+- Measured without Diablo II files, 8 runs for 4 minutes: frames in which a hero stayed within 3
+  cells for 4 seconds without fighting went from 8156 / 18917 (two seeds) to 0 / 258.
 - Line of sight for the map is only worked out for the run being watched.
 - At most 6 game frames are played per screen frame (more at higher speeds): a slow PC slows the
   game down instead of freezing it.
