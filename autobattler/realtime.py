@@ -51,16 +51,17 @@ MONSTER_THINK = 4       # the same for monsters
 DIRECT = 12             # cells: closer than this, walk straight at the goal (no path search)
 PATH_BUDGET = 3         # full path searches per run per frame; the rest wait a frame or two
 FRAME_PATHS = 6         # full path searches per frame for all runs together
-FRAME_GOALS = 2         # floor searches (goal_route) per frame for all runs together
+FRAME_NODES = 2000      # floor cells searched for routes (goal_route) per frame, all runs together
+SEARCH_CHUNK = 500      # cells searched in one go
 FLOW_R = 24            # cells: how far round each hero the monsters' distance map reaches
 FLOW_EVERY = 15         # frames: the distance map is made again at most this often (when he moved)
 ROUTE_SECONDS = 10      # a route to a far monster is kept this long (or until it is walked)
 #: what the runs have used of this frame's searches (reset by new_frame, once per game frame)
-BUDGET = {"paths": 0, "goals": 0}
+BUDGET = {"paths": 0, "nodes": 0}
 
 
 def new_frame():
-    BUDGET["paths"] = BUDGET["goals"] = 0
+    BUDGET["paths"] = BUDGET["nodes"] = 0
 CROWD = 3               # cells: a monster this close whose way in is blocked waits for a gap
 HERO_WALK = 6.0         # CharStats WalkVelocity
 HERO_RUN = 9.0          # CharStats RunVelocity (heroes run while on a run)
@@ -108,7 +109,6 @@ class Sim:
         self.brains = {}
         self.errors = 0
         self._foes, self._foes_frame = [], -1
-        self._cut_short = False
         self._paths_left = PATH_BUDGET
         self.occ = {}
         self.flow = {}              # id(hero) -> (frame, his cell, {cell: steps to him})
@@ -344,9 +344,16 @@ class Sim:
                 elif route:
                     b.last = "looking for monsters"
                     if self.occ.get(route[0]) not in (None, h):
-                        self.st.pop(("route", id(h)), None)    # someone in the way: a new route
-                        s.next_think = self.frame + 1
-                        return
+                        # someone in the way: round him by a free cell next to the one after
+                        nxt = route[1] if len(route) > 1 else None
+                        side = next((c for c in self.w.grid.neighbors(*h.pos) if c not in self.occ
+                                     and nxt is not None and chebyshev(c, nxt) <= 1), None)
+                        if side is None:
+                            s.mode, s.path = "idle", []
+                            s.next_think = self.frame + 4     # wait for him to move on
+                            return
+                        route = [side] + list(route[1:])
+                        self.st[("route", id(h))] = (self.st[("route", id(h))][0], self.st[("route", id(h))][1], route)
                     s.path = list(route)
                     s.mode = "walk"
                     self._advance(h, s)
@@ -563,36 +570,52 @@ class Sim:
 
     def goal_route(self, h):
         """Where a hero heads when nothing is in sight: the cells to the nearest monster he can
-        walk to, found by walking the floor's cells, so a wall between doesn't fool him. On a floor
-        too big to search in one go, the route goes as far as the search reached towards the
-        nearest monster, and the next search carries on from there.
+        walk to, by walking distance (a breadth-first search over the whole floor, so a wall or
+        the map's edge between them never fools him, and he never turns back and forth between
+        two half-searched guesses). A big floor is searched over several frames, SEARCH_CHUNK
+        cells at a time, at most FRAME_NODES cells a frame for all runs together; he waits
+        meanwhile.
 
-        The route is kept while he walks it (at most ROUTE_SECONDS), so the floor is searched about
-        once per stretch, not every few frames. -> the cells still ahead of him, [] when there is
-        nowhere to go, None when this frame's searches are used up (he waits a frame)."""
+        The route is kept while he walks it (at most ROUTE_SECONDS). -> the cells still ahead of
+        him, [] when there is nowhere to go, None while the search is still going."""
         key = ("route", id(h))
         ent = self.st.get(key)
+        old = None
         if ent is not None:
             until, foe, route = ent
-            if until > self.frame and (foe is None or foe.alive) and route:
+            if (foe is None or foe.alive) and route:
                 if h.pos in route:
                     route = route[route.index(h.pos) + 1:]
                     self.st[key] = (until, foe, route)
                 if route and chebyshev(h.pos, route[0]) <= 1:
-                    return route
-        if BUDGET["goals"] >= FRAME_GOALS:
-            return None
-        BUDGET["goals"] += 1
-        foe, route = self._nearest_reachable(h)
+                    if until > self.frame:
+                        return route
+                    old = route                  # (stale: walked on while a new one is searched)
+        skey = ("search", id(h))
+        gen = self.st.get(skey)
+        if gen is None or (old is None and gen[0] != h.pos):
+            gen = self.st[skey] = (h.pos, self._route_search(h))
+        try:
+            while BUDGET["nodes"] < FRAME_NODES:
+                BUDGET["nodes"] += SEARCH_CHUNK
+                next(gen[1])
+            return old                          # (not done: more next frame)
+        except StopIteration as done:
+            foe, route = done.value
+        self.st.pop(skey, None)
+        if old is not None and gen[0] != h.pos and h.pos in route:
+            route = route[route.index(h.pos) + 1:]     # (searched from where he was a moment ago)
+        elif old is not None and gen[0] != h.pos:
+            self.st.pop(key, None)
+            return old
         self.st[key] = (self.frame + ROUTE_SECONDS * timing.FPS, foe, route)
-        if foe is None and self.foes() and not self._cut_short:
+        if foe is None and self.foes():
             self.stranded = True             # monsters left, none of them reachable: floor done
         return route
 
-    def _nearest_reachable(self, h, cap=12000):
-        """Breadth-first over the floor from the hero. -> (monster, cells to it) for the nearest
-        one he can walk to; when the search stops at `cap` cells, (nearest monster, cells to the
-        searched cell closest to it); (None, []) when there is none."""
+    def _route_search(self, h):
+        """Breadth-first over the floor from the hero, SEARCH_CHUNK cells per step (a generator:
+        it returns (monster, cells to beside it), or (None, []) when none can be reached)."""
         skip = self._state(h).skip
         foes = [m for m in self.foes() if skip.get(id(m), 0) <= self.frame]
         at = {}
@@ -600,7 +623,6 @@ class Sim:
             for dx in (-1, 0, 1):
                 for dy in (-1, 0, 1):
                     at.setdefault((m.x + dx, m.y + dy), m)
-        self._cut_short = False
         if not at:
             return None, []
         g = self.w.grid
@@ -608,37 +630,30 @@ class Sim:
         occ = self.occ
         came = {start: None}
         q = deque([start])
-        found = end = None
+        n = 0
         while q:
-            if len(came) >= cap:
-                self._cut_short = True
-                break
             c = q.popleft()
             m = at.get(c)
-            if m is not None and c != start:
-                found, end = m, c
-                break
+            if m is not None and c != start and m.alive:
+                route = []
+                while c is not None and c != start:
+                    route.append(c)
+                    c = came[c]
+                route.reverse()
+                if route and route[-1] == m.pos:
+                    route.pop()              # stop beside it, not on it
+                return m, route
             for nb in g.neighbors(*c):
                 if nb not in came:
                     came[nb] = c
                     if nb in occ and nb not in at:
                         continue             # (someone stands there: the way goes round him)
                     q.append(nb)
-        if found is None and self._cut_short:
-            found = min(foes, key=lambda m: chebyshev(m.pos, start))
-            fx, fy = found.pos
-            end = min(came, key=lambda c: (max(abs(c[0] - fx), abs(c[1] - fy)), -abs(c[0] - start[0]) - abs(c[1] - start[1])))
-        if found is None or end is None:
-            return None, []
-        route = []
-        c = end
-        while c is not None and c != start:
-            route.append(c)
-            c = came[c]
-        route.reverse()
-        if route and route[-1] == found.pos:
-            route.pop()                      # stop beside it, not on it
-        return found, route
+            n += 1
+            if n >= SEARCH_CHUNK:
+                n = 0
+                yield
+        return None, []
 
     # ------------------------------------------------------------ actions
     def _start_attack(self, u, s, tgt, ranged=False):

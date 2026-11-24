@@ -148,12 +148,12 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
 - Full path searches (heroes, big monsters) are limited to 3 per run and 6 for all runs together
   per frame, a different run going first each frame; heroes search 3000 cells at most, monsters
   1500. The rest wait a frame.
-- With nothing in sight a hero walks a route to the nearest monster he can reach, taken from one
-  search over at most 12000 cells and kept while he walks it (up to 10 seconds). On a floor too big
-  for one search the route goes as far as the search got towards the nearest monster, and the next
-  search carries on from there. At most 2 of these searches run per frame for all runs together.
-  Only a search that wasn't cut short can decide that the monsters left are out of reach (the
-  floor then counts as done).
+- With nothing in sight a hero walks a route to the nearest monster he can reach by walking
+  distance: a breadth-first search over the whole floor (walls and the map's edges can't fool
+  it, and he no longer turns back and forth between half-searched guesses). A big floor is
+  searched over several frames, at most 2000 cells a frame for all runs together; he keeps
+  walking his last route meanwhile. Someone standing in the way is stepped round. A complete
+  search that finds no monster he can reach marks the floor as done.
 - A hero only takes on monsters he can see: within 18 cells with open floor on the straight line
   between them (or within 2 cells). One behind a wall is reached by the route over the floor
   instead, so he doesn't turn back and forth between the two.
