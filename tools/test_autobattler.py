@@ -179,6 +179,40 @@ def test_points_by_hand():
     check(h.skills.points == 0 and h.stat_points == 0, "turning the class plan on spends them")
 
 
+def test_town_stash():
+    """The shared stash: one hero puts an item in, another takes it out (autobattler/gear.py)."""
+    from autobattler import gear
+    from game import save as gsave
+    from game.items import Item
+    from game.cube import stash_tab
+    st = gsave.load_shared_stash(None)
+    st.purse = None
+    a, b = _hero("Giver"), _hero("Taker")
+    ring = Item("Ring", "rin", "ring")
+    a.inv_add(ring)
+    ga = gear.Bench(a, None, stash=st)
+    stash_tab(st, 1)
+    check(ga.backpack_to_stash(ring) and ring in st.contents and ring not in a.inventory,
+          "an item goes from the backpack into the stash")
+    gsave.save_shared_stash(st)
+    st2 = gsave.load_shared_stash(None)
+    stash_tab(st2, 1)
+    check(len(st2.contents) == 1, "the stash is saved for the whole account")
+    gb = gear.Bench(b, None, stash=st)
+    check(gb.stash_click(*ring.cube_pos) and gb.held is ring, "another hero picks it up from the stash")
+    check(gb.click_cell(0, 0) and ring in b.inventory, "and puts it in his backpack")
+    check(a.gold == a._gold and b.gold == b._gold, "gold stays each hero's own")
+    big = Item("Plate", "plt", "armor")
+    big.invw, big.invh = 2, 3
+    b.inv_add(big)
+    gb.click_cell(*big.inv_pos)
+    for x in range(b.INV_W):
+        for y in range(b.INV_H):
+            b.inv_add(Item("Stone", "sto", "helm"))
+    check(gb.finish() == 0 and any(big in pg for pg in st.pages),
+          "with a full backpack the cursor item goes to the stash, not sold")
+
+
 def test_cast_breakpoints():
     from autobattler.brain import CAST_FRAMES0
     sor = [timing.cast_frames(CAST_FRAMES0["sor"] + 1, f) for f in (0, 9, 20, 37, 63, 105, 200)]
@@ -383,6 +417,7 @@ if __name__ == "__main__":
     test_death_and_potions()
     test_gear()
     test_points_by_hand()
+    test_town_stash()
     test_inventory_screen()
     print("\n%s" % ("all passed" if not FAILS else "%d FAILED" % len(FAILS)))
     sys.exit(1 if FAILS else 0)

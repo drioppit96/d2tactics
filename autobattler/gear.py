@@ -12,7 +12,10 @@ when the screen closes; what still does not fit is sold.
 The hero's backpack is 10 x 8 here: twice D2's 10 x 4 (game.units.Player.INV_H reads
 qol["inv_rows"]).
 """
+import random
+
 from game import d2items
+from game.itemactions import ItemActions
 from game.world import World
 
 ROWS = 8
@@ -36,9 +39,11 @@ class Bench:
     mode = "explore"
     turn = "player"
 
-    def __init__(self, hero, content=None):
+    def __init__(self, hero, content=None, stash=None):
         self.player = hero
         self.content = content
+        self.stash = stash          # the account's shared stash (town only), or None
+        self.rng = random.Random()
         self.held = None
         self.cursor_mode = None
         self.ground = {}
@@ -63,6 +68,10 @@ class Bench:
     place_held = World.place_held
     equip_held = World.equip_held
     use_inventory_potion = World.use_inventory_potion
+    # the vendors (town): D2's own stock rules, prices and gambling odds
+    open_store = ItemActions.open_store
+    buy = ItemActions.buy
+    price_of = ItemActions.price_of
 
     def select_right_skill(self, name):
         self.player.right_skill = name
@@ -243,9 +252,158 @@ class Bench:
         self.changed = True
         return True
 
+    # ------------------------------------------------------------ town: the shop
+    #: Sanctuary's three traders (game/itemactions.py VENDORS: their stock is Malah's, Gheed's
+    #: and Halbu's), and Hadriel's gambling
+    SHOPS = [("tyrael3", "Tyrael", False), ("malachai", "Hadriel", False), ("izualghost", "Izual", False),
+             ("malachai", "Gamble", True)]
+
+    def store(self, npc, gamble=False):
+        """The trader's shelves. The potions he sells follow the act of the hero's deepest floor."""
+        if self.content is None:
+            return None
+        p = self.player
+        from game import rift
+        p.current_act = rift.act_of_depth(max(1, int(getattr(p, "rift_depth", 0) or 0)))
+        try:
+            return self.open_store(npc, gamble=gamble)
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            return None
+
+    def buy_item(self, store, it):
+        if self.held is not None or store is None:
+            return False
+        ok = self.buy(store, it)
+        self.changed |= bool(ok)
+        return ok
+
+    # ------------------------------------------------------------ town: the shared stash
+    def stash_page(self):
+        st = self.stash
+        return None if st is None or st.tab == 0 else st
+
+    def stash_click(self, cx, cy):
+        """Click on the stash grid: pick up the item there, or put the cursor item down (with it
+        centred on the mouse, the caller gives its top-left cell); swaps with one item, like D2."""
+        from game import cube as cb
+        st = self.stash_page()
+        if st is None:
+            return False
+        if self.held is None:
+            it = cb.at(st, cx, cy)
+            if it is None:
+                return False
+            st.contents.remove(it)
+            it.cube_pos = None
+            self.held = it
+            return True
+        ok, over = cb.fits(st, self.held, cx, cy)
+        if not ok or len(over) > 1:
+            self.log("No room there.", GREY)
+            return False
+        swap = over[0] if over else None
+        if swap is not None:
+            st.contents.remove(swap)
+            swap.cube_pos = None
+        self.held.cube_pos = (cx, cy)
+        st.contents.append(self.held)
+        self.held = swap
+        return True
+
+    def stash_to_backpack(self, it):
+        st = self.stash_page()
+        if st is None or it not in st.contents or self.held is not None:
+            return False
+        it.cube_pos = None
+        if not self.player.inv_add(it):
+            it.cube_pos = None
+            from game.cube import cube_add
+            st.contents.remove(it)
+            cube_add(st, it)
+            self.log("The backpack is full.", GREY)
+            return False
+        st.contents.remove(it)
+        self.changed = True
+        return True
+
+    def backpack_to_stash(self, it):
+        """Ctrl + click in the backpack with the stash open: straight into the stash."""
+        from game import cube as cb
+        st = self.stash
+        p = self.player
+        if st is None or it not in p.inventory:
+            return False
+        if cb.bankable(it):
+            p.inventory.remove(it)
+            it.inv_pos = None
+            st.bank[it.code] = st.bank.get(it.code, 0) + 1
+            self.changed = True
+            return True
+        page = self.stash_page()
+        if page is None:
+            return False
+        p.inventory.remove(it)
+        pos, it.inv_pos = it.inv_pos, None
+        if not cb.cube_add(page, it):
+            it.inv_pos = pos
+            p.inventory.append(it)
+            self.log("This stash tab is full.", GREY)
+            return False
+        self.changed = True
+        return True
+
+    def bank_deposit(self):
+        from game import cube as cb
+        st, it = self.stash, self.held
+        if st is None or it is None or not cb.bankable(it):
+            return False
+        self.held = None
+        st.bank[it.code] = st.bank.get(it.code, 0) + 1
+        return True
+
+    def bank_take(self, code, to_backpack=False):
+        st, c = self.stash, self.content
+        if st is None or c is None or st.bank.get(code, 0) <= 0:
+            return None
+        if not to_backpack and self.held is not None:
+            return None
+        base = c.base_by_code.get(code)
+        it = c.make_item(base, 1, self.rng) if base is not None else None
+        if it is None:
+            return None
+        if to_backpack:
+            if not self.player.inv_add(it):
+                self.log("The backpack is full.", GREY)
+                return None
+            self.changed = True
+        else:
+            self.held = it
+        st.bank[code] -= 1
+        if st.bank[code] <= 0:
+            del st.bank[code]
+        return it
+
     # ------------------------------------------------------------ closing the screen
+    def _into_stash(self, it):
+        from game import cube as cb
+        st = self.stash
+        if st is None:
+            return False
+        if cb.bankable(it):
+            st.bank[it.code] = st.bank.get(it.code, 0) + 1
+            return True
+        for i, page in enumerate(st.pages):
+            box = type("Page", (), {})()
+            box.contents, box.grid_size = page, st.grid_size
+            if cb.cube_add(box, it):
+                return True
+        return False
+
     def finish(self):
-        """The cursor item and the floor go back into the backpack; what has no room is sold.
+        """The cursor item and the floor go back into the backpack (in town, else into the stash);
+        what has no room is sold.
         Returns how many items were sold that way."""
         p = self.player
         self.cursor_mode = None
@@ -255,6 +413,8 @@ class Bench:
         for it in loose:
             it.inv_pos = None
             if p.inv_add(it):
+                continue
+            if self._into_stash(it):
                 continue
             if self.sellable(it):
                 p.gold += d2items.sell_price(it)

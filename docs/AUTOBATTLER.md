@@ -130,9 +130,9 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
 ## Speed
 
 - Floors are built on a background thread, one at a time, so the other runs and the screen keep
-  going while a run builds its next floor. All runs of a session share one rift seed, so two runs
-  on the same depth agree on what that floor is (act, place, monsters); their maps still come from
-  their own seeds.
+  going while a run builds its next floor. Each floor is rolled from a new seed when it is built:
+  its place within the act (dungeon or outdoors), its monsters and its map, so the same depth is a
+  different floor every time, also after a restart from floor 1.
 - A hero decides at most every 6 frames while walking (monsters every 4). Each hero's skill
   numbers (damage, element, radius, duration, cast time) are worked out every 10 seconds, not at
   every decision.
@@ -197,7 +197,25 @@ is drawn with plain boxes and a system font.
 - Heroes: the roster (a red + marks a hero with points to spend); a live view of the selected
   hero's floor (click it to watch full screen); his life, mana, level, style, gold, points to
   spend, what his brain is doing and the run's last events; buttons New hero, Start run, Stop
-  run, Watch, Style, Inventory / Loot, Character, Pickup, Speed - / +.
+  run, To town, Watch, Style, Inventory / Loot, Abilities, Pickup, Shop, Stash. A hero not on a
+  run is in town (Sanctuary, the Act 6 town). The speed buttons are gone; `speed` in
+  autobattler.ini still sets the game speed.
+- To town: the selected hero's run ends at once and he is back in town (Stop run waits for the
+  end of the floor). The traders restock each time a hero comes back.
+- Sanctuary (Shop, Stash; heroes in town only): the left half has five tabs, D2's inventory panel
+  is on the right, as on the Inventory screen.
+  - Tyrael, Hadriel, Izual: Sanctuary's three traders, with the stock and prices of the game's own
+    vendors (game/itemactions.py: Malah's, Gheed's and Halbu's lists). The healing and mana
+    potions follow the act of the hero's deepest floor. Click or right click an item to buy it.
+    Drop an item on the shelves, or Ctrl + right click it in the backpack, to sell it.
+  - Gamble: Hadriel's gambling, with D2's odds.
+  - Stash: the account's stash, the same one for every hero (saves_auto/_stash.json): the gems
+    and runes tab (one stack per kind; click takes one onto the cursor, right click puts one in the
+    backpack, a gem or rune dropped on it goes on its stack) and 29 tabs of 12 x 16. Click picks up
+    and puts down (swapping with one item, like D2); right click moves an item to the backpack;
+    Ctrl + click in the backpack moves one into the stash. Gold stays each hero's own.
+  - Leaving the screen with an item on the cursor puts it in the backpack, or in the stash when
+    the backpack is full.
 - Inventory / Loot: the loot window on the left, D2's own inventory panel (invchar6) on the right,
   drawn by the game's HUD code, with the equipment slots, the I / II weapon tabs and the backpack
   grown to 8 rows.
@@ -223,7 +241,7 @@ is drawn with plain boxes and a system font.
     not fit is sold, and the screen says so.
   - A hero who is not on a run is saved after each change; one on a run is saved by the run at
     the end of the floor.
-- Character: D2's character panel on the left and the skill tree on the right, both drawn by the
+- Abilities: D2's character panel on the left and the skill tree on the right, both drawn by the
   game's HUD code (`autobattler/points.py` does the spending).
   - + beside a stat puts a point in it (Shift + click: all of them). New life and mana are there
     at once, as in D2. Reset Stats gives every spent stat point back, free.
@@ -235,9 +253,9 @@ is drawn with plain boxes and a system font.
 - Pickup: his pickup rules and words.
 - Watch: his floor full screen at 1:1, with each hero's life, mana and decision.
 
-Keys: S start, X stop, W watch, T style, I or L inventory and loot, C character, P pickup,
-+ / - speed, Esc back, Ctrl+click adds heroes to a group. On the Inventory screen W swaps weapons
-and I / L close it; C closes the Character screen.
+Keys: S start, X stop, W watch, T style, I or L inventory and loot, C abilities, P pickup,
+Esc back, Ctrl+click adds heroes to a group. On the Inventory and Sanctuary screens W swaps
+weapons; I / L close the Inventory screen, C the Abilities screen.
 
 ## Not done yet
 

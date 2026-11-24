@@ -9,11 +9,13 @@ Screens:
     Inventory   the loot window (what lies on his floor: filters, search, click to take it) beside
                 D2's inventory panel: his gear and his 10 x 8 backpack (twice D2's); equip, take
                 off, move, identify, belt potions, sell
-    Character   D2's character panel (stats, left) and skill tree (right): spend the points
+    Abilities   D2's character panel (stats, left) and skill tree (right): spend the points
+    Sanctuary   town (heroes not on a run): Tyrael's, Hadriel's and Izual's shops, Hadriel's
+                gambling, and the stash every hero shares
     Pickup      what the selected hero picks up on his own
     Watch       the selected hero's run full screen
 
-Keys: S start run, X stop, W watch, T style, I or L inventory and loot, C character, P pickup, + / - speed,
+Keys: S start run, X stop, W watch, T style, I or L inventory and loot, C abilities, P pickup,
 F3 timings (also written to perf.log every 30 seconds), Esc back. Ctrl+click adds heroes to a
 group.
 """
@@ -47,6 +49,11 @@ def unspent(h):
     """(stat points, skill points) a hero has not spent."""
     book = getattr(h, "skills", None)
     return int(getattr(h, "stat_points", 0) or 0), int(getattr(book, "points", 0) or 0) if book else 0
+
+
+def d2items_sell(it):
+    from game.d2items import sell_price
+    return sell_price(it)
 
 
 class Perf:
@@ -347,8 +354,10 @@ class App:
                 if rect.collidepoint(pos):
                     action(*args)
                     return
-        elif ev.type == pygame.MOUSEBUTTONUP and ev.button == 3 and self.screen_name == "inventory":
+        elif ev.type == pygame.MOUSEBUTTONUP and ev.button == 3 and self.screen_name in ("inventory", "town"):
             self.mouse = self.logical(ev.pos)
+            if self.screen_name == "town" and self.town_right():
+                return
             self.inv_right()
         elif ev.type == pygame.MOUSEWHEEL and self.screen_name == "roster":
             self.scroll = max(0, self.scroll - ev.y)
@@ -386,10 +395,8 @@ class App:
         if ev.key == pygame.K_RETURN and self.screen_name == "create":
             self.create()
             return
-        if ev.key in (pygame.K_PLUS, pygame.K_EQUALS, pygame.K_KP_PLUS):
-            self.cfg["speed"] = min(8.0, self.cfg["speed"] * 2)
-        elif ev.key in (pygame.K_MINUS, pygame.K_KP_MINUS):
-            self.cfg["speed"] = max(0.25, self.cfg["speed"] / 2)
+        if self.screen_name == "town" and ev.key == pygame.K_w:
+            self.inv_swap()
         elif self.screen_name == "inventory" and ev.key in (pygame.K_w, pygame.K_l, pygame.K_i):
             if ev.key == pygame.K_w:
                 self.inv_swap()
@@ -427,7 +434,7 @@ class App:
         self.canvas.fill((0, 0, 0))
         {"roster": self.draw_roster, "create": self.draw_create,
          "inventory": self.draw_inventory, "pickup": self.draw_pickup, "watch": self.draw_watch,
-         "character": self.draw_character
+         "character": self.draw_character, "town": self.draw_town
          }.get(self.screen_name, self.draw_roster)()
         if self.message and self.screen_name != "watch":
             self.look.text(self.canvas, "small", self.message, GOLD, 12, 580)
@@ -443,7 +450,6 @@ class App:
 
     def _title(self, text):
         self.look.text(self.canvas, "big", text, GOLD, 0, 6, "center", W)
-        self.look.text(self.canvas, "small", "Speed x%g  (+ / -)" % self.cfg["speed"], GREY, 0, 16, "right", W - 14)
 
     def draw_roster(self):
         c, L = self.canvas, self.look
@@ -469,6 +475,8 @@ class App:
                                                      int(getattr(h, "rift_depth", 0) or 0)), GREY, row.x + 6, row.y + 16)
             if n in busy:
                 L.text(c, "small", "on a run", GREEN, row.x, row.y + 9, "right", row.w - 6)
+            else:
+                L.text(c, "small", "in town", GREY, row.x, row.y + 9, "right", row.w - 6)
             if unspent(h):
                 L.text(c, "med", "+", RED, row.x, row.y + 2, "right", row.w - 64)
             self.region(row, self.select, n)
@@ -522,13 +530,14 @@ class App:
         row1 = [("New hero", lambda: self.go("create"), roster.count() < self.cfg["max_heroes"]),
                 ("Start run", self.start_run, has and not on_run),
                 ("Stop run", self.stop_run, on_run),
+                ("To town", self.to_town, on_run),
                 ("Watch", lambda: self.go("watch"), on_run),
                 ("Style", self.cycle_style, has)]
         row2 = [("Inventory / Loot", lambda: self.go("inventory"), has),
-                ("Character", lambda: self.go("character"), has),
+                ("Abilities", lambda: self.go("character"), has),
                 ("Pickup", lambda: self.go("pickup"), has),
-                ("Speed -", lambda: self.cfg.__setitem__("speed", max(0.25, self.cfg["speed"] / 2)), True),
-                ("Speed +", lambda: self.cfg.__setitem__("speed", min(8.0, self.cfg["speed"] * 2)), True)]
+                ("Shop", lambda: self.open_town("shop"), has and not on_run),
+                ("Stash", lambda: self.open_town("stash"), has and not on_run)]
         for j, row in enumerate((row1, row2)):
             bw = (W - 20 + gap) // len(row) - gap
             for i, (label, act, en) in enumerate(row):
@@ -673,7 +682,8 @@ class App:
             b = None
         if b is None and h is not None:
             gear.prepare(h)
-            b = self.bench = gear.Bench(h, self.content)
+            in_town = h.name not in self.mgr.busy_names()
+            b = self.bench = gear.Bench(h, self.content, stash=self.shared_stash() if in_town else None)
         return b
 
     def _close_bench(self):
@@ -681,6 +691,8 @@ class App:
         if b is None:
             return
         sold = b.finish()
+        if b.stash is not None:
+            self.save_stash()
         if sold:
             self.message = "%s had no room: %d item%s sold." % (b.player.name, sold, "" if sold == 1 else "s")
         self._gear_saved(b)
@@ -748,7 +760,13 @@ class App:
                 b.click_slot(slot)
             else:
                 cell = self._inv_cell(b.held)
-                if cell is not None:
+                ctrl = pygame.key.get_mods() & pygame.KMOD_CTRL
+                if cell is not None and ctrl and b.held is None and self.screen_name == "town" \
+                        and self.town_tab == "stash":
+                    it = b.player.inv_at(*cell)
+                    if it is not None and b.backpack_to_stash(it):
+                        self.save_stash()
+                elif cell is not None:
                     b.click_cell(*cell)
         self._gear_saved(b)
 
@@ -849,6 +867,10 @@ class App:
             self.region(sell, self.inv_sell_held)
             self.region(floor, self.inv_floor)
         # ---- right: D2's inventory panel, 10 x 8 backpack
+        self._inventory_right(b)
+
+    def _inventory_right(self, b):
+        c, L, h = self.canvas, self.look, b.player
         self._draw_d2_inventory(b)
         self.region((self.INV_X, self.INV_Y, 320, 548), self.inv_click)
         if b.held is not None:
@@ -858,6 +880,309 @@ class App:
             self._tip = None
         elif b.cursor_mode:
             L.text(c, "small", "?", GOLD, self.mouse[0] + 10, self.mouse[1] - 4)
+
+    # ------------------------------------------------------------ town: shop and stash
+    TOWN_TABS = [("tyrael3", "Tyrael"), ("malachai", "Hadriel"), ("izualghost", "Izual"),
+                 ("gamble", "Gamble"), ("stash", "Stash")]
+    STORE_CELL = 29                  # D2's own cell, like the inventory
+    STASH_CELL = 22
+
+    def shared_stash(self):
+        """The account's chest: every hero in town uses the same one (saves_auto/_stash.json).
+        Gold stays each hero's own."""
+        st = getattr(self, "_stash", None)
+        if st is None:
+            from game import save as gsave
+            try:
+                st = gsave.load_shared_stash(self.content)
+            except Exception:
+                import traceback
+                traceback.print_exc()
+                from game.cube import make_stash
+                st = make_stash()
+            st.purse = None
+            self._stash = st
+        return st
+
+    def save_stash(self):
+        from game import save as gsave
+        try:
+            gsave.save_shared_stash(self.shared_stash())
+        except Exception:
+            import traceback
+            traceback.print_exc()
+
+    def to_town(self):
+        """The selected heroes on runs come back to town now (the floor is left as it is)."""
+        names = []
+        for n in list(self.selected):
+            r = self.run_of(n)
+            if r is not None:
+                names += [h.name for h in r.heroes]
+                r.note("Back to town from floor %d." % r.depth)
+                if self.bench is not None and self.bench.player in r.heroes:
+                    self._close_bench()
+                r.finish("town")
+                for h in r.heroes:
+                    h._town_visit = int(getattr(h, "_town_visit", 0) or 0) + 1   # (the traders restock)
+        if names:
+            self.message = "%s back in town." % ", ".join(names)
+
+    def open_town(self, tab):
+        if tab == "shop":
+            tab = getattr(self, "town_tab", "tyrael3")
+            tab = "tyrael3" if tab == "stash" else tab
+        self.town_tab = tab
+        self.go("town")
+
+    def _town_store(self, b):
+        tab = getattr(self, "town_tab", "tyrael3")
+        if tab == "stash" or b is None:
+            return None
+        return b.store("malachai" if tab == "gamble" else tab, gamble=tab == "gamble")
+
+    def town_set_tab(self, tab):
+        self.town_tab = tab
+
+    def store_page(self, i):
+        st = self._town_store(self.bench)
+        if st is not None:
+            st.tab = max(0, min(len(st.tabs) - 1, i))
+
+    def store_click(self, it):
+        b = self.bench
+        if b is None:
+            return
+        if b.held is not None:
+            b.sell(b.held)                 # an item dropped on the shelves is sold
+        elif it is not None:
+            b.buy_item(self._town_store(b), it)
+        self._gear_saved(b)
+
+    def stash_set_tab(self, tab):
+        from game.cube import stash_tab
+        stash_tab(self.shared_stash(), tab)
+
+    def stash_grid_click(self):
+        b = self.bench
+        if b is None:
+            return
+        cell = self._stash_cell(b.held)
+        if cell is not None and b.stash_click(*cell):
+            self.save_stash()
+            b.changed = True
+            self._gear_saved(b)
+
+    def bank_click(self, code=None):
+        b = self.bench
+        if b is None:
+            return
+        if b.held is not None:
+            if b.bank_deposit():
+                self.save_stash()
+            return
+        if code is not None and b.bank_take(code):
+            self.save_stash()
+
+    def town_right(self):
+        """Right click on the shelves buys, on the stash moves to the backpack, on the bank takes
+        one into the backpack. -> True when it was on one of those."""
+        b = self.bench
+        if b is None or b.held is not None:
+            return False
+        for rect, kind, arg in getattr(self, "_town_hot", []):
+            if not rect.collidepoint(self.mouse):
+                continue
+            if kind == "store":
+                b.buy_item(self._town_store(b), arg)
+            elif kind == "stash":
+                if b.stash_to_backpack(arg):
+                    self.save_stash()
+            elif kind == "bank":
+                if b.bank_take(arg, to_backpack=True):
+                    self.save_stash()
+            self._gear_saved(b)
+            return True
+        return False
+
+    def _stash_cell(self, item=None):
+        st = self.shared_stash()
+        gw, gh = st.grid_size
+        x0, y0 = getattr(self, "_stash_xy", (0, 0))
+        k = self.STASH_CELL
+        mx, my = self.mouse[0] - x0, self.mouse[1] - y0
+        if not (0 <= mx < gw * k and 0 <= my < gh * k):
+            return None
+        if item is None:
+            return int(mx // k), int(my // k)
+        w, hh = max(1, item.invw or 1), max(1, item.invh or 1)
+        cx = int(round(mx / float(k) - w / 2.0))
+        cy = int(round(my / float(k) - hh / 2.0))
+        return max(0, min(gw - w, cx)), max(0, min(gh - hh, cy))
+
+    def draw_town(self):
+        c, L = self.canvas, self.look
+        b = self.gear_bench()
+        h = b.player if b else None
+        self._title("Sanctuary")
+        self._town_hot = []
+        if h is None or self.run_of(h.name) is not None:
+            L.text(c, "med", "Only a hero in town can trade or use the stash.", GOLD, 0, 280, "center", W)
+            self.button((340, 540, 120, 28), "Back", lambda: self.go("roster"))
+            return
+        if b.stash is None:
+            b.stash = self.shared_stash()
+        tab = getattr(self, "town_tab", "tyrael3")
+        L.panel(c, (6, 40, 456, 534))
+        L.text(c, "med", "%s - gold %d" % (h.name, h.gold), GOLD, 6, 50, "center", 456)
+        for i, (key, label) in enumerate(self.TOWN_TABS):
+            r = pygame.Rect(18 + i * 87, 72, 83, 24)
+            self.button(r, label, self.town_set_tab, key)
+            if key == tab:
+                pygame.draw.rect(c, GOLD, r.inflate(2, 2), 1)
+        if tab == "stash":
+            self._draw_stash(b)
+        else:
+            self._draw_store(b)
+        for i, (text, colr) in enumerate(b.messages[-2:]):
+            L.text(c, "small", text, colr or GREY, 18, 520 + i * 14)
+        self.button((340, 540, 110, 28), "Back", lambda: self.go("roster"))
+        self._inventory_right(b)
+
+    def _draw_store(self, b):
+        c, L, h = self.canvas, self.look, b.player
+        store = self._town_store(b)
+        if store is None:
+            L.text(c, "med", "The traders need the Diablo II files.", GREY, 6, 260, "center", 456)
+            return
+        names = {"armo": "Armor", "weap": "Weapons", "misc": "Misc", "maps": "Maps", "gamble": "Gamble"}
+        for i, (page, _items) in enumerate(store.tabs):
+            r = pygame.Rect(18 + i * 90, 104, 86, 22)
+            self.button(r, names.get(page, page), self.store_page, i)
+            if i == store.tab:
+                pygame.draw.rect(c, GOLD, r.inflate(2, 2), 1)
+        from game.itemactions import STORE_W, STORE_H
+        k = self.STORE_CELL
+        gx, gy = 18 + (432 - STORE_W * k) // 2, 134
+        grid = pygame.Rect(gx - 1, gy - 1, STORE_W * k + 2, STORE_H * k + 2)
+        L.inset(c, grid)
+        self.region(grid, self.store_click, None)       # (an item dropped on the shelves is sold)
+        for it in store.items():
+            sx, sy = it.store_pos
+            w, hh = max(1, it.invw or 1), max(1, it.invh or 1)
+            r = pygame.Rect(gx + sx * k, gy + sy * k, w * k, hh * k)
+            L.icon(c, it, r.x + 1, r.y + 1, r.w - 2, r.h - 2)
+            self.region(r, self.store_click, it)
+            self._town_hot.append((r, "store", it))
+            if self.hot(r) and b.held is None:
+                cost = b.price_of(it, store)
+                if getattr(it, "gamble", False):
+                    lines = [(it.name, WHITE), ("Gamble: magic, rare, set or unique", GREY)]
+                else:
+                    lines = L.item_lines(it, h)
+                lines.append(("Buy for %d gold (click)" % cost, GOLD if h.gold >= cost else RED))
+                self._tip = lines
+        if b.held is not None and grid.collidepoint(self.mouse) and b.sellable(b.held):
+            self._tip = [("Sell for %d gold" % d2items_sell(b.held), GOLD)]
+        y = gy + STORE_H * k + 8
+        L.text(c, "small", "Click or right click: buy.  Drop an item on the shelves, or Ctrl +", GREY, 18, y)
+        L.text(c, "small", "right click it in the backpack: sell.  New stock each visit to town.", GREY, 18, y + 14)
+
+    def _draw_stash(self, b):
+        c, L, h = self.canvas, self.look, b.player
+        st = self.shared_stash()
+        from game.cube import STASH_TABS
+        self.button((18, 104, 120, 22), "Gems & Runes", self.stash_set_tab, 0)
+        if st.tab == 0:
+            pygame.draw.rect(c, GOLD, pygame.Rect(18, 104, 120, 22).inflate(2, 2), 1)
+        cur = max(1, st.tab)
+        self.button((150, 104, 30, 22), "<", self.stash_set_tab, cur - 1 if cur > 1 else STASH_TABS - 1)
+        self.button((184, 104, 96, 22), "Tab %d / %d" % (cur, STASH_TABS - 1), self.stash_set_tab, cur)
+        if st.tab != 0:
+            pygame.draw.rect(c, GOLD, pygame.Rect(184, 104, 96, 22).inflate(2, 2), 1)
+        self.button((284, 104, 30, 22), ">", self.stash_set_tab, cur + 1 if cur < STASH_TABS - 1 else 1)
+        L.text(c, "small", "Shared by every hero", GREY, 322, 108)
+        if st.tab == 0:
+            self._draw_bank(b, st)
+            return
+        k = self.STASH_CELL
+        gw, gh = st.grid_size
+        gx, gy = 18 + (432 - gw * k) // 2, 134
+        self._stash_xy = (gx, gy)
+        grid = pygame.Rect(gx - 1, gy - 1, gw * k + 2, gh * k + 2)
+        L.inset(c, grid)
+        for i in range(gw + 1):
+            pygame.draw.line(c, (34, 32, 28), (gx + i * k, gy), (gx + i * k, gy + gh * k))
+        for j in range(gh + 1):
+            pygame.draw.line(c, (34, 32, 28), (gx, gy + j * k), (gx + gw * k, gy + j * k))
+        self.region(grid, self.stash_grid_click)
+        for it in st.contents:
+            pos = getattr(it, "cube_pos", None)
+            if pos is None:
+                continue
+            w, hh = max(1, it.invw or 1), max(1, it.invh or 1)
+            r = pygame.Rect(gx + pos[0] * k, gy + pos[1] * k, w * k, hh * k)
+            tint = pygame.Surface((r.w - 1, r.h - 1), pygame.SRCALPHA)
+            tint.fill((10, 10, 40, 120))
+            c.blit(tint, (r.x + 1, r.y + 1))
+            L.icon(c, it, r.x + 1, r.y + 1, r.w - 2, r.h - 2)
+            self._town_hot.append((r, "stash", it))
+            if self.hot(r) and b.held is None:
+                self._tip = L.item_lines(it, h) + [("Right click: into the backpack", GREY)]
+        if b.held is not None:
+            cell = self._stash_cell(b.held)
+            if cell is not None:
+                from game import cube as cb
+                ok, over = cb.fits(st, b.held, *cell)
+                w, hh = max(1, b.held.invw or 1), max(1, b.held.invh or 1)
+                tint = pygame.Surface((w * k, hh * k), pygame.SRCALPHA)
+                tint.fill((0, 120, 0, 70) if ok and len(over) <= 1 else (140, 0, 0, 70))
+                c.blit(tint, (gx + cell[0] * k, gy + cell[1] * k))
+        L.text(c, "small", "Ctrl + click in the backpack: straight into the stash", GREY, 18, gy + gh * k + 4)
+
+    def _draw_bank(self, b, st):
+        """The gem & rune tab: one stack per kind, with how many."""
+        c, L = self.canvas, self.look
+        area = pygame.Rect(18, 134, 432, 380)
+        L.inset(c, area)
+        self.region(area, self.bank_click, None)        # (a gem or rune dropped here goes on its stack)
+        if self.content is None:
+            L.text(c, "small", "Needs the Diablo II files.", GREY, area.x, area.y + 20, "center", area.w)
+            return
+        from game.cube import bank_codes
+        rows, runes = bank_codes(self.content)
+        icons = self.__dict__.setdefault("_bank_icons", {})
+        k = 30
+
+        def slot(code, x, y):
+            if code is None:
+                return
+            it = icons.get(code)
+            if it is None:
+                base = self.content.base_by_code.get(code)
+                it = icons[code] = self.content.make_item(base, 1, b.rng) if base else None
+            r = pygame.Rect(x, y, k - 2, k - 2)
+            n = st.bank.get(code, 0)
+            pygame.draw.rect(c, (40, 36, 30), r, 1)
+            if it is not None:
+                L.icon(c, it, r.x + 1, r.y + 1, r.w - 2, r.h - 2)
+                if not n:
+                    dim = pygame.Surface(r.size, pygame.SRCALPHA)
+                    dim.fill((0, 0, 0, 170))
+                    c.blit(dim, r.topleft)
+            if n:
+                L.text(c, "small", str(n), WHITE, r.x, r.bottom - 13, "right", r.w - 1)
+                self.region(r, self.bank_click, code)
+                self._town_hot.append((r, "bank", code))
+            if self.hot(r) and it is not None and b.held is None:
+                self._tip = [(getattr(it, "name", code), getattr(it, "color", WHITE)), ("%d in the stash" % n, WHITE)] + \
+                    ([("Click: take one.  Right click: one into the backpack", GREY)] if n else [])
+        for j, row in enumerate(rows):
+            for i, code in enumerate(row):
+                slot(code, area.x + 10 + i * k, area.y + 10 + j * k)
+        for i, code in enumerate(runes):
+            slot(code, area.x + 10 + (i % 12) * k, area.y + 170 + (i // 12) * k)
+        L.text(c, "small", "Drop a gem or rune here to put it on its stack.", GREY, area.x + 10, area.bottom - 18)
 
     def _draw_d2_inventory(self, b):
         """D2's inventory panel (invchar6) with the hero's gear, drawn by the game's own HUD code;
@@ -991,7 +1316,7 @@ class App:
     def draw_character(self):
         c, L = self.canvas, self.look
         h = self.hero()
-        self._title("Character")
+        self._title("Abilities")
         self._char_regions, self._tree_regions = [], []
         if h is None:
             self.button((640, 540, 140, 30), "Back", lambda: self.go("roster"))
@@ -1169,7 +1494,7 @@ class App:
             thought = run.sim.brain(x).last if run.sim is not None else ""
             L.text(c, "small", "%s  life %d/%d  mana %d   %s" % (x.name, max(0, x.hp), x.max_hp, int(getattr(x, "mana", 0)), thought),
                    WHITE if x.alive else RED, 10, 24 + i * 18)
-        L.text(c, "small", "Esc: back   + / -: speed x%g" % self.cfg["speed"], GREY, 0, 584, "right", W - 10)
+        L.text(c, "small", "Esc: back", GREY, 0, 584, "right", W - 10)
         self.region((0, 0, W, H), lambda: None)
 
     def run(self):

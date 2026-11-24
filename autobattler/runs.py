@@ -10,9 +10,10 @@ every floor and when the run ends.
 RunManager holds every run of the account and plays at most max_active heroes at once.
 
 Floors are built on a background thread, one at a time, so the game keeps playing (and drawing)
-while a run builds its next floor. The rift's floor plans are kept in module globals keyed by
-depth; all runs of a session share one rift seed, so two runs on the same depth agree on what that
-floor is (its act, place and monsters) while their maps are still built from their own seeds.
+while a run builds its next floor. Each floor is rolled from a new seed when it is built (its
+place within the act, its monsters, its map), so the same depth is a different floor every time.
+The rift keeps floor plans in module globals keyed by depth; a build replaces the plan of its
+depth under the build lock.
 
 Without Diablo II files (placeholder art) a run plays on the engine's simple generated cave
 instead, with the monster farthest from the start as its boss. That is also how the tests run.
@@ -77,7 +78,6 @@ class Run:
                 self._refill_belt(h)
                 h.hp, h.alive = h.max_hp, True
                 h.mana = getattr(h, "max_mana", getattr(h, "mana", 0))
-                h.rift_seed = SESSION_SEED      # (see the module notes)
             self._built, self._error = None, None
             self._thread = threading.Thread(target=self._build_world, name="floor-%d" % self.id, daemon=True)
             self._thread.start()
@@ -106,6 +106,13 @@ class Run:
                     from game import rift
                     from game.actworld import make_world
                     lid = rift.level_id(self.depth)
+                    # every floor is rolled anew: its place (dungeon or outdoors of the act), its
+                    # monsters and its map - the same depth is a different floor each time
+                    seed = random.randrange(1, 1 << 30)
+                    rift._SEED = seed
+                    for h in self.heroes:
+                        h.rift_seed = seed
+                    rift.PLANS.pop(lid, None)
                     w = make_world(a.act_kit, a.act_info, a.content, lid, player=self.leader,
                                    seed=random.randrange(1 << 30))
                 else:
