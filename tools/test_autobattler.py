@@ -452,6 +452,30 @@ def test_skill_animations():
     check(Sim.skill_anim(sk("SC")) == "SC" and Sim.skill_anim(sk("")) == "SC", "a spell: SC")
 
 
+def test_farms():
+    """What a run farms: the rift goes on from his deepest floor; the Black Road and the Countess
+    start from the beginning, and the tower goes round levels 1-5."""
+    from autobattler import brain
+    from autobattler.runs import Run, TOWER
+    from game import arena
+    h = _hero("Farmer")
+    h.rift_depth = 7
+    r = Run([h], _NoAssets(), _cfg(), None)
+    check(r.farm == "rift" and r.depth == 8, "rift: goes on from floor 8")
+    brain.profile(h)["farm"] = "boss"
+    r = Run([h], _NoAssets(), _cfg(), None)
+    check(r.depth == 1 and r.level_key() == arena.BOSS_LEVEL and r.where() == "Black Road 1", "Black Road")
+    brain.profile(h)["farm"] = "runes"
+    r = Run([h], _NoAssets(), _cfg(), None)
+    keys = []
+    for d in range(1, 8):
+        r.depth = d
+        keys.append(r.level_key())
+    check(keys == [21, 22, 23, 24, 25, 21, 22] and "Tower Cellar 5" in (lambda: (setattr(r, "depth", 5), r.where())[1])(),
+          "runes: Tower Cellar 1-5, then again: %s" % keys)
+    brain.profile(h)["farm"] = "rift"
+
+
 def test_cast_breakpoints():
     from autobattler.brain import CAST_FRAMES0
     sor = [timing.cast_frames(CAST_FRAMES0["sor"] + 1, f) for f in (0, 9, 20, 37, 63, 105, 200)]
@@ -667,6 +691,7 @@ if __name__ == "__main__":
     test_act_levels()
     test_charm_inventory()
     test_skill_animations()
+    test_farms()
     test_inventory_screen()
     print("\n%s" % ("all passed" if not FAILS else "%d FAILED" % len(FAILS)))
     sys.exit(1 if FAILS else 0)

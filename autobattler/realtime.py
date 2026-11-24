@@ -119,6 +119,7 @@ class Sim:
         self.no_room = False        # a hero found something he wanted and had no room for it
         self.need_town = False      # a hero is nearly dead with no healing potion left
         self.notes = []             # things for the run's log (summons ...), taken by the run
+        self._foes_at_start = None
         self.portal = None          # the cell of the red portal to the next floor
         self.loot_until = 0
         self.at_portal = False
@@ -1021,6 +1022,12 @@ class Sim:
             return True
         if any(getattr(m, "rift_boss", False) for m in self.w.monsters):
             return self.boss_dead()
+        share = getattr(self.w, "_clear_share", None)
+        if share:
+            # (a level to get through, not to empty: done when most of it is dead)
+            if self._foes_at_start is None:
+                self._foes_at_start = max(1, len(self.foes()))
+            return len(self.foes()) <= self._foes_at_start * share
         return not self.foes()
 
     def wiped(self):

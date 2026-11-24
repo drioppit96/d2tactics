@@ -28,6 +28,20 @@ SESSION_SEED = random.randrange(1, 1 << 30)
 
 STATES = ("build", "fight", "pause", "town", "over")
 
+#: what a run farms (the hero's choice, profile "farm")
+#:   rift    the Infernal Rift, floor after floor, an act boss every tenth
+#:   boss    the Black Road: a small walled room with one of the Great Evils in it, again and again
+#:   runes   the Forgotten Tower's cellar, levels 1 to 5, the Countess at the bottom, then again
+FARMS = ("rift", "boss", "runes")
+FARM_NAMES = {"rift": "Infernal Rift", "boss": "Black Road", "runes": "Rune run (Countess)"}
+TOWER = (21, 22, 23, 24, 25)        # Tower Cellar Level 1-5 (game/act1.py); the Countess is on 5
+CELLAR_CLEAR = 0.35                 # a cellar level above hers is done when this share of it is left
+
+
+def farm_of(h):
+    f = brain.profile(h).get("farm", "rift")
+    return f if f in FARMS else "rift"
+
 
 class Run:
     _ids = 0
@@ -40,7 +54,8 @@ class Run:
         self.cfg = cfg
         self.timings = timings
         self.state = "build"
-        self.depth = max(1, max(cleared(h) for h in self.heroes) + 1)
+        self.farm = farm_of(self.heroes[0])
+        self.depth = max(1, max(cleared(h) for h in self.heroes) + 1) if self.farm == "rift" else 1
         self.deaths = 0
         self.world = None
         self.sim = None
@@ -57,7 +72,23 @@ class Run:
 
     def title(self):
         names = ", ".join(h.name for h in self.heroes)
-        return "%s - floor %d" % (names, self.depth)
+        return "%s - %s" % (names, self.where())
+
+    def where(self):
+        """Where the run is, for the screens: rift floor, Black Road number, tower level."""
+        if self.farm == "boss":
+            return "Black Road %d" % self.depth
+        if self.farm == "runes":
+            return "Tower Cellar %d (run %d)" % ((self.depth - 1) % 5 + 1, (self.depth - 1) // 5 + 1)
+        return "floor %d" % self.depth
+
+    def level_key(self):
+        from game import arena, rift
+        if self.farm == "boss":
+            return arena.BOSS_LEVEL
+        if self.farm == "runes":
+            return TOWER[(self.depth - 1) % 5]
+        return rift.level_id(self.depth)
 
     def note(self, text):
         self.log.append(text)
@@ -97,7 +128,7 @@ class Run:
         self.world = w
         self.sim = realtime.Sim(w, self.heroes, self.timings, self.cfg.get("move_scale", 1.0))
         self.state = "fight"
-        self.note("Floor %d: %s" % (self.depth, getattr(w, "level_name", "") or "rift"))
+        self.note("%s: %s" % (self.where()[:1].upper() + self.where()[1:], getattr(w, "level_name", "") or "rift"))
 
     def _build_world(self):
         try:
@@ -106,20 +137,22 @@ class Run:
                 if getattr(a, "act_kit", None) is not None:
                     from game import rift
                     from game.actworld import make_world
-                    lid = rift.level_id(self.depth)
-                    # every floor is rolled anew: its place (dungeon or outdoors of the act), its
-                    # monsters and its map - the same depth is a different floor each time
-                    seed = random.randrange(1, 1 << 30)
-                    rift._SEED = seed
-                    for h in self.heroes:
-                        h.rift_seed = seed
-                    rift.PLANS.pop(lid, None)
+                    lid = self.level_key()
+                    if self.farm == "rift":
+                        # every floor is rolled anew: its place (dungeon or outdoors of the act),
+                        # its monsters and its map - the same depth is a different floor each time
+                        seed = random.randrange(1, 1 << 30)
+                        rift._SEED = seed
+                        for h in self.heroes:
+                            h.rift_seed = seed
+                        rift.PLANS.pop(lid, None)
                     w = make_world(a.act_kit, a.act_info, a.content, lid, player=self.leader,
                                    seed=random.randrange(1 << 30))
                     for h in self.heroes:
                         # (the engine ends a rift run when its hero "leaves the rift"; here only
                         # the run decides that, so it never sees him as having been in one)
                         h._in_rift = False
+                    self._mark_farm_boss(w, lid)
                 else:
                     from game.world import World
                     w = World(seed=random.randrange(1 << 30), depth_level=self.depth, player=self.leader)
@@ -134,6 +167,27 @@ class Run:
                 log_error(traceback.format_exc())
             except Exception:
                 pass
+
+    def _mark_farm_boss(self, w, lid):
+        """The Black Road's Great Evil and the Countess end their floor; a cellar level above hers
+        is done when most of it is dead (CELLAR_CLEAR left)."""
+        if self.farm == "boss":
+            from game import arena
+            try:
+                arena.populate(w)
+            except Exception:
+                import traceback
+                traceback.print_exc()
+            for m in w.monsters:
+                if getattr(m, "boss", None) and not getattr(m, "ally", False):
+                    m.rift_boss = True
+        elif self.farm == "runes":
+            if lid == TOWER[-1]:
+                for m in w.monsters:
+                    if (getattr(m, "boss", "") or "") == "countess" or "countess" in (getattr(m, "name", "") or "").lower():
+                        m.rift_boss = True
+            else:
+                w._clear_share = CELLAR_CLEAR
 
     def _mark_boss(self, w):
         foes = [m for m in w.monsters if not getattr(m, "ally", False)]
@@ -271,9 +325,10 @@ class Run:
             self.note("Everyone fell on floor %d. Back to floor 1." % self.depth)
             for h in self.heroes:
                 prof = brain.profile(h)        # (saved with him; his best floor ever)
-                prof["best"] = max(int(prof.get("best", 0) or 0), int(getattr(h, "rift_depth", 0) or 0))
-                h.rift_depth = 0
-                prof["cleared"] = 0
+                if self.farm == "rift":
+                    prof["best"] = max(int(prof.get("best", 0) or 0), int(getattr(h, "rift_depth", 0) or 0))
+                    h.rift_depth = 0
+                    prof["cleared"] = 0
                 h.alive = True
                 roster.save(h)
             if self.stop_requested:
@@ -291,19 +346,20 @@ class Run:
             self.go_town(auto=True)
         elif self.sim.cleared() and self.sim.phase == "fight":
             self.sim.open_portal(self.sim.boss_cell())
-            self.note("Floor %d: the boss is dead, a portal opens." % self.depth)
+            self.note("%s: done, a portal opens." % self.where())
         elif self.sim.at_portal:
             self.kills += self.sim.kills
             self.floors += 1
             for h in self.heroes:
-                h.rift_depth = max(int(getattr(h, "rift_depth", 0) or 0), self.depth)
-                prof = brain.profile(h)
-                prof["cleared"] = h.rift_depth    # (kept in his profile too: the next run goes on from here)
-                prof["best"] = max(int(prof.get("best", 0) or 0), h.rift_depth)
+                if self.farm == "rift":
+                    h.rift_depth = max(int(getattr(h, "rift_depth", 0) or 0), self.depth)
+                    prof = brain.profile(h)
+                    prof["cleared"] = h.rift_depth    # (kept in his profile too: the next run goes on from here)
+                    prof["best"] = max(int(prof.get("best", 0) or 0), h.rift_depth)
                 roster.save(h)
             for who, what in self.sim.picked:
                 self.note("%s picked up %s." % (who, what))
-            self.note("Floor %d cleared: through the portal." % self.depth)
+            self.note("%s cleared: through the portal." % self.where())
             self.state = "pause"
             self.pause = int(self.cfg.get("floor_pause", 1) * timing.FPS)
         elif self.stop_requested:

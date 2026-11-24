@@ -279,6 +279,16 @@ is drawn with plain boxes and a system font.
   autobattler.ini still sets the game speed.
 - The hero card shows his build (as his brain sees it) and how he fights with it. While he has summons up, the
   card lists them ("Summons up: Oak Sage"), and each summon he casts goes in the run's log.
+- Farm (Rift / Boss / Runes): what the selected heroes farm on their next run (profile "farm"; a
+  group farms what its first hero does):
+  - Rift: the Infernal Rift, floor after floor, going on below the deepest floor cleared; an act
+    boss every tenth floor.
+  - Boss: the Black Road (game/arena.py): a small walled room with one of the Great Evils in it,
+    chosen at random each time; when it dies a portal opens and the next room follows.
+  - Runes: the Forgotten Tower's cellar, Tower Cellar levels 1 to 5 (D2's own maps and monsters).
+    Levels 1-4 are done when no more than 35% of their monsters are left; on level 5 the Countess
+    ends it (she drops her rune hoard every time). Then it starts again at level 1.
+  Dying restarts the farm from its beginning; only the rift keeps the deepest floor.
 - To town / Continue run: To town takes the hero (and his group) to town as a town portal would:
   the run waits on its floor, frozen as it is, and he is in Sanctuary, where Tyrael mends him and
   the traders restock; Shop and Stash work. The button then reads Continue run, which takes him

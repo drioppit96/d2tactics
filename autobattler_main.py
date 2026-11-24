@@ -31,7 +31,7 @@ sys.path.insert(0, HERE)
 from main import load_settings, load_assets, log_error          # noqa: E402  (the same engine)
 from autobattler import brain, config, gear, points, roster     # noqa: E402
 from autobattler import stash as abstash                        # noqa: E402
-from autobattler.runs import RunManager                         # noqa: E402
+from autobattler.runs import RunManager, FARMS, FARM_NAMES, farm_of  # noqa: E402
 from autobattler.timing import FPS, Timings                     # noqa: E402
 from autobattler.ui import Look, GOLD, WHITE, GREY, RED, GREEN, BLUE, W, H   # noqa: E402
 
@@ -58,6 +58,7 @@ def d2items_sell(it):
 
 
 DARK_TEXT = (90, 86, 78)
+FARM_SHORT = {"rift": "Rift", "boss": "Boss", "runes": "Runes"}
 
 
 class Perf:
@@ -236,7 +237,7 @@ class App:
         lv = self.view_of(run)
         self.look.inset(self.canvas, r)
         if run is not None and run.state == "town":
-            self.look.text(self.canvas, "med", "In town. Floor %d waits (Continue run)." % run.depth, GOLD,
+            self.look.text(self.canvas, "med", "In town. %s waits (Continue run)." % run.where(), GOLD,
                            r.x, r.centery - 8, "center", r.w)
             return
         if run is not None and run.state in ("pause", "build") and lv is not None:
@@ -297,6 +298,19 @@ class App:
             elif r is not None:
                 r.stop_requested = True
                 self.message = "%s will stop after this floor." % ", ".join(h.name for h in r.heroes)
+
+    def cycle_farm(self):
+        """What the selected heroes farm on their next run: the Infernal Rift, the Black Road (one of
+        the Great Evils in a small room, again and again) or the Countess (Tower Cellar 1-5)."""
+        for n in self.selected:
+            h = self.heroes.get(n)
+            if h is None or n in self.mgr.busy_names():
+                continue
+            prof = brain.profile(h)
+            cur = farm_of(h)
+            prof["farm"] = FARMS[(FARMS.index(cur) + 1) % len(FARMS)]
+            roster.save(h)
+            self.message = "%s will farm: %s" % (n, FARM_NAMES[prof["farm"]])
 
     def cycle_style(self):
         for n in self.selected:
@@ -502,11 +516,12 @@ class App:
         if run is not None:
             w = run.world
             area = getattr(w, "level_name", "") if w is not None else ""
-            L.text(c, "med", "Floor %d  %s" % (run.depth, area), GOLD, 312, 56, "center", 482)
+            L.text(c, "med", "%s  %s" % (run.where()[:1].upper() + run.where()[1:], area), GOLD, 312, 56, "center", 482)
             self.draw_view(run, view)
             self.region(view, self.go, "watch")
         else:
-            L.text(c, "med", h.name if h else "No hero selected", GOLD, 312, 56, "center", 482)
+            L.text(c, "med", ("%s - farms: %s" % (h.name, FARM_NAMES[farm_of(h)])) if h else "No hero selected",
+                   GOLD, 312, 56, "center", 482)
             L.inset(c, view)
             L.text(c, "med", "Not on a run" if h else "", GREY, view.x, view.centery - 8, "center", view.w)
         # his status
@@ -578,6 +593,7 @@ class App:
         row2 = [("Inventory / Loot", lambda: self.go("inventory"), has),
                 ("Abilities", lambda: self.go("character"), has),
                 ("Pickup", lambda: self.go("pickup"), has),
+                ("Farm: %s" % FARM_SHORT[farm_of(h)] if has else "Farm", self.cycle_farm, has and not on_run),
                 ("Shop", lambda: self.open_town("shop"), has and (not on_run or town_run)),
                 ("Stash", lambda: self.open_town("stash"), has and (not on_run or town_run))]
         for j, row in enumerate((row1, row2)):
@@ -1741,7 +1757,7 @@ class App:
         bar = pygame.Surface((W, 22 + 18 * len(run.heroes)), pygame.SRCALPHA)
         bar.fill((0, 0, 0, 150))
         c.blit(bar, (0, 0))
-        L.text(c, "med", "Floor %d  %s" % (run.depth, getattr(run.world, "level_name", "") if run.world else ""), GOLD, 10, 4)
+        L.text(c, "med", "%s  %s" % (run.where()[:1].upper() + run.where()[1:], getattr(run.world, "level_name", "") if run.world else ""), GOLD, 10, 4)
         for i, x in enumerate(run.heroes):
             thought = run.sim.brain(x).last if run.sim is not None else ""
             L.text(c, "small", "%s  life %d/%d  mana %d   %s" % (x.name, max(0, x.hp), x.max_hp, int(getattr(x, "mana", 0)), thought),
