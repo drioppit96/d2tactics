@@ -86,6 +86,10 @@ class DccAnim:
 MODE_MAP = {
     "NU": ["NU"], "WL": ["WL"], "A1": ["A1"], "SC": ["SC", "A2", "A1", "S1"],
     "GH": ["GH", "NU"], "DD": ["DT"], "DT": ["DD", "DT"], "KK": ["KK", "A2", "A1"],
+    # throwing, the second attack and the skill animations (Skills.txt anim), each falling back
+    # on the plain attack where a unit has no such animation
+    "TH": ["TH", "A1"], "A2": ["A2", "A1"], "S1": ["S1", "A1"], "S2": ["S2", "A1"], "S3": ["S3", "A1"],
+    "S4": ["S4", "A1"],
 }
 
 MONSTER_IDS = {"ZM": "zombie1", "FA": "fallen1", "FS": "fallenshaman1", "SI": "quillrat1", "SK": "skeleton1"}

@@ -71,7 +71,7 @@ MONSTER_VEL = 4.0       # when MonStats can't be read
 class State:
     __slots__ = ("mode", "frames", "hit_at", "target", "path", "prog", "next_path", "next_drink",
                  "speed", "kind", "plan", "stunned", "total", "next_think", "skip", "path_goal",
-                 "last_pos", "moved_at", "next_kite")
+                 "last_pos", "moved_at", "next_kite", "anim")
 
     def __init__(self):
         self.mode = "idle"          # idle | walk | attack | gethit
@@ -93,6 +93,7 @@ class State:
         self.last_pos = None        # where it stood when it last moved, and when (stuck check)
         self.moved_at = 0
         self.next_kite = 0          # the frame he may step away from melee monsters again
+        self.anim = None            # the animation of the swing / cast under way (A1, TH, SC, S1...)
 
 
 class Sim:
@@ -548,11 +549,26 @@ class Sim:
             return
         if aim is not None and aim != h.pos:
             h.face(*aim)
+        s.anim = self.skill_anim(sk, plan.skill)
         s.mode, s.frames, s.plan, s.path = "cast", max(1, plan.frames), plan, []
         s.total = s.frames
         s.hit_at = max(0, s.frames // 2)
         if self.watched:
             self.w.emit("attack", h, aim or h.pos, "cast" if sk is not None and sk.kind not in ("attack", "melee") else "attack")
+
+    @staticmethod
+    def skill_anim(sk, name=None):
+        """The animation D2 plays for a skill: its Skills.txt anim (A1, A2, TH, SC, S1-S4, KK);
+        Throw throws; a weapon skill without one swings or shoots; a spell casts."""
+        if name == "throw":
+            return "TH"
+        d = getattr(sk, "data", None) or {}
+        anim = (d.get("anim") or "").strip().upper()
+        if anim in ("A1", "A2", "TH", "SC", "KK", "S1", "S2", "S3", "S4"):
+            return anim
+        if sk is not None and (getattr(sk, "weapon", False) or sk.kind in ("attack", "melee")):
+            return "A1"
+        return "SC"
 
     def _cast(self, h, s):
         from game import tactics
@@ -719,6 +735,7 @@ class Sim:
         else:
             frames = timing.attack_frames(fpd, 0, 0, 0, speed)
         s.mode, s.frames, s.target, s.total = "attack", frames, tgt, frames
+        s.anim = "A1"
         s.hit_at = frames // 2
         s.kind = "arrow" if ranged and (not u.is_player or getattr(u, "ranged", False)) else None
         s.path = []

@@ -436,6 +436,18 @@ def test_charm_inventory():
           "the trip home sells the ring, never a charm")
 
 
+def test_skill_animations():
+    """Each skill plays D2's own animation: Skills.txt anim, Throw throws, weapon skills swing."""
+    import types
+    from autobattler.realtime import Sim
+    sk = lambda anim, kind="missile", weapon=False: types.SimpleNamespace(data={"anim": anim}, kind=kind, weapon=weapon)
+    check(Sim.skill_anim(None, "throw") == "TH", "Throw: TH")
+    check(Sim.skill_anim(sk("TH")) == "TH", "a javelin skill (anim TH): TH")
+    check(Sim.skill_anim(sk("A1", weapon=True)) == "A1", "a bow skill (anim A1): A1")
+    check(Sim.skill_anim(sk("", weapon=True)) == "A1", "a weapon skill without anim: A1")
+    check(Sim.skill_anim(sk("SC")) == "SC" and Sim.skill_anim(sk("")) == "SC", "a spell: SC")
+
+
 def test_cast_breakpoints():
     from autobattler.brain import CAST_FRAMES0
     sor = [timing.cast_frames(CAST_FRAMES0["sor"] + 1, f) for f in (0, 9, 20, 37, 63, 105, 200)]
@@ -650,6 +662,7 @@ if __name__ == "__main__":
     test_summons_once()
     test_act_levels()
     test_charm_inventory()
+    test_skill_animations()
     test_inventory_screen()
     print("\n%s" % ("all passed" if not FAILS else "%d FAILED" % len(FAILS)))
     sys.exit(1 if FAILS else 0)

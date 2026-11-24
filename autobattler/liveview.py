@@ -69,6 +69,8 @@ class LiveView:
             v.t += gdt * WALK_CYCLE
         elif s is not None and s.mode in ("attack", "cast", "gethit") and getattr(s, "total", 0):
             mode = {"attack": "A1", "cast": "SC", "gethit": "GH"}[s.mode]
+            if s.mode != "gethit" and getattr(s, "anim", None):
+                mode = s.anim                # the skill's own animation: TH, A1 for bow skills, S1 ...
             v.mode = mode
             v.dur = s.total / float(timing.FPS)
             v.t = max(0.0, (s.total - s.frames) / float(timing.FPS))

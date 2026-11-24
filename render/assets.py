@@ -122,7 +122,7 @@ class PlaceholderAssets(AssetProvider):
         ox = oy = 0.0
         if mode == "WL":
             oy = -abs(math.sin(phase * math.pi * 2)) * 2.5 * s
-        elif mode in ("A1", "SC"):
+        elif mode in ("A1", "A2", "SC", "TH", "KK", "S1", "S2", "S3", "S4"):
             lunge = math.sin(min(1.0, phase) * math.pi) * 6 * s
             ox, oy = dx * lunge, dy * lunge
         elif mode == "GH":
@@ -171,7 +171,7 @@ class PlaceholderAssets(AssetProvider):
         # weapon / staff
         sx0, sy0 = cx + dx * bw * 0.45 * s, top_y + bh * 0.35 * s
         swing = 0.0
-        if mode in ("A1", "SC"):
+        if mode in ("A1", "A2", "SC", "TH", "KK", "S1", "S2", "S3", "S4"):
             swing = math.sin(min(1.0, phase) * math.pi) * 1.2
         ang = math.atan2(dy, dx) - 0.9 + swing
         length = (10 if unit.token != "FS" else 14) * s

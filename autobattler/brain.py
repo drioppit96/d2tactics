@@ -426,7 +426,8 @@ class Brain:
             if getattr(h, "throwing", False) and frame >= self.cool.get("throw", 0):
                 # a javelin, knife or axe in hand: Throw is his main attack, from a distance
                 far = chebyshev(target.pos, h.pos) >= 2
-                plans.append(Plan("skill", "throw", target, None, frames, dps * (1.6 if far else 1.2), "throw"))
+                tframes = self.attack_frames("TH")
+                plans.append(Plan("skill", "throw", target, None, tframes, dps * (1.6 if far else 1.2), "throw"))
                 dps *= 0.8
             plans.append(Plan("attack", None, target, None, frames, dps, "attack"))
 

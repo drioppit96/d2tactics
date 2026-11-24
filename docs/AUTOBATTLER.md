@@ -165,6 +165,11 @@ WL while walking, A1 while swinging, SC while casting, GH in hit recovery and DD
 played over exactly the frames the real-time code gives it (IAS / FCR / FHR). Missiles,
 explosions, overlays, damage numbers and deaths still go through the Scene's own code.
 
+- Each swing or cast plays D2's own animation for it: the skill's Skills.txt anim (TH for the
+  javelin skills, A1 for the bow skills, S1-S4, A2, KK, SC for spells), TH for Throw, A1 for a
+  weapon skill without one. Its length is that animation's frames at his attack or cast speed. A
+  unit without the animation uses its plain attack (render/d2assets.py MODE_MAP).
+
 ## Speed
 
 - Floors are built on a background thread, one at a time, so the other runs and the screen keep

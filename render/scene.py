@@ -37,6 +37,10 @@ def _screen_len(dx, dy):
     walkers move at one even screen speed whichever way they go, so no direction looks jerky."""
     return math.hypot((dx - dy) * 2.0, dx + dy) / 2.2360679775
 
+
+#: the animations that play once through: attacks, casting, throwing, the skill animations
+ACTION_MODES = ("A1", "A2", "SC", "TH", "KK", "S1", "S2", "S3", "S4")
+
 class UnitView:
     def __init__(self, unit):
         self.unit = unit
@@ -60,7 +64,7 @@ class UnitView:
     def busy(self):
         if getattr(self, "spin", False):
             return bool(self.path)        # Whirlwind: done with a step once you reach its cell
-        return bool(self.path) or self.slide is not None or self.mode in ("A1", "SC", "DD")
+        return bool(self.path) or self.slide is not None or self.mode in ACTION_MODES or self.mode == "DD"
 
 
 class FloatText:
@@ -162,7 +166,7 @@ class Scene:
                 v = self.view(u)
             except Exception:
                 return False
-        return bool(v.path) or v.slide is not None or v.mode in ("A1", "SC")
+        return bool(v.path) or v.slide is not None or v.mode in ACTION_MODES
 
     def pull_events(self):
         if self.world.events:
@@ -672,7 +676,7 @@ class Scene:
             v.facing = (math.cos(v.spin_a), math.sin(v.spin_a))
             v.mode, v.dur, v.t = "A1", 1.0, 0.45
             return
-        if v.mode in ("A1", "SC", "GH", "DD"):
+        if v.mode in ACTION_MODES or v.mode in ("GH", "DD"):
             v.t += dt
             if v.t >= v.dur:
                 v.mode = "DT" if v.mode == "DD" else "NU"
@@ -936,7 +940,7 @@ class Scene:
                 v = obj
                 u = v.unit
                 b = 1.0 if use_tiles else self.brightness(int(round(v.rx)), int(round(v.ry)), light)
-                pose = {"mode": v.mode, "phase": (v.t / v.dur) if v.dur and v.mode in ("A1", "SC", "DD", "GH") else v.t,
+                pose = {"mode": v.mode, "phase": (v.t / v.dur) if v.dur and (v.mode in ACTION_MODES or v.mode in ("DD", "GH")) else v.t,
                         "flash": v.flash, "facing": v.facing}
                 tint = status_tint(u) if u.alive and not v.dead else None
                 if tint:
