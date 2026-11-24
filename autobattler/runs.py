@@ -17,7 +17,7 @@ instead, with the monster farthest from the start as its boss. That is also how 
 """
 import random
 
-from . import realtime, roster, timing
+from . import brain, realtime, roster, timing
 
 STATES = ("build", "fight", "pause", "over")
 
@@ -63,6 +63,8 @@ class Run:
         from game import rift
         a = self.assets
         for h in self.heroes:
+            brain.spend_points(h)
+            h._ab_level = h.level
             h.hp, h.alive = h.max_hp, True
             h.mana = getattr(h, "max_mana", getattr(h, "mana", 0))
         if getattr(a, "act_kit", None) is not None:
@@ -112,10 +114,8 @@ class Run:
             h.x, h.y = cell
             taken.add(cell)
             h.alive = True
-            h.ally = True
-            h.party_member = True
-            if h not in w.monsters:
-                w.monsters.append(h)
+            from game import tactics
+            tactics._as_follower(w, h)      # the fields the engine expects of a party hero
 
     def _restore_rift(self):
         if self._lid is None:
@@ -144,6 +144,11 @@ class Run:
         xp0 = self.leader.xp
         self.sim.tick()
         self._share_xp(self.leader.xp - xp0)
+        for h in self.heroes:
+            if h.alive and h.level != getattr(h, "_ab_level", h.level):
+                h._ab_level = h.level
+                brain.spend_points(h)       # a level up: new points go where his plan says
+                self.note("%s reached level %d." % (h.name, h.level))
         if self.sim.wiped():
             self.kills += self.sim.kills
             self.note("Everyone fell on floor %d." % self.depth)

@@ -16,18 +16,30 @@ Rules used here:
   into hit recovery: the swing it was in the middle of is lost.
 - Monsters wake up when a hero comes within AGGRO cells, and wait AI_DELAY frames between
   attacks on top of their attack animation.
-- A hero drinks a healing potion from his belt below DRINK_AT of his life, at most once a second.
+- A hero drinks a healing potion from his belt below his profile's potion_at, at most once a
+  second.
+- What a hero does next is decided by his own brain (autobattler/brain.py): skills, auras,
+  curses, buffs, summons, a normal attack, or backing off.
+- Skills are cast through the engine's own skill code (World.use_skill, as that hero), so every
+  skill does exactly what it does in the turn-based game. A cast takes its FCR time (spells) or
+  IAS time (skills that swing) and lands part way through.
+- The engine counts a turn as two seconds of D2 time (game/skills.py TURN_SECONDS). Every 50
+  frames the turn-based upkeep runs once: auras, buffs and curses tick, mana regenerates,
+  poison and lingering spells (Blizzard, Fire Wall ...) do their damage, summons, golems,
+  traps and hirelings act, frozen and stunned monsters lose that round, and monsters that cast
+  spells take a turn.
 """
 import random
 
 from game.grid import chebyshev
 
+from . import brain as brains
 from . import timing
 
 AGGRO = 14              # cells: a monster this close to a hero wakes up
 HERO_SIGHT = 18         # cells: how far a hero looks for something to fight
 AI_DELAY = 8            # frames a monster waits after its attack before the next decision
-DRINK_AT = 0.45         # drink below this share of life
+ROUND = 50              # frames per turn of the turn-based upkeep (2 seconds)
 DRINK_COOLDOWN = 25     # frames between two potions
 REPATH = 12             # frames between two path searches while chasing
 HERO_WALK = 6.0         # CharStats WalkVelocity
@@ -37,7 +49,7 @@ MONSTER_VEL = 4.0       # when MonStats can't be read
 
 class State:
     __slots__ = ("mode", "frames", "hit_at", "target", "path", "prog", "next_path", "next_drink",
-                 "speed", "kind")
+                 "speed", "kind", "plan", "stunned")
 
     def __init__(self):
         self.mode = "idle"          # idle | walk | attack | gethit
@@ -50,6 +62,8 @@ class State:
         self.next_drink = 0
         self.speed = 0.0            # cells per second
         self.kind = None            # "arrow" for ranged attacks
+        self.plan = None            # the skill being cast (brain.Plan)
+        self.stunned = 0            # frame until which it can't act (frozen, stunned)
 
 
 class Sim:
@@ -61,10 +75,20 @@ class Sim:
         self.rng = rng or random.Random()
         self.frame = 0
         self.st = {}
-        self.kills = 0
+        self.dead = set()           # every monster that died on this floor, however it died
+        self.casts = {}             # skill -> times cast on this floor
         self.watched = False        # while False the engine's animation events are thrown away
+        self.brains = {}
+        self.errors = 0
         for h in self.heroes:
             self._state(h)
+            self.brains[id(h)] = brains.Brain(h, self)
+
+    def brain(self, h):
+        b = self.brains.get(id(h))
+        if b is None:
+            b = self.brains[id(h)] = brains.Brain(h, self)
+        return b
 
     # ------------------------------------------------------------ state
     def _state(self, u):
@@ -107,18 +131,91 @@ class Sim:
         for m in self.foes():
             if not getattr(m, "aware", False) and any(chebyshev(m.pos, h.pos) <= AGGRO for h in heroes):
                 m.aware = True
-        for u in heroes + [m for m in self.foes() if getattr(m, "aware", False)]:
+        if self.frame % ROUND == 0:
+            self._round()
+        for u in heroes + [m for m in self.foes() if getattr(m, "aware", False) and not getattr(m, "caster", False)]:
             if u.alive:
                 self._step(u)
+        for m in self.w.monsters:
+            if not m.alive and not getattr(m, "ally", False) and not getattr(m, "is_player", False):
+                self.dead.add(id(m))
         if not self.watched:
             del self.w.events[:]
 
+    @property
+    def kills(self):
+        return len(self.dead)
+
+    # ------------------------------------------------------------ the 2-second upkeep
+    class _Guard:
+        """Engine code is turn-based: keep the world in "explore" on the heroes' turn around it."""
+
+        def __init__(self, w, turn="player"):
+            self.w, self.turn = w, turn
+
+        def __enter__(self):
+            self.mode, self.old_turn = self.w.mode, self.w.turn
+            self.w.mode, self.w.turn = "explore", self.turn
+
+        def __exit__(self, *exc):
+            self.w.mode, self.w.turn = "explore", "player"
+            self.w.game_over = False
+            return False
+
+    def _engine(self, fn, *a, **kw):
+        try:
+            return fn(*a, **kw)
+        except Exception:
+            self.errors += 1
+            if self.errors <= 5:
+                import traceback
+                traceback.print_exc()
+            return None
+
+    def _round(self):
+        from game import tactics
+        w = self.w
+        with self._Guard(w):
+            if hasattr(w, "aura_turn"):
+                self._engine(w.aura_turn)
+            for h in self.living_heroes():
+                with tactics.acting_as(w, h):
+                    self._engine(w._hero_turn_start)
+            if hasattr(w, "_tick_buffs"):
+                self._engine(w._tick_buffs)
+            if hasattr(w, "allies_turn"):
+                self._engine(w.allies_turn)
+            if hasattr(w, "tick_hazards"):
+                self._engine(w.tick_hazards)
+        for m in [m for m in self.foes() if getattr(m, "aware", False)]:
+            if getattr(m, "caster", False):
+                with self._Guard(w, "monsters"):
+                    self._engine(w._monster_turn, m)       # (its own status, spells and moves)
+                continue
+            s = self._state(m)
+            eff = getattr(m, "effects", None) or {}
+            ok = True
+            if hasattr(w, "monster_status"):
+                with self._Guard(w, "monsters"):
+                    ok = self._engine(w.monster_status, m)
+            if eff.get("stun"):
+                eff["stun"] -= 1
+                ok = False
+            if ok is False and m.alive:
+                s.stunned = self.frame + ROUND
+                s.mode, s.frames, s.path, s.hit_at = "idle", 0, [], -1
+
     def _step(self, u):
         s = self._state(u)
-        if s.mode in ("attack", "gethit"):
+        if s.stunned > self.frame:
+            return
+        if s.mode in ("attack", "gethit", "cast"):
             s.frames -= 1
-            if s.mode == "attack" and s.frames == s.hit_at:
-                self._land(u, s)
+            if s.frames == s.hit_at:
+                if s.mode == "attack":
+                    self._land(u, s)
+                elif s.mode == "cast":
+                    self._cast(u, s)
             if s.frames > 0:
                 return
             s.mode = "idle"
@@ -135,19 +232,97 @@ class Sim:
 
     # ------------------------------------------------------------ decisions
     def _hero_think(self, h, s):
-        if h.hp < h.max_hp * DRINK_AT and self.frame >= s.next_drink:
+        b = self.brain(h)
+        if h.hp * 100 < h.max_hp * brains.setting(h, "potion_at") and self.frame >= s.next_drink:
             if self._drink(h):
                 s.next_drink = self.frame + DRINK_COOLDOWN
         tgt = s.target if (s.target is not None and s.target.alive) else None
         if tgt is None or chebyshev(h.pos, tgt.pos) > HERO_SIGHT:
             tgt = self._nearest(h, self.foes(), HERO_SIGHT)
             s.target = tgt
-        if tgt is None:
-            goal = self.goal_cell()
-            if goal is not None and chebyshev(h.pos, goal) > 2:
-                self._walk_to(h, s, goal, reach=1)
+        awake = [m for m in self.foes() if getattr(m, "aware", False) or chebyshev(m.pos, h.pos) <= HERO_SIGHT]
+        plan = b.decide(tgt, awake)
+        if plan is not None and plan.what == "skill" and tgt is not None and \
+                b.ranged_hero(brains.SPELL_RANGE) and self._should_back_off(h, b):
+            if self._back_off(h, s):
+                b.last = "backing off"
+                return
+        if plan is None or plan.what == "attack":
+            if tgt is None:
+                goal = self.goal_cell()
+                if goal is not None and chebyshev(h.pos, goal) > 2:
+                    b.last = "heading for the boss"
+                    self._walk_to(h, s, goal, reach=1)
+                return
+            self._engage(h, s, tgt, self._reach(h))
             return
-        self._engage(h, s, tgt, self._reach(h))
+        self._start_cast(h, s, plan)
+
+    def _should_back_off(self, h, b):
+        limit = brains.setting(h, "back_off_at")
+        if not limit or h.hp * 100 > h.max_hp * limit:
+            return False
+        return any(chebyshev(m.pos, h.pos) <= 1 + getattr(m, "radius", 0) and getattr(m, "range", 1) <= 1
+                   for m in self.foes() if getattr(m, "aware", False))
+
+    def _back_off(self, h, s):
+        """A few steps to the open cell farthest from the monsters next to him."""
+        g = self.w.grid
+        foes = [m for m in self.foes() if chebyshev(m.pos, h.pos) <= 8]
+        best, bd = None, -1
+        for dx in range(-4, 5):
+            for dy in range(-4, 5):
+                c = (h.x + dx, h.y + dy)
+                if c == h.pos or not g.walkable(*c) or self.w.unit_at(c) is not None:
+                    continue
+                d = min([chebyshev(c, m.pos) for m in foes] or [99])
+                if d > bd:
+                    best, bd = c, d
+        if best is None or bd <= 1:
+            return False
+        self._walk_to(h, s, best, reach=0)
+        return True
+
+    # ------------------------------------------------------------ casting
+    def _start_cast(self, h, s, plan):
+        book = getattr(h, "skills", None)
+        sk = book.tree.get(plan.skill) if book else None
+        reach = brains.SPELL_RANGE
+        if sk is not None and (getattr(sk, "weapon", False) or sk.kind in ("attack", "melee")):
+            reach = self._reach(h)
+        aim = plan.target.pos if plan.target is not None else plan.cell
+        if aim is not None and sk is not None and sk.kind not in ("aura", "buff", "cry") and \
+                sk.kind not in brains.SUMMON_KINDS and chebyshev(h.pos, aim) > reach:
+            self._walk_to(h, s, aim, reach=reach)
+            return
+        if aim is not None and aim != h.pos:
+            h.face(*aim)
+        s.mode, s.frames, s.plan, s.path = "cast", max(1, plan.frames), plan, []
+        s.hit_at = max(0, s.frames // 2)
+        if self.watched:
+            self.w.emit("attack", h, aim or h.pos, "cast" if sk is not None and sk.kind not in ("attack", "melee") else "attack")
+
+    def _cast(self, h, s):
+        from game import tactics
+        plan = s.plan
+        s.plan = None
+        if plan is None or not h.alive:
+            return
+        if plan.target is not None and not plan.target.alive:
+            return
+        w = self.w
+        ok = False
+        with self._Guard(w):
+            with tactics.acting_as(w, h):
+                h.ap = max(getattr(h, "ap", 0), 20)
+                n0 = len(w.events)
+                ok = bool(self._engine(w.use_skill, plan.skill, plan.target, plan.cell))
+                if not self.watched:
+                    del w.events[n0:]
+        self.brain(h).done(plan, ok)
+        if ok:
+            self.casts[plan.skill] = self.casts.get(plan.skill, 0) + 1
+
 
     def _monster_think(self, m, s):
         heroes = self.living_heroes()
@@ -220,9 +395,7 @@ class Sim:
             traceback.print_exc()
             return
         lost = before - max(0, tgt.hp)
-        if was_alive and not tgt.alive and not tgt.is_player:
-            self.kills += 1
-        elif tgt.alive and lost > 0:
+        if tgt.alive and lost > 0:
             share = 12 if tgt.is_player else 8
             if lost * share >= tgt.max_hp:
                 self._hit_recovery(tgt)

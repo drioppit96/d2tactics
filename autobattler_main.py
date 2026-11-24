@@ -9,6 +9,7 @@ Keys and mouse:
     S / Start run           start a run for the selected heroes
     X / Stop run            the selected heroes' run stops after the current floor
     W / click a run         watch that run (Esc goes back)
+    T / Style               the selected heroes' fighting style (balanced, aggressive, careful)
     + / -                   game speed
 """
 import os
@@ -21,7 +22,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 from main import load_settings, load_assets, log_error          # noqa: E402  (the same engine)
-from autobattler import config, roster                          # noqa: E402
+from autobattler import brain, config, roster                   # noqa: E402
 from autobattler.runs import RunManager                         # noqa: E402
 from autobattler.timing import FPS, Timings                     # noqa: E402
 
@@ -128,6 +129,17 @@ class App:
         r = self.mgr.start(heroes)
         self.message = r if isinstance(r, str) else "Run started: %s" % ", ".join(h.name for h in heroes)
 
+    def cycle_style(self):
+        """The selected heroes' fighting style: balanced -> aggressive -> careful."""
+        for n in self.selected:
+            h = self.heroes.get(n)
+            if h is not None:
+                st = brain.cycle_style(h)
+                if n not in self.mgr.busy_names():
+                    roster.save(h)       # (a hero on a run is saved with it after the floor)
+                self.message = "%s fights %s now." % (n, {"balanced": "balanced", "aggressive": "aggressively",
+                                                          "careful": "carefully"}[st])
+
     def stop_run(self):
         for n in self.selected:
             r = self.run_of(n)
@@ -206,6 +218,8 @@ class App:
             self.start_run()
         elif ev.key == pygame.K_x and self.screen_name == "roster":
             self.stop_run()
+        elif ev.key == pygame.K_t and self.screen_name == "roster":
+            self.cycle_style()
         elif ev.key == pygame.K_w and self.screen_name == "roster" and self.selected:
             self.open_watch(self.run_of(self.selected[0]))
 
@@ -270,7 +284,8 @@ class App:
             state = "on a run" if name in busy else ""
             self.text("%s" % name, (row.x + 6, row.y + 4), "s", GOLD if name in self.selected else TEXT)
             self.text("Lv %d %s" % (h.level, CLASS_NAMES.get(h.cls, h.cls)), (row.x + 170, row.y + 4), "s", TEXT)
-            self.text("deepest floor %d" % int(getattr(h, "rift_depth", 0) or 0), (row.x + 330, row.y + 4), "s", GREY)
+            self.text("floor %d  %s" % (int(getattr(h, "rift_depth", 0) or 0), brain.profile(h)["style"]),
+                      (row.x + 330, row.y + 4), "s", GREY)
             if state:
                 self.text(state, (row.right - 80, row.y + 4), "s", GREEN)
             self._hero_rects.append((name, row))
@@ -305,6 +320,7 @@ class App:
                     any(self.run_of(n) for n in self.selected))
         self.button((530, by, 160, 40), "Watch (W)", lambda: self.open_watch(self.run_of(self.selected[0])),
                     bool(self.selected) and self.run_of(self.selected[0]) is not None)
+        self.button((700, by, 160, 40), "Style (T)", self.cycle_style, bool(self.selected))
         if self.message:
             self.text(self.message, (20, H - 28), "s", GOLD)
 
@@ -348,8 +364,9 @@ class App:
         self.text(r.title(), (16, 10), "m", GOLD)
         y = 36
         for h in r.heroes:
-            self.text("%s  life %d/%d  mana %d" % (h.name, max(0, h.hp), h.max_hp, int(getattr(h, "mana", 0))),
-                      (16, y), "s", TEXT if h.alive else RED)
+            thought = r.sim.brain(h).last if r.sim is not None else ""
+            self.text("%s  life %d/%d  mana %d   %s" % (h.name, max(0, h.hp), h.max_hp, int(getattr(h, "mana", 0)),
+                                                     thought), (16, y), "s", TEXT if h.alive else RED)
             y += 20
         self.text("Esc: back   wheel: zoom   +/-: speed x%g" % self.cfg["speed"], (16, H - 26), "s", GREY)
 

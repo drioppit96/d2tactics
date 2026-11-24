@@ -110,6 +110,49 @@ def test_floor_progress():
     check(int(getattr(h, "rift_depth", 0)) >= 1, "the deepest floor is remembered on the hero")
 
 
+def test_brain():
+    """Heroes spend their points by their plan and use their skills in the fight."""
+    from autobattler import brain
+    config.apply_d2_rules()
+    random.seed(11)
+    h = _hero("Thinker")
+    h.level = 12
+    h.skills.points = 12
+    h.stat_points = 55
+    s0 = (h.base_str, h.base_vit)
+    brain.spend_points(h)
+    learned = {k: v for k, v in h.skills.levels.items() if v}
+    check(h.skills.points == 0 and len(learned) >= 3, "skill points spent by the plan: %s" % learned)
+    check(h.stat_points == 0 and h.base_str > s0[0] and h.base_vit > s0[1], "stat points spent")
+    check(brain.profile(h)["style"] == "balanced" and brain.cycle_style(h) == "aggressive", "profile and styles")
+    brain.profile(h)["style"] = "balanced"
+    # a fight with skills: a run on the placeholder floor, counting what was cast
+    h.base_str, h.base_vit = 120, 150
+    h.recalc()
+    h.hp = h.max_hp
+    h.mana = h.max_mana = max(h.max_mana, 200)
+    mgr = RunManager(_NoAssets(), _cfg())
+    r = mgr.start([h])
+    used = {}
+    for _ in range(25 * 60 * 4):
+        mgr.tick()
+        if r.sim is not None:
+            for k, v in r.sim.casts.items():
+                used[k] = max(used.get(k, 0), v)
+        if r.state == "over":
+            break
+    check(sum(used.values()) > 0, "skills cast during the run: %s" % used)
+    check(r.result in (None, "died", "stopped"), "no errors in the run (%s), kills %d" % (r.result, r.kills))
+
+
+def test_cast_breakpoints():
+    from autobattler.brain import CAST_FRAMES0
+    sor = [timing.cast_frames(CAST_FRAMES0["sor"] + 1, f) for f in (0, 9, 20, 37, 63, 105, 200)]
+    check(sor == [13, 12, 11, 10, 9, 8, 7], "Sorceress FCR breakpoints %s" % sor)
+    nec = [timing.cast_frames(CAST_FRAMES0["nec"] + 1, f) for f in (0, 9, 18, 30, 48, 75, 125)]
+    check(nec == [15, 14, 13, 12, 11, 10, 9], "Necromancer FCR breakpoints %s" % nec)
+
+
 def test_roster():
     from game import save as gsave
     old = (roster.SAVE_DIR, gsave.SAVE_DIR, gsave.NORMAL_DIR)
@@ -150,5 +193,7 @@ if __name__ == "__main__":
     test_roster()
     test_runs()
     test_floor_progress()
+    test_cast_breakpoints()
+    test_brain()
     print("\n%s" % ("all passed" if not FAILS else "%d FAILED" % len(FAILS)))
     sys.exit(1 if FAILS else 0)

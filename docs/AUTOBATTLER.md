@@ -49,8 +49,57 @@ update never overwrites them.
   block, damage, resistances, life and mana steal, death, experience, drops.
 - Monsters wake up when a hero is within 14 cells and wait 8 frames between attacks on top of
   their attack animation.
-- Heroes fight the nearest monster within 18 cells, otherwise walk to the floor's boss. Below 45%
-  life they drink a healing or rejuvenation potion from the belt, at most once a second.
+- Heroes fight the nearest monster within 18 cells, otherwise walk to the floor's boss. Below
+  their profile's potion_at they drink a healing or rejuvenation potion from the belt, at most
+  once a second. What they do in a fight is up to their brain (below).
+
+## Each hero's brain (autobattler/brain.py)
+
+Every time a hero is free to act, his brain scores every skill he can use right now and does the
+best one, or a normal attack, or backs off, or drinks.
+
+- Damage skills: expected damage per second = the skill's own damage (SkillEnv, with synergies
+  and the D2R changes) x the monsters it reaches (the pack around the aim point for areas and
+  novas, up to four along a line) x what their resistances let through (immune = 0) / the time
+  the cast or swing takes. Weapon skills use the weapon's damage with the skill's bonus and the
+  chance to hit. A floor boss counts 1.3 times.
+- Curses: on a pack of three or more, or a boss, that does not have that curse yet.
+- Auras: one is switched on; a defensive one (Prayer, Defiance, the resist auras ...) when life
+  is below half.
+- Buffs and warcries that buff: cast again when 85% of their duration has passed.
+  Offensive warcries (Howl, Taunt, Battle Cry, War Cry): with two or more monsters within 5 cells.
+- Summons, golems, traps, walls: cast whenever the engine allows another; raising needs a corpse
+  within 10 cells. When the engine says no (full, no corpse), the skill waits 3 seconds.
+- Casting delay (Skills.txt delay: Meteor, Blizzard, Frozen Orb ...) is kept as a cooldown.
+- Mana: a skill that would leave the hero below his mana reserve scores a quarter.
+- Ranged heroes and casters back off a few cells from melee monsters next to them when their life
+  is below their style's limit.
+- Cast time: spells use the cast formula with the class's frames at 0% FCR (Amazon 19,
+  Assassin 16, Barbarian 13, Druid 18, Necromancer 15, Paladin 15, Sorceress 13) as base + 1,
+  which reproduces the published FCR breakpoints; skills that swing use the attack formula.
+  The skill takes effect half way through.
+
+Profile, saved with the hero (mode_state["autobattler"]):
+
+| field | meaning |
+| --- | --- |
+| style | balanced (drink at 45%, keep 15% mana, back off below 70% life), aggressive (30%, 5%, never), careful (60%, 25%, below 95%) |
+| potion_at, mana_reserve | override the style's numbers |
+| keep_distance | auto, yes, no |
+| favourite | a skill scored 25% higher |
+| never | skills not used |
+| auto_points | spend skill and stat points by the class plan |
+
+Points: with auto_points on, skill points go by the class's plan in BUILDS (prerequisites first;
+anything the plan can't take yet is kept) and stat points by STATS (strength and dexterity up to
+a cap, the rest vitality). Plans: Sorceress cold, Necromancer bone, Paladin Blessed Hammer,
+Barbarian Frenzy and Battle Orders, Amazon lightning javelin, Druid fire, Assassin lightning traps.
+Every skill a hero has points in is used, whatever the plan.
+
+The turn-based upkeep: the engine counts a turn as two seconds of D2 time, so every 50 frames
+auras, buffs and curses tick, mana regenerates, poison and lingering spells do their damage,
+summons, golems, traps and hirelings act, frozen and stunned monsters lose that round, and
+monsters that cast spells take a turn (their own spells, through the engine's monster code).
 
 ## Runs
 
@@ -74,13 +123,17 @@ update never overwrites them.
 The first screen is a working placeholder until the manager screen is designed: the roster on
 the left (click selects a hero, Ctrl+click adds heroes for a group), the runs on the right (click
 one to watch it), and buttons for a new hero, start, stop and watch. Keys: S start, X stop,
-W watch, + / - game speed, Esc back. The watch view uses the engine's renderer with Diablo II
+W watch, T fighting style, + / - game speed, Esc back. The watch view shows what each hero's
+brain decided last. The watch view uses the engine's renderer with Diablo II
 files, and a top-down view without them.
 
 ## Not done yet
 
-- Skills: heroes only use their normal attack. Skills, auras, curses and summons come next, a
-  class at a time.
+- Teleport and Leap are not used to get about yet (heroes walk). Whirlwind and Charge are scored
+  as damage on the monsters near their target.
+- Monsters that don't cast use their normal attack only; casters act once per 2-second round.
+- Only world.player can drink through the engine's potion code, so in a group only the first
+  hero drinks.
 - Picking up items, and managing gear from the manager screen.
 - The manager screen itself.
 - Reign of the Warlock changes beyond what `game/d2r.py` already has (the Warlock class excluded).
