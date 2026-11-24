@@ -550,8 +550,19 @@ class App:
             L.text(c, "small", "Build: %s" % brain.ROLE_NAMES.get(role, role), GOLD, x, y + 76)
             L.text(c, "small", ("keeps %d cells from melee monsters, kites when they reach him" % dist) if dist
                    else "goes in close; backs out of a crowd when hurt", GREY, x + 130, y + 76)
-            L.text(c, "small", "Drinks below %d%% life, retreats to town with no potions left" %
-                   brain.setting(h, "potion_at"), GREY, x, y + 92)
+            pets = []
+            if run is not None and run.world is not None:
+                pets = [m for m in run.world.monsters if m.alive and getattr(m, "ally", False)
+                        and getattr(m, "summon_skill", None) and getattr(m, "summoner", h) is h]
+            if pets:
+                names = {}
+                for m in pets:
+                    names[m.name] = names.get(m.name, 0) + 1
+                L.text(c, "small", "Summons up: " + ", ".join(("%s x%d" % (n, k)) if k > 1 else n
+                                                              for n, k in sorted(names.items())), GREEN, x, y + 92)
+            else:
+                L.text(c, "small", "Drinks below %d%% life, retreats to town with no potions left" %
+                       brain.setting(h, "potion_at"), GREY, x, y + 92)
         # buttons
         has = h is not None
         on_run = has and run is not None

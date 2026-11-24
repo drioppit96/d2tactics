@@ -256,6 +256,8 @@ class Run:
             return                              # (town: the floor waits)
         xp0 = self.leader.xp
         self.sim.tick()
+        while self.sim.notes:
+            self.note(self.sim.notes.pop(0))
         self._share_xp(self.leader.xp - xp0)
         for h in self.heroes:
             if h.alive and h.level != getattr(h, "_ab_level", h.level):

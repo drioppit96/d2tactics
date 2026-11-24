@@ -118,6 +118,7 @@ class Sim:
         self.phase = "fight"        # fight | loot (boss dead, picking up) | portal (walking to it)
         self.no_room = False        # a hero found something he wanted and had no room for it
         self.need_town = False      # a hero is nearly dead with no healing potion left
+        self.notes = []             # things for the run's log (summons ...), taken by the run
         self.portal = None          # the cell of the red portal to the next floor
         self.loot_until = 0
         self.at_portal = False
@@ -589,6 +590,7 @@ class Sim:
                 for m in w.monsters:
                     if id(m) not in before and getattr(m, "ally", False):
                         m.summoner = h               # (whose it is: his brain counts his own)
+                        self.notes.append("%s summons %s." % (h.name, getattr(m, "name", plan.skill)))
                 if not self.watched:
                     del w.events[n0:]
         self.brain(h).done(plan, ok)

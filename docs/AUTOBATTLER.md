@@ -277,7 +277,8 @@ is drawn with plain boxes and a system font.
   run, To town, Watch, Style, Inventory / Loot, Abilities, Pickup, Shop, Stash. A hero not on a
   run is in town (Sanctuary, the Act 6 town). The speed buttons are gone; `speed` in
   autobattler.ini still sets the game speed.
-- The hero card shows his build (as his brain sees it) and how he fights with it.
+- The hero card shows his build (as his brain sees it) and how he fights with it. While he has summons up, the
+  card lists them ("Summons up: Oak Sage"), and each summon he casts goes in the run's log.
 - To town / Continue run: To town takes the hero (and his group) to town as a town portal would:
   the run waits on its floor, frozen as it is, and he is in Sanctuary, where Tyrael mends him and
   the traders restock; Shop and Stash work. The button then reads Continue run, which takes him
