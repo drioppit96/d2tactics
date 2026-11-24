@@ -239,14 +239,14 @@ class Run:
             if h.alive:
                 h.hp, h.mana = h.max_hp, getattr(h, "max_mana", getattr(h, "mana", 0))
             h._town_visit = int(getattr(h, "_town_visit", 0) or 0) + 1
-            n = stash.deposit(h, st)
+            n = stash.deposit(h, st, getattr(self.assets, "content", None))
             stored += n
             if n:
                 self.note("%s puts %d item%s in the stash." % (h.name, n, "" if n == 1 else "s"))
             if auto and sell:
                 sold, gold = sell_magic_and_rare(h)
                 if sold:
-                    self.note("%s sells %d magic and rare item%s for %d gold." % (h.name, sold, "" if sold == 1 else "s", gold))
+                    self.note("%s sells %d item%s for %d gold." % (h.name, sold, "" if sold == 1 else "s", gold))
             roster.save(h)
         if stored:
             stash.save()
@@ -259,7 +259,8 @@ class Run:
         """A hero had no room for something he wanted: home, if that would make room (he carries
         gems, runes, unique or set items the stash takes, or magic or rare items to sell)."""
         from . import stash
-        if not any(stash.keeps(it) or (getattr(it, "rarity", "") in ("magic", "rare") and not getattr(it, "charm", False))
+        content = getattr(self.assets, "content", None)
+        if not any(stash.keeps(it, content) or sellable_on_trip(it)
                    for h in self.heroes for it in h.inventory):
             self.sim.no_room = False
             return False
@@ -486,14 +487,24 @@ def scale_for_players(w, players):
         m.xp_value = max(1, int(getattr(m, "xp_value", 1) * k))
 
 
+def sellable_on_trip(it):
+    """What the automatic trip home sells: magic (blue) and rare (yellow) items, and plain weapons
+    and armor (what the stash takes - runeword bases among them - has gone in before this)."""
+    if getattr(it, "kind", "") == "quest" or getattr(it, "charm", False):    # (charms are never sold)
+        return False
+    if getattr(it, "rarity", "") in ("magic", "rare"):
+        return True
+    return getattr(it, "kind", "") == "equip" and getattr(it, "rarity", "") in ("normal", "superior", "low") \
+        and not getattr(it, "runeword", None)
+
+
 def sell_magic_and_rare(h):
-    """The automatic trip home: every magic (blue) and rare (yellow) item in his backpack is sold
-    at D2's sell price; what he wears is kept. -> (items sold, gold)."""
+    """The automatic trip home: everything sellable_on_trip in his backpack is sold at D2's sell
+    price; what he wears is kept. -> (items sold, gold)."""
     from game.d2items import sell_price
     sold = gold = 0
     for it in list(h.inventory):
-        if getattr(it, "rarity", "") not in ("magic", "rare") or getattr(it, "kind", "") == "quest" \
-                or getattr(it, "charm", False):          # (charms are never sold)
+        if not sellable_on_trip(it):
             continue
         try:
             value = sell_price(it)

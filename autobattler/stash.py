@@ -34,18 +34,43 @@ def save():
         traceback.print_exc()
 
 
-def keeps(it):
-    """What the trip home puts in the stash: gems, runes, unique and set items."""
+PLAIN = ("normal", "superior", "low")
+
+
+def good_base(it, content=None):
+    """An exceptional or elite (tier II / III) plain item with all the sockets its base can have at
+    its item level - a runeword base."""
+    from game.items import tier_index
+    if getattr(it, "kind", "") != "equip" or getattr(it, "rarity", "") not in PLAIN or getattr(it, "runeword", None):
+        return False
+    if (tier_index(it) or 0) < 1:
+        return False
+    base = getattr(it, "base", None)
+    if not isinstance(base, dict):
+        return False
+    have = int(getattr(it, "sockets", 0) or 0)
+    if have <= 0:
+        return False
+    try:
+        cap = content.max_sockets(base, getattr(it, "ilvl", 1) or 1) if content is not None else base.get("maxsock", 0)
+    except Exception:
+        cap = base.get("maxsock", 0)
+    return cap > 0 and have >= cap
+
+
+def keeps(it, content=None):
+    """What the trip home puts in the stash: gems, runes, unique and set items, and exceptional or
+    elite plain items with all their sockets."""
     from game.cube import bankable
-    return bankable(it) or getattr(it, "rarity", "") in ("unique", "set")
+    return bankable(it) or getattr(it, "rarity", "") in ("unique", "set") or good_base(it, content)
 
 
-def deposit(hero, st):
+def deposit(hero, st, content=None):
     """-> how many items went from his backpack into the stash."""
     from game import cube as cb
     n = 0
     for it in list(hero.inventory):
-        if not keeps(it):
+        if not keeps(it, content):
             continue
         if cb.bankable(it):
             st.bank[it.code] = st.bank.get(it.code, 0) + 1

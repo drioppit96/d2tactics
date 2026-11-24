@@ -274,10 +274,12 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
 - A full backpack: when a hero finds something he wants and has no room for it, and he carries
   gems, runes, unique or set items, his run goes to town on its own (the floor waits). Every
   return to town, automatic or by the To town button, puts the gems and runes from the backpack on
-  their stacks in the stash's gems & runes tab and the unique and set items into the first stash
-  tabs with room (autobattler/stash.py). On an automatic trip he also sells every magic (blue)
-  and rare (yellow) item in his backpack at D2's sell price (runs.sell_magic_and_rare); what he
-  wears is kept, and a trip by the To town button sells nothing. After an automatic trip he goes
+  their stacks in the stash's gems & runes tab, and the unique and set items and the runeword bases
+  (exceptional or elite plain items with all the sockets their base can have at their item level)
+  into the first stash tabs with room (autobattler/stash.py). On an automatic trip he also sells
+  every magic (blue) and rare (yellow) item and every other plain weapon and armor in his backpack
+  at D2's sell price (runs.sellable_on_trip); charms and what he wears are kept, and a trip by the
+  To town button sells nothing. After an automatic trip he goes
   back to the floor by himself 3 seconds later; after To town, Continue run takes him back. With
   nothing in his backpack to stash or sell he stays on the floor and leaves the item lying.
 - The belt: every hero's belt has four rows whatever belt he wears (potions.ROWS_OVERRIDE): rows

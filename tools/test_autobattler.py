@@ -578,6 +578,33 @@ def test_line_of_fire():
     check(sim._can_shoot(a, c), "open floor: a clear shot")
 
 
+def test_runeword_bases():
+    """Home: exceptional / elite plain items with all their sockets go to the stash; other plain
+    gear is sold with the magic and rare items."""
+    from autobattler import stash
+    from autobattler.runs import sell_magic_and_rare
+    from game.items import Item
+
+    def gear(code, tiers, sockets, maxsock=4):
+        it = Item(code, code, "armor", rarity="normal")
+        it.base = {"code": code, "tiers": tiers, "maxsock": maxsock}
+        it.sockets = sockets
+        return it
+    elite4 = gear("uar", ("aar", "xar", "uar"), 4)          # an elite 4-socket armor: a base
+    exc3 = gear("xar", ("aar", "xar", "uar"), 3)            # exceptional, one socket short
+    norm4 = gear("aar", ("aar", "xar", "uar"), 4)           # normal tier: no
+    check(stash.keeps(elite4) and not stash.keeps(exc3) and not stash.keeps(norm4),
+          "only tier II / III with all their sockets are kept")
+    h = _hero("Sorter")
+    for it in (elite4, exc3, norm4):
+        h.inv_add(it)
+    st = stash.get(None)
+    stash.deposit(h, st)
+    sold, _ = sell_magic_and_rare(h)
+    check(any(elite4 in p for p in st.pages) and exc3 not in h.inventory and norm4 not in h.inventory and sold == 2,
+          "the base goes to the stash, the rest is sold")
+
+
 def test_cast_breakpoints():
     from autobattler.brain import CAST_FRAMES0
     sor = [timing.cast_frames(CAST_FRAMES0["sor"] + 1, f) for f in (0, 9, 20, 37, 63, 105, 200)]
@@ -798,6 +825,7 @@ if __name__ == "__main__":
     test_summons_fight()
     test_ready_skeletons()
     test_line_of_fire()
+    test_runeword_bases()
     test_inventory_screen()
     print("\n%s" % ("all passed" if not FAILS else "%d FAILED" % len(FAILS)))
     sys.exit(1 if FAILS else 0)
