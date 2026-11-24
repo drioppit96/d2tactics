@@ -212,7 +212,11 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
   there is room (potions.COLUMN_RULE, set by config.apply_d2_rules; D2 Tactics keeps D2's own
   rule). Heroes pick up healing, mana and rejuvenation potions on their own whenever their belt has
   a place for that kind, whatever their pickup rules say; with the belt full, the rules decide.
-  Before each floor the belt is filled the same way from his gold.
+  Before each floor, and when he comes back from town, the belt is filled the same way from his
+  gold: the best tier the traders sell for the act that he can pay for, down to Minor potions for a
+  poor hero. He drinks below his potion_at life, also while picking things up or walking to the
+  portal. The Inventory screen shows the belt (keys 1-4, the potion each drinks next and how many
+  are stacked in it); the hero card shows how many healing and mana potions he has.
 - Pickup rules, per hero (Pickup screen): gold, potions, runes, gems, charms, jewelry, unique,
   set, rare and crafted, magic, plain items with sockets, plain items, everything else, and a
   list of words: an item whose name contains one of them is always picked up.

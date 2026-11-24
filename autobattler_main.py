@@ -549,8 +549,11 @@ class App:
             st, sk = unspent(h)
             if st or sk:
                 L.text(c, "small", "Points to spend: %d stat, %d skill" % (st, sk), RED, x + 250, y + 52)
-            for i, line in enumerate((run.log if run else [])[-1:]):
-                L.text(c, "small", line, GREY, x, y + 52 + i * 14)
+            belt = getattr(h, "belt", None) or []
+            hp_n = sum(1 for it in belt if getattr(it, "potion", "") in ("heal", "rejuv"))
+            mp_n = sum(1 for it in belt if getattr(it, "potion", "") == "mana")
+            L.text(c, "small", "Belt: %d healing, %d mana potions" % (hp_n, mp_n),
+                   WHITE if belt else RED, x, y + 52)
             self._draw_skill_bar(h, x, y + 72)
         # buttons
         has = h is not None
@@ -1013,20 +1016,22 @@ class App:
         self.button((24, y0, 200, 30), "Identify all (%d)" % n_unid, self.inv_identify_all, enabled=n_unid > 0)
         self.button((240, y0, 200, 30), "Swap weapons (W)", self.inv_swap, enabled=b.held is None)
         # the sell box and the floor (things put down, or pushed out with no room)
-        sell = pygame.Rect(24, y0 + 36, 200, 50)
+        sell = pygame.Rect(24, y0 + 36, 124, 50)
         L.inset(c, sell)
         if b.held is not None and b.sellable(b.held):
             from game.d2items import sell_price
-            L.text(c, "small", "Sell for %d gold" % sell_price(b.held), GOLD, sell.x, sell.y + 20, "center", sell.w)
+            L.text(c, "small", "Sell: %d gold" % sell_price(b.held), GOLD, sell.x, sell.y + 20, "center", sell.w)
         else:
-            L.text(c, "small", "Sell: drop an item here", GREY, sell.x, sell.y + 12, "center", sell.w)
-            L.text(c, "small", "(or Ctrl + right click it)", GREY, sell.x, sell.y + 28, "center", sell.w)
-        floor = pygame.Rect(240, y0 + 36, 200, 50)
+            L.text(c, "small", "Sell: drop here", GREY, sell.x, sell.y + 12, "center", sell.w)
+            L.text(c, "small", "(Ctrl + right click)", GREY, sell.x, sell.y + 28, "center", sell.w)
+        floor = pygame.Rect(154, y0 + 36, 140, 50)
         L.inset(c, floor)
         loose = b.floor()
         if not loose:
-            L.text(c, "small", "Floor: put items down here", GREY, floor.x, floor.y + 20, "center", floor.w)
-        for i, it in enumerate(loose[:7]):
+            L.text(c, "small", "Floor: put items", GREY, floor.x, floor.y + 12, "center", floor.w)
+            L.text(c, "small", "down here", GREY, floor.x, floor.y + 28, "center", floor.w)
+        self._draw_belt(h, 302, y0 + 36)
+        for i, it in enumerate(loose[:5]):
             r = pygame.Rect(floor.x + 4 + i * 28, floor.y + 4, 26, 42)
             L.icon(c, it, r.x, r.y, r.w, r.h)
             if self.hot(r) and b.held is None:
@@ -1048,6 +1053,27 @@ class App:
             self.region(floor, self.inv_floor)
         # ---- right: D2's inventory panel, 10 x 8 backpack
         self._inventory_right(b)
+
+    def _draw_belt(self, h, x, y):
+        """His belt, as D2's control bar shows it: the four slots (keys 1-4) with the potion each
+        will drink next and how many are stacked in it. Healing in 1-2, mana in 3-4."""
+        c, L = self.canvas, self.look
+        from game import potions
+        rows = potions.belt_rows(h)
+        L.text(c, "small", "Belt (%d x %d)" % (potions.belt_slots(h), rows), GOLD, x, y - 2)
+        for col in range(potions.belt_slots(h)):
+            r = pygame.Rect(x + col * 37, y + 14, 34, 34)
+            L.inset(c, r)
+            stack = potions.column(h, col)
+            if stack:
+                L.icon(c, stack[0], r.x + 2, r.y + 2, r.w - 4, r.h - 4)
+                L.text(c, "small", "%d" % len(stack), WHITE, r.x, r.bottom - 14, "right", r.w - 2)
+                if self.hot(r):
+                    self._tip = L.item_lines(stack[0], h) + [("%d of %d in slot %d" % (len(stack), rows, col + 1), GREY)]
+            elif self.hot(r):
+                kind = "healing" if col < 2 else "mana"
+                self._tip = [("Slot %d: empty" % (col + 1), WHITE), ("For %s potions" % kind, GREY)]
+            L.text(c, "small", str(col + 1), DARK_TEXT, r.x + 2, r.y + 1)
 
     def _inventory_right(self, b):
         c, L, h = self.canvas, self.look, b.player

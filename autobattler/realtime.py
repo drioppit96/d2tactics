@@ -313,11 +313,12 @@ class Sim:
                 h.mana * 100 < h.max_mana * MANA_DRINK_AT and self._drink(h, ("mana", "rejuv")):
             s.next_drink = self.frame + DRINK_COOLDOWN
             b.last = "drinks a mana potion"
-        if self._loot_or_leave(h, s, b):
-            return
         if h.hp * 100 < h.max_hp * brains.setting(h, "potion_at") and self.frame >= s.next_drink:
             if self._drink(h):
                 s.next_drink = self.frame + DRINK_COOLDOWN
+                b.last = "drinks a healing potion"
+        if self._loot_or_leave(h, s, b):
+            return
         tgt = s.target if (s.target is not None and s.target.alive) else None
         if tgt is None or chebyshev(h.pos, tgt.pos) > HERO_SIGHT or s.skip.get(id(tgt), 0) > self.frame:
             # what he can see: in the open in front of him, not behind a wall (one behind a wall

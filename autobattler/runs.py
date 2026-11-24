@@ -212,6 +212,7 @@ class Run:
             self.sim.skip_items.clear()          # (with room again, what he left is worth a look)
         for h in self.heroes:
             h.recalc()                          # (gear changed in town)
+            self._refill_belt(h)                # (the traders: potions for the belt)
             h.hp = min(h.hp, h.max_hp)
             h.mana = min(h.mana, getattr(h, "max_mana", h.mana))
             gear.prepare(h)
@@ -331,12 +332,20 @@ class Run:
                 heals = sum(1 for it in h.belt if getattr(it, "potion", "") in ("heal", "rejuv"))
                 manas = sum(1 for it in h.belt if getattr(it, "potion", "") == "mana")
                 want_mana = manas < (cap // 2 if caster else cap // 4) and heals >= manas
-            code = ("mp%d" if want_mana else "hp%d") % tier
             it = None
-            if content is not None and code in getattr(content, "base_by_code", {}):
-                base = content.base_by_code[code]
-                price = int(base.get("cost", 0) or 0) or 25 * tier
-                if h.gold < price:
+            if content is not None:
+                # the best tier the traders sell that he can pay for (a poor hero buys Minor ones)
+                base = price = None
+                for t in range(tier, 0, -1):
+                    code = ("mp%d" if want_mana else "hp%d") % t
+                    b = getattr(content, "base_by_code", {}).get(code)
+                    if b is None:
+                        continue
+                    cost = int(b.get("cost", 0) or 0) or 25 * t
+                    if h.gold >= cost:
+                        base, price = b, cost
+                        break
+                if base is None:
                     break
                 it = content.make_item(base, max(1, h.level), random.Random())
                 h.gold -= price
@@ -348,6 +357,8 @@ class Run:
             bought += 1
         if bought:
             self.note("%s fills his belt (%d potions)." % (h.name, bought))
+        elif not getattr(h, "belt", None):
+            self.note("%s has no gold for potions." % h.name)
 
     def _share_xp(self, gained):
         """Kills give experience to world.player; the rest of the group gets the same amount."""
