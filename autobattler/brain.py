@@ -116,6 +116,75 @@ def cycle_style(hero):
     return prof["style"]
 
 
+# ------------------------------------------------------------------ what he picks up
+# Each rule is on or off per hero (the Pickup screen). "words": anything whose name contains one of
+# these (comma separated) is picked up whatever the other rules say.
+PICKUP_RULES = [("gold", "Gold", True), ("potions", "Potions (while the belt has room)", True),
+                ("runes", "Runes", True), ("gems", "Gems", True), ("charms", "Charms", True),
+                ("jewelry", "Rings, amulets, jewels", True), ("unique", "Unique items", True),
+                ("set", "Set items", True), ("rare", "Rare and crafted items", True),
+                ("magic", "Magic items", False), ("sockets", "Plain items with sockets", True),
+                ("normal", "Plain items", False), ("other", "Everything else (scrolls, keys ...)", False)]
+
+
+def pickup_rules(hero):
+    prof = profile(hero)
+    r = prof.setdefault("pickup", {})
+    for k, _t, default in PICKUP_RULES:
+        r.setdefault(k, default)
+    r.setdefault("words", "")
+    return r
+
+
+def item_tags(it):
+    """What kind of thing an item is, for the pickup rules and the loot window's filters."""
+    tags = set()
+    kind = getattr(it, "kind", "")
+    if kind == "gold":
+        return {"gold"}
+    if kind == "potion":
+        return {"potions"}
+    gem = getattr(it, "gem", None)
+    if gem:
+        tags.add("runes" if gem[0] == "rune" else "gems")
+    if getattr(it, "charm", False):
+        tags.add("charms")
+    slot = str(getattr(it, "slot", "") or "").lower()
+    b = getattr(it, "base", None)
+    btype = str(b.get("type", "")).lower() if isinstance(b, dict) else ""
+    if slot in ("ring", "amulet", "rring", "lring", "neck") or btype in ("ring", "amul", "jewl"):
+        tags.add("jewelry")
+    rar = str(getattr(it, "rarity", "") or "normal").lower()
+    if rar in ("unique", "set", "rare", "magic"):
+        tags.add(rar)
+    elif rar == "crafted":
+        tags.add("rare")
+    elif kind == "equip" and not tags:
+        tags.add("sockets" if int(getattr(it, "sockets", 0) or 0) > 0 else "normal")
+    if not tags:
+        tags.add("other")
+    return tags
+
+
+def wants(hero, it):
+    r = pickup_rules(hero)
+    name = str(getattr(it, "shown_name", None) or getattr(it, "name", "") or "").lower()
+    for w in (r.get("words") or "").split(","):
+        w = w.strip().lower()
+        if w and w in name:
+            return True
+    tags = item_tags(it)
+    if "potions" in tags:
+        if not r.get("potions"):
+            return False
+        try:
+            from game import potions
+            return bool(potions.has_room(hero, it))
+        except Exception:
+            return len(getattr(hero, "belt", []) or []) < 8
+    return any(r.get(t) for t in tags)
+
+
 # ------------------------------------------------------------------ spending points
 def _mastery_for(hero):
     w = (getattr(hero, "equipment", None) or {}).get("rhand")

@@ -25,6 +25,13 @@ BOSS_EVERY = 10            # every tenth floor is guarded by one of D2's act bos
 ACT_BOSSES = ["andariel", "duriel", "mephisto", "diablo", "baalcrab"]
 FIELD = "@field"           # the open-plain floor (no maze kit)
 BIG = False                # the autobattler's real-time floors: about twice the area (autobattler/runs.py sets it)
+CONTENT = None             # the game's tables, for building outdoor floors (set with BIG)
+# outdoor floors (BIG only): randmap's open-world themes, built from each act's own outdoor presets
+OPEN_FLOORS = [("wild", 1, "Wild Moors"), ("desert", 2, "Scorched Waste"), ("jungle", 3, "Drowned Jungle"),
+               ("slums", 3, "Rotting Slums"), ("burbs", 3, "Ruined Bazaar"), ("metro", 3, "Sunken Streets"),
+               ("steppes", 4, "Burning Steppes"), ("plains", 4, "Plains of Ash"), ("damned", 4, "Damned Streets"),
+               ("highlands", 5, "Frozen Highlands"), ("plateau", 5, "Windswept Plateau")]
+OPEN_SHARE = 0.35          # about a third of the BIG floors are outdoors
 
 # where a floor can be built from: maze kit (act1.MAZES) or FIELD, the act whose palette it wears,
 # and what the floor is called. Every act of the game is in here.
@@ -107,6 +114,11 @@ def plan(lid, player=None):
     p = dict(depth=depth, seed=rng.randrange(1 << 30), kit=kit, act=act, flavour=flavour,
              rooms=rng.randint(4, 6), mlvl=None, roster=None, boss=None, start=None, boss_cell=None,
              actboss=rng.choice(ACT_BOSSES) if depth % BOSS_EVERY == 0 else None)
+    if BIG:
+        orng = random.Random(p["seed"] ^ 0x0BE1)
+        if orng.random() < OPEN_SHARE:
+            theme, act, flavour = orng.choice(OPEN_FLOORS)
+            p.update(kit=FIELD, act=act, flavour=flavour, open=theme)
     PLANS[lid] = p
     return p
 
@@ -171,7 +183,15 @@ def build_level(kit, lid, seed=None, player=None):
     elif BIG:
         rooms = rooms * 2                       # the autobattler: twice the rooms on a wider floor
     seed = p["seed"] if seed is None else seed
-    if p["kit"] == FIELD:
+    if p["kit"] == FIELD and BIG and p.get("open"):
+        try:
+            b, grid, rng = _build_open(kit, lid, seed, p["open"])
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            b, grid, rng = _build_field(kit, lid, seed, small=False)
+            p["act"], p["flavour"], p["open"] = 1, "Open Plain", None
+    elif p["kit"] == FIELD:
         b, grid, rng = _build_field(kit, lid, seed, small=tactics.ACTIVE)
     else:
         spec = dict(kit=p["kit"], roles=[], act=p["act"], **_fit(kit, p["kit"], rooms, tactics.ACTIVE))
@@ -209,6 +229,20 @@ def _fit(kit, name, rooms, small):
     cap = (SMALL_TILES if small else (BIG_TILES if BIG else MAX_TILES)) // max(1, side)
     g = max(2, min(6 if BIG and not small else 4, cap))
     return dict(rooms=max(2, min(rooms, g * g - 1)), grid=g)
+
+
+def _build_open(kit, lid, seed, theme):
+    """An outdoor floor of any act (desert, jungle, Kurast, the steppes, the highlands ...), built by
+    the map generator's open-world builder (game/randmap.py) at 10 x 10 blocks, without its own
+    monsters or objects: the rift fills it like any other floor."""
+    from . import custommap, randmap
+    o = dict(kind="open", open_theme=theme, width=10, height=10, seed=int(seed) & 0x3FFFFFFF,
+             monsters=[], open_packs=0, packs=0, champions=0, uniques=0, boss="", shrines=0, wells=0,
+             chests=0, breakables=0, bodies=0, racks=0, bookshelves=0, lights=0, room_objects=False)
+    data = randmap.generate(kit, CONTENT, None, o)
+    data["monsters"] = []
+    data["objects"] = []
+    return custommap.compose(kit, data, lid, seed)
 
 
 def _build_field(kit, lid, seed, small=False):

@@ -63,12 +63,17 @@ class Run:
         from game import rift
         a = self.assets
         for h in self.heroes:
+            q = getattr(h, "qol", None)
+            if not isinstance(q, dict):
+                q = h.qol = {}
+            q["big_inv"] = True             # the D2 Tactics bigger backpack (10 x 7)
             brain.spend_points(h)
             h._ab_level = h.level
             h.hp, h.alive = h.max_hp, True
             h.mana = getattr(h, "max_mana", getattr(h, "mana", 0))
         if getattr(a, "act_kit", None) is not None:
             rift.BIG = bool(self.cfg.get("big_maps", True))
+            rift.CONTENT = a.content
             rift.forget(None)
             rift.rift_seed(self.leader)
             lid = rift.level_id(self.depth)
@@ -153,13 +158,18 @@ class Run:
             self.kills += self.sim.kills
             self.note("Everyone fell on floor %d." % self.depth)
             self.finish("died")
-        elif self.sim.cleared():
+        elif self.sim.cleared() and self.sim.phase == "fight":
+            self.sim.open_portal(self.sim.boss_cell())
+            self.note("Floor %d: the boss is dead, a portal opens." % self.depth)
+        elif self.sim.at_portal:
             self.kills += self.sim.kills
             self.floors += 1
             for h in self.heroes:
                 h.rift_depth = max(int(getattr(h, "rift_depth", 0) or 0), self.depth)
                 roster.save(h)
-            self.note("Floor %d cleared." % self.depth)
+            for who, what in self.sim.picked:
+                self.note("%s picked up %s." % (who, what))
+            self.note("Floor %d cleared: through the portal." % self.depth)
             self.state = "pause"
             self.pause = int(self.cfg.get("floor_pause", 3) * timing.FPS)
         elif self.stop_requested:
@@ -175,6 +185,16 @@ class Run:
                     h.gain_xp(gained)
                 except Exception:
                     h.xp += gained
+
+    def ground_items(self):
+        return self.sim.ground_items() if self.sim is not None else []
+
+    def take(self, hero, cell, it):
+        """Manual loot from the loot window: this hero takes it (outside a fight, from anywhere on
+        the floor, by the engine's rule)."""
+        if self.sim is None or hero not in self.heroes or not hero.alive:
+            return False
+        return self.sim.take(hero, cell, it)
 
     def finish(self, why):
         self.state = "over"

@@ -1,16 +1,18 @@
 """D2 Autobattler: heroes grind rift floors in real time while you manage them.
 
-This is a working first screen, not the final menu: a roster on the left (create, select, start
-and stop runs), the active runs on the right, and a watch view for any run. The final manager
-screen replaces it once its layout is settled.
+Everything is drawn on one 800 x 600 canvas in Diablo II's own fonts, panels and buttons
+(autobattler/ui.py) and scaled to the window.
 
-Keys and mouse:
-    click a hero            select it (Ctrl+click adds more heroes for a group run)
-    S / Start run           start a run for the selected heroes
-    X / Stop run            the selected heroes' run stops after the current floor
-    W / click a run         watch that run (Esc goes back)
-    T / Style               the selected heroes' fighting style (balanced, aggressive, careful)
-    + / -                   game speed
+Screens:
+    Heroes      the roster, a small live view of the selected hero's run, his status, the buttons
+    New hero    class and name
+    Loot        what lies on the selected hero's floor: filters, search, click to take it
+    Inventory   the selected hero's gear and his 10 x 7 backpack
+    Pickup      what the selected hero picks up on his own
+    Watch       the selected hero's run full screen
+
+Keys: S start run, X stop, W watch, T style, L loot, I inventory, P pickup, + / - speed,
+Esc back. Ctrl+click adds heroes to a group.
 """
 import os
 import sys
@@ -25,23 +27,17 @@ from main import load_settings, load_assets, log_error          # noqa: E402  (t
 from autobattler import brain, config, roster                   # noqa: E402
 from autobattler.runs import RunManager                         # noqa: E402
 from autobattler.timing import FPS, Timings                     # noqa: E402
+from autobattler.ui import Look, GOLD, WHITE, GREY, RED, GREEN, BLUE, W, H   # noqa: E402
 
-GOLD = (199, 179, 119)
-TEXT = (220, 220, 220)
-GREY = (140, 140, 140)
-RED = (220, 80, 60)
-GREEN = (110, 200, 110)
-BG = (14, 12, 10)
-PANEL = (28, 24, 20)
-LINE = (70, 58, 44)
 CLASS_NAMES = {"ama": "Amazon", "sor": "Sorceress", "nec": "Necromancer", "pal": "Paladin",
                "bar": "Barbarian", "dru": "Druid", "ass": "Assassin"}
-
-
-class Button:
-    def __init__(self, rect, label, action, enabled=True):
-        self.rect = pygame.Rect(rect)
-        self.label, self.action, self.enabled = label, action, enabled
+STYLE_NAMES = {"balanced": "Balanced", "aggressive": "Aggressive", "careful": "Careful"}
+# loot window filters: label -> item_tags it shows (None = everything)
+FILTERS = [("All", None), ("Gold", {"gold"}), ("Potions", {"potions"}), ("Runes", {"runes"}), ("Gems", {"gems"}),
+           ("Charms", {"charms"}), ("Jewelry", {"jewelry"}), ("Unique", {"unique"}), ("Set", {"set"}),
+           ("Rare", {"rare"}), ("Magic", {"magic"}), ("Bases", {"sockets", "normal"})]
+CELL = 22                      # item grid cell on the 800 x 600 canvas (the stash's cell size)
+LOOT_COLS, LOOT_ROWS = 12, 14
 
 
 class App:
@@ -52,50 +48,85 @@ class App:
         roster.use_folder()
         pygame.init()
         w, h = self.cfg_game.getint("display", "width"), self.cfg_game.getint("display", "height")
-        self.screen = pygame.display.set_mode((w, h), pygame.RESIZABLE)
+        self.window = pygame.display.set_mode((w, h), pygame.RESIZABLE)
         pygame.display.set_caption("D2 Autobattler")
         serif = "georgia,palatinolinotype,timesnewroman,serif"
-        self.f = {"s": pygame.font.SysFont(serif, 15), "m": pygame.font.SysFont(serif, 18, bold=True),
-                  "b": pygame.font.SysFont(serif, 28, bold=True)}
-        self.clock = pygame.time.Clock()
+        self.sysfonts = {"small": pygame.font.SysFont(serif, 13), "med": pygame.font.SysFont(serif, 16, bold=True),
+                         "big": pygame.font.SysFont(serif, 26, bold=True), "title": pygame.font.SysFont(serif, 16, bold=True)}
+        self.canvas = pygame.Surface((W, H))
         self._loading("Reading Diablo II files...")
         self.assets, self.warning = load_assets(self.cfg_game, self._loading)
-        content = getattr(self.assets, "content", None)
-        self.content = content
-        self.timings = Timings(getattr(content, "src", None) if content else None)
+        self.content = getattr(self.assets, "content", None)
+        self.look = Look(self.assets, self.sysfonts)
+        self.timings = Timings(getattr(self.content, "src", None) if self.content else None)
         self.mgr = RunManager(self.assets, self.cfg, self.timings)
-        self.heroes = {}                 # name -> Player (one object per hero, shared with its run)
+        self.heroes = {}
         self.selected = []
-        self.screen_name = "roster"      # roster | create | watch
-        self.watch = None
-        self.scene = None
-        self.cam = None
-        self.new_cls = "bar"
-        self.new_name = ""
+        self.screen_name = "roster"
+        self.views = {}              # run id -> (world, LiveView)
+        self.focus = None            # text field taking the keyboard: name | search | words
+        self.new_cls, self.new_name = "bar", ""
+        self.search, self.filter = "", "All"
+        self.loot_page = 0
+        self.scroll = 0
         self.message = self.warning or ""
+        self.regions = []
+        self.mouse = (0, 0)
+        self.down = None
         self.acc = 0.0
-        self.buttons = []
+        self._dt = 0.0
         self.reload_heroes()
         self.running = True
 
     # ------------------------------------------------------------ helpers
     def _loading(self, text):
-        self.screen.fill(BG)
-        surf = self.f["m"].render(text, True, GOLD) if hasattr(self, "f") else None
-        if surf is not None:
-            self.screen.blit(surf, surf.get_rect(center=self.screen.get_rect().center))
-        pygame.display.flip()
+        self.canvas.fill((0, 0, 0))
+        f = self.sysfonts["med"]
+        img = f.render(text, True, GOLD)
+        self.canvas.blit(img, img.get_rect(center=(W // 2, H // 2)))
+        self._present()
         pygame.event.pump()
+
+    def _present(self):
+        """The 800 x 600 canvas, scaled to fit the window (black bars where the shape differs)."""
+        ww, wh = self.window.get_size()
+        k = min(ww / float(W), wh / float(H))
+        size = (max(1, int(W * k)), max(1, int(H * k)))
+        self._ofs = ((ww - size[0]) // 2, (wh - size[1]) // 2)
+        self._k = k
+        self.window.fill((0, 0, 0))
+        if size == (W, H):
+            self.window.blit(self.canvas, self._ofs)
+        else:
+            self.window.blit(pygame.transform.smoothscale(self.canvas, size), self._ofs)
+        pygame.display.flip()
+
+    def logical(self, pos):
+        ox, oy = getattr(self, "_ofs", (0, 0))
+        k = getattr(self, "_k", 1.0) or 1.0
+        return ((pos[0] - ox) / k, (pos[1] - oy) / k)
+
+    def region(self, rect, action, *args):
+        self.regions.append((pygame.Rect(rect), action, args))
+
+    def hot(self, rect):
+        return pygame.Rect(rect).collidepoint(self.mouse)
+
+    def button(self, rect, label, action, *args, enabled=True):
+        r = pygame.Rect(rect)
+        self.look.button(self.canvas, r, label, hot=self.hot(r) and enabled,
+                         down=enabled and self.down is not None and r.collidepoint(self.down), enabled=enabled)
+        if enabled:
+            self.region(r, action, *args)
 
     def reload_heroes(self):
         busy = self.mgr.busy_names()
-        datas = roster.list_heroes()
         names = set()
-        for d in datas:
+        for d in roster.list_heroes():
             n = d.get("name")
             names.add(n)
             if n in busy and n in self.heroes:
-                continue                 # (a hero on a run keeps the object the run plays)
+                continue
             try:
                 self.heroes[n] = roster.load(d, self.content)
             except Exception:
@@ -105,40 +136,76 @@ class App:
             if n not in names and n not in busy:
                 del self.heroes[n]
         self.selected = [n for n in self.selected if n in self.heroes]
+        if not self.selected and self.heroes:
+            self.selected = [sorted(self.heroes, key=lambda n: (-self.heroes[n].level, n))[0]]
 
-    def text(self, s, pos, font="s", color=TEXT, center=False):
-        surf = self.f[font].render(str(s), True, color)
-        r = surf.get_rect(center=pos) if center else surf.get_rect(topleft=pos)
-        self.screen.blit(surf, r)
-        return r
-
-    def button(self, rect, label, action, enabled=True):
-        b = Button(rect, label, action, enabled)
-        pygame.draw.rect(self.screen, (60, 48, 34) if enabled else (34, 30, 26), b.rect)
-        pygame.draw.rect(self.screen, GOLD if enabled else LINE, b.rect, 1)
-        self.text(label, b.rect.center, "m", GOLD if enabled else GREY, center=True)
-        self.buttons.append(b)
-        return b
+    def hero(self):
+        return self.heroes.get(self.selected[0]) if self.selected else None
 
     def run_of(self, name):
         return next((r for r in self.mgr.active() if any(h.name == name for h in r.heroes)), None)
 
+    def view_of(self, run):
+        """The run's live view (made again when it moves to a new floor)."""
+        if run is None or run.world is None or run.sim is None:
+            return None
+        ent = self.views.get(run.id)
+        if ent is None or ent[0] is not run.world:
+            from autobattler.liveview import LiveView
+            lv = LiveView(run, self.assets, {"small": self.sysfonts["small"], "med": self.sysfonts["med"],
+                                             "big": self.sysfonts["big"], "title": self.sysfonts["title"]})
+            if self.look.hud is not None:
+                lv.scene.d2_fonts = {"med": self.look.hud.f16, "big": self.look.hud.f30,
+                                     "small": self.look.hud.f10, "ind": self.look.hud.ind}
+            ent = self.views[run.id] = (run.world, lv)
+        return ent[1]
+
+    def draw_view(self, run, rect, follow=True):
+        """A run's floor drawn into `rect` of the canvas, 1:1 like D2, centred on its first hero."""
+        from render.iso import Camera
+        r = pygame.Rect(rect)
+        lv = self.view_of(run)
+        self.look.inset(self.canvas, r)
+        if lv is None:
+            self.look.text(self.canvas, "med", "Building floor %d..." % run.depth if run else "", GOLD,
+                           r.x, r.centery - 8, "center", r.w)
+            return
+        for other in self.mgr.active():
+            if other.sim is not None:
+                other.sim.watched = other is run
+        lv.update(self._dt, self.cfg["speed"])
+        sub = self.canvas.subsurface(r.inflate(-2, -2))
+        cam = getattr(lv, "_cam", None)
+        if cam is None or cam.sw != sub.get_width() or cam.sh != sub.get_height():
+            cam = lv._cam = Camera(sub.get_width(), sub.get_height(), 1.0)
+            cam.snap(*lv.focus())
+        cam.follow(*lv.focus(), dt=self._dt)
+        sub.fill((0, 0, 0))
+        try:
+            lv.draw(sub, cam)
+        except Exception:
+            import traceback
+            traceback.print_exc()
+
     # ------------------------------------------------------------ actions
+    def go(self, name):
+        self.screen_name = name
+        self.focus = {"create": "name", "loot": "search", "pickup": "words"}.get(name)
+        self.loot_page = 0
+
+    def select(self, name):
+        if pygame.key.get_mods() & pygame.KMOD_CTRL:
+            if name in self.selected:
+                self.selected.remove(name)
+            else:
+                self.selected.append(name)
+        else:
+            self.selected = [name]
+
     def start_run(self):
         heroes = [self.heroes[n] for n in self.selected if n in self.heroes]
         r = self.mgr.start(heroes)
         self.message = r if isinstance(r, str) else "Run started: %s" % ", ".join(h.name for h in heroes)
-
-    def cycle_style(self):
-        """The selected heroes' fighting style: balanced -> aggressive -> careful."""
-        for n in self.selected:
-            h = self.heroes.get(n)
-            if h is not None:
-                st = brain.cycle_style(h)
-                if n not in self.mgr.busy_names():
-                    roster.save(h)       # (a hero on a run is saved with it after the floor)
-                self.message = "%s fights %s now." % (n, {"balanced": "balanced", "aggressive": "aggressively",
-                                                          "careful": "carefully"}[st])
 
     def stop_run(self):
         for n in self.selected:
@@ -147,102 +214,116 @@ class App:
                 r.stop_requested = True
                 self.message = "%s will stop after this floor." % ", ".join(h.name for h in r.heroes)
 
-    def open_watch(self, run):
-        if run is None:
-            return
-        for r in self.mgr.active():
-            if r.sim is not None:
-                r.sim.watched = False
-        self.watch = run
-        self.scene = None
-        self.screen_name = "watch"
+    def cycle_style(self):
+        for n in self.selected:
+            h = self.heroes.get(n)
+            if h is not None:
+                st = brain.cycle_style(h)
+                if n not in self.mgr.busy_names():
+                    roster.save(h)
+                self.message = "%s: %s" % (n, STYLE_NAMES[st])
 
     def create(self):
-        if roster.count() >= self.cfg["max_heroes"]:
-            self.message = "The roster is full (%d heroes)." % self.cfg["max_heroes"]
-            return
         p = roster.create(self.new_cls, self.new_name, self.content, self.cfg["max_heroes"])
         if p is None:
-            self.message = "The roster is full."
+            self.message = "The roster is full (%d heroes)." % self.cfg["max_heroes"]
             return
         self.heroes[p.name] = p
         self.selected = [p.name]
         self.new_name = ""
-        self.screen_name = "roster"
         self.message = "%s the %s joins the roster." % (p.name, CLASS_NAMES.get(p.cls, p.cls))
+        self.go("roster")
         self.reload_heroes()
+
+    def take(self, cell, it):
+        h = self.hero()
+        run = self.run_of(h.name) if h else None
+        if run is None:
+            return
+        name = "%d gold" % it.amount if it.kind == "gold" else getattr(it, "shown_name", it.name)
+        if run.take(h, cell, it):
+            self.message = "%s takes %s." % (h.name, name)
+        else:
+            self.message = "%s has no room for %s." % (h.name, name)
+
+    def toggle_rule(self, key):
+        h = self.hero()
+        if h is None:
+            return
+        r = brain.pickup_rules(h)
+        r[key] = not r.get(key)
+        if h.name not in self.mgr.busy_names():
+            roster.save(h)
+
+    def set_filter(self, name):
+        self.filter, self.loot_page = name, 0
+
+    def page(self, d, pages):
+        self.loot_page = max(0, min(pages - 1, self.loot_page + d))
 
     # ------------------------------------------------------------ input
     def handle(self, ev):
         if ev.type == pygame.QUIT:
             self.running = False
         elif ev.type == pygame.VIDEORESIZE:
-            self.screen = pygame.display.set_mode((ev.w, ev.h), pygame.RESIZABLE)
-            if self.cam is not None:
-                self.cam.resize(ev.w, ev.h)
+            self.window = pygame.display.set_mode((ev.w, ev.h), pygame.RESIZABLE)
+        elif ev.type == pygame.MOUSEMOTION:
+            self.mouse = self.logical(ev.pos)
         elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
-            for b in self.buttons:
-                if b.enabled and b.rect.collidepoint(ev.pos):
-                    b.action()
+            self.down = self.logical(ev.pos)
+        elif ev.type == pygame.MOUSEBUTTONUP and ev.button == 1:
+            pos = self.logical(ev.pos)
+            self.down = None
+            for rect, action, args in reversed(self.regions):
+                if rect.collidepoint(pos):
+                    action(*args)
                     return
-            if self.screen_name == "roster":
-                self._click_roster(ev.pos)
-        elif ev.type == pygame.MOUSEWHEEL and self.screen_name == "watch" and self.cam is not None:
-            self.cam.scale = max(1.0, min(3.5, self.cam.scale + ev.y * 0.25))
+        elif ev.type == pygame.MOUSEWHEEL and self.screen_name == "roster":
+            self.scroll = max(0, self.scroll - ev.y)
         elif ev.type == pygame.KEYDOWN:
             self._key(ev)
 
     def _key(self, ev):
-        if self.screen_name == "create":
-            if ev.key == pygame.K_ESCAPE:
-                self.screen_name = "roster"
-            elif ev.key == pygame.K_RETURN:
-                self.create()
-            elif ev.key == pygame.K_BACKSPACE:
-                self.new_name = self.new_name[:-1]
-            elif ev.unicode and (ev.unicode.isalnum() or ev.unicode in "-_") and len(self.new_name) < 15:
-                self.new_name += ev.unicode
+        if self.focus and ev.key not in (pygame.K_ESCAPE, pygame.K_RETURN):
+            field = {"name": "new_name", "search": "search", "words": None}[self.focus]
+            h = self.hero()
+            cur = getattr(self, field) if field else (brain.pickup_rules(h)["words"] if h else "")
+            if ev.key == pygame.K_BACKSPACE:
+                cur = cur[:-1]
+            elif ev.unicode and ev.unicode.isprintable() and len(cur) < (15 if field == "new_name" else 40):
+                if field == "new_name" and not (ev.unicode.isalnum() or ev.unicode in "-_"):
+                    return
+                cur += ev.unicode
+            else:
+                return
+            if field:
+                setattr(self, field, cur)
+                self.loot_page = 0
+            elif h is not None:
+                brain.pickup_rules(h)["words"] = cur
             return
         if ev.key == pygame.K_ESCAPE:
-            if self.screen_name == "watch":
-                self.screen_name = "roster"
-                if self.watch is not None and self.watch.sim is not None:
-                    self.watch.sim.watched = False
-                self.watch = None
+            if self.screen_name != "roster":
+                if self.screen_name == "pickup" and self.hero() and self.hero().name not in self.mgr.busy_names():
+                    roster.save(self.hero())
+                self.go("roster")
+            return
+        if ev.key == pygame.K_RETURN and self.screen_name == "create":
+            self.create()
             return
         if ev.key in (pygame.K_PLUS, pygame.K_EQUALS, pygame.K_KP_PLUS):
             self.cfg["speed"] = min(8.0, self.cfg["speed"] * 2)
         elif ev.key in (pygame.K_MINUS, pygame.K_KP_MINUS):
             self.cfg["speed"] = max(0.25, self.cfg["speed"] / 2)
-        elif ev.key == pygame.K_s and self.screen_name == "roster":
-            self.start_run()
-        elif ev.key == pygame.K_x and self.screen_name == "roster":
-            self.stop_run()
-        elif ev.key == pygame.K_t and self.screen_name == "roster":
-            self.cycle_style()
-        elif ev.key == pygame.K_w and self.screen_name == "roster" and self.selected:
-            self.open_watch(self.run_of(self.selected[0]))
-
-    def _click_roster(self, pos):
-        for name, rect in getattr(self, "_hero_rects", []):
-            if rect.collidepoint(pos):
-                ctrl = pygame.key.get_mods() & pygame.KMOD_CTRL
-                if ctrl:
-                    if name in self.selected:
-                        self.selected.remove(name)
-                    else:
-                        self.selected.append(name)
-                else:
-                    self.selected = [name]
-                return
-        for run, rect in getattr(self, "_run_rects", []):
-            if rect.collidepoint(pos):
-                self.open_watch(run)
-                return
+        elif self.screen_name == "roster":
+            act = {pygame.K_s: self.start_run, pygame.K_x: self.stop_run, pygame.K_t: self.cycle_style,
+                   pygame.K_w: lambda: self.go("watch"), pygame.K_l: lambda: self.go("loot"),
+                   pygame.K_i: lambda: self.go("inventory"), pygame.K_p: lambda: self.go("pickup")}.get(ev.key)
+            if act is not None and (self.hero() is not None or ev.key == pygame.K_s):
+                act()
 
     # ------------------------------------------------------------ the frame
     def step(self, dt):
-        """Play D2 frames for this much real time (all runs, watched or not)."""
         self.acc += dt * FPS * self.cfg["speed"]
         n = 0
         while self.acc >= 1.0 and n < FPS * 4:
@@ -250,174 +331,321 @@ class App:
             self.acc -= 1.0
             n += 1
         if self.acc > FPS:
-            self.acc = 0.0               # (too slow to keep up: drop the backlog instead of spiralling)
+            self.acc = 0.0
 
     def draw(self):
-        self.buttons = []
-        self.screen.fill(BG)
-        if self.screen_name == "create":
-            self.draw_create()
-        elif self.screen_name == "watch":
-            self.draw_watch()
-        else:
-            self.draw_roster()
-        pygame.display.flip()
+        self.regions = []
+        self.canvas.fill((0, 0, 0))
+        {"roster": self.draw_roster, "create": self.draw_create, "loot": self.draw_loot,
+         "inventory": self.draw_inventory, "pickup": self.draw_pickup, "watch": self.draw_watch
+         }.get(self.screen_name, self.draw_roster)()
+        if self.message and self.screen_name != "watch":
+            self.look.text(self.canvas, "small", self.message, GOLD, 12, 580)
+        if getattr(self, "_tip", None):
+            self.look.tooltip(self.canvas, self._tip, self.mouse)
+        self._tip = None
+        self._present()
+
+    def _title(self, text):
+        self.look.text(self.canvas, "big", text, GOLD, 0, 6, "center", W)
+        self.look.text(self.canvas, "small", "Speed x%g  (+ / -)" % self.cfg["speed"], GREY, 0, 16, "right", W - 14)
 
     def draw_roster(self):
-        W, H = self.screen.get_size()
-        self.text("D2 Autobattler", (24, 16), "b", GOLD)
-        self.text("Speed x%g   (+ / -)" % self.cfg["speed"], (W - 220, 26), "s", GREY)
-        left = pygame.Rect(20, 64, W // 2 - 30, H - 150)
-        right = pygame.Rect(W // 2 + 10, 64, W // 2 - 30, H - 150)
-        for r in (left, right):
-            pygame.draw.rect(self.screen, PANEL, r)
-            pygame.draw.rect(self.screen, LINE, r, 1)
-        self.text("Heroes %d / %d" % (len(self.heroes), self.cfg["max_heroes"]), (left.x + 12, left.y + 8), "m", GOLD)
+        c, L = self.canvas, self.look
+        self._title("D2 Autobattler")
+        # heroes
+        L.panel(c, (6, 40, 300, 428))
+        L.text(c, "med", "Heroes %d / %d" % (len(self.heroes), self.cfg["max_heroes"]), GOLD, 6, 56, "center", 300)
+        lst = pygame.Rect(26, 78, 260, 370)
+        L.inset(c, lst)
         busy = self.mgr.busy_names()
-        self._hero_rects = []
-        y = left.y + 40
-        for name in sorted(self.heroes, key=lambda n: (-self.heroes[n].level, n)):
-            h = self.heroes[name]
-            row = pygame.Rect(left.x + 8, y, left.w - 16, 26)
-            if name in self.selected:
-                pygame.draw.rect(self.screen, (60, 46, 30), row)
-            state = "on a run" if name in busy else ""
-            self.text("%s" % name, (row.x + 6, row.y + 4), "s", GOLD if name in self.selected else TEXT)
-            self.text("Lv %d %s" % (h.level, CLASS_NAMES.get(h.cls, h.cls)), (row.x + 170, row.y + 4), "s", TEXT)
-            self.text("floor %d  %s" % (int(getattr(h, "rift_depth", 0) or 0), brain.profile(h)["style"]),
-                      (row.x + 330, row.y + 4), "s", GREY)
-            if state:
-                self.text(state, (row.right - 80, row.y + 4), "s", GREEN)
-            self._hero_rects.append((name, row))
-            y += 28
-            if y > left.bottom - 30:
-                break
-        active = self.mgr.active()
-        self.text("Runs %d / %d heroes busy" % (sum(len(r.heroes) for r in active), self.cfg["max_active"]),
-                  (right.x + 12, right.y + 8), "m", GOLD)
-        self._run_rects = []
-        y = right.y + 40
-        for r in self.mgr.runs[::-1]:
-            row = pygame.Rect(right.x + 8, y, right.w - 16, 44)
-            col = TEXT if r.state != "over" else GREY
-            self.text(r.title(), (row.x + 6, row.y + 2), "s", GOLD if r.state != "over" else GREY)
-            hp = ""
-            if r.state == "fight":
-                hp = "   ".join("%s %d/%d" % (h.name, max(0, h.hp), h.max_hp) for h in r.heroes)
-            status = {"build": "building the floor", "fight": "fighting", "pause": "floor cleared",
-                      "over": "ended (%s)" % (r.result or "")}.get(r.state, r.state)
-            self.text("%s - floors %d, kills %d   %s" % (status, r.floors, r.kills, hp), (row.x + 6, row.y + 22), "s", col)
-            if r.state != "over":
-                self._run_rects.append((r, row))
-            y += 48
-            if y > right.bottom - 50:
-                break
-        by = H - 74
-        self.button((20, by, 160, 40), "New hero", self._open_create,
-                    roster.count() < self.cfg["max_heroes"])
-        self.button((190, by, 160, 40), "Start run (S)", self.start_run, bool(self.selected))
-        self.button((360, by, 160, 40), "Stop run (X)", self.stop_run,
-                    any(self.run_of(n) for n in self.selected))
-        self.button((530, by, 160, 40), "Watch (W)", lambda: self.open_watch(self.run_of(self.selected[0])),
-                    bool(self.selected) and self.run_of(self.selected[0]) is not None)
-        self.button((700, by, 160, 40), "Style (T)", self.cycle_style, bool(self.selected))
-        if self.message:
-            self.text(self.message, (20, H - 28), "s", GOLD)
-
-    def _open_create(self):
-        self.screen_name = "create"
+        names = sorted(self.heroes, key=lambda n: (-self.heroes[n].level, n))
+        per = lst.h // 30
+        self.scroll = max(0, min(self.scroll, max(0, len(names) - per)))
+        for i, n in enumerate(names[self.scroll:self.scroll + per]):
+            h = self.heroes[n]
+            row = pygame.Rect(lst.x + 2, lst.y + 2 + i * 30, lst.w - 4, 28)
+            if n in self.selected:
+                pygame.draw.rect(c, (52, 42, 26), row)
+            elif self.hot(row):
+                pygame.draw.rect(c, (26, 22, 18), row)
+            L.text(c, "med", n, GOLD if n in self.selected else WHITE, row.x + 6, row.y + 2)
+            L.text(c, "small", "Lv %d %s - floor %d" % (h.level, CLASS_NAMES.get(h.cls, h.cls),
+                                                     int(getattr(h, "rift_depth", 0) or 0)), GREY, row.x + 6, row.y + 16)
+            if n in busy:
+                L.text(c, "small", "on a run", GREEN, row.x, row.y + 9, "right", row.w - 6)
+            self.region(row, self.select, n)
+        # the selected hero's run, live
+        h = self.hero()
+        run = self.run_of(h.name) if h else None
+        L.panel(c, (312, 40, 482, 290), dark=True)
+        view = pygame.Rect(330, 78, 446, 232)
+        if run is not None:
+            w = run.world
+            area = getattr(w, "level_name", "") if w is not None else ""
+            L.text(c, "med", "Floor %d  %s" % (run.depth, area), GOLD, 312, 56, "center", 482)
+            self.draw_view(run, view)
+            self.region(view, self.go, "watch")
+        else:
+            L.text(c, "med", h.name if h else "No hero selected", GOLD, 312, 56, "center", 482)
+            L.inset(c, view)
+            L.text(c, "med", "Not on a run" if h else "", GREY, view.x, view.centery - 8, "center", view.w)
+        # his status
+        L.panel(c, (312, 334, 482, 134), dark=True)
+        if h is not None:
+            x, y = 334, 352
+            mx = max(1, getattr(h, "max_mana", 1))
+            L.text(c, "small", "Life %d / %d" % (max(0, h.hp), h.max_hp), WHITE, x, y)
+            L.bar(c, (x + 110, y + 2, 120, 8), h.hp / float(max(1, h.max_hp)), (170, 20, 20))
+            L.text(c, "small", "Mana %d / %d" % (int(getattr(h, "mana", 0)), mx), WHITE, x, y + 16)
+            L.bar(c, (x + 110, y + 18, 120, 8), getattr(h, "mana", 0) / float(mx), (40, 60, 200))
+            try:
+                need = h.xp_to_next()
+                frac = 1.0 - need / float(max(1, need + 1)) if need else 1.0
+            except Exception:
+                frac = 0.0
+            L.text(c, "small", "Level %d %s   %s" % (h.level, CLASS_NAMES.get(h.cls, h.cls),
+                                                   STYLE_NAMES[brain.profile(h)["style"]]), GOLD, x + 250, y)
+            L.text(c, "small", "Gold %d   Deepest floor %d" % (getattr(h, "gold", 0), int(getattr(h, "rift_depth", 0) or 0)),
+                   WHITE, x + 250, y + 16)
+            if run is not None and run.sim is not None:
+                L.text(c, "small", "Now: %s" % (run.sim.brain(h).last or "..."), GOLD, x, y + 36)
+                L.text(c, "small", "This run: %d floors, %d kills" % (run.floors, run.kills + run.sim.kills), WHITE, x + 250, y + 36)
+            for i, line in enumerate((run.log if run else [])[-3:]):
+                L.text(c, "small", line, GREY, x, y + 56 + i * 14)
+        # buttons
+        has = h is not None
+        on_run = has and run is not None
+        bw, bh, gap = 150, 32, 8
+        row1 = [("New hero", lambda: self.go("create"), roster.count() < self.cfg["max_heroes"]),
+                ("Start run", self.start_run, has and not on_run),
+                ("Stop run", self.stop_run, on_run),
+                ("Watch", lambda: self.go("watch"), on_run),
+                ("Style", self.cycle_style, has)]
+        row2 = [("Loot", lambda: self.go("loot"), on_run),
+                ("Inventory", lambda: self.go("inventory"), has),
+                ("Pickup", lambda: self.go("pickup"), has),
+                ("Speed -", lambda: self.cfg.__setitem__("speed", max(0.25, self.cfg["speed"] / 2)), True),
+                ("Speed +", lambda: self.cfg.__setitem__("speed", min(8.0, self.cfg["speed"] * 2)), True)]
+        for j, row in enumerate((row1, row2)):
+            for i, (label, act, en) in enumerate(row):
+                self.button((10 + i * (bw + gap), 476 + j * (bh + 6), bw, bh), label, act, enabled=en)
 
     def draw_create(self):
-        W, H = self.screen.get_size()
-        self.text("New hero", (24, 16), "b", GOLD)
-        x, y = 24, 80
-        for cls in roster.CLASSES:
-            def pick(c=cls):
-                self.new_cls = c
-            b = self.button((x, y, 170, 40), CLASS_NAMES[cls], pick)
+        c, L = self.canvas, self.look
+        self._title("New Hero")
+        L.panel(c, (150, 60, 500, 420))
+        for i, cls in enumerate(roster.CLASSES):
+            r = pygame.Rect(190 + (i % 2) * 220, 100 + (i // 2) * 44, 200, 34)
+            self.button(r, CLASS_NAMES[cls], lambda c_=cls: setattr(self, "new_cls", c_))
             if cls == self.new_cls:
-                pygame.draw.rect(self.screen, (240, 210, 120), b.rect, 3)
-            x += 180
-            if x > W - 190:
-                x, y = 24, y + 50
-        y += 70
-        self.text("Name (type it): %s_" % self.new_name, (24, y), "m", TEXT)
-        self.button((24, y + 50, 160, 40), "Create (Enter)", self.create)
-        self.button((194, y + 50, 160, 40), "Back (Esc)", lambda: setattr(self, "screen_name", "roster"))
-        if self.message:
-            self.text(self.message, (24, H - 28), "s", GOLD)
+                pygame.draw.rect(c, GOLD, r.inflate(4, 4), 1)
+        L.text(c, "med", "Name", GOLD, 190, 290)
+        field = pygame.Rect(190, 310, 420, 28)
+        L.inset(c, field)
+        L.text(c, "med", self.new_name + ("_" if int(time.time() * 2) % 2 else ""), WHITE, field.x + 8, field.y + 6)
+        self.button((190, 400, 200, 34), "Create", self.create, enabled=roster.count() < self.cfg["max_heroes"])
+        self.button((410, 400, 200, 34), "Back", lambda: self.go("roster"))
+
+    def _loot_items(self, run):
+        items = run.ground_items() if run is not None else []
+        tags = dict(FILTERS).get(self.filter)
+        q = self.search.strip().lower()
+        out = []
+        for cell, it in items:
+            if tags is not None and not (brain.item_tags(it) & tags):
+                continue
+            if q:
+                name = ("%d gold" % it.amount) if it.kind == "gold" else \
+                    str(getattr(it, "shown_name", None) or getattr(it, "name", ""))
+                text = name.lower() + " " + " ".join(t.lower() for t, _ in self.look.item_lines(it, self.hero()))
+                if q not in text:
+                    continue
+            out.append((cell, it))
+        return out
+
+    def _pack(self, items):
+        """Items laid out like the stash, page after page (largest first)."""
+        order = sorted(items, key=lambda ci: (-(ci[1].invw or 1) * (ci[1].invh or 1), ci[1].kind == "gold"))
+        pages = []
+        for cell, it in order:
+            w, h = max(1, it.invw or 1), max(1, it.invh or 1)
+            placed = False
+            for pg in pages:
+                for y in range(LOOT_ROWS - h + 1):
+                    for x in range(LOOT_COLS - w + 1):
+                        if all((x + i, y + j) not in pg["occ"] for i in range(w) for j in range(h)):
+                            pg["occ"].update((x + i, y + j) for i in range(w) for j in range(h))
+                            pg["items"].append((cell, it, x, y, w, h))
+                            placed = True
+                            break
+                    if placed:
+                        break
+                if placed:
+                    break
+            if not placed:
+                pages.append({"occ": {(i, j) for i in range(w) for j in range(h)}, "items": [(cell, it, 0, 0, w, h)]})
+        return [p["items"] for p in pages] or [[]]
+
+    def draw_loot(self):
+        c, L = self.canvas, self.look
+        h = self.hero()
+        run = self.run_of(h.name) if h else None
+        self._title("Loot")
+        L.panel(c, (6, 40, 788, 432))
+        # filters and search
+        for i, (label, _t) in enumerate(FILTERS):
+            r = pygame.Rect(22 + (i % 6) * 64, 58 + (i // 6) * 26, 60, 22)
+            self.button(r, label, self.set_filter, label)
+            if label == self.filter:
+                pygame.draw.rect(c, GOLD, r.inflate(2, 2), 1)
+        field = pygame.Rect(420, 60, 240, 22)
+        L.text(c, "small", "Search", GOLD, 420, 46)
+        L.inset(c, field)
+        L.text(c, "med", self.search + ("_" if int(time.time() * 2) % 2 else ""), WHITE, field.x + 6, field.y + 3)
+        self.button((668, 60, 100, 22), "Clear", lambda: setattr(self, "search", ""))
+        items = self._loot_items(run)
+        pages = self._pack(items)
+        self.loot_page = max(0, min(self.loot_page, len(pages) - 1))
+        gx, gy = 22, 116
+        grid = pygame.Rect(gx - 1, gy - 1, LOOT_COLS * CELL + 2, LOOT_ROWS * CELL + 2)
+        L.inset(c, grid)
+        for i in range(LOOT_COLS + 1):
+            pygame.draw.line(c, (34, 32, 28), (gx + i * CELL, gy), (gx + i * CELL, gy + LOOT_ROWS * CELL))
+        for j in range(LOOT_ROWS + 1):
+            pygame.draw.line(c, (34, 32, 28), (gx, gy + j * CELL), (gx + LOOT_COLS * CELL, gy + j * CELL))
+        for cell, it, x, y, w, hh in pages[self.loot_page]:
+            r = pygame.Rect(gx + x * CELL, gy + y * CELL, w * CELL, hh * CELL)
+            tint = pygame.Surface((r.w - 1, r.h - 1), pygame.SRCALPHA)
+            wanted = h is not None and brain.wants(h, it)
+            tint.fill((10, 40, 10, 120) if wanted else (10, 10, 40, 120))
+            c.blit(tint, (r.x + 1, r.y + 1))
+            L.icon(c, it, r.x + 1, r.y + 1, r.w - 1, r.h - 1)
+            self.region(r, self.take, cell, it)
+            if self.hot(r):
+                lines = L.item_lines(it, h)
+                lines.append(("Click: %s takes it" % h.name if h else "", GREY))
+                self._tip = lines
+        n_all = len(run.ground_items()) if run is not None else 0
+        L.text(c, "small", "%d of %d items on floor %d" % (len(items), n_all, run.depth) if run else "No run: nothing on the ground",
+               WHITE, gx, gy + LOOT_ROWS * CELL + 6)
+        if len(pages) > 1:
+            self.button((gx + 150, gy + LOOT_ROWS * CELL + 4, 40, 20), "<", self.page, -1, len(pages))
+            L.text(c, "small", "%d / %d" % (self.loot_page + 1, len(pages)), WHITE, gx + 194, gy + LOOT_ROWS * CELL + 8)
+            self.button((gx + 230, gy + LOOT_ROWS * CELL + 4, 40, 20), ">", self.page, 1, len(pages))
+        # the hero's backpack, to see the room he has
+        if h is not None:
+            L.text(c, "med", "%s's backpack" % h.name, GOLD, 330, 110)
+            self._backpack(h, 330, 132)
+            L.text(c, "small", "Green: his pickup rules want it.  Blue: they don't.", GREY, 330, 300)
+            L.text(c, "small", "Click any item to take it with %s." % h.name, GREY, 330, 316)
+            L.text(c, "small", "Items stay here until the floor ends.", GREY, 330, 332)
+        self.button((640, 430, 140, 30), "Back", lambda: self.go("roster"))
+
+    def _backpack(self, h, x0, y0):
+        c, L = self.canvas, self.look
+        cols, rows = getattr(h, "INV_W", 10), getattr(h, "INV_H", 7)
+        L.inset(c, (x0 - 1, y0 - 1, cols * CELL + 2, rows * CELL + 2))
+        for i in range(cols + 1):
+            pygame.draw.line(c, (34, 32, 28), (x0 + i * CELL, y0), (x0 + i * CELL, y0 + rows * CELL))
+        for j in range(rows + 1):
+            pygame.draw.line(c, (34, 32, 28), (x0, y0 + j * CELL), (x0 + cols * CELL, y0 + j * CELL))
+        for it in getattr(h, "inventory", []) or []:
+            pos = getattr(it, "inv_pos", None)
+            if not pos:
+                continue
+            ix, iy = pos
+            try:
+                w, hh = h._size(it)
+            except Exception:
+                w, hh = max(1, it.invw or 1), max(1, it.invh or 1)
+            r = pygame.Rect(x0 + ix * CELL, y0 + iy * CELL, w * CELL, hh * CELL)
+            L.icon(c, it, r.x + 1, r.y + 1, r.w - 1, r.h - 1)
+            if self.hot(r):
+                self._tip = L.item_lines(it, h)
+
+    def draw_inventory(self):
+        c, L = self.canvas, self.look
+        h = self.hero()
+        self._title("Inventory")
+        L.panel(c, (6, 40, 788, 432))
+        if h is None:
+            return
+        L.text(c, "med", "%s - level %d %s" % (h.name, h.level, CLASS_NAMES.get(h.cls, h.cls)), GOLD, 6, 56, "center", 788)
+        # what he wears
+        y = 90
+        L.text(c, "med", "Equipped", GOLD, 30, y)
+        y += 22
+        for slot, it in sorted((getattr(h, "equipment", None) or {}).items()):
+            if it is None:
+                continue
+            r = pygame.Rect(30, y, 2 * CELL, 2 * CELL)
+            L.inset(c, r)
+            L.icon(c, it, r.x + 1, r.y + 1, r.w - 2, r.h - 2)
+            name = getattr(it, "shown_name", None) or getattr(it, "name", "")
+            L.text(c, "small", "%s: %s" % (slot, name), getattr(it, "color", WHITE) or WHITE, r.right + 8, r.y + 14)
+            if self.hot(r.union(pygame.Rect(r.right, r.y, 260, r.h))):
+                self._tip = L.item_lines(it, h)
+            y += 2 * CELL + 4
+            if y > 430:
+                break
+        L.text(c, "med", "Backpack", GOLD, 400, 90)
+        self._backpack(h, 400, 112)
+        L.text(c, "small", "Gold %d" % getattr(h, "gold", 0), GOLD, 400, 112 + 7 * CELL + 10)
+        self.button((640, 430, 140, 30), "Back", lambda: self.go("roster"))
+
+    def draw_pickup(self):
+        c, L = self.canvas, self.look
+        h = self.hero()
+        self._title("Pickup")
+        L.panel(c, (100, 40, 600, 432))
+        if h is None:
+            return
+        L.text(c, "med", "What %s picks up on his own" % h.name, GOLD, 100, 58, "center", 600)
+        rules = brain.pickup_rules(h)
+        for i, (key, label, _d) in enumerate(brain.PICKUP_RULES):
+            r = pygame.Rect(140, 84 + i * 22, 520, 21)
+            box = pygame.Rect(r.x, r.y + 3, 16, 16)
+            L.inset(c, box)
+            if rules.get(key):
+                pygame.draw.line(c, GOLD, (box.x + 3, box.centery), (box.x + 7, box.bottom - 4), 2)
+                pygame.draw.line(c, GOLD, (box.x + 7, box.bottom - 4), (box.right - 3, box.y + 3), 2)
+            L.text(c, "med", label, WHITE if rules.get(key) else GREY, r.x + 26, r.y + 3)
+            self.region(r, self.toggle_rule, key)
+        y = 84 + len(brain.PICKUP_RULES) * 22 + 6
+        L.text(c, "small", "Also anything whose name contains (comma separated):", GOLD, 140, y)
+        field = pygame.Rect(140, y + 16, 520, 24)
+        L.inset(c, field)
+        L.text(c, "med", rules.get("words", "") + ("_" if int(time.time() * 2) % 2 else ""), WHITE, field.x + 6, field.y + 4)
+        self.button((520, y + 50, 140, 30), "Done", lambda: self._key_escape())
+
+    def _key_escape(self):
+        h = self.hero()
+        if h is not None and h.name not in self.mgr.busy_names():
+            roster.save(h)
+        self.go("roster")
 
     def draw_watch(self):
-        r = self.watch
-        W, H = self.screen.get_size()
-        if r is None or r.state == "over":
-            self.text("This run is over. Esc goes back.", (24, 24), "m", GOLD)
+        c, L = self.canvas, self.look
+        h = self.hero()
+        run = self.run_of(h.name) if h else None
+        if run is None:
+            self._title("Watch")
+            L.text(c, "med", "This hero is not on a run. Esc goes back.", GOLD, 0, 280, "center", W)
             return
-        if r.world is None or r.sim is None:
-            self.text("Building floor %d..." % r.depth, (24, 24), "m", GOLD)
-            return
-        r.sim.watched = True
-        if getattr(self.assets, "act_kit", None) is not None:
-            self._draw_scene(r)
-        else:
-            self._draw_topdown(r)
-        self.text(r.title(), (16, 10), "m", GOLD)
-        y = 36
-        for h in r.heroes:
-            thought = r.sim.brain(h).last if r.sim is not None else ""
-            self.text("%s  life %d/%d  mana %d   %s" % (h.name, max(0, h.hp), h.max_hp, int(getattr(h, "mana", 0)),
-                                                     thought), (16, y), "s", TEXT if h.alive else RED)
-            y += 20
-        self.text("Esc: back   wheel: zoom   +/-: speed x%g" % self.cfg["speed"], (16, H - 26), "s", GREY)
-
-    def _draw_scene(self, r):
-        """The engine's own renderer, driven straight from the real-time state (autobattler/liveview.py)."""
-        from render.iso import Camera
-        from autobattler.liveview import LiveView
-        W, H = self.screen.get_size()
-        if self.scene is None or self.scene.world is not r.world:
-            self.scene = LiveView(r, self.assets, {"small": self.f["s"], "med": self.f["m"],
-                                                   "big": self.f["b"], "title": self.f["m"]})
-            zoom = self.cam.scale if self.cam is not None else getattr(self.assets, "native_scale", 1.5)
-            self.cam = Camera(W, H, zoom)
-            self.cam.snap(*self.scene.focus())
-        self.scene.update(self._dt, self.cfg["speed"])
-        self.cam.follow(*self.scene.focus(), dt=self._dt)
-        z = self.cam.scale
-        ow, oh = max(1, int(W / z)), max(1, int(H / z))
-        if getattr(self, "_off", None) is None or self._off.get_size() != (ow, oh):
-            self._off = pygame.Surface((ow, oh))
-            self._rcam = Camera(ow, oh, 1.0)
-        self._off.fill((0, 0, 0))
-        self._rcam.wx, self._rcam.wy = self.cam.wx, self.cam.wy
-        self.scene.draw(self._off, self._rcam)
-        scale = pygame.transform.scale if abs(z - round(z)) < 1e-6 else pygame.transform.smoothscale
-        scale(self._off, (W, H), self.screen)
-
-    def _draw_topdown(self, r):
-        """Without Diablo II files: the floor seen from above (grey floor, red monsters, gold heroes)."""
-        w = r.world
-        W, H = self.screen.get_size()
-        g = w.grid
-        lead = next((h for h in r.heroes if h.alive), r.heroes[0])
-        cs = 8
-        ox, oy = W // 2 - lead.x * cs, H // 2 - lead.y * cs
-        x0, x1 = max(0, -ox // cs), min(g.w, (W - ox) // cs + 1)
-        y0, y1 = max(0, -oy // cs), min(g.h, (H - oy) // cs + 1)
-        for yy in range(y0, y1):
-            for xx in range(x0, x1):
-                if g.walkable(xx, yy):
-                    pygame.draw.rect(self.screen, (44, 40, 36), (ox + xx * cs, oy + yy * cs, cs - 1, cs - 1))
-        for m in w.monsters:
-            if m.alive and not getattr(m, "ally", False):
-                col = (255, 140, 40) if getattr(m, "rift_boss", False) else RED
-                pygame.draw.circle(self.screen, col, (ox + m.x * cs + cs // 2, oy + m.y * cs + cs // 2), cs // 2 + 1)
-        for h in r.heroes:
-            if h.alive:
-                pygame.draw.circle(self.screen, GOLD, (ox + h.x * cs + cs // 2, oy + h.y * cs + cs // 2), cs // 2 + 2)
+        self.draw_view(run, (0, 0, W, H))
+        bar = pygame.Surface((W, 22 + 18 * len(run.heroes)), pygame.SRCALPHA)
+        bar.fill((0, 0, 0, 150))
+        c.blit(bar, (0, 0))
+        L.text(c, "med", "Floor %d  %s" % (run.depth, getattr(run.world, "level_name", "") if run.world else ""), GOLD, 10, 4)
+        for i, x in enumerate(run.heroes):
+            thought = run.sim.brain(x).last if run.sim is not None else ""
+            L.text(c, "small", "%s  life %d/%d  mana %d   %s" % (x.name, max(0, x.hp), x.max_hp, int(getattr(x, "mana", 0)), thought),
+                   WHITE if x.alive else RED, 10, 24 + i * 18)
+        L.text(c, "small", "Esc: back   + / -: speed x%g" % self.cfg["speed"], GREY, 0, 584, "right", W - 10)
+        self.region((0, 0, W, H), lambda: None)
 
     def run(self):
-        self._dt = 0.0
         last = time.perf_counter()
         while self.running:
             now = time.perf_counter()
@@ -427,7 +655,7 @@ class App:
                 self.handle(ev)
             self.step(self._dt)
             self.draw()
-            self.clock.tick(60)
+            pygame.time.Clock().tick(60)
         for r in self.mgr.active():
             r.finish("stopped")
         pygame.quit()

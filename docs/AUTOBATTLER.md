@@ -143,14 +143,48 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
 - Measured without Diablo II files: 8 runs together take about 3 ms per game frame (D2's frame is
   40 ms); the watch view draws a frame in about 8 ms.
 
-## Screen (temporary)
+## Floors, portals and loot
 
-The first screen is a working placeholder until the manager screen is designed: the roster on
-the left (click selects a hero, Ctrl+click adds heroes for a group), the runs on the right (click
-one to watch it), and buttons for a new hero, start, stop and watch. Keys: S start, X stop,
-W watch, T fighting style, + / - game speed, Esc back. The watch view shows what each hero's
-brain decided last. The watch view uses the engine's renderer with Diablo II
-files, and a top-down view without them.
+- About a third of the big floors are outdoors: one of eleven terrains from all five acts
+  (randmap's open-world builder: wilderness, desert, jungle, three Kurast districts, the Outer
+  Steppes, the Plains of Despair, the City of the Damned, highlands, plateau) at 10 x 10 blocks,
+  filled with the rift's own monsters and boss. If an outdoor floor can't be built it falls back
+  to the open plain.
+- When the floor's boss dies a red portal opens where it fell. The heroes pick up what they want
+  (at most 25 seconds), then walk to the portal; the first hero stepping next to it takes the run
+  to the next floor.
+- Heroes also pick things up between fights, whenever nothing awake is within 18 cells: the
+  nearest item within 30 cells that their pickup rules want. Pickups go through the engine's own
+  code (gold to the purse, potions to the belt while it has room, tomes, stacks, the backpack).
+  The autobattler has no quests: the engine's quest hook is skipped on pickup. An item that doesn't
+  fit is left lying.
+- Autobattler heroes have the D2 Tactics bigger backpack (10 x 7).
+- Pickup rules, per hero (Pickup screen): gold, potions, runes, gems, charms, jewelry, unique,
+  set, rare and crafted, magic, plain items with sockets, plain items, everything else, and a
+  list of words: an item whose name contains one of them is always picked up.
+
+## The manager screen
+
+One 800 x 600 canvas (D2's own resolution), scaled to the window, in Diablo II's own fonts
+(font16, font30, fontformal10), the quest panel's carved stone for panels, the front-end's
+wide and medium buttons (up and pressed frames), D2's item graphics and description box - all
+read from the player's install by the engine's loaders. Without Diablo II files the same layout
+is drawn with plain boxes and a system font.
+
+- Heroes: the roster; a live view of the selected hero's floor (click it to watch full screen);
+  his life, mana, level, style, gold, what his brain is doing and the run's last events; buttons
+  New hero, Start run, Stop run, Watch, Style, Loot, Inventory, Pickup, Speed - / +.
+- Loot: every item on the selected hero's floor laid out like the stash (12 x 14, pages), with
+  filters (All, Gold, Potions, Runes, Gems, Charms, Jewelry, Unique, Set, Rare, Magic, Bases) and a
+  search field that matches the name and the item's description lines. Green items are ones his
+  pickup rules want. Click an item to take it with him (the engine's rule: outside a fight, from
+  anywhere on the floor). His backpack is shown beside it.
+- Inventory: what he wears and his backpack, with tooltips.
+- Pickup: his pickup rules and words.
+- Watch: his floor full screen at 1:1, with each hero's life, mana and decision.
+
+Keys: S start, X stop, W watch, T style, L loot, I inventory, P pickup, + / - speed, Esc back,
+Ctrl+click adds heroes to a group.
 
 ## Not done yet
 
@@ -159,8 +193,7 @@ files, and a top-down view without them.
 - Monsters that don't cast use their normal attack only; casters act once per 2-second round.
 - Only world.player can drink through the engine's potion code, so in a group only the first
   hero drinks.
-- Picking up items, and managing gear from the manager screen.
-- The manager screen itself.
+- Equipping, selling and dropping items from the Inventory screen (it shows them only).
 - Reign of the Warlock changes beyond what `game/d2r.py` already has (the Warlock class excluded).
 - Floor building happens on the main thread, so the game may pause briefly when several runs
   start a new floor at once.

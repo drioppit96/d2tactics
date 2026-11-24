@@ -41,6 +41,8 @@ AGGRO = 14              # cells: a monster this close to a hero wakes up
 HERO_SIGHT = 18         # cells: how far a hero looks for something to fight
 AI_DELAY = 8            # frames a monster waits after its attack before the next decision
 ROUND = 50              # frames per turn of the turn-based upkeep (2 seconds)
+LOOT_SECONDS = 25       # after the boss: at most this long picking things up, then the portal
+LOOT_REACH = 30         # cells: how far a hero goes for an item he wants
 DRINK_COOLDOWN = 25     # frames between two potions
 REPATH = 12             # frames between two path searches while chasing
 THINK = 6               # frames between two decisions while a hero is walking
@@ -87,6 +89,12 @@ class Sim:
         self.watched = False        # while False the engine's animation events are thrown away
         self.brains = {}
         self.errors = 0
+        self.phase = "fight"        # fight | loot (boss dead, picking up) | portal (walking to it)
+        self.portal = None          # the cell of the red portal to the next floor
+        self.loot_until = 0
+        self.at_portal = False
+        self.skip_items = set()     # id(item): not wanted after all, or no room for it
+        self.picked = []            # (hero, item name) this floor
         for h in self.heroes:
             self._state(h)
             self.brains[id(h)] = brains.Brain(h, self)
@@ -140,6 +148,8 @@ class Sim:
                 m.aware = True
         if self.frame % ROUND == 0:
             self._round()
+        if self.phase == "loot" and (self.frame >= self.loot_until or not any(self._next_item(h) for h in heroes)):
+            self.phase = "portal"
         for u in heroes + [m for m in self.foes() if getattr(m, "aware", False) and not getattr(m, "caster", False)]:
             if u.alive:
                 self._step(u)
@@ -244,6 +254,8 @@ class Sim:
     # ------------------------------------------------------------ decisions
     def _hero_think(self, h, s):
         b = self.brain(h)
+        if self._loot_or_leave(h, s, b):
+            return
         if h.hp * 100 < h.max_hp * brains.setting(h, "potion_at") and self.frame >= s.next_drink:
             if self._drink(h):
                 s.next_drink = self.frame + DRINK_COOLDOWN
@@ -268,6 +280,94 @@ class Sim:
             self._engage(h, s, tgt, self._reach(h))
             return
         self._start_cast(h, s, plan)
+
+    # ------------------------------------------------------------ loot and the portal
+    def open_portal(self, cell):
+        """The boss is dead: a red portal to the next floor opens where it fell."""
+        if self.phase != "fight":
+            return
+        g = self.w.grid
+        if cell is None or not g.walkable(*cell):
+            cell = self.living_heroes()[0].pos if self.living_heroes() else cell
+        self.portal = cell
+        self.phase = "loot"
+        self.loot_until = self.frame + LOOT_SECONDS * timing.FPS
+        self.w.objects.append(dict(kind="red_portal", cell=cell, level=None, oid=0, used=False, target=None,
+                                   rift_next=True))
+        if self.watched:
+            self.w.emit("object", cell)
+
+    def _awake_near(self, h, r=HERO_SIGHT):
+        return [m for m in self.foes() if getattr(m, "aware", False) and chebyshev(m.pos, h.pos) <= r]
+
+    def ground_items(self):
+        out = []
+        for cell, items in list((getattr(self.w, "ground", None) or {}).items()):
+            for it in list(items):
+                out.append((cell, it))
+        return out
+
+    def _next_item(self, h):
+        best, bd = None, LOOT_REACH + 1
+        for cell, it in self.ground_items():
+            if id(it) in self.skip_items:
+                continue
+            d = chebyshev(h.pos, cell)
+            if d < bd and brains.wants(h, it):
+                best, bd = (cell, it), d
+        return best
+
+    def _loot_or_leave(self, h, s, b):
+        """With nothing awake around him: pick up what he wants; after the boss, go to the portal.
+        -> True when that is what he is doing this moment."""
+        if self._awake_near(h):
+            return False
+        nxt = self._next_item(h)
+        if nxt is not None:
+            cell, it = nxt
+            if chebyshev(h.pos, cell) <= 1:
+                self.take(h, cell, it)
+            else:
+                b.last = "going for %s" % self._item_name(it)
+                if not self._walk_to(h, s, cell, reach=1):
+                    self.skip_items.add(id(it))
+            return True
+        if self.phase == "portal" and self.portal is not None:
+            if chebyshev(h.pos, self.portal) <= 1:
+                if h is self.living_heroes()[0]:
+                    self.at_portal = True
+                b.last = "at the portal"
+            else:
+                b.last = "to the portal"
+                if not self._walk_to(h, s, self.portal, reach=1):
+                    self.at_portal = True    # (no way to it: go through anyway)
+            return True
+        return False
+
+    def _item_name(self, it):
+        if getattr(it, "kind", "") == "gold":
+            return "%d gold" % getattr(it, "amount", 0)
+        return str(getattr(it, "shown_name", None) or getattr(it, "name", "an item"))
+
+    def take(self, h, cell, it):
+        """The engine's own pickup (gold to the purse, potions to the belt, tomes, stacks, the
+        backpack), as that hero. -> True if he took it."""
+        from game import quests, tactics
+        w = self.w
+        hook = quests.on_pickup
+        quests.on_pickup = lambda *a, **k: None   # the autobattler has no quests
+        try:
+            with self._Guard(w):
+                with tactics.acting_as(w, h):
+                    ok = bool(self._engine(w.pickup_item, cell, it))
+        finally:
+            quests.on_pickup = hook
+        if ok:
+            self.picked.append((h.name, self._item_name(it)))
+            self.brain(h).last = "picked up %s" % self._item_name(it)
+        else:
+            self.skip_items.add(id(it))      # no room: leave it (it stays in the loot window)
+        return ok
 
     def _should_back_off(self, h, b):
         limit = brains.setting(h, "back_off_at")
@@ -558,6 +658,10 @@ class Sim:
     def boss_dead(self):
         bosses = [m for m in self.w.monsters if getattr(m, "rift_boss", False)]
         return bool(bosses) and not any(m.alive for m in bosses)
+
+    def boss_cell(self):
+        dead = [m for m in self.w.monsters if getattr(m, "rift_boss", False) and not m.alive]
+        return dead[0].pos if dead else None
 
     def cleared(self):
         """The floor is done: its boss is dead (or, with no boss on it, every monster is), or the
