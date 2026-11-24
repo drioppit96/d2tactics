@@ -153,6 +153,49 @@ def test_cast_breakpoints():
     check(nec == [15, 14, 13, 12, 11, 10, 9], "Necromancer FCR breakpoints %s" % nec)
 
 
+def test_acts():
+    """Floors 1-10 Act 1 ... 41-50 Act 5, the act's boss on every tenth floor (big floors only)."""
+    from game import rift
+    rift.BIG = True
+    rift.forget(None)
+    acts = [rift.act_of_depth(d) for d in (1, 10, 11, 20, 21, 31, 41, 50, 51)]
+    check(acts == [1, 1, 2, 2, 3, 4, 5, 5, 1], "act of each floor %s" % acts)
+    bosses = {d: rift.plan(rift.level_id(d))["actboss"] for d in (9, 10, 20, 30, 40, 50)}
+    check(bosses == {9: None, 10: "andariel", 20: "duriel", 30: "mephisto", 40: "diablo", 50: "baalcrab"},
+          "act bosses %s" % bosses)
+    places = {rift.plan(rift.level_id(d))["act"] for d in range(31, 41)}
+    check(places == {4}, "floors 31-40 are all Act 4 places: %s" % places)
+    rift.BIG = False
+    rift.forget(None)
+
+
+def test_death_and_potions():
+    """A wiped run starts again from floor 1; belts are filled; potions are drunk."""
+    config.apply_d2_rules()
+    random.seed(21)
+    mgr = RunManager(_NoAssets(), _cfg())
+    h = _hero("Fragile", "sor")
+    h.rift_depth = 4
+    r = mgr.start([h])
+    check(r.depth == 5, "a run starts after the deepest floor cleared (%d)" % r.depth)
+    mgr.tick()                                   # builds the floor (fills the belt)
+    check(len(h.belt) > 0, "the belt is filled before the floor: %d potions" % len(h.belt))
+    drunk = 0
+    belt_before = len(h.belt)
+    for _ in range(25 * 60 * 3):
+        mgr.tick()
+        if r.sim is not None and len(h.belt) < belt_before:
+            drunk += belt_before - len(h.belt)
+        belt_before = len(h.belt)
+        if getattr(r, "deaths", 0) >= 1 and r.state in ("pause", "build", "fight") and r.depth == 1:
+            break
+    check(drunk > 0, "potions drunk in the fight: %d" % drunk)
+    check(r.deaths >= 1 and r.depth == 1 and h.rift_depth == 0 and r.state != "over",
+          "after dying the run goes on from floor 1 (deaths %d, depth %d, state %s)" % (r.deaths, r.depth, r.state))
+    from autobattler import brain
+    check(brain.profile(h).get("best", 0) >= 4, "his best floor is kept: %s" % brain.profile(h).get("best"))
+
+
 def test_roster():
     from game import save as gsave
     old = (roster.SAVE_DIR, gsave.SAVE_DIR, gsave.NORMAL_DIR)
@@ -195,5 +238,7 @@ if __name__ == "__main__":
     test_floor_progress()
     test_cast_breakpoints()
     test_brain()
+    test_acts()
+    test_death_and_potions()
     print("\n%s" % ("all passed" if not FAILS else "%d FAILED" % len(FAILS)))
     sys.exit(1 if FAILS else 0)

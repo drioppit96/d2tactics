@@ -406,11 +406,13 @@ class App:
                 frac = 0.0
             L.text(c, "small", "Level %d %s   %s" % (h.level, CLASS_NAMES.get(h.cls, h.cls),
                                                    STYLE_NAMES[brain.profile(h)["style"]]), GOLD, x + 250, y)
-            L.text(c, "small", "Gold %d   Deepest floor %d" % (getattr(h, "gold", 0), int(getattr(h, "rift_depth", 0) or 0)),
+            L.text(c, "small", "Gold %d   Floor %d   Best %d" % (getattr(h, "gold", 0), int(getattr(h, "rift_depth", 0) or 0),
+                                                            int(brain.profile(h).get("best", 0) or 0)),
                    WHITE, x + 250, y + 16)
             if run is not None and run.sim is not None:
                 L.text(c, "small", "Now: %s" % (run.sim.brain(h).last or "..."), GOLD, x, y + 36)
-                L.text(c, "small", "This run: %d floors, %d kills" % (run.floors, run.kills + run.sim.kills), WHITE, x + 250, y + 36)
+                L.text(c, "small", "This run: %d floors, %d kills, %d deaths" % (run.floors, run.kills + run.sim.kills,
+                                                                                getattr(run, "deaths", 0)), WHITE, x + 250, y + 36)
             for i, line in enumerate((run.log if run else [])[-3:]):
                 L.text(c, "small", line, GREY, x, y + 56 + i * 14)
         # buttons

@@ -110,8 +110,8 @@ monsters that cast spells take a turn (their own spells, through the engine's mo
   across (instead of 56), open plains are 8 x 8 blocks (instead of 6 x 6), and up to 32 packs
   (instead of 16) are placed.
 - Heroes are healed between floors, as if they had been to town.
-- A run ends when every hero on it is dead, or after the current floor when it is stopped.
-  Heroes are saved after every floor and when the run ends.
+- A run ends after the current floor when it is stopped. Heroes are saved after every floor and
+  when the run ends.
 - In a group, experience from kills goes to the first hero by the engine's rules, and every other
   living hero in the group gets the same amount.
 - Without Diablo II files, a run plays on the engine's generated cave with placeholder monsters.
@@ -142,6 +142,23 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
   as done, so a run can't hang.
 - Measured without Diablo II files: 8 runs together take about 3 ms per game frame (D2's frame is
   40 ms); the watch view draws a frame in about 8 ms.
+
+## Acts, bosses, death and potions
+
+- Floors follow the acts: 1-10 Act 1, 11-20 Act 2, 21-30 Act 3, 31-40 Act 4, 41-50 Act 5, then
+  round again (51-60 Act 1 ...). A floor is built from its act's dungeons or outdoor terrain
+  (Act 4 has only outdoor ones) and filled with monsters from that act's areas (Levels.txt).
+- The tenth floor of each act is guarded by the act's boss: Andariel (10), Duriel (20),
+  Mephisto (30), Diablo (40), Baal (50). Act bosses are as D2 makes them: their own MonStats
+  level, life and damage. Every other monster is at the hero's level (the first hero's in a group).
+- When every hero on a run is dead, the run starts again from floor 1 (after floor_pause seconds),
+  and the heroes' floor progress goes back to 0. Each hero's best floor is kept in his profile.
+  A run stopped with Stop run ends after the current floor, or at the death.
+- Before each floor every hero fills his belt from his gold, at the vendors' best potion tier for
+  that act and difficulty (potions.vendor_tiers), at the potion's own price: healing mostly, about
+  half mana for Sorceresses, Necromancers, Druids and Assassins, a quarter for the others.
+- Every hero of a group drinks from his own belt (through the engine's potion code, as him):
+  healing below his potion_at life, mana below 25% mana.
 
 ## Floors, portals and loot
 
@@ -191,8 +208,6 @@ Ctrl+click adds heroes to a group.
 - Teleport and Leap are not used to get about yet (heroes walk). Whirlwind and Charge are scored
   as damage on the monsters near their target.
 - Monsters that don't cast use their normal attack only; casters act once per 2-second round.
-- Only world.player can drink through the engine's potion code, so in a group only the first
-  hero drinks.
 - Equipping, selling and dropping items from the Inventory screen (it shows them only).
 - Reign of the Warlock changes beyond what `game/d2r.py` already has (the Warlock class excluded).
 - Floor building happens on the main thread, so the game may pause briefly when several runs

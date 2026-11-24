@@ -33,6 +33,12 @@ OPEN_FLOORS = [("wild", 1, "Wild Moors"), ("desert", 2, "Scorched Waste"), ("jun
                ("highlands", 5, "Frozen Highlands"), ("plateau", 5, "Windswept Plateau")]
 OPEN_SHARE = 0.35          # about a third of the BIG floors are outdoors
 
+
+def act_of_depth(depth):
+    """BIG floors follow the acts: 1-10 Act 1, 11-20 Act 2, 21-30 Act 3, 31-40 Act 4, 41-50 Act 5,
+    then round again (51-60 Act 1 ...). The tenth floor of each is that act's boss."""
+    return ((max(1, int(depth)) - 1) // 10) % 5 + 1
+
 # where a floor can be built from: maze kit (act1.MAZES) or FIELD, the act whose palette it wears,
 # and what the floor is called. Every act of the game is in here.
 PLACES = [
@@ -115,10 +121,19 @@ def plan(lid, player=None):
              rooms=rng.randint(4, 6), mlvl=None, roster=None, boss=None, start=None, boss_cell=None,
              actboss=rng.choice(ACT_BOSSES) if depth % BOSS_EVERY == 0 else None)
     if BIG:
+        # the act of this stretch of ten floors: its own dungeons and outdoors, its own monsters,
+        # and on the tenth floor its own boss at D2's own strength
         orng = random.Random(p["seed"] ^ 0x0BE1)
-        if orng.random() < OPEN_SHARE:
-            theme, act, flavour = orng.choice(OPEN_FLOORS)
+        act = act_of_depth(depth)
+        inside = [x for x in PLACES if x[1] == act and x[0] != FIELD]
+        outside = [x for x in OPEN_FLOORS if x[1] == act]
+        if outside and (not inside or orng.random() < OPEN_SHARE):
+            theme, act, flavour = orng.choice(outside)
             p.update(kit=FIELD, act=act, flavour=flavour, open=theme)
+        elif inside:
+            kit_, act, flavour = orng.choice(inside)
+            p.update(kit=kit_, act=act, flavour=flavour, open=None)
+        p["actboss"] = ACT_BOSSES[act - 1] if depth % BOSS_EVERY == 0 else None
     PLANS[lid] = p
     return p
 
@@ -154,10 +169,36 @@ def _pool(content, kit):
     return _POOL
 
 
+_ACT_POOLS = {}
+
+
+def _pool_act(content, kit, act):
+    """The monsters of one act's areas (Levels.txt rosters of that act), minus the act bosses."""
+    if act in _ACT_POOLS:
+        return _ACT_POOLS[act]
+    every = set(_pool(content, kit))
+    seen = []
+    for r in (getattr(kit, "levels", None) or {}).values():
+        try:
+            if int(r.get("act", -1)) + 1 != act:
+                continue
+        except (TypeError, ValueError):
+            continue
+        for pre in ("mon", "nmon"):
+            for i in range(1, 11):
+                mid = (r.get("%s%d" % (pre, i), "") or "").lower()
+                if mid in every and mid not in seen:
+                    seen.append(mid)
+    _ACT_POOLS[act] = sorted(seen)
+    return _ACT_POOLS[act]
+
+
 def roster(lid, content, kit):
     p = plan(lid)
     if p["roster"] is None:
         pool = _pool(content, kit)
+        if BIG:
+            pool = _pool_act(content, kit, p["act"]) or pool
         if not pool:
             return []
         rng = random.Random(p["seed"] ^ 0x51ED)
@@ -379,9 +420,11 @@ def after_build(world):
         # every tenth floor: one of D2's act bosses, brought down (or up) to the hero's own level
         boss = actworld._spawn(world, p["actboss"], spot, lvl, taken)
         if boss is not None:
-            scale_to_level(world, boss, lvl)
             boss.rift_boss = True
-            boss.max_hp = int(boss.max_hp * 1.5)
+            if not BIG:
+                scale_to_level(world, boss, lvl)
+                boss.max_hp = int(boss.max_hp * 1.5)
+            # (BIG: the act boss as D2 makes it - its own level, life and damage)
             boss.hp = boss.max_hp
             world.log("%s guards this floor." % boss.name, RED)
             return

@@ -44,6 +44,7 @@ ROUND = 50              # frames per turn of the turn-based upkeep (2 seconds)
 LOOT_SECONDS = 25       # after the boss: at most this long picking things up, then the portal
 LOOT_REACH = 30         # cells: how far a hero goes for an item he wants
 DRINK_COOLDOWN = 25     # frames between two potions
+MANA_DRINK_AT = 25      # mana %% below which a hero drinks a mana potion
 REPATH = 12             # frames between two path searches while chasing
 THINK = 6               # frames between two decisions while a hero is walking
 MONSTER_THINK = 4       # the same for monsters
@@ -254,6 +255,10 @@ class Sim:
     # ------------------------------------------------------------ decisions
     def _hero_think(self, h, s):
         b = self.brain(h)
+        if self.frame >= s.next_drink and getattr(h, "max_mana", 0) and \
+                h.mana * 100 < h.max_mana * MANA_DRINK_AT and self._drink(h, ("mana", "rejuv")):
+            s.next_drink = self.frame + DRINK_COOLDOWN
+            b.last = "drinks a mana potion"
         if self._loot_or_leave(h, s, b):
             return
         if h.hp * 100 < h.max_hp * brains.setting(h, "potion_at") and self.frame >= s.next_drink:
@@ -632,23 +637,19 @@ class Sim:
                 return 0
         return 0
 
-    def _drink(self, h):
-        """A healing (or rejuvenation) potion from the belt, by the engine's own potion code."""
-        from game import potions
+    def _drink(self, h, kinds=("heal", "rejuv")):
+        """A potion of one of `kinds` from his belt, by the engine's own potion code (as him, so
+        every hero of a group drinks from his own belt)."""
+        from game import potions, tactics
         w = self.w
-        if h is not w.player:
-            return False                 # (the engine's potion code drinks for world.player)
         try:
             for c in range(potions.belt_slots(h)):
                 col = potions.column(h, c)
-                if col and getattr(col[0], "potion", "") in ("heal", "rejuv"):
-                    old_mode = w.mode
-                    w.mode = "explore"   # no AP in real time
-                    h.ap = max(getattr(h, "ap", 0), 10)
-                    try:
-                        return bool(potions.drink(w, c))
-                    finally:
-                        w.mode = old_mode
+                if col and getattr(col[0], "potion", "") in kinds:
+                    with self._Guard(w):
+                        with tactics.acting_as(w, h):
+                            h.ap = max(getattr(h, "ap", 0), 10)
+                            return bool(self._engine(potions.drink, w, c))
         except Exception:
             import traceback
             traceback.print_exc()

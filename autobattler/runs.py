@@ -34,6 +34,7 @@ class Run:
         self.timings = timings
         self.state = "build"
         self.depth = max(1, max(int(getattr(h, "rift_depth", 0) or 0) for h in self.heroes) + 1)
+        self.deaths = 0
         self.world = None
         self.sim = None
         self.pause = 0
@@ -69,6 +70,7 @@ class Run:
             q["big_inv"] = True             # the D2 Tactics bigger backpack (10 x 7)
             brain.spend_points(h)
             h._ab_level = h.level
+            self._refill_belt(h)
             h.hp, h.alive = h.max_hp, True
             h.mana = getattr(h, "max_mana", getattr(h, "mana", 0))
         if getattr(a, "act_kit", None) is not None:
@@ -140,7 +142,9 @@ class Run:
                 if self.stop_requested:
                     self.finish("stopped")
                 else:
-                    self.depth += 1
+                    if not getattr(self, "_restart", False):
+                        self.depth += 1
+                    self._restart = False
                     self.state = "build"
             return
         if self.state != "fight":
@@ -155,9 +159,23 @@ class Run:
                 brain.spend_points(h)       # a level up: new points go where his plan says
                 self.note("%s reached level %d." % (h.name, h.level))
         if self.sim.wiped():
+            # death: the run starts again from the first floor (the heroes get up at the start)
             self.kills += self.sim.kills
-            self.note("Everyone fell on floor %d." % self.depth)
-            self.finish("died")
+            self.deaths += 1
+            self.note("Everyone fell on floor %d. Back to floor 1." % self.depth)
+            for h in self.heroes:
+                prof = brain.profile(h)        # (saved with him; his best floor ever)
+                prof["best"] = max(int(prof.get("best", 0) or 0), int(getattr(h, "rift_depth", 0) or 0))
+                h.rift_depth = 0
+                h.alive = True
+                roster.save(h)
+            if self.stop_requested:
+                self.finish("died")
+            else:
+                self.depth = 1
+                self.state = "pause"
+                self.pause = int(self.cfg.get("floor_pause", 3) * timing.FPS)
+                self._restart = True
         elif self.sim.cleared() and self.sim.phase == "fight":
             self.sim.open_portal(self.sim.boss_cell())
             self.note("Floor %d: the boss is dead, a portal opens." % self.depth)
@@ -166,6 +184,8 @@ class Run:
             self.floors += 1
             for h in self.heroes:
                 h.rift_depth = max(int(getattr(h, "rift_depth", 0) or 0), self.depth)
+                prof = brain.profile(h)
+                prof["best"] = max(int(prof.get("best", 0) or 0), h.rift_depth)
                 roster.save(h)
             for who, what in self.sim.picked:
                 self.note("%s picked up %s." % (who, what))
@@ -174,6 +194,47 @@ class Run:
             self.pause = int(self.cfg.get("floor_pause", 3) * timing.FPS)
         elif self.stop_requested:
             self.finish("stopped")
+
+    # potions bought between floors: what is missing from the belt, as far as his gold goes
+    def _refill_belt(self, h):
+        from game import potions
+        a = self.assets
+        content = getattr(a, "content", None)
+        try:
+            cap = potions.belt_slots(h) * potions.belt_rows(h)
+        except Exception:
+            cap = 8
+        caster = getattr(h, "cls", "") in ("sor", "nec", "dru", "ass")
+        act = ((max(1, self.depth) - 1) // 10) % 5 + 1
+        diff = getattr(content, "difficulty", "normal") if content else "normal"
+        try:
+            tier = max(int(t) for t in potions.vendor_tiers(act, diff))
+        except Exception:
+            tier = 1
+        bought = 0
+        guard = 0
+        while len(getattr(h, "belt", []) or []) < cap and guard < 40:
+            guard += 1
+            heals = sum(1 for it in h.belt if getattr(it, "potion", "") in ("heal", "rejuv"))
+            manas = sum(1 for it in h.belt if getattr(it, "potion", "") == "mana")
+            want_mana = manas < (cap // 2 if caster else cap // 4) and heals >= manas
+            code = ("mp%d" if want_mana else "hp%d") % tier
+            it = None
+            if content is not None and code in getattr(content, "base_by_code", {}):
+                base = content.base_by_code[code]
+                price = int(base.get("cost", 0) or 0) or 25 * tier
+                if h.gold < price:
+                    break
+                it = content.make_item(base, max(1, h.level), random.Random())
+                h.gold -= price
+            elif content is None:
+                from game.items import make_potion
+                it = make_potion(h.level)          # (placeholder game: no shop, a plain potion)
+            if it is None or not potions.belt_add(h, it, None):
+                break
+            bought += 1
+        if bought:
+            self.note("%s fills his belt (%d potions)." % (h.name, bought))
 
     def _share_xp(self, gained):
         """Kills give experience to world.player; the rest of the group gets the same amount."""
