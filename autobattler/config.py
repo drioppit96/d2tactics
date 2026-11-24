@@ -79,6 +79,9 @@ def apply_d2_rules():
     (min_hit_chance, monster_hit_chance, normal_monster_damage, normal_monster_hit_bonus)."""
     from game import essences
     essences.DROPS = False          # the account currencies are D2 Tactics' own: none here
+    from game import potions
+    # the belt: healing potions in columns 1-2, mana in 3-4, rejuvenation wherever there is room
+    potions.COLUMN_RULE = {"heal": (0, 1), "mana": (2, 3), "rejuv": (0, 1, 2, 3)}
     import game.world as gw
     gw.PLAYER_HIT_FLOOR = 0.05
     gw.MONSTER_HIT_FLOOR = 0.05

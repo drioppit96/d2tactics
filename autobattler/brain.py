@@ -185,6 +185,15 @@ def wants(hero, it):
         if w and w in name:
             return True
     tags = item_tags(it)
+    if "potions" in tags and getattr(it, "potion", "") in ("heal", "mana", "rejuv"):
+        # healing, mana and rejuvenation potions: always, while his belt has a place for that
+        # kind (healing in columns 1-2, mana in 3-4); with the belt full, by his rules
+        try:
+            from game import potions
+            if potions._free_column(hero, it) is not None:
+                return True
+        except Exception:
+            pass
     if "potions" in tags:
         if not r.get("potions"):
             return False

@@ -274,11 +274,22 @@ class Run:
             tier = 1
         bought = 0
         guard = 0
+        rule = potions.COLUMN_RULE
         while len(getattr(h, "belt", []) or []) < cap and guard < 40:
             guard += 1
-            heals = sum(1 for it in h.belt if getattr(it, "potion", "") in ("heal", "rejuv"))
-            manas = sum(1 for it in h.belt if getattr(it, "potion", "") == "mana")
-            want_mana = manas < (cap // 2 if caster else cap // 4) and heals >= manas
+            if rule:
+                # healing fills columns 1-2, mana 3-4 (config.apply_d2_rules)
+                free_hp = potions._free_column(h, _probe("heal")) is not None
+                free_mp = potions._free_column(h, _probe("mana")) is not None
+                if not free_hp and not free_mp:
+                    break
+                want_mana = free_mp and (not free_hp or
+                                         sum(1 for x in h.belt if getattr(x, "potion", "") == "mana") <
+                                         sum(1 for x in h.belt if getattr(x, "potion", "") in ("heal", "rejuv")))
+            else:
+                heals = sum(1 for it in h.belt if getattr(it, "potion", "") in ("heal", "rejuv"))
+                manas = sum(1 for it in h.belt if getattr(it, "potion", "") == "mana")
+                want_mana = manas < (cap // 2 if caster else cap // 4) and heals >= manas
             code = ("mp%d" if want_mana else "hp%d") % tier
             it = None
             if content is not None and code in getattr(content, "base_by_code", {}):
@@ -329,6 +340,14 @@ class Run:
             roster.save(h)
         self.world = None
         self.sim = None
+
+
+def _probe(kind):
+    """A stand-in potion of a kind, to ask the belt whether it has room for one."""
+    from game.items import Item
+    it = Item("probe", "hp1" if kind == "heal" else "mp1", None, kind="potion")
+    it.potion = kind
+    return it
 
 
 class RunManager:

@@ -183,8 +183,21 @@ def cooldown_of(it):
     return 0
 
 
+#: which belt columns (keys 1-4) a kind of potion may go in, or None for D2's own rule (any
+#: column, its own kind first). The D2 Autobattler sets healing to 1-2 and mana to 3-4.
+COLUMN_RULE = None
+
+
 def _free_column(p, it):
     n, rows = belt_slots(p), belt_rows(p)
+    rule = COLUMN_RULE.get(getattr(it, "potion", None)) if COLUMN_RULE else None
+    if rule is not None:
+        cols = {c: column(p, c) for c in rule if c < n}
+        for c in sorted(cols, key=lambda c: (-len(cols[c]) if cols[c] and cols[c][0].code == it.code else 1, c)):
+            if len(cols[c]) < rows and (not cols[c] or cols[c][0].code == it.code
+                                        or getattr(cols[c][0], "potion", "") == getattr(it, "potion", "")):
+                return c
+        return None
     cols = [column(p, c) for c in range(n)]
     for c in range(n):                         # a column of the same potions first, like D2
         if cols[c] and len(cols[c]) < rows and cols[c][0].code == it.code:

@@ -282,6 +282,33 @@ def test_town_and_back():
     r.finish("stopped")
 
 
+def test_belt_columns():
+    """Healing potions in belt columns 1-2, mana in 3-4; picked up while there is a place."""
+    from autobattler import brain
+    from game import potions
+    from game.items import Item
+    config.apply_d2_rules()
+    h = _hero("Belted")
+
+    def pot(kind, code):
+        it = Item(kind, code, None, kind="potion")
+        it.potion = kind
+        return it
+    for _ in range(3):
+        potions.belt_add(h, pot("heal", "hp1"))
+        potions.belt_add(h, pot("mana", "mp1"))
+    cols = {c: [x.potion for x in potions.column(h, c)] for c in range(4)}
+    check(all(k == "heal" for c in (0, 1) for k in cols[c]) and all(k == "mana" for c in (2, 3) for k in cols[c])
+          and sum(len(v) for v in cols.values()) == min(6, 4 * potions.belt_rows(h)),
+          "healing in columns 1-2, mana in 3-4: %s" % cols)
+    brain.pickup_rules(h)["potions"] = False
+    full = potions._free_column(h, pot("heal", "hp1")) is None
+    check(brain.wants(h, pot("mana", "mp1")) == (potions._free_column(h, pot("mana", "mp1")) is not None)
+          and (not brain.wants(h, pot("heal", "hp1")) if full else True),
+          "potions are picked up while the belt has a place for them")
+    potions.COLUMN_RULE = None
+
+
 def test_cast_breakpoints():
     from autobattler.brain import CAST_FRAMES0
     sor = [timing.cast_frames(CAST_FRAMES0["sor"] + 1, f) for f in (0, 9, 20, 37, 63, 105, 200)]
@@ -490,6 +517,7 @@ if __name__ == "__main__":
     test_no_essences()
     test_skill_bar()
     test_town_and_back()
+    test_belt_columns()
     test_inventory_screen()
     print("\n%s" % ("all passed" if not FAILS else "%d FAILED" % len(FAILS)))
     sys.exit(1 if FAILS else 0)

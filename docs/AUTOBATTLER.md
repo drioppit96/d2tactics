@@ -193,6 +193,11 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
   fit is left lying.
 - Autobattler heroes have a 10 x 8 backpack, twice D2's 10 x 4 (`qol["inv_rows"] = 8`, read by
   `Player.INV_H`; heroes saved with a 10 x 7 backpack keep their items where they were).
+- The belt: healing potions go in columns 1-2, mana potions in 3-4, rejuvenation potions wherever
+  there is room (potions.COLUMN_RULE, set by config.apply_d2_rules; D2 Tactics keeps D2's own
+  rule). Heroes pick up healing, mana and rejuvenation potions on their own whenever their belt has
+  a place for that kind, whatever their pickup rules say; with the belt full, the rules decide.
+  Before each floor the belt is filled the same way from his gold.
 - Pickup rules, per hero (Pickup screen): gold, potions, runes, gems, charms, jewelry, unique,
   set, rare and crafted, magic, plain items with sockets, plain items, everything else, and a
   list of words: an item whose name contains one of them is always picked up.
