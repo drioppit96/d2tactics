@@ -112,6 +112,12 @@ or click it - uses its skills and aura, and is resurrected for gold by the one w
 
 Without a D2 path the game falls back to placeholder art (a Barbarian in a generated cave).
 
+## D2 Autobattler
+
+A second game on this engine: heroes grind rift floors in real time and you manage them (up to
+30 heroes, 8 on runs at once). Run `Make D2 Autobattler folder.bat` to set up its own folder next
+to this one. Details: docs/AUTOBATTLER.md.
+
 ## Run it (Windows)
 
 1. Python 3.7 or newer (Windows 7: Python 3.8 is the last official version and works fine).

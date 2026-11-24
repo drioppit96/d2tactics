@@ -872,7 +872,7 @@ def _populate(world, lid, rect, taken, safe, info):
     if tactics.ACTIVE:
         per_pack, cap = (1100, 20) if outdoor else (360, 24)   # dense, hard fights on the smaller maps
     if rift.is_rift(lid):
-        cap = min(cap, 12 if tactics.ACTIVE else 16)   # a rift floor is a fight, not a march
+        cap = min(cap, 12 if tactics.ACTIVE else (32 if rift.BIG else 16))   # a rift floor is a fight, not a march
     if lid in DENSE:                    # levels that set their own crowd (see DENSE)
         per_pack, cap = DENSE[lid]
     n_packs = min(int(walk / per_pack), cap)

@@ -24,6 +24,7 @@ KINDS = 6                  # kinds of monster on one floor
 BOSS_EVERY = 10            # every tenth floor is guarded by one of D2's act bosses
 ACT_BOSSES = ["andariel", "duriel", "mephisto", "diablo", "baalcrab"]
 FIELD = "@field"           # the open-plain floor (no maze kit)
+BIG = False                # the autobattler's real-time floors: about twice the area (autobattler/runs.py sets it)
 
 # where a floor can be built from: maze kit (act1.MAZES) or FIELD, the act whose palette it wears,
 # and what the floor is called. Every act of the game is in here.
@@ -167,6 +168,8 @@ def build_level(kit, lid, seed=None, player=None):
     rooms = p["rooms"]
     if tactics.ACTIVE:
         rooms = max(3, rooms - 2)               # the shrunken maps of tactics mode
+    elif BIG:
+        rooms = rooms * 2                       # the autobattler: twice the rooms on a wider floor
     seed = p["seed"] if seed is None else seed
     if p["kit"] == FIELD:
         b, grid, rng = _build_field(kit, lid, seed, small=tactics.ACTIVE)
@@ -191,6 +194,7 @@ def build_level(kit, lid, seed=None, player=None):
 # blocks of 8 tiles; Act 2's is 8), whatever the size of one room of its kit
 MAX_TILES = 56
 SMALL_TILES = 44
+BIG_TILES = 80              # the autobattler's floors: (80/56)^2 = about twice the area
 
 
 def _fit(kit, name, rooms, small):
@@ -202,8 +206,8 @@ def _fit(kit, name, rooms, small):
         side = max(mk.rw, mk.rh)
     except Exception:
         side = 16
-    cap = (SMALL_TILES if small else MAX_TILES) // max(1, side)
-    g = max(2, min(4, cap))
+    cap = (SMALL_TILES if small else (BIG_TILES if BIG else MAX_TILES)) // max(1, side)
+    g = max(2, min(6 if BIG and not small else 4, cap))
     return dict(rooms=max(2, min(rooms, g * g - 1)), grid=g)
 
 
@@ -211,7 +215,7 @@ def _build_field(kit, lid, seed, small=False):
     """An open plain: Act 1's wilderness ground inside its border ring, with a few fills."""
     from .act1 import BLOCK, SUB, Built, OutdoorKit, stamp, make_grid
     rng = random.Random(seed)
-    size = 5 if small else 6
+    size = 5 if small else (8 if BIG else 6)    # (8: 6x6 inner blocks instead of 4x4)
     b = Built(size * BLOCK + 1, size * BLOCK + 1)
     from .acts import apply_act_tables
     apply_act_tables(b, 1, kit)

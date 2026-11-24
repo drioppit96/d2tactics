@@ -39,3 +39,7 @@ errors.log
 d2act*_part*.zip
 d2tables.zip
 maps/*.json
+
+# the autobattler's heroes and settings
+saves_auto/
+autobattler.ini
