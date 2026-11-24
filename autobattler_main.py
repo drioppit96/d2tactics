@@ -371,28 +371,28 @@ class App:
         self.text("Esc: back   wheel: zoom   +/-: speed x%g" % self.cfg["speed"], (16, H - 26), "s", GREY)
 
     def _draw_scene(self, r):
-        """The engine's own renderer, fed by the run's events."""
+        """The engine's own renderer, driven straight from the real-time state (autobattler/liveview.py)."""
         from render.iso import Camera
-        from render.scene import Scene
-        if self.scene is None or self.scene.world is not r.world:
-            self.scene = Scene(r.world, self.assets, {"small": self.f["s"], "med": self.f["m"],
-                                                       "big": self.f["b"], "title": self.f["m"]})
-            W, H = self.screen.get_size()
-            zoom = getattr(self.assets, "native_scale", 1.5)
-            self.cam = Camera(W, H, zoom)
-            wx, wy = self.scene.player_world_pos()
-            self.cam.snap(wx, wy)
-        self.scene.update(self._dt)
-        wx, wy = self.scene.player_world_pos()
-        self.cam.follow(wx, wy, self._dt)
+        from autobattler.liveview import LiveView
         W, H = self.screen.get_size()
+        if self.scene is None or self.scene.world is not r.world:
+            self.scene = LiveView(r, self.assets, {"small": self.f["s"], "med": self.f["m"],
+                                                   "big": self.f["b"], "title": self.f["m"]})
+            zoom = self.cam.scale if self.cam is not None else getattr(self.assets, "native_scale", 1.5)
+            self.cam = Camera(W, H, zoom)
+            self.cam.snap(*self.scene.focus())
+        self.scene.update(self._dt, self.cfg["speed"])
+        self.cam.follow(*self.scene.focus(), dt=self._dt)
         z = self.cam.scale
         ow, oh = max(1, int(W / z)), max(1, int(H / z))
-        off = pygame.Surface((ow, oh))
-        rcam = Camera(ow, oh, 1.0)
-        rcam.wx, rcam.wy = self.cam.wx, self.cam.wy
-        self.scene.draw(off, rcam, None, None, None)
-        self.screen.blit(pygame.transform.scale(off, (W, H)), (0, 0))
+        if getattr(self, "_off", None) is None or self._off.get_size() != (ow, oh):
+            self._off = pygame.Surface((ow, oh))
+            self._rcam = Camera(ow, oh, 1.0)
+        self._off.fill((0, 0, 0))
+        self._rcam.wx, self._rcam.wy = self.cam.wx, self.cam.wy
+        self.scene.draw(self._off, self._rcam)
+        scale = pygame.transform.scale if abs(z - round(z)) < 1e-6 else pygame.transform.smoothscale
+        scale(self._off, (W, H), self.screen)
 
     def _draw_topdown(self, r):
         """Without Diablo II files: the floor seen from above (grey floor, red monsters, gold heroes)."""

@@ -221,7 +221,12 @@ class RunManager:
         return r
 
     def tick(self):
+        built = False
         for r in self.active():
+            if r.state == "build":
+                if built:
+                    continue                 # one new floor per frame: no pile-up of building
+                built = True
             try:
                 r.tick()
             except Exception:

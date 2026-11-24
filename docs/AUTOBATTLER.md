@@ -118,6 +118,31 @@ monsters that cast spells take a turn (their own spells, through the engine's mo
   Those monsters' numbers were made for turn-based play and hit far too often in real time; it is
   only for testing.
 
+## The watch view (autobattler/liveview.py)
+
+The engine's Scene plays events one after another, the way turns play out; real time doesn't go
+through that queue. Every frame each unit's picture is set from the real-time state: its position
+glides between its cell and the next one by how far into that step it is, and its animation is
+WL while walking, A1 while swinging, SC while casting, GH in hit recovery and DD when it dies, each
+played over exactly the frames the real-time code gives it (IAS / FCR / FHR). Missiles,
+explosions, overlays, damage numbers and deaths still go through the Scene's own code.
+
+## Speed
+
+- A hero decides at most every 6 frames while walking (monsters every 4), and keeps walking in
+  between.
+- Within 12 cells of where it is going, a unit steps straight at it when a free neighbouring cell
+  gets it closer; the path search is only used when that doesn't work (monsters search 1500
+  cells at most, heroes 6000).
+- One run builds its new floor per frame, so several runs reaching a new floor at once don't
+  pile up.
+- A hero who can't reach his target (a wall between, or boxed in by its pack) leaves it for two
+  seconds. With nothing in sight he heads for the nearest monster he can walk to (searched over
+  the floor's cells, once a second). If none of the monsters left can be reached, the floor counts
+  as done, so a run can't hang.
+- Measured without Diablo II files: 8 runs together take about 3 ms per game frame (D2's frame is
+  40 ms); the watch view draws a frame in about 8 ms.
+
 ## Screen (temporary)
 
 The first screen is a working placeholder until the manager screen is designed: the roster on

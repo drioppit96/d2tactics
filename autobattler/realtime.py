@@ -30,6 +30,7 @@ Rules used here:
   spells take a turn.
 """
 import random
+from collections import deque
 
 from game.grid import chebyshev
 
@@ -42,6 +43,9 @@ AI_DELAY = 8            # frames a monster waits after its attack before the nex
 ROUND = 50              # frames per turn of the turn-based upkeep (2 seconds)
 DRINK_COOLDOWN = 25     # frames between two potions
 REPATH = 12             # frames between two path searches while chasing
+THINK = 6               # frames between two decisions while a hero is walking
+MONSTER_THINK = 4       # the same for monsters
+DIRECT = 12             # cells: closer than this, walk straight at the goal (no path search)
 HERO_WALK = 6.0         # CharStats WalkVelocity
 HERO_RUN = 9.0          # CharStats RunVelocity (heroes run while on a run)
 MONSTER_VEL = 4.0       # when MonStats can't be read
@@ -49,7 +53,7 @@ MONSTER_VEL = 4.0       # when MonStats can't be read
 
 class State:
     __slots__ = ("mode", "frames", "hit_at", "target", "path", "prog", "next_path", "next_drink",
-                 "speed", "kind", "plan", "stunned")
+                 "speed", "kind", "plan", "stunned", "total", "next_think", "skip")
 
     def __init__(self):
         self.mode = "idle"          # idle | walk | attack | gethit
@@ -64,6 +68,9 @@ class State:
         self.kind = None            # "arrow" for ranged attacks
         self.plan = None            # the skill being cast (brain.Plan)
         self.stunned = 0            # frame until which it can't act (frozen, stunned)
+        self.total = 0              # frames of the current swing / cast / hit recovery
+        self.next_think = 0         # while walking: the frame of the next decision
+        self.skip = {}              # id(monster) -> frame: no way to reach it (a wall between), leave it be
 
 
 class Sim:
@@ -225,6 +232,10 @@ class Sim:
         if s.mode == "idle" and s.frames > 0:
             s.frames -= 1
             return
+        if s.mode == "walk" and s.path and self.frame < s.next_think:
+            self._advance(u, s)              # keep walking; the next decision comes in a moment
+            return
+        s.next_think = self.frame + (THINK if u.is_player else MONSTER_THINK)
         if u.is_player:
             self._hero_think(u, s)
         else:
@@ -237,8 +248,8 @@ class Sim:
             if self._drink(h):
                 s.next_drink = self.frame + DRINK_COOLDOWN
         tgt = s.target if (s.target is not None and s.target.alive) else None
-        if tgt is None or chebyshev(h.pos, tgt.pos) > HERO_SIGHT:
-            tgt = self._nearest(h, self.foes(), HERO_SIGHT)
+        if tgt is None or chebyshev(h.pos, tgt.pos) > HERO_SIGHT or s.skip.get(id(tgt), 0) > self.frame:
+            tgt = self._nearest(h, [m for m in self.foes() if s.skip.get(id(m), 0) <= self.frame], HERO_SIGHT)
             s.target = tgt
         awake = [m for m in self.foes() if getattr(m, "aware", False) or chebyshev(m.pos, h.pos) <= HERO_SIGHT]
         plan = b.decide(tgt, awake)
@@ -249,9 +260,9 @@ class Sim:
                 return
         if plan is None or plan.what == "attack":
             if tgt is None:
-                goal = self.goal_cell()
-                if goal is not None and chebyshev(h.pos, goal) > 2:
-                    b.last = "heading for the boss"
+                goal = self.goal_cell(h)
+                if goal is not None and chebyshev(h.pos, goal) > 1:
+                    b.last = "looking for monsters"
                     self._walk_to(h, s, goal, reach=1)
                 return
             self._engage(h, s, tgt, self._reach(h))
@@ -298,6 +309,7 @@ class Sim:
         if aim is not None and aim != h.pos:
             h.face(*aim)
         s.mode, s.frames, s.plan, s.path = "cast", max(1, plan.frames), plan, []
+        s.total = s.frames
         s.hit_at = max(0, s.frames // 2)
         if self.watched:
             self.w.emit("attack", h, aim or h.pos, "cast" if sk is not None and sk.kind not in ("attack", "melee") else "attack")
@@ -343,8 +355,11 @@ class Sim:
         r = getattr(u, "radius", 0) + getattr(tgt, "radius", 0)
         if chebyshev(u.pos, tgt.pos) <= reach + r:
             self._start_attack(u, s, tgt, ranged=reach > 1)
-        else:
-            self._walk_to(u, s, tgt.pos, reach=reach, target_r=getattr(tgt, "radius", 0))
+        elif not self._walk_to(u, s, tgt.pos, reach=reach, target_r=getattr(tgt, "radius", 0)):
+            # no way to it from here (behind a wall, or boxed in by its own pack): pick another
+            s.skip[id(tgt)] = self.frame + 2 * timing.FPS
+            s.target = None
+            s.next_think = self.frame
 
     def _nearest(self, u, units, limit):
         best, bd = None, limit + 1
@@ -354,15 +369,43 @@ class Sim:
                 best, bd = o, d
         return best
 
-    def goal_cell(self):
-        """Where a hero heads when nothing is in sight: the floor's boss, else the far end."""
-        boss = next((m for m in self.w.monsters if m.alive and getattr(m, "rift_boss", False)), None)
-        if boss is not None:
-            return boss.pos
-        rest = self.foes()
-        if rest:
-            h = self.living_heroes()[0]
-            return min(rest, key=lambda m: chebyshev(m.pos, h.pos)).pos
+    def goal_cell(self, h=None):
+        """Where a hero heads when nothing is in sight: the nearest monster he can walk to (found
+        by walking the floor's cells, so a wall between doesn't fool him), the boss in the end.
+        Searched again at most once a second."""
+        h = h or (self.living_heroes() or [None])[0]
+        if h is None:
+            return None
+        key = ("goal", id(h))
+        cached = self.st.get(key)
+        if cached is not None and cached[0] > self.frame and cached[1] is not None and cached[1].alive:
+            return cached[1].pos
+        foe = self._nearest_reachable(h)
+        self.st[key] = (self.frame + timing.FPS, foe)
+        if foe is None and self.foes():
+            self.stranded = True             # monsters left, none of them reachable: floor done
+        return foe.pos if foe is not None else None
+
+    def _nearest_reachable(self, h, cap=40000):
+        at = {}
+        for m in self.foes():
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    at.setdefault((m.x + dx, m.y + dy), m)
+        if not at:
+            return None
+        g = self.w.grid
+        seen = {h.pos}
+        q = deque([h.pos])
+        while q and len(seen) < cap:
+            c = q.popleft()
+            m = at.get(c)
+            if m is not None:
+                return m
+            for nb in g.neighbors(*c):
+                if nb not in seen:
+                    seen.add(nb)
+                    q.append(nb)
         return None
 
     # ------------------------------------------------------------ actions
@@ -374,7 +417,7 @@ class Sim:
             frames = timing.attack_frames(fpd, ias, self._wsm(u), 0, speed)
         else:
             frames = timing.attack_frames(fpd, 0, 0, 0, speed)
-        s.mode, s.frames, s.target = "attack", frames, tgt
+        s.mode, s.frames, s.target, s.total = "attack", frames, tgt, frames
         s.hit_at = frames // 2
         s.kind = "arrow" if ranged and (not u.is_player or getattr(u, "ranged", False)) else None
         s.path = []
@@ -405,20 +448,56 @@ class Sim:
         fpd, speed = self.t.fpd(u, "GH")
         fhr = u.mod("fhr") if getattr(u, "is_player", False) and hasattr(u, "mod") else 0
         s.mode = "gethit"
-        s.frames = timing.hit_recovery_frames(fpd, fhr, speed)
+        s.frames = s.total = timing.hit_recovery_frames(fpd, fhr, speed)
         s.hit_at = -1
         s.path = []
 
     def _walk_to(self, u, s, goal, reach=1, target_r=0):
         if s.speed <= 0:
             return
-        if not s.path or self.frame >= s.next_path:
-            path = self.w.path_near(u, goal, reach=reach, target_r=target_r, limit=6000)
-            s.next_path = self.frame + REPATH
+        """Walk towards `goal`. -> False when there is no way there from here."""
+        if s.speed <= 0:
+            return False
+        want = reach + getattr(u, "radius", 0) + target_r
+        d = chebyshev(u.pos, goal)
+        if d <= want:
+            s.path = []
+            return True
+        if d <= DIRECT:
+            step = self._direct_step(u, goal)
+            if step is not None:
+                s.path = [step]              # close by and nothing in the way: straight at it
+                s.mode = "walk"
+                self._advance(u, s)
+                return True
+        if not s.path or self.frame >= s.next_path or (s.path and s.path[-1] != goal and d <= DIRECT):
+            limit = 6000 if u.is_player else 1500
+            path = self.w.path_near(u, goal, reach=reach, target_r=target_r, limit=limit)
+            s.next_path = self.frame + (REPATH * 3 if u.is_player and d > DIRECT else REPATH)
             s.path = list(path or [])
             if not s.path:
-                return
+                s.mode = "idle"
+                return False
         s.mode = "walk"
+        self._advance(u, s)
+        return True
+
+    def _direct_step(self, u, goal):
+        """The free neighbouring cell that gets closest to `goal`, if it gets closer at all."""
+        if getattr(u, "radius", 0):
+            return None                      # (big monsters need the path search's room checks)
+        g = self.w.grid
+        best, bd = None, (chebyshev(u.pos, goal), 0.0)
+        for nb in g.neighbors(*u.pos):
+            if self.w.unit_at(nb) is not None:
+                continue
+            dd = (chebyshev(nb, goal), (nb[0] - goal[0]) ** 2 + (nb[1] - goal[1]) ** 2)
+            if dd < bd:
+                best, bd = nb, dd
+        return best
+
+    def _advance(self, u, s):
+        """Move along s.path at the unit's speed (part of a cell per frame)."""
         s.prog += s.speed / timing.FPS
         moved = []
         while s.prog >= 1.0 and s.path:
@@ -481,7 +560,10 @@ class Sim:
         return bool(bosses) and not any(m.alive for m in bosses)
 
     def cleared(self):
-        """The floor is done: its boss is dead (or, with no boss on it, every monster is)."""
+        """The floor is done: its boss is dead (or, with no boss on it, every monster is), or the
+        monsters that are left can't be reached from where the heroes are."""
+        if getattr(self, "stranded", False):
+            return True
         if any(getattr(m, "rift_boss", False) for m in self.w.monsters):
             return self.boss_dead()
         return not self.foes()
