@@ -85,8 +85,10 @@ def apply_d2_rules():
     actworld.BOSS_LIFE_NORMAL = 1.0  # (D2 Tactics: act bosses -40% on Normal)
     rift.KEEPER_LIFE = 1.0           # (D2 Tactics: a floor keeper x2.5 on top of a unique)
     from game import potions
-    # the belt: healing potions in columns 1-2, mana in 3-4, rejuvenation wherever there is room
-    potions.COLUMN_RULE = {"heal": (0, 1), "mana": (2, 3), "rejuv": (0, 1, 2, 3)}
+    # the belt: what each row holds, counted from the bottom, set per hero (Inventory screen)
+    potions.COLUMN_RULE = None
+    from . import brain
+    potions.ROW_RULE = brain.belt_rows
     import game.world as gw
     gw.PLAYER_HIT_FLOOR = 0.05
     gw.MONSTER_HIT_FLOOR = 0.05

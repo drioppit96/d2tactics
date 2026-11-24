@@ -325,11 +325,11 @@ class Run:
             tier = 1
         bought = 0
         guard = 0
-        rule = potions.COLUMN_RULE
+        rule = potions.COLUMN_RULE or potions.ROW_RULE
         while len(getattr(h, "belt", []) or []) < cap and guard < 40:
             guard += 1
             if rule:
-                # healing fills columns 1-2, mana 3-4 (config.apply_d2_rules)
+                # the rows he has for each kind (his belt rows, Inventory screen)
                 free_hp = potions._free_column(h, _probe("heal")) is not None
                 free_mp = potions._free_column(h, _probe("mana")) is not None
                 if not free_hp and not free_mp:

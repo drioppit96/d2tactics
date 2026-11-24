@@ -188,8 +188,72 @@ def cooldown_of(it):
 COLUMN_RULE = None
 
 
+#: which kind of potion each belt row holds, counted from the bottom: a function of the hero giving
+#: a list like ["heal", "heal", "mana", "mana"] ("any" takes every kind; a healing row also takes
+#: rejuvenation potions), or None for D2's own rule. The D2 Autobattler sets it per hero.
+ROW_RULE = None
+
+
+def row_accepts(row_kind, kind):
+    return row_kind in ("any", kind) or (row_kind == "heal" and kind == "rejuv")
+
+
+def _row_kinds(p):
+    rows = belt_rows(p)
+    try:
+        rule = list(ROW_RULE(p) or [])
+    except Exception:
+        rule = []
+    return [(rule[r] if r < len(rule) else "any") for r in range(rows)]
+
+
+def _fits_rows(kinds_in_col, rule):
+    """Can these potions (their kinds) be ordered so that every row takes the one in it?"""
+    if len(kinds_in_col) > len(rule):
+        return False
+    free = list(rule)
+    # the pickiest first: exact kinds before what an 'any' row could take
+    for k in sorted(kinds_in_col, key=lambda k: sum(1 for r in free if row_accepts(r, k))):
+        spot = next((i for i, r in enumerate(free) if r == k), None)
+        if spot is None:
+            spot = next((i for i, r in enumerate(free) if row_accepts(r, k)), None)
+        if spot is None:
+            return False
+        free.pop(spot)
+    return True
+
+
+def arrange(p):
+    """Put the potions of every belt column in the rows their kind belongs to (after one was drunk
+    the ones above slide down, as in D2; this puts them back where the rows say)."""
+    if ROW_RULE is None:
+        return
+    rule = _row_kinds(p)
+    out = []
+    for c in range(belt_slots(p)):
+        col = column(p, c)
+        left = list(col)
+        ordered = []
+        for r in range(len(col)):
+            want = rule[r] if r < len(rule) else "any"
+            pick = next((x for x in left if getattr(x, "potion", "") == want), None) or \
+                next((x for x in left if row_accepts(want, getattr(x, "potion", ""))), None) or left[0]
+            left.remove(pick)
+            ordered.append(pick)
+        out += ordered
+    p.belt[:] = out + [x for x in p.belt if getattr(x, "belt_col", None) is None]
+
+
 def _free_column(p, it):
     n, rows = belt_slots(p), belt_rows(p)
+    if ROW_RULE is not None:
+        rule = _row_kinds(p)
+        kind = getattr(it, "potion", "")
+        for c in range(n):
+            col = column(p, c)
+            if len(col) < rows and _fits_rows([getattr(x, "potion", "") for x in col] + [kind], rule):
+                return c
+        return None
     rule = COLUMN_RULE.get(getattr(it, "potion", None)) if COLUMN_RULE else None
     if rule is not None:
         cols = {c: column(p, c) for c in rule if c < n}
@@ -225,6 +289,7 @@ def belt_add(p, it, world=None):
     it.belt_col = c
     it.inv_pos = None
     p.belt.append(it)
+    arrange(p)
     return True
 
 
@@ -321,6 +386,7 @@ def drink(world, c, row=None):
             return False
         p.ap -= POTION_AP
     belt_remove(p, pot)                      # every potion is used up
+    arrange(p)
     world.emit("sound", "item_potion_drink")
     apply(world, pot)
     world._maybe_auto_end()

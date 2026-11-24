@@ -114,6 +114,19 @@ def profile(hero):
     return prof
 
 
+BELT_KINDS = ("heal", "mana", "rejuv", "any")
+BELT_NAMES = {"heal": "Healing", "mana": "Mana", "rejuv": "Rejuvenation", "any": "Any"}
+DEFAULT_BELT = ["heal", "heal", "mana", "mana"]
+
+
+def belt_rows(hero):
+    """What each of his belt rows holds, from the bottom (rows 1-4)."""
+    rows = profile(hero).setdefault("belt_rows", list(DEFAULT_BELT))
+    while len(rows) < 4:
+        rows.append("any")
+    return rows
+
+
 def setting(hero, key):
     prof = profile(hero)
     v = prof.get(key)

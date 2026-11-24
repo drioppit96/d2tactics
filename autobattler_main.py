@@ -904,7 +904,6 @@ class App:
         if not loose:
             L.text(c, "small", "Floor: put items", GREY, floor.x, floor.y + 6, "center", floor.w)
             L.text(c, "small", "down here", GREY, floor.x, floor.y + 22, "center", floor.w)
-        self._draw_belt(h, 18, y0 + 80)
         for i, it in enumerate(loose[:5]):
             r = pygame.Rect(floor.x + 4 + i * 28, floor.y + 3, 26, 36)
             L.icon(c, it, r.x, r.y, r.w, r.h)
@@ -913,9 +912,9 @@ class App:
             self.region(r, self.inv_floor, it)
         # what happened last
         for i, (text, colr) in enumerate(b.messages[-2:]):
-            L.text(c, "small", text, colr or GREY, 172, y0 + 96 + i * 14)
+            L.text(c, "small", text, colr or GREY, 18, y0 + 82 + i * 14)
         if b.cursor_mode:
-            L.text(c, "small", "Click the item to identify", GOLD, 172, y0 + 124)
+            L.text(c, "small", "Click the item to identify", GOLD, 18, y0 + 110)
         self.button((226, 546, 90, 22), "Back", lambda: self.go("roster"))
         # held item: anywhere outside the panel puts it on the floor
         if b.held is not None:
@@ -925,32 +924,81 @@ class App:
         # ---- right: D2's inventory panel, 10 x 8 backpack
         self._inventory_right(b)
 
-    def _draw_belt(self, h, x, y):
-        """His belt, as D2's control bar shows it: the four slots (keys 1-4) with the potion each
-        will drink next and how many are stacked in it. Healing in 1-2, mana in 3-4."""
+    ROW_SHORT = {"heal": "HP", "mana": "MP", "rejuv": "RJ", "any": "ANY"}
+    ROW_COLOR = {"heal": (200, 60, 50), "mana": (70, 90, 220), "rejuv": (170, 70, 190), "any": (150, 140, 120)}
+
+    def _draw_belt(self, h):
+        """His belt above the charm inventory, as D2 draws it opened: four slots (keys 1-4), the
+        rows stacked from the bottom. Beside each row, what kind of potion it holds: click to
+        change (Healing, Mana, Rejuvenation, Any)."""
         c, L = self.canvas, self.look
         from game import potions
-        rows = potions.belt_rows(h)
-        L.text(c, "small", "Belt (%d x %d)" % (potions.belt_slots(h), rows), GOLD, x, y - 2)
-        for col in range(potions.belt_slots(h)):
-            r = pygame.Rect(x + col * 37, y + 14, 34, 34)
-            L.inset(c, r)
-            stack = potions.column(h, col)
-            if stack:
-                L.icon(c, stack[0], r.x + 2, r.y + 2, r.w - 4, r.h - 4)
-                L.text(c, "small", "%d" % len(stack), WHITE, r.x, r.bottom - 14, "right", r.w - 2)
-                if self.hot(r):
-                    self._tip = L.item_lines(stack[0], h) + [("%d of %d in slot %d" % (len(stack), rows, col + 1), GREY)]
-            elif self.hot(r):
-                kind = "healing" if col < 2 else "mana"
-                self._tip = [("Slot %d: empty" % (col + 1), WHITE), ("For %s potions" % kind, GREY)]
-            L.text(c, "small", str(col + 1), DARK_TEXT, r.x + 2, r.y + 1)
+        rows_have = potions.belt_rows(h)
+        kinds = brain.belt_rows(h)
+        frame = pygame.Rect(self.CHARM_X, 44, 136, 206)
+        L.panel(c, frame)
+        L.text(c, "med", "Belt", GOLD, frame.x, frame.y + 8, "center", frame.w)
+        k, x0, bottom = 22, frame.x + 8, frame.y + 180
+        for r in range(potions.MAX_ROWS):
+            y = bottom - (r + 1) * (k + 2)
+            open_row = r < rows_have
+            for col in range(potions.belt_slots(h)):
+                rect = pygame.Rect(x0 + col * (k + 1), y, k, k)
+                L.inset(c, rect)
+                stack = potions.column(h, col)
+                if open_row and r < len(stack):
+                    it = stack[r]
+                    L.icon(c, it, rect.x + 1, rect.y + 1, rect.w - 2, rect.h - 2)
+                    if self.hot(rect):
+                        self._tip = L.item_lines(it, h) + [("Slot %d, row %d" % (col + 1, r + 1), GREY)]
+                elif not open_row:
+                    dim = pygame.Surface(rect.size, pygame.SRCALPHA)
+                    dim.fill((0, 0, 0, 160))
+                    c.blit(dim, rect.topleft)
+            sel = pygame.Rect(x0 + 4 * (k + 1) + 3, y, 28, k)
+            kind = kinds[r] if r < len(kinds) else "any"
+            pygame.draw.rect(c, (20, 18, 16), sel)
+            pygame.draw.rect(c, self.ROW_COLOR[kind] if open_row else DARK_TEXT, sel, 1)
+            L.text(c, "small", self.ROW_SHORT[kind], self.ROW_COLOR[kind] if open_row else DARK_TEXT,
+                   sel.x, sel.y + 5, "center", sel.w)
+            self.region(sel, self.belt_row_kind, r)
+            if self.hot(sel):
+                self._tip = [("Row %d (from the bottom): %s" % (r + 1, brain.BELT_NAMES[kind]), WHITE),
+                             ("Click: Healing, Mana, Rejuvenation, Any", GREY)] + \
+                    ([("His belt has %d row%s; a better belt opens this one" % (rows_have, "" if rows_have == 1 else "s"), RED)]
+                     if not open_row else [])
+        L.text(c, "small", "1  2  3  4", DARK_TEXT, x0 + 6, bottom + 2)
+
+    def belt_row_kind(self, r):
+        """Cycle what a belt row holds; the potions already in the belt are put in order again."""
+        h = self.hero()
+        if h is None:
+            return
+        rows = brain.belt_rows(h)
+        order = list(brain.BELT_KINDS)
+        rows[r] = order[(order.index(rows[r]) + 1) % len(order)] if rows[r] in order else "heal"
+        from game import potions
+        potions.arrange(h)
+        # potions that no longer fit their column go back in where they can, else to the backpack
+        loose = []
+        for c in range(potions.belt_slots(h)):
+            col = potions.column(h, c)
+            while col and not potions._fits_rows([getattr(x, "potion", "") for x in col], potions._row_kinds(h)):
+                it = col.pop()
+                potions.belt_remove(h, it)
+                loose.append(it)
+        for it in loose:
+            if not potions.belt_add(h, it) and not h.inv_add(it):
+                h.belt.append(it)          # (nowhere else: it stays, out of order)
+        if h.name not in self.mgr.on_floor_names():
+            roster.save(h)
 
     def _inventory_right(self, b):
         c, L, h = self.canvas, self.look, b.player
         self._draw_d2_inventory(b)
         self.region((self.INV_X, self.INV_Y, 320, 548), self.inv_click)
         self._draw_charms(b)
+        self._draw_belt(h)
         if b.held is not None:
             w, hh = h._size(b.held)
             ic = self._inv_geometry()[3]

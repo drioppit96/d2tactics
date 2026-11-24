@@ -962,21 +962,26 @@ class Sim:
         return 0
 
     def _drink(self, h, kinds=("heal", "rejuv")):
-        """A potion of the first of `kinds` he has in his belt, by the engine's own potion code (as
-        him, so every hero of a group drinks from his own belt)."""
+        """A potion of the first of `kinds` he has anywhere in his belt (any row, as a right click
+        in D2's open belt), by the engine's own potion code - as him, so every hero of a group
+        drinks from his own belt."""
         from game import potions, tactics
         w = self.w
         try:
-            cols = [c for c in range(potions.belt_slots(h)) if potions.column(h, c)]
-            cols.sort(key=lambda c: kinds.index(getattr(potions.column(h, c)[0], "potion", ""))
-                      if getattr(potions.column(h, c)[0], "potion", "") in kinds else 99)
-            for c in cols:
-                col = potions.column(h, c)
-                if col and getattr(col[0], "potion", "") in kinds:
-                    with self._Guard(w):
-                        with tactics.acting_as(w, h):
-                            h.ap = max(getattr(h, "ap", 0), 10)
-                            return bool(self._engine(potions.drink, w, c))
+            best = None
+            for c in range(potions.belt_slots(h)):
+                for row, it in enumerate(potions.column(h, c)):
+                    k = getattr(it, "potion", "")
+                    if k in kinds:
+                        key = (kinds.index(k), row)
+                        if best is None or key < best[0]:
+                            best = (key, c, row)
+            if best is None:
+                return False
+            with self._Guard(w):
+                with tactics.acting_as(w, h):
+                    h.ap = max(getattr(h, "ap", 0), 10)
+                    return bool(self._engine(potions.drink, w, best[1], best[2]))
         except Exception:
             import traceback
             traceback.print_exc()

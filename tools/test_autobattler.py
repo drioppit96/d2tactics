@@ -297,30 +297,34 @@ def test_town_and_back():
 
 
 def test_belt_columns():
-    """Healing potions in belt columns 1-2, mana in 3-4; picked up while there is a place."""
+    """Belt rows by kind, counted from the bottom (his choice); any row can be drunk from."""
     from autobattler import brain
     from game import potions
     from game.items import Item
     config.apply_d2_rules()
     h = _hero("Belted")
+    belt = Item("Plated Belt", "hbl", "belt")
+    h.equipment["belt"] = belt
 
     def pot(kind, code):
         it = Item(kind, code, None, kind="potion")
         it.potion = kind
         return it
-    for _ in range(3):
-        potions.belt_add(h, pot("heal", "hp1"))
+    brain.belt_rows(h)[:] = ["heal", "heal", "mana", "mana"]
+    for _ in range(8):
         potions.belt_add(h, pot("mana", "mp1"))
-    cols = {c: [x.potion for x in potions.column(h, c)] for c in range(4)}
-    check(all(k == "heal" for c in (0, 1) for k in cols[c]) and all(k == "mana" for c in (2, 3) for k in cols[c])
-          and sum(len(v) for v in cols.values()) == min(6, 4 * potions.belt_rows(h)),
-          "healing in columns 1-2, mana in 3-4: %s" % cols)
-    brain.pickup_rules(h)["potions"] = False
-    full = potions._free_column(h, pot("heal", "hp1")) is None
-    check(brain.wants(h, pot("mana", "mp1")) == (potions._free_column(h, pot("mana", "mp1")) is not None)
-          and (not brain.wants(h, pot("heal", "hp1")) if full else True),
-          "potions are picked up while the belt has a place for them")
-    potions.COLUMN_RULE = None
+        potions.belt_add(h, pot("heal", "hp1"))
+    rows = [[getattr(x, "potion", "") for x in potions.column(h, c)] for c in range(4)]
+    check(all(col == ["heal", "heal", "mana", "mana"] for col in rows), "rows 1-2 healing, 3-4 mana: %s" % rows)
+    check(not potions.has_room(h, pot("mana", "mp1")), "full belt: no more room")
+    brain.belt_rows(h)[:] = ["mana", "any", "any", "any"]
+    del h.belt[:]
+    for _ in range(4):
+        potions.belt_add(h, pot("heal", "hp1"))
+    check(potions.column(h, 0) and potions.column(h, 0)[0].potion == "heal" and len(potions.column(h, 0)) == 1
+          or all(len(potions.column(h, c)) <= 3 for c in range(4)),
+          "a mana bottom row keeps healing potions above it")
+    potions.ROW_RULE = None
 
 
 def test_full_bag_trip():
