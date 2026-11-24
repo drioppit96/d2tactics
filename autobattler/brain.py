@@ -46,7 +46,9 @@ STYLES = {
     "careful": dict(potion_at=60, mana_reserve=25, back_off_at=95),
 }
 DEFAULT_PROFILE = dict(style="balanced", potion_at=None, mana_reserve=None, keep_distance="auto",
-                       favourite="", never=[], auto_points=False)
+                       favourite="", never=[], auto_points=False,
+                       slots=["", "", "", "", "", "", "", ""])
+SLOTS = 8
 
 DAMAGE_KINDS = ("missile", "nova", "area", "line", "chain", "charge", "spiral", "corpse_blast", "melee", "attack")
 SUMMON_KINDS = ("summon", "golem", "raise", "revive", "turret", "wall")
@@ -358,6 +360,10 @@ class Brain:
             dps = self.weapon_avg() * self.hit_chance(target) * self.res_factor(target, "phys") * timing.FPS / max(1, frames)
             plans.append(Plan("attack", None, target, None, frames, dps, "attack"))
 
+        slots = [x for x in (profile(h).get("slots") or []) if x]
+        if slots and book is not None:
+            return self._decide_slots(slots, book, target, near, boss, frame, plans)
+
         if book is not None:
             for name in book.actives():
                 if name in never or frame < self.cool.get(name, 0):
@@ -388,6 +394,40 @@ class Brain:
         best = max(plans, key=lambda p: p.score)
         self.last = best.why
         return best
+
+    def _decide_slots(self, slots, book, target, near, boss, frame, plans):
+        """The player's skill bar: buffs, auras and warcries that buff come first whenever one
+        needs casting; then the first skill in the bar's order that makes sense now (enough mana,
+        a target in reach, not a curse already on it, room for another summon ...); then the
+        normal attack. Skills not on the bar are not used."""
+        h = self.h
+        usable = []
+        for name in slots:
+            s = book.tree.get(name)
+            if s is None or s.kind == "passive" or not book.level(name) or frame < self.cool.get(name, 0):
+                continue
+            try:
+                mana = float(book.mana_cost(name)) if not book.charged_only(name) else 0.0
+            except Exception:
+                continue
+            if mana > h.mana:
+                continue
+            p = self._score(name, s, target, near, boss, frame)
+            if p is None or p.score <= 0:
+                continue
+            usable.append((s, p))
+        for s, p in usable:
+            if s.kind in ("aura", "buff") or (s.kind == "cry" and not self._offensive_cry(s)):
+                self.last = p.why
+                return p
+        if usable:
+            p = usable[0][1]
+            self.last = p.why
+            return p
+        if plans:
+            self.last = plans[0].why
+            return plans[0]
+        return None
 
     def info(self, name, s):
         """A skill's numbers (damage, element, radius, duration, cast frames): working them out is

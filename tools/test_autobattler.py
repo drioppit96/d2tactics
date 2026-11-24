@@ -219,6 +219,34 @@ def test_no_essences():
     check(not essences.DROPS and essences.roll_drop(None, None) is None, "no essences drop in the autobattler")
 
 
+def test_skill_bar():
+    """The 8-slot skill bar: buffs first, then the slots in order; skills not on it unused."""
+    from autobattler import brain, points
+    config.apply_d2_rules()
+    random.seed(5)
+    h = _hero("Barred")
+    h.level = 12
+    h.skills.points = 10
+    for n in ("Bash", "Howl", "Shout", "Double Swing"):
+        points.learn(h, n)
+    h.base_eng = 200
+    h.recalc()
+    h.mana = h.max_mana
+    brain.profile(h)["slots"] = ["Double Swing", "Shout", "", "", "", "", "", ""]
+    mgr = RunManager(_NoAssets(), _cfg())
+    r = mgr.start([h])
+    used = {}
+    for _ in range(25 * 60):
+        _tick(mgr)
+        if r.sim is not None:
+            for k, v in r.sim.casts.items():
+                used[k] = max(used.get(k, 0), v)
+        if r.state == "over":
+            break
+    check(used.get("Shout", 0) >= 1 and used.get("Double Swing", 0) >= 1, "the bar's skills are used: %s" % used)
+    check(not used.get("Bash") and not used.get("Howl"), "skills not on the bar are not used")
+
+
 def test_cast_breakpoints():
     from autobattler.brain import CAST_FRAMES0
     sor = [timing.cast_frames(CAST_FRAMES0["sor"] + 1, f) for f in (0, 9, 20, 37, 63, 105, 200)]
@@ -425,6 +453,7 @@ if __name__ == "__main__":
     test_points_by_hand()
     test_town_stash()
     test_no_essences()
+    test_skill_bar()
     test_inventory_screen()
     print("\n%s" % ("all passed" if not FAILS else "%d FAILED" % len(FAILS)))
     sys.exit(1 if FAILS else 0)

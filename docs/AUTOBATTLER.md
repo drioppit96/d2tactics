@@ -211,6 +211,12 @@ is drawn with plain boxes and a system font.
   run, To town, Watch, Style, Inventory / Loot, Abilities, Pickup, Shop, Stash. A hero not on a
   run is in town (Sanctuary, the Act 6 town). The speed buttons are gone; `speed` in
   autobattler.ini still sets the game speed.
+- Skill bar (on the hero card, 8 slots): click a slot to choose one of his learned skills for it
+  (D2's icon and tooltip), right click to empty it. With any slot filled, his brain uses only the
+  bar: a buff, aura or warcry that buffs is cast first whenever it needs casting; otherwise the
+  first skill in slot order that makes sense at that moment (enough mana, a target in reach, a
+  curse not already on it, room for another summon, its cooldown over); otherwise his normal
+  attack. With every slot empty he picks his skills himself, as before (brain.decide).
 - To town: the selected hero's run ends at once and he is back in town (Stop run waits for the
   end of the floor). The traders restock each time a hero comes back.
 - Shop and Stash (heroes in town only) are two windows, each with D2's inventory panel on the
