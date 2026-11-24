@@ -10,8 +10,8 @@ Screens:
                 D2's inventory panel: his gear and his 10 x 8 backpack (twice D2's); equip, take
                 off, move, identify, belt potions, sell
     Abilities   D2's character panel (stats, left) and skill tree (right): spend the points
-    Sanctuary   town (heroes not on a run): Tyrael's, Hadriel's and Izual's shops, Hadriel's
-                gambling, and the stash every hero shares
+    Shop        in town (Sanctuary): Tyrael's, Hadriel's and Izual's shelves, Hadriel's gambling
+    Stash       in town: the stash every hero shares
     Pickup      what the selected hero picks up on his own
     Watch       the selected hero's run full screen
 
@@ -882,8 +882,7 @@ class App:
             L.text(c, "small", "?", GOLD, self.mouse[0] + 10, self.mouse[1] - 4)
 
     # ------------------------------------------------------------ town: shop and stash
-    TOWN_TABS = [("tyrael3", "Tyrael"), ("malachai", "Hadriel"), ("izualghost", "Izual"),
-                 ("gamble", "Gamble"), ("stash", "Stash")]
+    SHOP_TABS = [("tyrael3", "Tyrael"), ("malachai", "Hadriel"), ("izualghost", "Izual"), ("gamble", "Gamble")]
     STORE_CELL = 29                  # D2's own cell, like the inventory
     STASH_CELL = 22
 
@@ -929,9 +928,9 @@ class App:
             self.message = "%s back in town." % ", ".join(names)
 
     def open_town(self, tab):
+        """Shop and Stash are two windows: the shop's traders, or the account's stash."""
         if tab == "shop":
-            tab = getattr(self, "town_tab", "tyrael3")
-            tab = "tyrael3" if tab == "stash" else tab
+            tab = getattr(self, "shop_tab", "tyrael3")
         self.town_tab = tab
         self.go("town")
 
@@ -942,7 +941,7 @@ class App:
         return b.store("malachai" if tab == "gamble" else tab, gamble=tab == "gamble")
 
     def town_set_tab(self, tab):
-        self.town_tab = tab
+        self.town_tab = self.shop_tab = tab
 
     def store_page(self, i):
         st = self._town_store(self.bench)
@@ -1024,7 +1023,7 @@ class App:
         c, L = self.canvas, self.look
         b = self.gear_bench()
         h = b.player if b else None
-        self._title("Sanctuary")
+        self._title("Stash" if getattr(self, "town_tab", "") == "stash" else "Shop")
         self._town_hot = []
         if h is None or self.run_of(h.name) is not None:
             L.text(c, "med", "Only a hero in town can trade or use the stash.", GOLD, 0, 280, "center", W)
@@ -1035,11 +1034,12 @@ class App:
         tab = getattr(self, "town_tab", "tyrael3")
         L.panel(c, (6, 40, 456, 534))
         L.text(c, "med", "%s - gold %d" % (h.name, h.gold), GOLD, 6, 50, "center", 456)
-        for i, (key, label) in enumerate(self.TOWN_TABS):
-            r = pygame.Rect(18 + i * 87, 72, 83, 24)
-            self.button(r, label, self.town_set_tab, key)
-            if key == tab:
-                pygame.draw.rect(c, GOLD, r.inflate(2, 2), 1)
+        if tab != "stash":
+            for i, (key, label) in enumerate(self.SHOP_TABS):
+                r = pygame.Rect(18 + i * 108, 72, 104, 24)
+                self.button(r, label, self.town_set_tab, key)
+                if key == tab:
+                    pygame.draw.rect(c, GOLD, r.inflate(2, 2), 1)
         if tab == "stash":
             self._draw_stash(b)
         else:
@@ -1092,22 +1092,22 @@ class App:
         c, L, h = self.canvas, self.look, b.player
         st = self.shared_stash()
         from game.cube import STASH_TABS
-        self.button((18, 104, 120, 22), "Gems & Runes", self.stash_set_tab, 0)
+        self.button((18, 72, 120, 22), "Gems & Runes", self.stash_set_tab, 0)
         if st.tab == 0:
-            pygame.draw.rect(c, GOLD, pygame.Rect(18, 104, 120, 22).inflate(2, 2), 1)
+            pygame.draw.rect(c, GOLD, pygame.Rect(18, 72, 120, 22).inflate(2, 2), 1)
         cur = max(1, st.tab)
-        self.button((150, 104, 30, 22), "<", self.stash_set_tab, cur - 1 if cur > 1 else STASH_TABS - 1)
-        self.button((184, 104, 96, 22), "Tab %d / %d" % (cur, STASH_TABS - 1), self.stash_set_tab, cur)
+        self.button((150, 72, 30, 22), "<", self.stash_set_tab, cur - 1 if cur > 1 else STASH_TABS - 1)
+        self.button((184, 72, 96, 22), "Tab %d / %d" % (cur, STASH_TABS - 1), self.stash_set_tab, cur)
         if st.tab != 0:
-            pygame.draw.rect(c, GOLD, pygame.Rect(184, 104, 96, 22).inflate(2, 2), 1)
-        self.button((284, 104, 30, 22), ">", self.stash_set_tab, cur + 1 if cur < STASH_TABS - 1 else 1)
-        L.text(c, "small", "Shared by every hero", GREY, 322, 108)
+            pygame.draw.rect(c, GOLD, pygame.Rect(184, 72, 96, 22).inflate(2, 2), 1)
+        self.button((284, 72, 30, 22), ">", self.stash_set_tab, cur + 1 if cur < STASH_TABS - 1 else 1)
+        L.text(c, "small", "Shared by every hero", GREY, 322, 76)
         if st.tab == 0:
             self._draw_bank(b, st)
             return
         k = self.STASH_CELL
         gw, gh = st.grid_size
-        gx, gy = 18 + (432 - gw * k) // 2, 134
+        gx, gy = 18 + (432 - gw * k) // 2, 104
         self._stash_xy = (gx, gy)
         grid = pygame.Rect(gx - 1, gy - 1, gw * k + 2, gh * k + 2)
         L.inset(c, grid)
@@ -1143,7 +1143,7 @@ class App:
     def _draw_bank(self, b, st):
         """The gem & rune tab: one stack per kind, with how many."""
         c, L = self.canvas, self.look
-        area = pygame.Rect(18, 134, 432, 380)
+        area = pygame.Rect(18, 104, 432, 400)
         L.inset(c, area)
         self.region(area, self.bank_click, None)        # (a gem or rune dropped here goes on its stack)
         if self.content is None:

@@ -202,8 +202,9 @@ is drawn with plain boxes and a system font.
   autobattler.ini still sets the game speed.
 - To town: the selected hero's run ends at once and he is back in town (Stop run waits for the
   end of the floor). The traders restock each time a hero comes back.
-- Sanctuary (Shop, Stash; heroes in town only): the left half has five tabs, D2's inventory panel
-  is on the right, as on the Inventory screen.
+- Shop and Stash (heroes in town only) are two windows, each with D2's inventory panel on the
+  right, as on the Inventory screen. The Shop window has four tabs (Tyrael, Hadriel, Izual,
+  Gamble); the Stash window has only the stash.
   - Tyrael, Hadriel, Izual: Sanctuary's three traders, with the stock and prices of the game's own
     vendors (game/itemactions.py: Malah's, Gheed's and Halbu's lists). The healing and mana
     potions follow the act of the hero's deepest floor. Click or right click an item to buy it.
