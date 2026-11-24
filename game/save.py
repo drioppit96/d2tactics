@@ -448,7 +448,8 @@ def build_player(data, content):
     # by this hero's own INV_H would tear up a backpack that is about to be seven rows tall again.
     for it in p.inventory:
         pos = getattr(it, "inv_pos", None)
-        if pos and (pos[1] + max(1, getattr(it, "invh", 1) or 1) > 7 or pos[0] >= p.INV_W):
+        if pos and (pos[1] + max(1, getattr(it, "invh", 1) or 1) > max(7, p.INV_H)
+                    or pos[0] >= p.INV_W):
             it.inv_pos = None
     loose = [it for it in p.inventory if getattr(it, "inv_pos", None) is None]
     for it in loose:

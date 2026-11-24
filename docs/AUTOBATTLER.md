@@ -168,7 +168,8 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
   code (gold to the purse, potions to the belt while it has room, tomes, stacks, the backpack).
   The autobattler has no quests: the engine's quest hook is skipped on pickup. An item that doesn't
   fit is left lying.
-- Autobattler heroes have the D2 Tactics bigger backpack (10 x 7).
+- Autobattler heroes have a 10 x 8 backpack, twice D2's 10 x 4 (`qol["inv_rows"] = 8`, read by
+  `Player.INV_H`; heroes saved with a 10 x 7 backpack keep their items where they were).
 - Pickup rules, per hero (Pickup screen): gold, potions, runes, gems, charms, jewelry, unique,
   set, rare and crafted, magic, plain items with sockets, plain items, everything else, and a
   list of words: an item whose name contains one of them is always picked up.
@@ -189,19 +190,36 @@ is drawn with plain boxes and a system font.
   search field that matches the name and the item's description lines. Green items are ones his
   pickup rules want. Click an item to take it with him (the engine's rule: outside a fight, from
   anywhere on the floor). His backpack is shown beside it.
-- Inventory: what he wears and his backpack, with tooltips.
+- Inventory: D2's own inventory panel (invchar6), drawn by the game's HUD code, with the
+  equipment slots, the I / II weapon tabs and the backpack grown to 8 rows. Beside it: his stats,
+  his belt, and the buttons. The item handling is `autobattler/gear.py`, which uses the World's
+  own item methods, so the game's rules apply (requirements, two-handed weapons and shields, rings,
+  off-hand weapons for Barbarians and Assassins).
+  - Click: pick an item up onto the cursor, put it down in the backpack (swapping with one item
+    under it, like D2), or wear it in a slot (what was there comes onto the cursor).
+  - Right click on a backpack item: wear it; a potion goes to the belt; a Scroll or Tome of
+    Identify picks a target, then click the item to identify. Right click on a worn item takes it
+    off into the backpack. Ctrl + right click sells an item.
+  - Identify all: identifies everything he carries and wears, free.
+  - Swap weapons (W, or the I / II tabs).
+  - Sell box: drop the cursor item on it to sell it for D2's sell price.
+  - Floor box: items put down outside the panel, or pushed out of a slot with no room. Click one
+    to pick it up again.
+  - Leaving the screen puts the cursor item and the floor back in the backpack. What still does
+    not fit is sold, and the screen says so.
+  - A hero who is not on a run is saved after each change; one on a run is saved by the run at
+    the end of the floor.
 - Pickup: his pickup rules and words.
 - Watch: his floor full screen at 1:1, with each hero's life, mana and decision.
 
 Keys: S start, X stop, W watch, T style, L loot, I inventory, P pickup, + / - speed, Esc back,
-Ctrl+click adds heroes to a group.
+Ctrl+click adds heroes to a group. On the Inventory screen W swaps weapons.
 
 ## Not done yet
 
 - Teleport and Leap are not used to get about yet (heroes walk). Whirlwind and Charge are scored
   as damage on the monsters near their target.
 - Monsters that don't cast use their normal attack only; casters act once per 2-second round.
-- Equipping, selling and dropping items from the Inventory screen (it shows them only).
 - Reign of the Warlock changes beyond what `game/d2r.py` already has (the Warlock class excluded).
 - Floor building happens on the main thread, so the game may pause briefly when several runs
   start a new floor at once.
@@ -209,5 +227,6 @@ Ctrl+click adds heroes to a group.
 ## Tests
 
 `python tools/test_autobattler.py` checks the timing against the published breakpoints, the map
-size switch, the roster cap, the run limits, and that runs fight and go on to the next floor. It
+size switch, the roster cap, the run limits, that runs fight and go on to the next floor, and
+the Inventory screen's item handling (equip, swap, identify, sell, the 8-row backpack). It
 needs no Diablo II files and writes its heroes to a temporary folder.

@@ -117,7 +117,10 @@ class Player(Unit):
     def INV_H(self):
         """4 rows - 7 with the Bigger Inventory option (the tallest grid that still leaves the
         panel its bottom row, with the gold count and the close button, above the control bar)."""
-        return 7 if (getattr(self, "qol", None) or {}).get("big_inv") else 4
+        q = getattr(self, "qol", None) or {}
+        if q.get("inv_rows"):           # a set height (the autobattler's heroes: 8, twice D2's)
+            return max(4, min(8, int(q["inv_rows"])))
+        return 7 if q.get("big_inv") else 4
 
     def _size(self, it):
         return max(1, getattr(it, "invw", 1) or 1), max(1, getattr(it, "invh", 1) or 1)

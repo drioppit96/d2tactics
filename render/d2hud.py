@@ -270,10 +270,10 @@ class D2Hud:
         return None
 
     def _inv_rows(self, hero=None):
-        """How many backpack rows that hero's panel shows: 4, or 7 with Bigger Inventory. It is the
-        panel's own hero that decides, so a party member's grid never shows rows he cannot use."""
+        """How many backpack rows that hero's panel shows: 4, 7 with Bigger Inventory, 8 for an
+        autobattler hero. It is the panel's own hero that decides, so a party member's grid never shows rows he cannot use."""
         p = hero if hero is not None else getattr(getattr(self, "world", None), "player", None)
-        return min(7, max(4, getattr(p, "INV_H", 4) if p is not None else 4))
+        return min(8, max(4, getattr(p, "INV_H", 4) if p is not None else 4))
 
     # ------------------------------------------------------------ drawing
     def draw(self, surf, world, scene, mouse):

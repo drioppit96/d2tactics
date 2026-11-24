@@ -237,6 +237,112 @@ def test_big_maps():
           "big floors: grid %d -> %d, rooms %d -> %d" % (small["grid"], big["grid"], small["rooms"], big["rooms"]))
 
 
+def test_gear():
+    """The inventory screen's item handling (autobattler/gear.py)."""
+    from autobattler import gear
+    from game.items import Item
+    p = roster.create("bar", "Gear", None, max_heroes=99)
+    check(p.INV_H == 8 and p.INV_W == 10, "backpack is 10 x 8, twice D2's 10 x 4")
+    loaded = roster.load(next(d for d in roster.list_heroes() if d.get("name") == p.name), None)
+    check(loaded.INV_H == 8, "the double backpack stays after loading")
+    b = gear.Bench(p)
+    for it in list(p.inventory):
+        p.inventory.remove(it)
+    for s in list(p.equipment):
+        p.equipment[s] = None
+    helm = Item("Cap", "cap", "helm", defense=5)
+    helm2 = Item("Skull Cap", "skp", "helm", defense=9)
+    ring = Item("Ring", "rin", "ring")
+    check(p.inv_add(helm) and p.inv_add(helm2) and p.inv_add(ring), "items go in")
+    low = Item("Stone", "sto", "helm")
+    low.inv_pos = (0, 7)
+    p.inventory.append(low)
+    check(p.inv_at(0, 7) is low, "the eighth row holds items")
+    p.inventory.remove(low)
+    check(b.right_click(helm) and p.equipment["helm"] is helm, "right click wears an item")
+    x, y = helm2.inv_pos
+    check(b.click_cell(x, y) and b.held is helm2, "click picks an item up")
+    check(b.click_slot("helm") and p.equipment["helm"] is helm2 and b.held is helm,
+          "click on the slot wears it and the old one comes onto the cursor")
+    check(not b.click_slot("boots") and b.held is helm, "a helm does not go on the feet")
+    check(b.click_cell(5, 6) and b.held is None and helm.inv_pos == (5, 6), "it goes down where clicked")
+    check(b.click_cell(ring.inv_pos[0], ring.inv_pos[1]) and b.click_slot("ring2") and
+          p.equipment["ring2"] is ring, "rings go in either ring slot")
+    check(b.unequip("ring2") and ring in p.inventory, "right click on a worn item takes it off")
+    unid = Item("Hat", "hat", "helm")
+    unid.identified = False
+    scroll = Item("Scroll of Identify", "isc", None, kind="misc")
+    scroll.use = "id"
+    p.inv_add(unid)
+    p.inv_add(scroll)
+    check(b.unidentified() == 1, "one item to identify")
+    check(b.right_click(scroll) and b.cursor_mode, "right click on the scroll picks a target")
+    check(b.click_cell(*unid.inv_pos) and unid.identified and scroll not in p.inventory,
+          "the scroll identifies the item and is used up")
+    unid.identified = False
+    check(b.identify_all() == 1 and unid.identified, "identify all")
+    gold = p.gold
+    check(b.right_click(helm, sell=True) and p.gold > gold and helm not in p.inventory, "ctrl + right click sells")
+    b.click_cell(*ring.inv_pos)
+    b.drop_held()
+    check(b.floor() == [ring], "items can be put on the floor")
+    b.take_from_floor(ring)
+    check(b.finish() == 0 and ring in p.inventory and ring.inv_pos is not None,
+          "closing the screen puts the cursor item back in the backpack")
+    b.swap_weapons()
+    check(getattr(p, "weapon_set", 0) == 1, "weapon swap")
+    roster.delete(p.name)
+
+
+def test_inventory_screen():
+    """The screen draws and takes clicks (placeholder art)."""
+    import autobattler_main as am
+    import pygame
+    app = am.App.__new__(am.App)
+    pygame.init()
+    from autobattler.ui import Look
+    from autobattler.runs import RunManager
+    serif = "serif"
+    fonts = {k: pygame.font.SysFont(serif, 14) for k in ("small", "med", "big", "title")}
+    app.sysfonts = fonts
+    app.canvas = pygame.Surface((800, 600))
+    app.window = pygame.display.set_mode((800, 600))
+    app.look = Look(None, fonts)
+    app.content = None
+    app.cfg = config.load()
+    app.mgr = RunManager(None, app.cfg, timing.Timings(None))
+    p = roster.create("sor", "Screen", None, max_heroes=99)
+    from game.items import Item
+    p.inv_add(Item("Cap", "cap", "helm", defense=5))
+    app.heroes = {p.name: p}
+    app.selected = [p.name]
+    app.screen_name = "inventory"
+    app.bench, app.regions, app.message, app._tip, app.mouse, app.down = None, [], "", None, (0, 0), None
+    app.show_perf, app._dt = False, 0.0
+    app.perf = am.Perf()
+    app.views = {}
+    app.focus = None
+    app.loot_page = 0
+    app.draw_inventory()
+    first = next((it for it in p.inventory if it.inv_pos), None)
+    slots, gx, gy, ic = app._inv_geometry()
+    check(first is not None, "the screen shows the backpack")
+    if first is not None:
+        x, y = first.inv_pos
+        app.mouse = (app.INV_X + gx + x * ic + 3, app.INV_Y + gy + y * ic + 3)
+        app.inv_click()
+        check(app.bench.held is first, "clicking the panel's backpack picks the item up")
+        app.regions = []
+        app.draw_inventory()
+        app.mouse = (app.INV_X + gx + 9 * ic + 3, app.INV_Y + gy + 7 * ic + 3)
+        app.inv_click()
+        check(app.bench.held is None and first.inv_pos[1] + p._size(first)[1] == 8,
+              "and puts it down in the bottom row")
+    app.go("roster")
+    check(app.bench is None, "leaving the screen closes the bench")
+    roster.delete(p.name)
+
+
 if __name__ == "__main__":
     _tmp = tempfile.TemporaryDirectory()        # nothing a test makes lands among your real heroes
     roster.SAVE_DIR = os.path.join(_tmp.name, "saves_auto")
@@ -250,5 +356,7 @@ if __name__ == "__main__":
     test_brain()
     test_acts()
     test_death_and_potions()
+    test_gear()
+    test_inventory_screen()
     print("\n%s" % ("all passed" if not FAILS else "%d FAILED" % len(FAILS)))
     sys.exit(1 if FAILS else 0)

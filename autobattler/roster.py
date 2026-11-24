@@ -8,6 +8,8 @@ import random
 
 from game import save as gsave
 
+from . import gear
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SAVE_DIR = os.path.join(ROOT, "saves_auto")
 CLASSES = ["ama", "sor", "nec", "pal", "bar", "dru", "ass"]
@@ -52,12 +54,15 @@ def create(cls, name, content, max_heroes=30):
             traceback.print_exc()
     p.map_seed = random.randrange(1 << 30)
     p.rift_depth = 0
+    gear.prepare(p)
     gsave.save_character(p)
     return p
 
 
 def load(data, content):
-    return gsave.build_player(data, content)
+    p = gsave.build_player(data, content)
+    gear.prepare(p)
+    return p
 
 
 def save(p):

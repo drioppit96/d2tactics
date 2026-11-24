@@ -20,7 +20,7 @@ instead, with the monster farthest from the start as its boss. That is also how 
 import random
 import threading
 
-from . import brain, realtime, roster, timing
+from . import brain, gear, realtime, roster, timing
 
 BUILD_LOCK = threading.Lock()       # one floor built at a time
 SESSION_SEED = random.randrange(1, 1 << 30)
@@ -70,7 +70,8 @@ class Run:
                 q = getattr(h, "qol", None)
                 if not isinstance(q, dict):
                     q = h.qol = {}
-                q["big_inv"] = True             # the D2 Tactics bigger backpack (10 x 7)
+                q["big_inv"] = True
+                q["inv_rows"] = gear.ROWS       # twice D2's backpack: 10 x 8
                 brain.spend_points(h)
                 h._ab_level = h.level
                 self._refill_belt(h)

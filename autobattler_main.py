@@ -7,7 +7,8 @@ Screens:
     Heroes      the roster, a small live view of the selected hero's run, his status, the buttons
     New hero    class and name
     Loot        what lies on the selected hero's floor: filters, search, click to take it
-    Inventory   the selected hero's gear and his 10 x 7 backpack
+    Inventory   D2's inventory panel: the hero's gear and his 10 x 8 backpack (twice D2's);
+                equip, take off, move, identify, belt potions, sell
     Pickup      what the selected hero picks up on his own
     Watch       the selected hero's run full screen
 
@@ -25,7 +26,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 from main import load_settings, load_assets, log_error          # noqa: E402  (the same engine)
-from autobattler import brain, config, roster                   # noqa: E402
+from autobattler import brain, config, gear, roster             # noqa: E402
 from autobattler.runs import RunManager                         # noqa: E402
 from autobattler.timing import FPS, Timings                     # noqa: E402
 from autobattler.ui import Look, GOLD, WHITE, GREY, RED, GREEN, BLUE, W, H   # noqa: E402
@@ -112,6 +113,7 @@ class App:
         self.screen_name = "roster"
         self.views = {}              # run id -> (world, LiveView)
         self.focus = None            # text field taking the keyboard: name | search | words
+        self.bench = None            # the inventory screen's item handling (autobattler/gear.py)
         self.new_cls, self.new_name = "bar", ""
         self.search, self.filter = "", "All"
         self.loot_page = 0
@@ -238,6 +240,8 @@ class App:
 
     # ------------------------------------------------------------ actions
     def go(self, name):
+        if name != "inventory":
+            self._close_bench()          # the cursor item goes back in the backpack
         self.screen_name = name
         self.focus = {"create": "name", "loot": "search", "pickup": "words"}.get(name)
         self.loot_page = 0
@@ -327,6 +331,9 @@ class App:
                 if rect.collidepoint(pos):
                     action(*args)
                     return
+        elif ev.type == pygame.MOUSEBUTTONUP and ev.button == 3 and self.screen_name == "inventory":
+            self.mouse = self.logical(ev.pos)
+            self.inv_right()
         elif ev.type == pygame.MOUSEWHEEL and self.screen_name == "roster":
             self.scroll = max(0, self.scroll - ev.y)
         elif ev.type == pygame.KEYDOWN:
@@ -367,6 +374,8 @@ class App:
             self.cfg["speed"] = min(8.0, self.cfg["speed"] * 2)
         elif ev.key in (pygame.K_MINUS, pygame.K_KP_MINUS):
             self.cfg["speed"] = max(0.25, self.cfg["speed"] / 2)
+        elif self.screen_name == "inventory" and ev.key == pygame.K_w:
+            self.inv_swap()
         elif self.screen_name == "roster":
             act = {pygame.K_s: self.start_run, pygame.K_x: self.stop_run, pygame.K_t: self.cycle_style,
                    pygame.K_w: lambda: self.go("watch"), pygame.K_l: lambda: self.go("loot"),
@@ -629,35 +638,293 @@ class App:
             if self.hot(r):
                 self._tip = L.item_lines(it, h)
 
+    # ------------------------------------------------------------ inventory (D2's own panel)
+    INV_X, INV_Y = 470, 40          # where D2's 320-wide inventory panel sits on the canvas
+
+    def gear_bench(self):
+        """The item bench for the selected hero (made again when the selection changes)."""
+        h = self.hero()
+        b = self.bench
+        if b is not None and b.player is not h:
+            self._close_bench()
+            b = None
+        if b is None and h is not None:
+            gear.prepare(h)
+            b = self.bench = gear.Bench(h, self.content)
+        return b
+
+    def _close_bench(self):
+        b, self.bench = self.bench, None
+        if b is None:
+            return
+        sold = b.finish()
+        if sold:
+            self.message = "%s had no room: %d item%s sold." % (b.player.name, sold, "" if sold == 1 else "s")
+        self._gear_saved(b)
+
+    def _gear_saved(self, b):
+        """Idle heroes are saved after each change; a hero on a run is saved by the run."""
+        if b is not None and b.changed and b.player.name not in self.mgr.busy_names():
+            roster.save(b.player)
+            b.changed = False
+
+    def _inv_geometry(self):
+        from render.d2hud import INV_SLOTS, GRID_X, GRID_Y, CELL as IC
+        return INV_SLOTS, GRID_X, GRID_Y, IC
+
+    def _inv_cell(self, item=None):
+        """Backpack cell under the mouse; with `item`, the top-left cell that centres it on the
+        mouse, like D2."""
+        slots, gx, gy, ic = self._inv_geometry()
+        b = self.bench
+        rows = b.player.INV_H if b else gear.ROWS
+        mx, my = self.mouse[0] - self.INV_X, self.mouse[1] - self.INV_Y
+        if not (gx <= mx < gx + 10 * ic and gy <= my < gy + rows * ic):
+            return None
+        if item is None:
+            return int((mx - gx) // ic), int((my - gy) // ic)
+        w, hh = b.player._size(item)
+        cx = int(round((mx - gx) / float(ic) - w / 2.0))
+        cy = int(round((my - gy) / float(ic) - hh / 2.0))
+        return max(0, min(10 - w, cx)), max(0, min(rows - hh, cy))
+
+    def _inv_slot(self):
+        slots, gx, gy, ic = self._inv_geometry()
+        mx, my = self.mouse[0] - self.INV_X, self.mouse[1] - self.INV_Y
+        for slot, (x, y, w, hh) in slots.items():
+            if x <= mx < x + w and y <= my < y + hh:
+                return slot
+        return None
+
+    def _inv_tab(self):
+        from render.d2hud import D2Hud
+        mx, my = self.mouse[0] - self.INV_X, self.mouse[1] - self.INV_Y
+        for i, (x, y, w, hh) in enumerate(D2Hud.WEAPON_TABS):
+            if x <= mx < x + w and y <= my < y + hh:
+                return i % 2
+        return None
+
+    def inv_click(self):
+        b = self.gear_bench()
+        if b is None:
+            return
+        from render.d2hud import INV_CLOSE
+        slots, gx, gy, ic = self._inv_geometry()
+        dy = gy + b.player.INV_H * ic - 371          # the panel's bottom row moves down with the grid
+        close = pygame.Rect(self.INV_X + INV_CLOSE[0], self.INV_Y + INV_CLOSE[1] + dy, INV_CLOSE[2], INV_CLOSE[3])
+        if b.held is None and close.collidepoint(self.mouse):
+            self.go("roster")
+            return
+        tab = self._inv_tab()
+        if tab is not None:
+            if b.held is None and tab != getattr(b.player, "weapon_set", 0):
+                b.swap_weapons()
+        else:
+            slot = self._inv_slot()
+            if slot is not None:
+                b.click_slot(slot)
+            else:
+                cell = self._inv_cell(b.held)
+                if cell is not None:
+                    b.click_cell(*cell)
+        self._gear_saved(b)
+
+    def inv_right(self):
+        """Right click: wear / belt / identify (Ctrl: sell); on a worn item, take it off."""
+        b = self.gear_bench()
+        if b is None:
+            return
+        if b.cursor_mode or b.held is not None:
+            b.cursor_mode = None
+            return
+        slot = self._inv_slot()
+        if slot is not None:
+            b.unequip(slot)
+        else:
+            cell = self._inv_cell()
+            it = b.player.inv_at(*cell) if cell else None
+            b.right_click(it, sell=bool(pygame.key.get_mods() & pygame.KMOD_CTRL))
+        self._gear_saved(b)
+
+    def inv_sell_held(self):
+        b = self.bench
+        if b is not None and b.held is not None:
+            b.sell(b.held)
+            self._gear_saved(b)
+
+    def inv_floor(self, it=None):
+        b = self.bench
+        if b is None:
+            return
+        if b.held is not None:
+            b.drop_held()
+        elif it is not None:
+            b.take_from_floor(it)
+
+    def inv_identify_all(self):
+        b = self.gear_bench()
+        if b is not None:
+            b.identify_all()
+            self._gear_saved(b)
+
+    def inv_swap(self):
+        b = self.gear_bench()
+        if b is not None and b.held is None:
+            b.swap_weapons()
+            self._gear_saved(b)
+
     def draw_inventory(self):
         c, L = self.canvas, self.look
-        h = self.hero()
+        b = self.gear_bench()
+        h = b.player if b else None
         self._title("Inventory")
-        L.panel(c, (6, 40, 788, 432))
         if h is None:
+            self.button((640, 540, 140, 30), "Back", lambda: self.go("roster"))
             return
-        L.text(c, "med", "%s - level %d %s" % (h.name, h.level, CLASS_NAMES.get(h.cls, h.cls)), GOLD, 6, 56, "center", 788)
-        # what he wears
-        y = 90
-        L.text(c, "med", "Equipped", GOLD, 30, y)
-        y += 22
-        for slot, it in sorted((getattr(h, "equipment", None) or {}).items()):
-            if it is None:
-                continue
-            r = pygame.Rect(30, y, 2 * CELL, 2 * CELL)
-            L.inset(c, r)
-            L.icon(c, it, r.x + 1, r.y + 1, r.w - 2, r.h - 2)
-            name = getattr(it, "shown_name", None) or getattr(it, "name", "")
-            L.text(c, "small", "%s: %s" % (slot, name), getattr(it, "color", WHITE) or WHITE, r.right + 8, r.y + 14)
-            if self.hot(r.union(pygame.Rect(r.right, r.y, 260, r.h))):
+        run = self.run_of(h.name)
+        # ---- left: who he is, what he has, the buttons
+        L.panel(c, (6, 40, 456, 534))
+        L.text(c, "med", "%s - level %d %s" % (h.name, h.level, CLASS_NAMES.get(h.cls, h.cls)), GOLD, 6, 54, "center", 456)
+        L.text(c, "small", ("On a run: rift floor %d" % run.depth) if run else "In town", GREY, 6, 74, "center", 456)
+        res = getattr(h, "res", {}) or {}
+        try:
+            dmg = "%d-%d" % tuple(h.dmg)
+        except Exception:
+            dmg = "-"
+        left = [("Strength", h.strength), ("Dexterity", h.dexterity), ("Vitality", h.vitality),
+                ("Energy", h.energy), ("Life", "%d / %d" % (h.hp, h.max_hp)),
+                ("Mana", "%d / %d" % (h.mana, h.max_mana)), ("Gold", h.gold)]
+        right = [("Damage", dmg), ("Attack Rating", getattr(h, "ar", 0)), ("Defense", getattr(h, "defense", 0)),
+                 ("Fire Resist", res.get("fire", 0)), ("Cold Resist", res.get("cold", 0)),
+                 ("Lightning Resist", res.get("ltng", 0)), ("Poison Resist", res.get("pois", 0))]
+        for col, rows in ((24, left), (244, right)):
+            for i, (label, val) in enumerate(rows):
+                y = 98 + i * 20
+                L.text(c, "small", label, GOLD, col, y)
+                v = val if isinstance(val, str) else "%d" % val
+                colr = RED if (not isinstance(val, str) and label.endswith("Resist") and val < 0) else WHITE
+                L.text(c, "small", v, colr, col + 196, y, "right")
+        # the belt, as the bottom of D2's screen shows it
+        from game import potions
+        by = 252
+        L.text(c, "small", "Belt", GOLD, 24, by)
+        nrows = potions.belt_rows(h)
+        for col in range(4):
+            stack = potions.column(h, col)
+            for r in range(nrows):
+                rect = pygame.Rect(70 + col * 32, by - 4 + (nrows - 1 - r) * 30, 30, 28)
+                L.inset(c, rect)
+                if r < len(stack):
+                    L.icon(c, stack[r], rect.x + 1, rect.y + 1, rect.w - 2, rect.h - 2)
+                    if self.hot(rect):
+                        self._tip = L.item_lines(stack[r], h)
+        # the buttons
+        y0 = 384
+        n_unid = b.unidentified()
+        self.button((24, y0, 200, 30), "Identify all (%d)" % n_unid, self.inv_identify_all, enabled=n_unid > 0)
+        self.button((240, y0, 200, 30), "Swap weapons (W)", self.inv_swap, enabled=b.held is None)
+        # the sell box and the floor (things put down, or pushed out with no room)
+        sell = pygame.Rect(24, y0 + 40, 200, 56)
+        L.inset(c, sell)
+        if b.held is not None and b.sellable(b.held):
+            from game.d2items import sell_price
+            L.text(c, "small", "Sell for %d gold" % sell_price(b.held), GOLD, sell.x, sell.y + 20, "center", sell.w)
+        else:
+            L.text(c, "small", "Sell: drop an item here", GREY, sell.x, sell.y + 12, "center", sell.w)
+            L.text(c, "small", "(or Ctrl + right click it)", GREY, sell.x, sell.y + 28, "center", sell.w)
+        floor = pygame.Rect(240, y0 + 40, 200, 56)
+        L.inset(c, floor)
+        loose = b.floor()
+        if not loose:
+            L.text(c, "small", "Floor: put items down here", GREY, floor.x, floor.y + 20, "center", floor.w)
+        for i, it in enumerate(loose[:7]):
+            r = pygame.Rect(floor.x + 4 + i * 28, floor.y + 6, 26, 44)
+            L.icon(c, it, r.x, r.y, r.w, r.h)
+            if self.hot(r) and b.held is None:
                 self._tip = L.item_lines(it, h)
-            y += 2 * CELL + 4
-            if y > 430:
-                break
-        L.text(c, "med", "Backpack", GOLD, 400, 90)
-        self._backpack(h, 400, 112)
-        L.text(c, "small", "Gold %d" % getattr(h, "gold", 0), GOLD, 400, 112 + 7 * CELL + 10)
-        self.button((640, 430, 140, 30), "Back", lambda: self.go("roster"))
+            self.region(r, self.inv_floor, it)
+        # what happened last, and how it works
+        for i, (text, colr) in enumerate(b.messages[-2:]):
+            L.text(c, "small", text, colr or GREY, 24, y0 + 104 + i * 15)
+        hint = "Click the item to identify (right click cancels)" if b.cursor_mode else \
+            "Click: pick up / place / wear.  Right click: wear, belt, identify; on a worn item, take it off."
+        L.text(c, "small", hint, GOLD if b.cursor_mode else GREY, 24, y0 + 136)
+        self.button((330, 536, 120, 28), "Back", lambda: self.go("roster"))
+        # held item: anywhere outside the panel puts it on the floor
+        if b.held is not None:
+            self.regions.insert(0, (pygame.Rect(0, 0, W, H), self.inv_floor, ()))
+            self.region(sell, self.inv_sell_held)
+            self.region(floor, self.inv_floor)
+        # ---- right: D2's inventory panel, 10 x 8 backpack
+        self._draw_d2_inventory(b)
+        self.region((self.INV_X, self.INV_Y, 320, 548), self.inv_click)
+        if b.held is not None:
+            w, hh = h._size(b.held)
+            ic = self._inv_geometry()[3]
+            L.icon(c, b.held, self.mouse[0] - w * ic / 2.0, self.mouse[1] - hh * ic / 2.0, w * ic - 1, hh * ic - 1)
+            self._tip = None
+        elif b.cursor_mode:
+            L.text(c, "small", "?", GOLD, self.mouse[0] + 10, self.mouse[1] - 4)
+
+    def _draw_d2_inventory(self, b):
+        """D2's inventory panel (invchar6) with the hero's gear, drawn by the game's own HUD code;
+        without D2 files, plain boxes in the same places."""
+        c, L = self.canvas, self.look
+        h = b.player
+        slots, gx, gy, ic = self._inv_geometry()
+        rows = h.INV_H
+        height = gy + rows * ic + 61
+        sub = c.subsurface(pygame.Rect(self.INV_X, self.INV_Y, 320, min(H - self.INV_Y, height)))
+        hud = L.hud
+        if hud is not None:
+            keep = (hud.lw, getattr(hud, "world", None), hud.mouse, hud.regions, getattr(hud, "show_inv", False), hud.store)
+            try:
+                hud.lw, hud.world, hud.store, hud.show_inv = 320, b, None, True
+                hud.mouse = (self.mouse[0] - self.INV_X, self.mouse[1] - self.INV_Y)
+                hud.regions, hud.hover_lines, hud.hover_item = [], None, None
+                hud._draw_inventory(sub, b, hero=h)
+                tip = hud.hover_lines
+            except Exception:
+                import traceback
+                traceback.print_exc()
+                hud = None
+                tip = None
+            finally:
+                if L.hud is not None:
+                    (L.hud.lw, L.hud.world, L.hud.mouse, L.hud.regions, L.hud.show_inv, L.hud.store) = keep
+            if hud is not None:
+                # the purse: gold only (the essences are D2 Tactics' own)
+                from render.d2hud import PURSE_BOX
+                dy = gy + rows * ic - 371
+                box = pygame.Rect(PURSE_BOX[0], PURSE_BOX[1] + dy, PURSE_BOX[2], PURSE_BOX[3])
+                sub.fill((17, 16, 14), box)
+                pygame.draw.rect(sub, (74, 66, 50), box, 1)
+                L.text(sub, "med", "Gold  %d" % h.gold, GOLD, box.x + 10, box.y + 15)
+                if tip and b.held is None:
+                    self._tip = tip
+                return
+        # plain version
+        L.panel(sub, (0, 0, 320, sub.get_height()))
+        mx, my = self.mouse[0] - self.INV_X, self.mouse[1] - self.INV_Y
+        for slot, (x, y, w, hh) in slots.items():
+            r = pygame.Rect(x, y, w, hh)
+            L.inset(sub, r)
+            it = h.equipment.get(slot)
+            if it is not None:
+                L.icon(sub, it, x + 1, y + 1, w - 2, hh - 2)
+                if r.collidepoint((mx, my)) and b.held is None:
+                    self._tip = L.item_lines(it, h)
+        L.inset(sub, (gx - 1, gy - 1, 10 * ic + 2, rows * ic + 2))
+        for it in h.inventory:
+            pos = getattr(it, "inv_pos", None)
+            if not pos:
+                continue
+            w, hh = h._size(it)
+            r = pygame.Rect(gx + pos[0] * ic, gy + pos[1] * ic, w * ic, hh * ic)
+            L.icon(sub, it, r.x + 1, r.y + 1, r.w - 2, r.h - 2)
+            if r.collidepoint((mx, my)) and b.held is None:
+                self._tip = L.item_lines(it, h)
+        L.text(sub, "med", "Gold  %d" % h.gold, GOLD, 60, gy + rows * ic + 20)
 
     def draw_pickup(self):
         c, L = self.canvas, self.look
