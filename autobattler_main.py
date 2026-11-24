@@ -576,9 +576,49 @@ class App:
     # ------------------------------------------------------------ the skill bar (8 slots)
     SLOT = 34
 
+    BASIC_NAMES = {"attack": "Attack", "throw": "Throw"}
+
+    def _basic_icon(self, name):
+        """D2's own icon for Attack or Throw: Skillicon.DC6, at the IconCel Skills.txt gives it."""
+        cache = self.__dict__.setdefault("_basic_icons", {})
+        if name in cache:
+            return cache[name]
+        img = None
+        hud = self.look.hud
+        if hud is not None:
+            try:
+                from render.d2hud import SPELLS
+                from d2.source import read_table
+                frames = hud._load(SPELLS + "Skillicon.DC6") or hud._load(SPELLS + "skillicon.dc6")
+                row = next((r for r in read_table(hud.src, "Skills")
+                            if (r.get("skill") or "").strip().lower() == name), None)
+                cel = int(row.get("iconcel") or row.get("IconCel") or 0) if row else 0
+                img = frames[cel] if frames and cel < len(frames) else None
+            except Exception:
+                img = None
+        cache[name] = img
+        return img
+
+    def _basic_tip(self, h, name):
+        if name == "attack":
+            how = "shoots with his bow or crossbow" if getattr(h, "ranged", False) else "swings his weapon"
+            return [("Attack", GREEN), ("His normal attack: he %s" % how, WHITE)]
+        lines = [("Throw", GREEN), ("Throws the javelin, knife or axe in his hand", WHITE),
+                 ("Range: %d" % getattr(h, "throw_range", brain.THROW_RANGE), WHITE)]
+        if not getattr(h, "throwing", False):
+            lines.append(("Needs a throwing weapon in hand", RED))
+        return lines
+
     def _skill_icon(self, h, name, x, y, size):
         """D2's icon of one of his skills (or its name in plain letters without the art)."""
         c, L = self.canvas, self.look
+        if name in self.BASIC_NAMES:
+            img = self._basic_icon(name)
+            if img is not None:
+                c.blit(L.hud.S(img, size / float(img.get_width())), (x, y))
+            else:
+                L.text(c, "small", self.BASIC_NAMES[name], WHITE, x, y + 10, "center", size)
+            return
         s = h.skills.tree.get(name) if getattr(h, "skills", None) else None
         hud = L.hud
         if s is not None and hud is not None:
@@ -609,11 +649,12 @@ class App:
             r = pygame.Rect(x + 70 + i * (k + 4), y, k, k)
             L.inset(c, r)
             name = slots[i]
-            if name and name in h.skills.tree and h.skills.levels.get(name):
+            if name and (name in self.BASIC_NAMES or (name in h.skills.tree and h.skills.levels.get(name))):
                 self._skill_icon(h, name, r.x + 1, r.y + 1, k - 2)
                 L.text(c, "small", str(i + 1), GOLD, r.x + 2, r.y + 1)
                 if self.hot(r):
-                    self._tip = points.skill_tooltip(h, name) + [("", WHITE), ("Slot %d. Click: change.  Right click: empty it" % (i + 1), GREY)]
+                    tip = self._basic_tip(h, name) if name in self.BASIC_NAMES else points.skill_tooltip(h, name)
+                    self._tip = tip + [("", WHITE), ("Slot %d. Click: change.  Right click: empty it" % (i + 1), GREY)]
             else:
                 L.text(c, "small", str(i + 1), DARK_TEXT, r.x, r.y + 10, "center", r.w)
                 if self.hot(r):
@@ -655,6 +696,7 @@ class App:
         book = h.skills
         names = [n for n in book.tree if book.levels.get(n) and book.tree[n].kind != "passive"]
         names.sort(key=lambda n: (book.tree[n].page, book.tree[n].row, book.tree[n].col))
+        names = list(brain.BASIC) + names
         cols = 2
         rows = max(1, (len(names) + cols - 1) // cols)
         w, hh = 420, 70 + rows * 40
@@ -662,15 +704,15 @@ class App:
         self.regions.append((pygame.Rect(0, 0, W, H), lambda: setattr(self, "slot_pick", None), ()))
         L.panel(c, box)
         L.text(c, "med", "Slot %d" % (self.slot_pick[1] + 1), GOLD, box.x, box.y + 14, "center", box.w)
-        if not names:
-            L.text(c, "small", "He has learned no skill to use yet (Abilities).", GREY, box.x, box.y + 44, "center", box.w)
         for i, n in enumerate(names):
             r = pygame.Rect(box.x + 20 + (i % cols) * 195, box.y + 44 + (i // cols) * 40, 190, 36)
+            basic = n in self.BASIC_NAMES
             if self.hot(r):
                 pygame.draw.rect(c, (52, 42, 26), r)
-                self._tip = points.skill_tooltip(h, n)
+                self._tip = self._basic_tip(h, n) if basic else points.skill_tooltip(h, n)
             self._skill_icon(h, n, r.x + 2, r.y + 2, 32)
-            L.text(c, "small", "%s (%d)" % (book.tree[n].title, book.level(n)), WHITE, r.x + 40, r.y + 11)
+            label = self.BASIC_NAMES[n] if basic else "%s (%d)" % (book.tree[n].title, book.level(n))
+            L.text(c, "small", label, WHITE, r.x + 40, r.y + 11)
             self.region(r, self.set_slot, n)
         self.button((box.right - 110, box.bottom - 30, 90, 22), "Empty", self.set_slot, "")
 

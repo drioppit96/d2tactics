@@ -245,6 +245,20 @@ def test_skill_bar():
             break
     check(used.get("Shout", 0) >= 1 and used.get("Double Swing", 0) >= 1, "the bar's skills are used: %s" % used)
     check(not used.get("Bash") and not used.get("Howl"), "skills not on the bar are not used")
+    # Attack ahead of the skills: he swings instead of casting Double Swing (buffs still first)
+    brain.profile(h)["slots"] = ["Shout", "attack", "Double Swing", "", "", "", "", ""]
+    r.finish("stopped")
+    h.mana = h.max_mana
+    r = mgr.start([h])
+    used = {}
+    for _ in range(25 * 30):
+        _tick(mgr)
+        if r.sim is not None:
+            for k, v in r.sim.casts.items():
+                used[k] = max(used.get(k, 0), v)
+    check(not used.get("Double Swing") and used.get("Shout", 0) >= 1,
+          "Attack in an earlier slot comes before the skills after it: %s" % used)
+    r.finish("stopped")
 
 
 def test_town_and_back():

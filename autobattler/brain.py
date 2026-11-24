@@ -49,6 +49,10 @@ DEFAULT_PROFILE = dict(style="balanced", potion_at=None, mana_reserve=None, keep
                        favourite="", never=[], auto_points=False,
                        slots=["", "", "", "", "", "", "", ""])
 SLOTS = 8
+#: what a slot can hold besides his skills: the normal attack (a melee swing, or a shot with a bow
+#: or crossbow) and Throw (a javelin, throwing knife or axe in hand)
+BASIC = ("attack", "throw")
+THROW_RANGE = 14
 
 DAMAGE_KINDS = ("missile", "nova", "area", "line", "chain", "charge", "spiral", "corpse_blast", "melee", "attack")
 SUMMON_KINDS = ("summon", "golem", "raise", "revive", "turret", "wall")
@@ -402,7 +406,17 @@ class Brain:
         normal attack. Skills not on the bar are not used."""
         h = self.h
         usable = []
+        attack = next((p for p in plans if p.what == "attack"), None)
         for name in slots:
+            if name == "attack":
+                if attack is not None:
+                    usable.append((None, attack))
+                continue
+            if name == "throw":
+                if target is not None and getattr(h, "throwing", False) and \
+                        chebyshev(target.pos, h.pos) <= getattr(h, "throw_range", THROW_RANGE):
+                    usable.append((None, Plan("skill", "throw", target, None, self.attack_frames("A1"), 1.0, "throw")))
+                continue
             s = book.tree.get(name)
             if s is None or s.kind == "passive" or not book.level(name) or frame < self.cool.get(name, 0):
                 continue
@@ -417,6 +431,8 @@ class Brain:
                 continue
             usable.append((s, p))
         for s, p in usable:
+            if s is None:
+                continue
             if s.kind in ("aura", "buff") or (s.kind == "cry" and not self._offensive_cry(s)):
                 self.last = p.why
                 return p

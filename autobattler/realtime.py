@@ -480,6 +480,8 @@ class Sim:
         reach = brains.SPELL_RANGE
         if sk is not None and (getattr(sk, "weapon", False) or sk.kind in ("attack", "melee")):
             reach = self._reach(h)
+        if plan.skill == "throw":
+            reach = int(getattr(h, "throw_range", brains.THROW_RANGE))
         aim = plan.target.pos if plan.target is not None else plan.cell
         if aim is not None and sk is not None and sk.kind not in ("aura", "buff", "cry") and \
                 sk.kind not in brains.SUMMON_KINDS and chebyshev(h.pos, aim) > reach:
