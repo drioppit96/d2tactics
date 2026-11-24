@@ -209,7 +209,7 @@ class Sim:
             self._round()
         if self.phase == "loot" and (self.frame >= self.loot_until or not any(self._next_item(h) for h in heroes)):
             self.phase = "portal"
-        for u in heroes + [m for m in self.foes() if getattr(m, "aware", False) and not getattr(m, "caster", False)]:
+        for u in heroes + self.pets() + [m for m in self.foes() if getattr(m, "aware", False) and not getattr(m, "caster", False)]:
             if u.alive:
                 self._step(u)
         for m in self.w.monsters:
@@ -315,6 +315,8 @@ class Sim:
         s.next_think = self.frame + (THINK if u.is_player else MONSTER_THINK)
         if u.is_player:
             self._hero_think(u, s)
+        elif getattr(u, "ally", False):
+            self._pet_think(u, s)
         else:
             self._monster_think(u, s)
 
@@ -615,8 +617,54 @@ class Sim:
             self.casts[plan.skill] = self.casts.get(plan.skill, 0) + 1
 
 
+    # ------------------------------------------------------------ summons, in real time
+    PET_AIS = ("ally", "ally_ranged")
+    PET_LEASH = 3               # cells: how close a summon keeps to its summoner with nothing to fight
+    PET_GUARD = 12              # cells round the summoner it goes after monsters in
+
+    def pets(self):
+        """The heroes' summons that walk and fight (skeletons, golems, wolves, Valkyries,
+        revives ...), played frame by frame like everyone else. Turrets, traps, vines and spirits
+        keep to the engine's round (allies_turn), which skips these."""
+        out = []
+        for m in self.w.monsters:
+            if m.alive and getattr(m, "ally", False) and not getattr(m, "is_player", False) \
+                    and getattr(m, "ai", "") in self.PET_AIS and not getattr(m, "decoy", False) \
+                    and not getattr(m, "party_member", False):
+                m.realtime = True
+                out.append(m)
+        return out
+
+    def _owner(self, a):
+        o = getattr(a, "summoner", None)
+        if o is not None and o.alive:
+            return o
+        return self._nearest(a, self.living_heroes(), 10 ** 6)
+
+    def _pet_think(self, a, s):
+        """A summon: after the monsters round its summoner (or the one it is near), else back to
+        his side."""
+        owner = self._owner(a)
+        if owner is None:
+            return
+        foes = [m for m in self.foes() if chebyshev(m.pos, owner.pos) <= self.PET_GUARD
+                or chebyshev(m.pos, a.pos) <= 6]
+        foes = [m for m in foes if s.skip.get(id(m), 0) <= self.frame]
+        tgt = s.target if (s.target is not None and s.target.alive and s.target in foes) else \
+            self._nearest(a, foes, 10 ** 6)
+        if tgt is not None:
+            s.target = tgt
+            tgt.aware = True
+            self._engage(a, s, tgt, self._reach(a))
+            return
+        s.target = None
+        if chebyshev(a.pos, owner.pos) > self.PET_LEASH:
+            self._walk_to(a, s, owner.pos, reach=2)
+        else:
+            s.mode, s.path = "idle", []
+
     def _monster_think(self, m, s):
-        heroes = self.living_heroes()
+        heroes = self.living_heroes() + self.pets()      # (summons are fought like heroes)
         tgt = self._nearest(m, heroes, 10 ** 6)
         if tgt is None:
             return
@@ -735,8 +783,11 @@ class Sim:
             for nb in g.neighbors(*c):
                 if nb not in came:
                     came[nb] = c
-                    if nb in occ and nb not in at:
-                        continue             # (someone stands there: the way goes round him)
+                    o = occ.get(nb)
+                    if o is not None and nb not in at and not getattr(o, "ally", False) \
+                            and not getattr(o, "is_player", False):
+                        continue             # (a monster stands there: the way goes round it;
+                                             #  his own side moves out of the way)
                     q.append(nb)
             n += 1
             if n >= SEARCH_CHUNK:
@@ -768,7 +819,15 @@ class Sim:
         before = tgt.hp
         was_alive = tgt.alive
         try:
-            self.w._resolve_attack(u, tgt, "attack", ranged_kind=s.kind, quiet_anim=True)
+            el = getattr(u, "missile_elem", None) if getattr(u, "ally", False) and not u.is_player else None
+            if el and s.kind == "arrow":
+                # a summon that shoots its element (the skeletal mages)
+                if self.watched:
+                    self.w.emit("projectile", u, u.pos, tgt.pos, {"fire": "fireball", "cold": "cold", "ltng": "ltng"}.get(el, "spike"))
+                lo, hi = u.dmg
+                self.w.elem_hit(tgt, el, lo, hi * 2, u, 50, show=False)
+            else:
+                self.w._resolve_attack(u, tgt, "attack", ranged_kind=s.kind, quiet_anim=True)
         except Exception:
             # one bad blow must not stop eight runs: log it and carry on
             import traceback

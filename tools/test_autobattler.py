@@ -506,6 +506,46 @@ def test_d2_quality():
     check(rb.get("unique", 0) > 10 * r0.get("unique", 0), "a boss class's ratios: far better odds")
 
 
+def test_summons_fight():
+    """Summons walk with their summoner and fight in real time; his own side never blocks his way."""
+    import copy
+    from game.grid import chebyshev
+    config.apply_d2_rules()
+    random.seed(4)
+    h = _hero("Necro")
+    h.base_vit = 300
+    h.recalc()
+    h.hp = h.max_hp
+    mgr = RunManager(_NoAssets(), _cfg())
+    r = mgr.start([h])
+    _tick(mgr)
+    _tick(mgr)
+    w = r.world
+    proto = [f for f in r.sim.foes() if not getattr(f, "rift_boss", False)][0]
+    pets = []
+    for _ in range(3):
+        m = copy.copy(proto)
+        m.effects, m.curses = {}, {}
+        m.ally, m.ai, m.aware, m.summoner, m.summon_skill, m.life_turns = True, "ally", False, h, "Raise Skeleton", None
+        m.x, m.y = w._free_cell_near(h.pos, 3)
+        m.hp = m.max_hp = 200
+        m.tc, m.unique, m.rift_boss = None, False, False
+        w.monsters.append(m)
+        pets.append(m)
+    attacks, far = 0, 0
+    for _ in range(25 * 40):
+        _tick(mgr)
+        if r.state != "fight" or r.world is not w:
+            break
+        for p in pets:
+            if p.alive:
+                attacks += r.sim._state(p).mode == "attack"
+                far = max(far, chebyshev(p.pos, h.pos))
+    check(attacks > 50, "skeletons fight (%d frames of attacking)" % attacks)
+    check(r.floors == 0 or attacks > 0, "his skeletons don't end the floor by standing round him")
+    r.finish("stopped")
+
+
 def test_cast_breakpoints():
     from autobattler.brain import CAST_FRAMES0
     sor = [timing.cast_frames(CAST_FRAMES0["sor"] + 1, f) for f in (0, 9, 20, 37, 63, 105, 200)]
@@ -723,6 +763,7 @@ if __name__ == "__main__":
     test_skill_animations()
     test_farms()
     test_d2_quality()
+    test_summons_fight()
     test_inventory_screen()
     print("\n%s" % ("all passed" if not FAILS else "%d FAILED" % len(FAILS)))
     sys.exit(1 if FAILS else 0)

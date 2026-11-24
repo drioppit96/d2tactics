@@ -116,6 +116,16 @@ best one, or a normal attack, or backs off, or drinks.
   is below half.
 - Buffs and warcries that buff: cast again when 85% of their duration has passed.
   Offensive warcries (Howl, Taunt, Battle Cry, War Cry): with two or more monsters within 5 cells.
+- Summons that walk and fight (skeletons, mages, golems, revives, wolves, bears, Valkyries,
+  shadows) are played frame by frame like the heroes (Sim.pets): each goes after the monsters within
+  12 cells of its summoner (or 6 of itself) and otherwise keeps within 3 cells of him; monsters fight
+  them as they fight heroes. A skeletal mage shoots its element. Turrets, traps, vines and spirits
+  keep the engine's round (allies_turn skips the ones the sim plays). The hero's route search walks
+  through his own side (they move out of the way), so his summons can't make a floor look cut off.
+- Skills that hit several monsters at once score each one they would reach (Multiple Shot: level
+  + 1 arrows, Strafe, Fend, Lightning Fury, Whirlwind, Cleave ...), skills that hit several times
+  score each hit (Zeal, Fury, Frenzy, Double Swing, Jab, Dragon Talon ...), and a weapon skill's
+  attack rating bonus counts in its chance to hit.
 - Summons, golems, traps, walls: cast only while he has fewer of them up than the skill allows
   (Skills.txt petmax at his skill level: one golem of any kind, one Valkyrie, as many skeletons
   as the level gives). A summon that is up is not cast again; when it dies, it is. Each summon is

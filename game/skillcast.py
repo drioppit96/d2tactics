@@ -1897,6 +1897,8 @@ class SkillCaster:
                     continue
             if a.ai in ("wall", "pet") or getattr(a, "decoy", False):
                 continue
+            if getattr(a, "realtime", False):
+                continue                     # (the D2 Autobattler moves and fights it frame by frame)
             if a.ai == "turret":
                 self._turret_shoot(a)
                 continue

@@ -348,12 +348,34 @@ class Brain:
             avg += (elo + ehi) / 2.0
         return avg
 
-    def hit_chance(self, m):
+    def hit_chance(self, m, ar_bonus=0):
+        """His chance to hit `m`; ar_bonus: a skill's +attack rating %, applied the way D2 does
+        (his rating x (100 + bonus) / 100, then the usual formula)."""
         try:
             from game.world import hit_chance
+            if ar_bonus:
+                h = self.h
+                keep = h.ar
+                try:
+                    h.ar = int(keep * (100 + ar_bonus) / 100.0)
+                    return hit_chance(h, m)
+                finally:
+                    h.ar = keep
             return hit_chance(self.h, m)
         except Exception:
             return 0.75
+
+    #: skills that hit several monsters at once (how many, by skill level) - the score counts
+    #: each one they would reach, not just the one aimed at
+    SPREAD = {"Multiple Shot": lambda lv: lv + 1, "Strafe": lambda lv: min(10, 4 + lv),
+              "Fend": lambda lv: 8, "Lightning Fury": lambda lv: 1 + lv, "Plague Javelin": lambda lv: 6,
+              "Immolation Arrow": lambda lv: 6, "Freezing Arrow": lambda lv: 6, "Exploding Arrow": lambda lv: 4,
+              "Whirlwind": lambda lv: 6, "Cleave": lambda lv: 4, "Fist of the Heavens": lambda lv: 6}
+    #: skills that hit the same monster several times in one go
+    REPEAT = {"Zeal": lambda lv: min(6, 2 + lv // 4), "Fury": lambda lv: min(5, 2 + lv // 5),
+              "Frenzy": lambda lv: 2, "Double Swing": lambda lv: 2, "Double Throw": lambda lv: 2,
+              "Jab": lambda lv: 3, "Strafe": lambda lv: 1, "Dragon Talon": lambda lv: 1 + min(4, lv // 5),
+              "Phoenix Strike": lambda lv: 1, "Dragon Claw": lambda lv: 2}
 
     def role(self):
         """What his build is, from what he holds and where his skill points are:
@@ -613,10 +635,12 @@ class Brain:
         k = s.kind
         elem, eavg, pavg = inf["elem"], inf["eavg"], inf["pavg"]
         weapon = getattr(s, "weapon", False) or k in ("attack", "melee")
+        ar_bonus = 0
         if weapon:
             bonus = 0
             try:
-                bonus = self.w._skill_mods(h, name).get("dmg", 0)
+                mods = self.w._skill_mods(h, name)
+                bonus, ar_bonus = mods.get("dmg", 0), mods.get("ar", 0)
             except Exception:
                 pass
             pavg += self.weapon_avg() * (100 + bonus) / 100.0
@@ -645,6 +669,18 @@ class Brain:
         else:
             hit = [main]
             cell = main.pos
+        book = self._book()
+        lv = max(1, book.level(name)) if book is not None else 1
+        spread = self.SPREAD.get(name) or self.SPREAD.get(getattr(s, "title", ""))
+        if spread is not None:
+            # arrows fanning out, a whirl, a chain: everything near what he aims at, up to how
+            # many the skill reaches at his level
+            n = spread(lv)
+            around = sorted((m for m in near if chebyshev(m.pos, main.pos) <= 5),
+                            key=lambda m: chebyshev(m.pos, main.pos))
+            hit = list({id(m): m for m in [main] + around}.values())[:max(1, n)]
+        repeat = self.REPEAT.get(name) or self.REPEAT.get(getattr(s, "title", ""))
+        times = repeat(lv) if repeat is not None else 1
         if k == "teleport":
             return None                      # (getting about: handled by walking for now)
         if not hit:
@@ -655,11 +691,11 @@ class Brain:
             reach_ok = True
         total = 0.0
         for m in hit:
-            part = pavg * self.res_factor(m, "phys") * (self.hit_chance(m) if weapon else 1.0)
+            part = pavg * self.res_factor(m, "phys") * (self.hit_chance(m, ar_bonus) if weapon else 1.0)
             part += eavg * self.res_factor(m, elem)
             if getattr(m, "rift_boss", False):
                 part *= 1.3                  # the boss is what ends the floor
-            total += part
+            total += part * times
         score = total * per_sec
         if not reach_ok:
             score *= 0.6                     # he would have to walk first
