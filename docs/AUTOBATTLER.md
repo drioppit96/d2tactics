@@ -100,6 +100,10 @@ How a hero fights is worked out from his build; there are no priority settings t
 - Shots, thrown weapons and aimed spells need open floor all the way to the target (a pillar or a
   wall corner stops them, as in D2): in range but blocked, he walks round until the way is open,
   instead of standing and shooting the pillar. Summons that shoot do the same.
+- His own side never blocks him: a hero or summon walking into one of its own side changes
+  places with it (as D2's minions make way), and path searches only treat monsters as blocking.
+  Before this, a necromancer in a corridor stood boxed in by his skeletons ("looking for monsters"):
+  4 test necromancers with 5 skeletons went from 7473 frames stuck to none in 90 seconds each.
 - Potions are checked every frame, in the middle of a swing, a cast or a hit as D2 allows, not
   only when he makes his next decision.
 - Kiting: every build but melee steps away when a melee monster reaches him, at most twice a

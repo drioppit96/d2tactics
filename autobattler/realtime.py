@@ -353,7 +353,8 @@ class Sim:
                     s.next_think = self.frame + 1     # (this frame's searches are used up)
                 elif route:
                     b.last = "looking for monsters"
-                    if self.occ.get(route[0]) not in (None, h):
+                    blocker = self.occ.get(route[0])
+                    if blocker not in (None, h) and not self._friendly(h, blocker):
                         # someone in the way: round him by a free cell next to the one after
                         nxt = route[1] if len(route) > 1 else None
                         side = next((c for c in self.w.grid.neighbors(*h.pos) if c not in self.occ
@@ -739,6 +740,12 @@ class Sim:
             return max(1, int(getattr(u, "reach", 1)))
         return max(1, int(getattr(u, "range", 1)))
 
+    @staticmethod
+    def _friendly(a, b):
+        """Both on the heroes' side (heroes and their summons)."""
+        side = lambda x: bool(getattr(x, "is_player", False) or getattr(x, "ally", False))
+        return side(a) and side(b)
+
     def _can_shoot(self, a, b):
         """A shot or a missile from a reaches b: next to it, or open floor all the way (a pillar
         or a wall corner between them stops it, as in D2)."""
@@ -969,7 +976,11 @@ class Sim:
             self._paths_left -= 1
             BUDGET["paths"] += 1
             limit = 3000 if u.is_player else 1500
-            path = self.w.path_near(u, goal, reach=reach, target_r=target_r, limit=limit)
+            blocked = None
+            if u.is_player or getattr(u, "ally", False):
+                # his own side moves out of his way (they change places): only monsters block him
+                blocked = {c for c, o in self.occ.items() if o is not u and not self._friendly(u, o)}
+            path = self.w.path_near(u, goal, reach=reach, target_r=target_r, limit=limit, blocked=blocked)
             s.path_goal = goal
             s.next_path = self.frame + (REPATH * 3 if u.is_player and d > DIRECT else REPATH)
             s.path = list(path or [])
@@ -1083,6 +1094,16 @@ class Sim:
         while s.prog >= 1.0 and s.path:
             nxt = s.path[0]
             other = self.occ.get(nxt)
+            if other is not None and other is not u and self._friendly(u, other) and not getattr(other, "radius", 0) \
+                    and self._state(other).mode not in ("attack", "cast"):
+                # one of his own side in the way: they change places, as D2's minions make way
+                if self.occ.get(u.pos) is u:
+                    del self.occ[u.pos]
+                other.x, other.y = u.pos
+                self.occ[other.pos] = other
+                os_ = self._state(other)
+                os_.path, os_.mode = [], "idle"
+                other = None
             if other is not None and other is not u:
                 s.path = []              # someone stepped in the way: look again next frame
                 s.next_path = self.frame
