@@ -27,7 +27,7 @@ update never overwrites them.
 | big_maps | yes | rift floors about twice the area of D2 Tactics' |
 | speed | 1.0 | game speed; 1 = 25 frames a second |
 | move_scale | 1.0 | cells per second per point of D2 velocity |
-| floor_pause | 3 | seconds between a boss dying and the next floor |
+| floor_pause | 1 | seconds between stepping through the portal and the next floor; the next floor is built during it |
 
 ## Rules
 
@@ -140,18 +140,29 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
   monster), and so is the list of living monsters. Monsters wake up on a check five times a
   second.
 - Within 12 cells of where it is going a unit steps straight at it when a free cell gets it
-  closer. A monster within 3 cells of its target whose way in is blocked by its own pack waits for
-  a gap instead of searching a path. Full path searches are limited to 3 per run per frame (monsters
-  search 1500 cells at most, heroes 6000); the rest wait a frame.
-- With nothing in sight a hero heads for the nearest monster he can walk to (searched over at most
-  12000 cells, once every two seconds); if the search is cut short he heads for the nearest one in
-  a straight line. Only a search that wasn't cut short can decide that the monsters left are out
-  of reach (the floor then counts as done).
+  closer.
+- Monsters after a hero walk down that hero's distance map: one breadth-first search over the
+  cells within 24 of him, made again at most every 15 frames while he moves, serves his whole
+  pack. A monster with no free cell nearer waits for a gap. Beyond the map's reach it steps
+  straight at him, or waits a second. Big monsters (with a radius) still use the path search.
+- Full path searches (heroes, big monsters) are limited to 3 per run and 6 for all runs together
+  per frame, a different run going first each frame; heroes search 3000 cells at most, monsters
+  1500. The rest wait a frame.
+- With nothing in sight a hero walks a route to the nearest monster he can reach, taken from one
+  search over at most 12000 cells and kept while he walks it (up to 10 seconds). On a floor too big
+  for one search the route goes as far as the search got towards the nearest monster, and the next
+  search carries on from there. At most 2 of these searches run per frame for all runs together.
+  Only a search that wasn't cut short can decide that the monsters left are out of reach (the
+  floor then counts as done).
+- Awake monsters a hero can't get to (no path) don't keep him from picking things up or going to
+  the portal; after the boss he leaves such a monster alone for 10 seconds at a time.
+- Line of sight for the map is only worked out for the run being watched.
 - At most 6 game frames are played per screen frame (more at higher speeds): a slow PC slows the
   game down instead of freezing it.
 - F3 shows the timings on screen; perf.log in the game folder gets them every 30 seconds.
-- Measured without Diablo II files, 8 runs at 25 frames a second: 3 ms per game frame on average,
-  under 10 ms for 99% of frames (D2's frame is 40 ms).
+- Measured without Diablo II files, 8 runs at 25 frames a second: 2.6 ms per game frame on
+  average; one frame in 6000 took over 30 ms (the first, when the floors are set up). Before the
+  distance maps, 316 in 6000 did.
 
 ## Floors, portals and loot
 
@@ -162,7 +173,8 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
   to the open plain.
 - When the floor's boss dies a red portal opens where it fell. The heroes pick up what they want
   (at most 25 seconds), then walk to the portal; the first hero stepping next to it takes the run
-  to the next floor.
+  to the next floor. The next floor is built while the screen shows "Next: floor N" for
+  floor_pause seconds (1 by default); the pause and the building overlap.
 - Heroes also pick things up between fights, whenever nothing awake is within 18 cells: the
   nearest item within 30 cells that their pickup rules want. Pickups go through the engine's own
   code (gold to the purse, potions to the belt while it has room, tomes, stacks, the backpack).
@@ -221,8 +233,6 @@ Ctrl+click adds heroes to a group. On the Inventory screen W swaps weapons.
   as damage on the monsters near their target.
 - Monsters that don't cast use their normal attack only; casters act once per 2-second round.
 - Reign of the Warlock changes beyond what `game/d2r.py` already has (the Warlock class excluded).
-- Floor building happens on the main thread, so the game may pause briefly when several runs
-  start a new floor at once.
 
 ## Tests
 

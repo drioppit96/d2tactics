@@ -22,12 +22,13 @@ big_maps = yes
 speed = 1.0
 # walking speed in cells per second for each point of D2's velocity (CharStats / MonStats)
 move_scale = 1.0
-# seconds between the boss dying and the next floor starting
-floor_pause = 3
+# seconds between stepping through the portal and the next floor starting (the next floor is
+# built during it, so it only adds time when the floor is built faster than this)
+floor_pause = 1
 """
 
 DEFAULTS = {"max_heroes": 30, "max_active": 8, "max_group": 4, "big_maps": True, "speed": 1.0,
-            "move_scale": 1.0, "floor_pause": 3.0}
+            "move_scale": 1.0, "floor_pause": 1.0}
 
 
 def load():
@@ -37,6 +38,7 @@ def load():
                 f.write(DEFAULT_TEXT)
         except OSError:
             pass
+    _update_old_file()
     cfg = configparser.ConfigParser()
     cfg.read_string(DEFAULT_TEXT)
     cfg.read(PATH)
@@ -53,6 +55,23 @@ def load():
     except (ValueError, KeyError):
         pass
     return out
+
+
+OLD_PAUSE = "# seconds between the boss dying and the next floor starting\nfloor_pause = 3\n"
+NEW_PAUSE = DEFAULT_TEXT[DEFAULT_TEXT.index("# seconds between stepping"):]
+
+
+def _update_old_file():
+    """A file still holding the first version's untouched floor pause (3 seconds, added on top of
+    the floor's build time) gets the new default."""
+    try:
+        with open(PATH) as f:
+            text = f.read()
+        if OLD_PAUSE in text:
+            with open(PATH, "w") as f:
+                f.write(text.replace(OLD_PAUSE, NEW_PAUSE))
+    except OSError:
+        pass
 
 
 def apply_d2_rules():

@@ -217,6 +217,11 @@ class App:
         r = pygame.Rect(rect)
         lv = self.view_of(run)
         self.look.inset(self.canvas, r)
+        if run is not None and run.state in ("pause", "build") and lv is not None:
+            # between floors: the old floor is over (and the heroes already stand on the new one)
+            self.look.text(self.canvas, "med", "Next: floor %d..." % run.depth, GOLD,
+                           r.x, r.centery - 8, "center", r.w)
+            return
         if lv is None:
             self.look.text(self.canvas, "med", "Building floor %d..." % run.depth if run else "", GOLD,
                            r.x, r.centery - 8, "center", r.w)

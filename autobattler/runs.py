@@ -157,15 +157,22 @@ class Run:
             self.build()
             return
         if self.state == "pause":
+            # through the portal (or back to floor 1): the next floor is built during the pause,
+            # so the pause and the building overlap instead of adding up
+            if self.stop_requested:
+                self.finish("stopped")
+                return
+            if not getattr(self, "_next_set", False):
+                if not getattr(self, "_restart", False):
+                    self.depth += 1
+                self._restart = False
+                self._next_set = True
+            if getattr(self, "_thread", None) is None:
+                self.build()                    # (starts the build thread, nothing more)
             self.pause -= 1
             if self.pause <= 0:
-                if self.stop_requested:
-                    self.finish("stopped")
-                else:
-                    if not getattr(self, "_restart", False):
-                        self.depth += 1
-                    self._restart = False
-                    self.state = "build"
+                self._next_set = False
+                self.state = "build"
             return
         if self.state != "fight":
             return
@@ -193,7 +200,7 @@ class Run:
             else:
                 self.depth = 1
                 self.state = "pause"
-                self.pause = int(self.cfg.get("floor_pause", 3) * timing.FPS)
+                self.pause = int(self.cfg.get("floor_pause", 1) * timing.FPS)
                 self._restart = True
         elif self.sim.cleared() and self.sim.phase == "fight":
             self.sim.open_portal(self.sim.boss_cell())
@@ -210,7 +217,7 @@ class Run:
                 self.note("%s picked up %s." % (who, what))
             self.note("Floor %d cleared: through the portal." % self.depth)
             self.state = "pause"
-            self.pause = int(self.cfg.get("floor_pause", 3) * timing.FPS)
+            self.pause = int(self.cfg.get("floor_pause", 1) * timing.FPS)
         elif self.stop_requested:
             self.finish("stopped")
 
@@ -327,7 +334,13 @@ class RunManager:
         return r
 
     def tick(self):
-        for r in self.active():
+        realtime.new_frame()
+        runs = self.active()
+        if runs:
+            # the frame's path searches are shared: a different run goes first each frame
+            self._turn = (getattr(self, "_turn", 0) + 1) % len(runs)
+            runs = runs[self._turn:] + runs[:self._turn]
+        for r in runs:
             try:
                 r.tick()
             except Exception:
