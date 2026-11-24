@@ -237,14 +237,22 @@ class Sim:
             self.w.game_over = False
             return False
 
+    last_error = None
+
     def _engine(self, fn, *a, **kw):
         try:
             return fn(*a, **kw)
-        except Exception:
+        except Exception as e:
             self.errors += 1
+            self.last_error = "error: %s" % e
             if self.errors <= 5:
                 import traceback
                 traceback.print_exc()
+                try:
+                    from main import log_error
+                    log_error(traceback.format_exc())
+                except Exception:
+                    pass
             return None
 
     def _round(self):
@@ -587,6 +595,14 @@ class Sim:
                 n0 = len(w.events)
                 before = set(id(m) for m in w.monsters)
                 ok = bool(self._engine(w.use_skill, plan.skill, plan.target, plan.cell))
+                if not ok:
+                    # why the engine said no, for the run's log (once per skill per floor)
+                    why = [e[1] for e in w.events[n0:] if e and e[0] == "log"]
+                    seen = self.st.setdefault(("failed", id(h)), set())
+                    if plan.skill not in seen:
+                        seen.add(plan.skill)
+                        self.notes.append("%s can't use %s: %s" % (h.name, plan.skill, why[-1] if why else
+                                                                   (self.last_error or "no reason given")))
                 for m in w.monsters:
                     if id(m) not in before and getattr(m, "ally", False):
                         m.summoner = h               # (whose it is: his brain counts his own)
