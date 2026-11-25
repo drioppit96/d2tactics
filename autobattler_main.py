@@ -34,6 +34,7 @@ from autobattler import stash as abstash                        # noqa: E402
 from autobattler.runs import RunManager, FARMS, FARM_NAMES, farm_of  # noqa: E402
 from autobattler.timing import FPS, Timings                     # noqa: E402
 from autobattler.ui import Look, GOLD, WHITE, GREY, RED, GREEN, BLUE, W, H   # noqa: E402
+YELLOW = (255, 255, 100)            # D2's rare-item colour (Rare Cores)
 
 CLASS_NAMES = {"ama": "Amazon", "sor": "Sorceress", "nec": "Necromancer", "pal": "Paladin",
                "bar": "Barbarian", "dru": "Druid", "ass": "Assassin"}
@@ -540,9 +541,9 @@ class App:
                 frac = 0.0
             L.text(c, "small", "Level %d %s   %s" % (h.level, CLASS_NAMES.get(h.cls, h.cls),
                                                    STYLE_NAMES[brain.profile(h)["style"]]), GOLD, x + 250, y)
-            L.text(c, "small", "Gold %d   Floor %d   Best %d" % (getattr(h, "gold", 0), int(getattr(h, "rift_depth", 0) or 0),
-                                                            int(brain.profile(h).get("best", 0) or 0)),
-                   WHITE, x + 250, y + 16)
+            L.text(c, "small", "Gold %d   Cores %d   Floor %d   Best %d" % (
+                getattr(h, "gold", 0), gear.rare_cores(h), int(getattr(h, "rift_depth", 0) or 0),
+                int(brain.profile(h).get("best", 0) or 0)), WHITE, x + 250, y + 16)
             if run is not None and run.sim is not None:
                 now = "in town, floor %d waits" % run.depth if run.state == "town" else (run.sim.brain(h).last or "...")
                 L.text(c, "small", "Now: %s" % now, GOLD, x, y + 36)
@@ -1431,7 +1432,8 @@ class App:
                 box = pygame.Rect(PURSE_BOX[0], PURSE_BOX[1] + dy, PURSE_BOX[2], PURSE_BOX[3])
                 sub.fill((17, 16, 14), box)
                 pygame.draw.rect(sub, (74, 66, 50), box, 1)
-                L.text(sub, "med", "Gold  %d" % h.gold, GOLD, box.x + 10, box.y + 15)
+                L.text(sub, "med", "Gold  %d" % h.gold, GOLD, box.x + 10, box.y + 6)
+                L.text(sub, "med", "Rare Cores  %d" % gear.rare_cores(h), YELLOW, box.x + 10, box.y + 24)
                 if tip and b.held is None:
                     self._tip = tip
                 return
@@ -1456,7 +1458,8 @@ class App:
             L.icon(sub, it, r.x + 1, r.y + 1, r.w - 2, r.h - 2)
             if r.collidepoint((mx, my)) and b.held is None:
                 self._tip = L.item_lines(it, h)
-        L.text(sub, "med", "Gold  %d" % h.gold, GOLD, 60, gy + rows * ic + 20)
+        L.text(sub, "med", "Gold  %d" % h.gold, GOLD, 60, gy + rows * ic + 12)
+        L.text(sub, "med", "Rare Cores  %d" % gear.rare_cores(h), YELLOW, 60, gy + rows * ic + 30)
 
     # ------------------------------------------------------------ character: stats and skills
     CHAR_X, TREE_X, PANEL_Y = 80, 400, 40      # D2's two 320 x 432 panels side by side

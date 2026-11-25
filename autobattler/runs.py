@@ -244,9 +244,12 @@ class Run:
             if n:
                 self.note("%s puts %d item%s in the stash." % (h.name, n, "" if n == 1 else "s"))
             if auto and sell:
+                cores0 = gear.rare_cores(h)
                 sold, gold = sell_magic_and_rare(h)
                 if sold:
-                    self.note("%s sells %d item%s for %d gold." % (h.name, sold, "" if sold == 1 else "s", gold))
+                    cores = gear.rare_cores(h) - cores0
+                    self.note("%s sells %d item%s for %d gold%s." % (h.name, sold, "" if sold == 1 else "s", gold,
+                                                                     (" and %d Rare Core%s" % (cores, "" if cores == 1 else "s")) if cores else ""))
             roster.save(h)
         if stored:
             stash.save()
@@ -513,6 +516,7 @@ def sell_magic_and_rare(h):
         h.inventory.remove(it)
         it.inv_pos = None
         h.gold += value
+        gear.on_sold(h, it)                     # (a rare one: a Rare Core)
         sold += 1
         gold += value
     return sold, gold

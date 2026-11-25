@@ -345,6 +345,10 @@ is drawn with plain boxes and a system font.
     gem or rune in the backpack puts it on its stack. Gold stays each hero's own.
   - Leaving the screen with an item on the cursor puts it in the backpack, or in the stash when
     the backpack is full.
+- Rare Cores: a crafting material. Every rare (yellow) item a hero sells gives him one Rare Core,
+  whether he sells it by hand (the sell box, Ctrl + right click, the shop's shelves) or on the
+  automatic trip home (gear.on_sold). Each hero keeps his own (his profile, saved with him); the
+  hero card and the inventory purse show how many. Nothing uses them yet.
 - No essences: the three account currencies of D2 Tactics (game/essences.py) don't drop in the
   autobattler (essences.DROPS is turned off by config.apply_d2_rules) and aren't shown anywhere.
   D2's own boss essences (the Token of Absolution's) are untouched.

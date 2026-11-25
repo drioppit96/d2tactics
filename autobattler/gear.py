@@ -23,6 +23,23 @@ CHARM_W, CHARM_H = 4, 8     # the charm inventory beside the backpack
 GREY = (170, 170, 170)
 
 
+def rare_cores(hero):
+    """His Rare Cores: a crafting material, one for every rare (yellow) item he sells. Kept in his
+    profile (saved with him)."""
+    from . import brain
+    return int(brain.profile(hero).get("rare_cores", 0) or 0)
+
+
+def on_sold(hero, it):
+    """Every sale goes through here: a rare item gives him a Rare Core. -> cores gained."""
+    if getattr(it, "rarity", "") != "rare":
+        return 0
+    from . import brain
+    prof = brain.profile(hero)
+    prof["rare_cores"] = int(prof.get("rare_cores", 0) or 0) + 1
+    return 1
+
+
 def is_charm(it):
     return bool(getattr(it, "charm", False))
 
@@ -267,7 +284,9 @@ class Bench:
             return False
         it.inv_pos = None
         p.gold += value
-        self.log("Sold %s for %d gold." % (getattr(it, "shown_name", it.name), value), GREY)
+        core = on_sold(p, it)
+        self.log("Sold %s for %d gold%s." % (getattr(it, "shown_name", it.name), value,
+                                              " and a Rare Core" if core else ""), GREY)
         self.changed = True
         return True
 
@@ -525,6 +544,7 @@ class Bench:
                 continue
             if self.sellable(it):
                 p.gold += d2items.sell_price(it)
+                on_sold(p, it)
                 sold += 1
                 self.log("No room: sold %s." % getattr(it, "shown_name", it.name), GREY)
             else:

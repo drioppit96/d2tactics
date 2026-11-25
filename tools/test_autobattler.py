@@ -605,6 +605,26 @@ def test_runeword_bases():
           "the base goes to the stash, the rest is sold")
 
 
+def test_rare_cores():
+    """Each rare item sold gives one Rare Core: by hand, and on the trip home."""
+    from autobattler import gear
+    from autobattler.runs import sell_magic_and_rare
+    from game.items import Item
+    h = _hero("Crafter")
+    c0 = gear.rare_cores(h)
+    b = gear.Bench(h)
+    r1, m1 = Item("Rare Ring", "rin", "ring", rarity="rare"), Item("Magic Ring", "rin", "ring", rarity="magic")
+    h.inv_add(r1)
+    h.inv_add(m1)
+    b.sell(r1)
+    b.sell(m1)
+    check(gear.rare_cores(h) == c0 + 1, "selling a rare by hand: +1 core, a magic one: none")
+    for _ in range(3):
+        h.inv_add(Item("Rare Cap", "cap", "helm", rarity="rare"))
+    sell_magic_and_rare(h)
+    check(gear.rare_cores(h) == c0 + 4, "three rares sold on the trip home: +3 cores")
+
+
 def test_cast_breakpoints():
     from autobattler.brain import CAST_FRAMES0
     sor = [timing.cast_frames(CAST_FRAMES0["sor"] + 1, f) for f in (0, 9, 20, 37, 63, 105, 200)]
@@ -826,6 +846,7 @@ if __name__ == "__main__":
     test_ready_skeletons()
     test_line_of_fire()
     test_runeword_bases()
+    test_rare_cores()
     test_inventory_screen()
     print("\n%s" % ("all passed" if not FAILS else "%d FAILED" % len(FAILS)))
     sys.exit(1 if FAILS else 0)
