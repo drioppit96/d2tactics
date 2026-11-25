@@ -88,6 +88,8 @@ class Perf:
         gn = max(1, self.n.get("game", 0))
         out.append("game: %.1f ms per game frame (D2 allows 40), worst burst %.0f ms" % (1000 * g / gn, 1000 * self.worst.get("game", 0)))
         out.append("drawing: %.1f ms per screen frame, worst %.0f ms" % (1000 * d / max(1, self.frames), 1000 * self.worst.get("draw", 0)))
+        if runs.HOLDER_NOTE[0]:
+            out.append("  " + runs.HOLDER_NOTE[0])
         for r in mgr.active():
             w = r.world
             gf = max(1, getattr(r, "game_frames", 0))

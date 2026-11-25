@@ -280,9 +280,10 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
   folder, shared out over the 24 places the rift builds floors from (each act's dungeons and
   outdoors: 8-9 each), and 2 premade arenas for each act's boss. A floor whose place has its
   share loads one of them; its monsters, arrival spot and boss spot are placed new each time.
-  Until then floors are built as before and kept, and the missing ones are built in the
-  background while no run waits for a floor, arenas first (perf.log shows "premade floor n/204"
-  while it works). The layouts are made on the player's PC from his own D2 files and are never in
+  Until then floors are built as before and kept, and the missing ones are built by a process
+  of its own (autobattler/mapworker.py, below-normal priority, on another processor core), arenas
+  first; it stops when the pool is full. On a thread next to the game it took time from the
+  screen even with one hero. perf.log shows "premade floors: n/214" while it works. The layouts are made on the player's PC from his own D2 files and are never in
   the repository; they hold no art, only the names of D2's tile files and tile numbers, read
   from the MPQs again when loaded. A layout that can't be kept or loaded is skipped and the floor
   is built as before. Delete map_cache/ to make new ones.

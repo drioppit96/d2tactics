@@ -34,6 +34,7 @@ MAIN_BUSY = [False]
 #: and while there is one, nothing steps aside for the screen
 WAITING = set()
 HOLDER = [None]     # the thread building now (for perf.log)
+HOLDER_NOTE = [None]    # the premade floors' process at work (for perf.log)
 
 _GIVE = [0.0]
 
@@ -47,7 +48,9 @@ class _Aborted(BaseException):
 def _hook_for(job):
     """The profile hook of a thread building a floor ahead (see _give_way)."""
     def hook(frame, event, arg, _job=job, _waiting=WAITING, _give=_give_way):
-        if _waiting and _job.get("locked") and not _job.get("needed"):
+        if event == "call" and _waiting and _job.get("locked") and not _job.get("needed"):
+            # (only as a Python function starts: raised as a C call returns, it could leave a
+            # lock taken - a with-block's lock is taken in C before the block begins)
             raise _Aborted()
         _give(frame, event, arg)
     return hook
@@ -944,41 +947,28 @@ class RunManager:
         return n
 
     def _fill_maps(self):
-        """While no run waits for a floor and nothing else is being built, the pool of premade
-        floors is filled, one floor at a time, in the background (it steps aside for the screen,
-        and is dropped the moment a run needs its floor)."""
-        from . import mapcache
-        kit = getattr(self.assets, "act_kit", None)
-        if kit is None or mapcache._ORIGINAL is None or HOLDER[0] is not None or BUILD_LOCK.locked():
+        """The pool of premade floors is filled by a process of its own (autobattler/mapworker.py):
+        on a thread next to the game it took time from the screen. Every 10 s the game looks for
+        the floors it has saved meanwhile."""
+        from . import mapcache, mapworker
+        if getattr(self.assets, "act_kit", None) is None or mapcache._ORIGINAL is None:
             return
-        th = getattr(self, "_filler", None)
-        if th is not None and th.is_alive():
+        if _clock() < getattr(self, "_fill_after", 0.0):
             return
-        if _clock() < getattr(self, "_fill_after", 0.0) or not mapcache.missing():
-            return
-        self._fill_after = _clock() + 2.0
-
-        def fill():
-            import sys
-            job = {"needed": False}
-            sys.setprofile(_hook_for(job))
-            try:
-                _take_build_lock(job)
-                try:
-                    HOLDER[0] = "premade floor %d/%d" % (mapcache.total() + 1, mapcache.MAP_POOL + mapcache.ARENA_POOL * len(mapcache.arenas()))
-                    mapcache.build_missing_one(kit)
-                finally:
-                    HOLDER[0] = None
-                    job["locked"] = False
-                    BUILD_LOCK.release()
-            except _Aborted:
-                pass
-            except Exception:
-                mapcache._log("building a premade floor")
-            finally:
-                sys.setprofile(None)
-        self._filler = threading.Thread(target=fill, name="premade-floors", daemon=True)
-        self._filler.start()
+        self._fill_after = _clock() + 10.0
+        try:
+            if mapworker.running():
+                with mapcache._LOCK:
+                    mapcache._INDEX = None
+                HOLDER_NOTE[0] = "premade floors: %d/%d" % (mapcache.total(), mapcache.MAP_POOL +
+                                                            mapcache.ARENA_POOL * len(mapcache.arenas()))
+            elif not getattr(self, "_worker_started", False):
+                self._worker_started = True
+                mapworker.start(self.assets)
+            else:
+                HOLDER_NOTE[0] = None
+        except Exception:
+            mapcache._log("starting the premade floors' process")
 
     def _tick_runs(self, runs):
         content = getattr(self.assets, "content", None)
