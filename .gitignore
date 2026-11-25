@@ -48,3 +48,4 @@ build_profile.log
 stuck.log
 map_cache/
 diagnose_report.txt
+session_report.txt

@@ -318,6 +318,19 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
   screen_scale = gpu; pygame's SCALED window). It used to be smoothed on the processor every
   frame (smoothscale), several milliseconds a frame on its own - more on an older PC.
   screen_scale = sharp or smooth go back to the processor (plain or smoothed pixels).
+- F9 in the game: a report of the session being played. The game always keeps the last 4 minutes
+  of every hero on a run (once a second: floor, position, what he does, his target, its distance
+  and life, whether he has a shot at it) and every 8-second stall (with the monsters near: their
+  size, whether they stand on floor, whether he has a shot, whether he has given up on them).
+  F9 watches the next 30 seconds with Python's profiler, then writes session_report.txt in the
+  game folder: the game's timing, each run's log, the heroes' last minutes, the stalls, where the
+  time went, and what perf.log, stuck.log, build_profile.log and errors.log got meanwhile.
+- A big monster whose body doesn't fit through a narrow passage on the way to a hero squeezes
+  through like a small one (D2 does the same) instead of standing still. A player's test drive
+  had a sorceress and a Dune Beast 3 cells apart for 20 seconds: it found no way for its body,
+  she had no shot round the corner.
+- The 8-second stall check counts every awake monster near, also one the hero has given up on
+  for a while (the one he can't hit and that can't reach him is the one holding him).
 - "Diagnose D2 Autobattler.bat" (tools/diagnose_autobattler.py): a 3-minute test drive on a copy
   of the heroes (the real saves are never touched). It starts a run for up to four heroes (an
   Amazon first), shows the first, and writes diagnose_report.txt: frame times, the game's own

@@ -16,7 +16,7 @@ Screens:
     Watch       the selected hero's run full screen
 
 Keys: S start run, X stop, W watch, T style, I or L inventory and loot, C abilities, P pickup,
-F3 timings (also written to perf.log every 30 seconds), Esc back. Ctrl+click adds heroes to a
+F3 timings (also written to perf.log every 30 seconds), F9 a 30-second report (session_report.txt), Esc back. Ctrl+click adds heroes to a
 group.
 """
 import os
@@ -171,6 +171,10 @@ class App:
         self._dt = 0.0
         self.show_perf = False
         self.perf = Perf()
+        from autobattler.diagnose import Recorder
+        self.recorder = Recorder()      # what the heroes do, once a second (F9 writes it down)
+        self._rec_next = 0.0
+        self._report = None             # F9: [ends at, profiler, log sizes at the start]
         self.reload_heroes()
         self.running = True
 
@@ -471,6 +475,9 @@ class App:
             elif h is not None:
                 brain.pickup_rules(h)["words"] = cur
             return
+        if ev.key == pygame.K_F9:
+            self.start_report()
+            return
         if ev.key == pygame.K_F3:
             self.show_perf = not self.show_perf
             return
@@ -503,7 +510,71 @@ class App:
     # ------------------------------------------------------------ the frame
     MAX_CATCH_UP = 3       # game frames per screen frame at most: a slow PC slows the game, never stutters
 
+    REPORT_SECONDS = 30
+    REPORT_LOGS = ("perf.log", "stuck.log", "build_profile.log", "errors.log")
+
+    def start_report(self):
+        """F9: watch the next 30 seconds closely (where the time goes), then write
+        session_report.txt in the game folder with that and the last minutes of every hero."""
+        if self._report is not None:
+            return
+        import cProfile
+        sizes = {}
+        for n in self.REPORT_LOGS:
+            p = os.path.join(HERE, n)
+            sizes[n] = os.path.getsize(p) if os.path.exists(p) else 0
+        prof = cProfile.Profile()
+        try:
+            prof.enable()
+        except Exception:
+            prof = None
+        self._report = [time.time() + self.REPORT_SECONDS, prof, sizes]
+        self.message = "Recording a report for %d seconds (F9)..." % self.REPORT_SECONDS
+
+    def _finish_report(self):
+        import io
+        import pstats
+        end, prof, sizes = self._report
+        self._report = None
+        text = None
+        if prof is not None:
+            prof.disable()
+            buf = io.StringIO()
+            st = pstats.Stats(prof, stream=buf)
+            st.sort_stats("cumulative").print_stats(40)
+            st.sort_stats("tottime").print_stats(30)
+            text = buf.getvalue()
+        extra = []
+        for n in self.REPORT_LOGS:
+            try:
+                with open(os.path.join(HERE, n), "rb") as f:
+                    f.seek(sizes.get(n, 0))
+                    got = f.read().decode("utf-8", "replace")
+            except OSError:
+                got = ""
+            extra.append("")
+            extra.append("== %s during the recording" % n)
+            extra.append(got[-15000:] if got else "   (nothing)")
+        report = self.recorder.report(self, "D2 Autobattler session report, %s" % time.strftime("%Y-%m-%d %H:%M:%S"),
+                                      text)
+        path = os.path.join(HERE, "session_report.txt")
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(report + "\n".join(extra) + "\n")
+            self.message = "Report written: session_report.txt in the game folder."
+        except OSError as e:
+            self.message = "The report could not be written: %s" % e
+
     def step(self, dt):
+        now = time.time()
+        if now >= self._rec_next:
+            self._rec_next = now + 1.0
+            try:
+                self.recorder.sample(self)
+            except Exception:
+                pass
+        if self._report is not None and now >= self._report[0]:
+            self._finish_report()
         t0 = time.perf_counter()
         # every run keeps its own count of game frames owed: the one on screen is played in full,
         # the others in what is left of the frame's game time (see RunManager.step)

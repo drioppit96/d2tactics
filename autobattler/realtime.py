@@ -918,14 +918,15 @@ class Sim:
         cache = self.__dict__.setdefault("_fit_cache", {})
         return cache.setdefault(r, {})
 
-    def _path_big(self, u, goal, reach, target_r, limit):
+    def _path_big(self, u, goal, reach, target_r, limit, r=None):
         """The engine's path_near for a big monster (radius 1 or more), without its cost: there
         every cell looked at checked the monster's whole body against the floor and every unit
         (Python's profiler on a player's PC: 79 ms a search, two thirds of all the game's time).
         Here the floor under a body is worked out once per cell and floor, and the other units'
         cells are widened by the body once per search."""
         import heapq
-        r = getattr(u, "radius", 0)
+        if r is None:
+            r = getattr(u, "radius", 0)
         g = self.w.grid
         fit = self._fits_terrain(r)
         cells, gw, gh = g.cells, g.w, g.h
@@ -1291,6 +1292,10 @@ class Sim:
                 blocked = {c for c, o in self.occ.items() if o is not u and not self._friendly(u, o)}
             if getattr(u, "radius", 0):
                 path = self._path_big(u, goal, reach, target_r, BIG_PATH)
+                if not path:
+                    # its whole body doesn't fit through (a narrow passage): it squeezes through
+                    # like a small one, as D2's big monsters do, rather than standing there
+                    path = self._path_big(u, goal, reach, target_r, BIG_PATH, r=0)
             else:
                 path = self.w.path_near(u, goal, reach=reach, target_r=target_r, limit=limit, blocked=blocked)
             s.path_goal = goal
@@ -1384,7 +1389,9 @@ class Sim:
         last = max(s.moved_at, s.dealt_at, getattr(self, "_floor_start", 0))
         if self.frame - last < self.NO_PROGRESS * timing.FPS:
             return False
-        if not self._awake_near(h):
+        if not any(getattr(m, "aware", False) and chebyshev(m.pos, h.pos) <= HERO_SIGHT for m in self.foes()):
+            # (every awake monster near counts here, also one he has given up on for a while:
+            # one he can't hit and that can't reach him is what holds him)
             s.dealt_at = self.frame
             return False
         s.dealt_at = s.moved_at = self.frame
