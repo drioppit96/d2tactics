@@ -47,6 +47,11 @@ update never overwrites them.
 - The rift runs to floor 60 before it starts over: 1-10 Act 1 ... 41-50 Act 5, and 51-60 a
   sixth stretch in Act 5's places with levels going on past Baal's (Normal: 61-70), Baal again on
   floor 60 (rift.SIXTH). After 60 the acts come round again, 70 levels higher (at most 99).
+- One trip to town per floor (against save scumming): To town, the automatic trip with a full
+  backpack and the retreat with no healing potions all use the floor's one trip (Run.town_used).
+  Once it is spent the button reads "To town (used)" and is greyed out, a full backpack leaves
+  items lying and a hero out of potions fights on; clearing the floor or dying gives it back. The
+  trip before an act boss doesn't count.
 - Before every act boss (floors 10, 20, 30, 40, 50, 60) the run goes back to town when the floor
   before it is cleared (the heroes are mended and their gems, runes, uniques, sets and runeword
   bases go to the stash, as on any trip home) and waits: the roster's Fight boss button sends them

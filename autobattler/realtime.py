@@ -506,7 +506,7 @@ class Sim:
         pct = 100.0 * h.hp / max(1, h.max_hp)
         fighting = bool(self._awake_near(h, HERO_SIGHT))
         has_heal = any(getattr(x, "potion", "") in ("heal", "rejuv") for x in (getattr(h, "belt", None) or []))
-        if pct < self.RETREAT_AT and not has_heal and fighting:
+        if pct < self.RETREAT_AT and not has_heal and fighting and not getattr(self, "town_spent", False):
             self.need_town = True              # (the run takes him home to be mended)
             b.last = "retreats: no potions left"
             self._back_off(h, s)

@@ -619,7 +619,8 @@ class App:
                 ("Stop run", self.stop_run, on_run),
                 ("Fight boss", self.fight_boss, True) if gate_run else
                 ("Continue run", self.continue_run, True) if town_run else
-                ("To town", self.to_town, on_run and run.state == "fight"),
+                ("To town (used)" if on_run and run.town_used else "To town", self.to_town,
+                 on_run and run.state == "fight" and not run.town_used),
                 ("Watch", lambda: self.go("watch"), on_run and not town_run)]
         row2 = [("Inventory / Loot", lambda: self.go("inventory"), has),
                 ("Abilities", lambda: self.go("character"), has),

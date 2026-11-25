@@ -293,6 +293,10 @@ def test_town_and_back():
     check(r.resume() and r.state == "fight" and r.world is w and r.depth == depth, "continue: the same floor")
     _tick(mgr)
     check(r.sim.frame == f0 + 1, "and it plays on")
+    check(not r.go_town() and r.state == "fight", "one trip to town per floor: the second is refused")
+    r.sim.at_portal = True
+    _tick(mgr)
+    check(not r.town_used, "a cleared floor gives the trip back")
     r.finish("stopped")
 
 

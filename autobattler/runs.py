@@ -81,6 +81,7 @@ class Run:
         self.cfg = cfg
         self.timings = timings
         self.state = "build"
+        self.town_used = False      # the floor's one trip to town is spent (no save scumming)
         self.farm = farm_of(self.heroes[0])
         self.difficulty = difficulty_of(self.heroes[0])
         self.depth = max(1, max(cleared(h, self.difficulty) for h in self.heroes) + 1) if self.farm == "rift" else 1
@@ -261,8 +262,9 @@ class Run:
         Tyrael mends them and the traders have new stock, and they put their gems, runes, unique
         and set items in the account's stash. With auto (a full backpack) they go back to the
         floor on their own a moment later. -> True if they went."""
-        if self.state != "fight" or self.sim is None:
+        if self.state != "fight" or self.sim is None or self.town_used:
             return False
+        self.town_used = True                   # (one trip per floor, until it is cleared or he dies)
         self.state = "town"
         from . import stash
         st = stash.get(getattr(self.assets, "content", None))
@@ -376,6 +378,7 @@ class Run:
         if self.state != "fight":
             return                              # (town: the floor waits)
         xp0 = self.leader.xp
+        self.sim.town_spent = self.town_used     # (no retreat home once the floor's trip is spent)
         self.sim.tick()
         while self.sim.notes:
             self.note(self.sim.notes.pop(0))
@@ -399,6 +402,7 @@ class Run:
                     prof["cleared"] = 0
                 h.alive = True
                 roster.save(h)
+            self.town_used = False
             if self.stop_requested:
                 self.finish("died")
             else:
@@ -406,10 +410,10 @@ class Run:
                 self.state = "pause"
                 self.pause = int(self.cfg.get("floor_pause", 1) * timing.FPS)
                 self._restart = True
-        elif self.sim.need_town:
+        elif self.sim.need_town and not self.town_used:
             self.sim.need_town = False
             self.go_town(auto=True, sell=False, why="out of healing potions")
-        elif self.sim.no_room and self._should_empty_bag():
+        elif self.sim.no_room and not self.town_used and self._should_empty_bag():
             self.sim.no_room = False
             self.go_town(auto=True)
         elif self.sim.cleared() and self.sim.phase == "fight":
@@ -418,6 +422,7 @@ class Run:
         elif self.sim.at_portal:
             self.kills += self.sim.kills
             self.floors += 1
+            self.town_used = False
             for h in self.heroes:
                 if self.farm == "rift":
                     h.rift_depth = max(int(getattr(h, "rift_depth", 0) or 0), self.depth)
