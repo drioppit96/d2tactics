@@ -3,7 +3,7 @@
     "Diagnose D2 Autobattler.bat" (or: python tools/diagnose_autobattler.py [seconds])
 
 It opens the game as usual, on a COPY of the heroes (saves_auto is never touched: the copy is in
-a temporary folder and is thrown away), starts a run for up to four heroes (an Amazon first, if
+a temporary folder and is thrown away), starts a run for up to six heroes (an Amazon first, if
 there is one), shows the first of them on screen and lets them play for 3 minutes. Meanwhile it
 records:
 - every screen frame's time, and where the game's time goes (Python's profiler);
@@ -66,7 +66,7 @@ def main(seconds=180):
                                             {k: app.cfg[k] for k in sorted(app.cfg)}))
         heroes = [h for h in app.heroes.values()]
         heroes.sort(key=lambda h: (getattr(h, "cls", "") != "ama", -getattr(h, "level", 1)))
-        heroes = heroes[:4]
+        heroes = heroes[:6]                      # (up to six: every hero of a usual account)
         if not heroes:
             say("No heroes to test with: make one in the game first.")
             return out, tmp
