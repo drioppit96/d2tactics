@@ -90,12 +90,16 @@ class Perf:
         out.append("drawing: %.1f ms per screen frame, worst %.0f ms" % (1000 * d / max(1, self.frames), 1000 * self.worst.get("draw", 0)))
         for r in mgr.active():
             w = r.world
-            out.append("run %d: %s, floor %d, %d monsters, %s" % (r.id, r.state, r.depth,
-                                                               len(w.monsters) if w is not None else 0,
-                                                               "%dx%d cells" % (w.grid.w, w.grid.h) if w is not None else "building"))
+            gf = max(1, getattr(r, "game_frames", 0))
+            out.append("run %d: %s, floor %d, %d monsters, %s, %.1f ms per game frame, %d floors built in %.1f s" % (
+                r.id, r.state, r.depth, len(w.monsters) if w is not None else 0,
+                "%dx%d cells" % (w.grid.w, w.grid.h) if w is not None else "building",
+                1000 * getattr(r, "game_secs", 0.0) / gf, getattr(r, "builds", 0), getattr(r, "build_secs", 0.0)))
         if el > 5:
             self.since = time.time()
             self.t, self.n, self.worst, self.frames = {}, {}, {}, 0
+            for r in mgr.active():
+                r.game_secs, r.game_frames, r.builds, r.build_secs = 0.0, 0, 0, 0.0
         return out
 
     def maybe_write(self, mgr):

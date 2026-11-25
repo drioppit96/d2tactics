@@ -20,6 +20,7 @@ instead, with the monster farthest from the start as its boss. That is also how 
 """
 import random
 import threading
+from time import perf_counter as _clock
 
 from . import brain, gear, realtime, roster, timing
 
@@ -165,6 +166,16 @@ class Run:
         self.note("%s: %s" % (self.where()[:1].upper() + self.where()[1:], getattr(w, "level_name", "") or "rift"))
 
     def _build_world(self):
+        import time as _time
+        t0 = _time.perf_counter()
+        try:
+            self._build_world_inner()
+        finally:
+            # (for perf.log: how long floors take to build, on their own thread)
+            self.build_secs = getattr(self, "build_secs", 0.0) + _time.perf_counter() - t0
+            self.builds = getattr(self, "builds", 0) + 1
+
+    def _build_world_inner(self):
         try:
             with BUILD_LOCK:
                 a = self.assets
@@ -671,6 +682,7 @@ class RunManager:
                     content.set_difficulty(getattr(r, "difficulty", "normal"))
                 finally:
                     BUILD_LOCK.release()
+            t0 = _clock()
             try:
                 r.tick()
             except Exception:
@@ -678,6 +690,8 @@ class RunManager:
                 traceback.print_exc()
                 r.note("This run stopped because of an error (see the console / errors.log).")
                 r.finish("error")
+            r.game_secs = getattr(r, "game_secs", 0.0) + _clock() - t0
+            r.game_frames = getattr(r, "game_frames", 0) + 1
         # finished runs are kept for their log, but only the last 30
         over = [r for r in self.runs if r.state == "over"]
         for r in over[:-30]:

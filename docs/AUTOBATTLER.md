@@ -270,6 +270,16 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
 - Summons think every 6 frames and share the list of monsters round their summoner each frame;
   their path searches look at 600 cells at most. At most 4 full path searches run per frame for
   all runs together.
+- perf.log (every 30 seconds, and F3 on screen) lists for each run its time per game frame and how
+  many floors it built and how long that took.
+- Spells are aimed only as far as the engine lets them fly (12 cells); a cast further away used to
+  fail as "Out of range" and was tried again. A spell is aimed where the monster is when it is
+  released, not where it stood when the cast began.
+- Before a missile spell the hero checks the engine's own flight line; if it would end in a wall
+  he walks round first.
+- A monster whose life has not gone down after 8 blows or casts in a row is left alone for 10
+  seconds, and the run's log says so ("... leaves Fallen at x,y: 8 attacks did nothing to it").
+  A floor's boss is never left.
 - Measured on a 240 x 240 cave with 4 runs (one a necromancer with 5 skeletons), 1500 frames:
   7.4 ms per frame on average (95% under 29 ms) before, 3.0 ms (95% under 15 ms) after.
 - At most 3 game frames are played per screen frame (more at higher speeds): a slow PC slows the

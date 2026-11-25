@@ -56,7 +56,10 @@ ROLE_NAMES = {"melee": "Melee", "ranged": "Bow / crossbow", "thrower": "Thrower"
 
 DAMAGE_KINDS = ("missile", "nova", "area", "line", "chain", "charge", "spiral", "corpse_blast", "melee", "attack")
 SUMMON_KINDS = ("summon", "golem", "raise", "revive", "turret", "wall")
-SPELL_RANGE = 14            # cells: how far a hero casts a targeted spell
+try:
+    from game.skillcast import SPELL_RANGE   # the engine's own reach for spells (12 cells): a cast
+except Exception:                             # aimed further fails as "Out of range"
+    SPELL_RANGE = 12
 DEFENSIVE_AURAS = ("Prayer", "Defiance", "Cleansing", "Meditation", "Redemption", "Salvation",
                    "Resist Fire", "Resist Cold", "Resist Lightning", "Vigor")
 

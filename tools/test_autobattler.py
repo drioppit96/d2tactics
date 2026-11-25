@@ -588,6 +588,34 @@ def test_line_of_fire():
     check(sim._can_shoot(a, c), "open floor: a clear shot")
 
 
+def test_futile_target():
+    """Spells reach as far as the engine lets them; a monster whose life never goes down is left."""
+    import types
+    from autobattler import brain
+    from autobattler.realtime import Sim, State
+    from game import skillcast
+    check(brain.SPELL_RANGE == skillcast.SPELL_RANGE, "heroes aim spells only as far as they fly")
+    sim = Sim.__new__(Sim)
+    sim.frame, sim.notes = 100, []
+    h = types.SimpleNamespace(name="Sorc")
+    s = State()
+    m = types.SimpleNamespace(hp=50, pos=(3, 4), name="Fallen", rift_boss=False)
+    for _ in range(Sim.FUTILE_BLOWS - 1):
+        Sim._count_blow(s, m)
+    check(not sim._futile(h, s, m), "a few blows without damage: keep at it")
+    m.hp = 40
+    Sim._count_blow(s, m)
+    check(not sim._futile(h, s, m) and s.futile[2] == 0, "its life went down: the count starts again")
+    for _ in range(Sim.FUTILE_BLOWS):
+        Sim._count_blow(s, m)
+    check(sim._futile(h, s, m) and s.skip.get(id(m), 0) > sim.frame and sim.notes,
+          "8 blows that did nothing: he leaves it and says so")
+    m.rift_boss = True
+    for _ in range(Sim.FUTILE_BLOWS):
+        Sim._count_blow(s, m)
+    check(not sim._futile(h, s, m), "the floor's boss is never left")
+
+
 def test_runeword_bases():
     """Home: exceptional / elite plain items with all their sockets go to the stash; other plain
     gear is sold with the magic and rare items."""
@@ -955,6 +983,7 @@ if __name__ == "__main__":
     test_summons_fight()
     test_ready_skeletons()
     test_line_of_fire()
+    test_futile_target()
     test_runeword_bases()
     test_rare_cores()
     test_horadric_cube()

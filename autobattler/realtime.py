@@ -72,7 +72,7 @@ MONSTER_VEL = 4.0       # when MonStats can't be read
 class State:
     __slots__ = ("mode", "frames", "hit_at", "target", "path", "prog", "next_path", "next_drink",
                  "speed", "kind", "plan", "stunned", "total", "next_think", "skip", "path_goal",
-                 "last_pos", "moved_at", "next_kite", "anim")
+                 "last_pos", "moved_at", "next_kite", "anim", "futile")
 
     def __init__(self):
         self.mode = "idle"          # idle | walk | attack | gethit
@@ -95,6 +95,7 @@ class State:
         self.moved_at = 0
         self.next_kite = 0          # the frame he may step away from melee monsters again
         self.anim = None            # the animation of the swing / cast under way (A1, TH, SC, S1...)
+        self.futile = None          # [id(target), its life, blows and casts since it last went down]
 
 
 class Sim:
@@ -366,6 +367,10 @@ class Sim:
                     and (chebyshev(m.pos, h.pos) <= 2 or self._line_clear(h.pos, m.pos))]
             tgt = self._nearest(h, seen, HERO_SIGHT)
             s.target = tgt
+        if tgt is not None and self._futile(h, s, tgt):
+            s.target = None
+            s.next_think = self.frame + 1
+            return
         awake = [m for m in self.foes() if getattr(m, "aware", False) or chebyshev(m.pos, h.pos) <= HERO_SIGHT]
         if self._kite(h, s, b):
             return
@@ -588,7 +593,7 @@ class Sim:
     def _start_cast(self, h, s, plan):
         book = getattr(h, "skills", None)
         sk = book.tree.get(plan.skill) if book else None
-        reach = brains.SPELL_RANGE
+        reach = brains.SPELL_RANGE - 1         # (a cell spare: the monster may step back while he casts)
         if sk is not None and (getattr(sk, "weapon", False) or sk.kind in ("attack", "melee")):
             reach = self._reach(h)
         if plan.skill == "throw":
@@ -596,7 +601,10 @@ class Sim:
         aim = plan.target.pos if plan.target is not None else plan.cell
         aimed = (sk is not None and sk.kind not in ("aura", "buff", "cry", "nova", "passive")
                  and sk.kind not in brains.SUMMON_KINDS) or plan.skill == "throw"
-        if aim is not None and aimed and chebyshev(h.pos, aim) <= reach and not self._can_shoot(h, aim):
+        if aim is not None and aimed and chebyshev(h.pos, aim) <= reach and (
+                not self._can_shoot(h, aim) or
+                (sk is not None and sk.kind == "missile" and plan.target is not None
+                 and not self._missile_reaches(h, plan.target))):
             # a pillar or a wall between: walk round until the way is open
             if not self._walk_to(h, s, aim, reach=1) and plan.target is not None:
                 s.skip[id(plan.target)] = self.frame + 2 * timing.FPS
@@ -639,6 +647,9 @@ class Sim:
             return
         if plan.target is not None and not plan.target.alive:
             return
+        if plan.target is not None and plan.cell is not None:
+            plan.cell = plan.target.pos      # aimed where the monster is now, not where it was
+                                             # when the cast began (it walks on meanwhile)
         w = self.w
         ok = False
         with self._Guard(w):
@@ -664,6 +675,8 @@ class Sim:
         self.brain(h).done(plan, ok)
         if ok:
             self.casts[plan.skill] = self.casts.get(plan.skill, 0) + 1
+            if plan.target is not None:
+                self._count_blow(s, plan.target)
 
 
     # ------------------------------------------------------------ summons, in real time
@@ -790,6 +803,48 @@ class Sim:
         or a wall corner between them stops it, as in D2)."""
         apos, bpos = getattr(a, "pos", a), getattr(b, "pos", b)
         return chebyshev(apos, bpos) <= 1 + getattr(b, "radius", 0) or self._line_clear(apos, bpos)
+
+    def _missile_reaches(self, h, tgt):
+        """The engine's own flight for a missile spell from h at tgt hits a monster (the line it
+        flies can differ from the one the hero looks along: it must not end in a wall)."""
+        fn = getattr(self.w, "_first_hit_on_line", None)
+        if fn is None:
+            return True
+        try:
+            hit, _end = fn(h.pos, tgt.pos, max_len=chebyshev(h.pos, tgt.pos) + 2)
+        except Exception:
+            return True
+        return bool(hit)
+
+    FUTILE_BLOWS = 8            # blows and casts at one monster without its life going down
+    FUTILE_SKIP = 10            # seconds it is then left alone
+
+    @staticmethod
+    def _count_blow(s, tgt):
+        f = s.futile
+        if f is None or f[0] != id(tgt):
+            s.futile = [id(tgt), tgt.hp, 1]
+        else:
+            f[2] += 1
+
+    def _futile(self, h, s, tgt):
+        """A monster whose life doesn't go down whatever he does (one stuck in a wall that
+        missiles can't reach, one immune to all he has): leave it and go on to the others.
+        A boss is never left - the floor needs it dead."""
+        f = s.futile
+        if f is None or f[0] != id(tgt):
+            return False
+        if tgt.hp < f[1]:
+            f[1], f[2] = tgt.hp, 0
+            return False
+        f[1] = max(f[1], tgt.hp)
+        if f[2] < self.FUTILE_BLOWS or getattr(tgt, "rift_boss", False):
+            return False
+        s.futile = None
+        s.skip[id(tgt)] = self.frame + self.FUTILE_SKIP * timing.FPS
+        self.notes.append("%s leaves %s at %d,%d: %d attacks did nothing to it." % (
+            h.name, getattr(tgt, "name", "a monster"), tgt.pos[0], tgt.pos[1], self.FUTILE_BLOWS))
+        return True
 
     def _engage(self, u, s, tgt, reach):
         r = getattr(u, "radius", 0) + getattr(tgt, "radius", 0)
@@ -937,6 +992,8 @@ class Sim:
             return
         before = tgt.hp
         was_alive = tgt.alive
+        if u.is_player:
+            self._count_blow(s, tgt)
         try:
             el = getattr(u, "missile_elem", None) if getattr(u, "ally", False) and not u.is_player else None
             if el and s.kind == "arrow":
