@@ -831,6 +831,10 @@ class RunManager:
             rift.BIG = bool(cfg.get("big_maps", True))
             rift.CONTENT = assets.content
             rift.ACT_LEVELS = True           # monsters by the act's own levels, not the hero's
+            rift.AREA = float(cfg.get("map_area", 0.5))     # floors half the size they were
+            if cfg.get("premade_maps", True):
+                from . import mapcache
+                mapcache.install()           # floors from a pool of 54 kept layouts
             rift.SIXTH = True                # floors 51-60 in Act 5's places, Baal on 60
             # Diablo II's own drops: every monster's own treasure classes, ItemRatio.txt quality
             # with D2's magic find, no D2 Tactics boosts (act bosses' x1.8, the two-piece floor,
@@ -930,7 +934,45 @@ class RunManager:
                 if pre is not None and pre.get("aborted") and r.state == "fight" and \
                         pre["key"] == r._job_key(r.depth + 1):
                     r._pre = r._start_job(r.depth + 1, stand_in=True)
+            self._fill_maps()
         return n
+
+    def _fill_maps(self):
+        """While no run waits for a floor and nothing else is being built, the pool of premade
+        floors is filled, one floor at a time, in the background (it steps aside for the screen,
+        and is dropped the moment a run needs its floor)."""
+        from . import mapcache
+        kit = getattr(self.assets, "act_kit", None)
+        if kit is None or mapcache._ORIGINAL is None or HOLDER[0] is not None or BUILD_LOCK.locked():
+            return
+        th = getattr(self, "_filler", None)
+        if th is not None and th.is_alive():
+            return
+        if _clock() < getattr(self, "_fill_after", 0.0) or not mapcache.missing():
+            return
+        self._fill_after = _clock() + 2.0
+
+        def fill():
+            import sys
+            job = {"needed": False}
+            sys.setprofile(_hook_for(job))
+            try:
+                _take_build_lock(job)
+                try:
+                    HOLDER[0] = "premade floor %d/%d" % (mapcache.total() + 1, mapcache.MAP_POOL)
+                    mapcache.build_missing_one(kit)
+                finally:
+                    HOLDER[0] = None
+                    job["locked"] = False
+                    BUILD_LOCK.release()
+            except _Aborted:
+                pass
+            except Exception:
+                mapcache._log("building a premade floor")
+            finally:
+                sys.setprofile(None)
+        self._filler = threading.Thread(target=fill, name="premade-floors", daemon=True)
+        self._filler.start()
 
     def _tick_runs(self, runs):
         content = getattr(self.assets, "content", None)

@@ -775,6 +775,76 @@ def test_build_ahead_dropped_for_waiting_run():
     r.finish("stopped")
 
 
+def test_premade_floors():
+    """Floors are kept as tile references (no art) and loaded back with the same tiles; a place
+    with its share of kept floors loads one instead of building, with new ends each time."""
+    import os
+    import tempfile
+    from autobattler import mapcache
+    from d2.dt1 import DT1, Tile
+    from game import rift
+    from game.act1 import Built
+    from game.grid import Grid, FLOOR
+    tmp = tempfile.mkdtemp()
+    old_folder, old_orig, old_index = mapcache.FOLDER, mapcache._ORIGINAL, mapcache._INDEX
+    mapcache.FOLDER, mapcache._INDEX = tmp, None
+
+    def fake_dt1(name, n):
+        dt = DT1.__new__(DT1)
+        dt.name, dt.data, dt.tiles = name, b"", []
+        for i in range(n):
+            t = Tile()
+            t.main, t.sub, t.image = i, 0, None
+            dt.tiles.append(t)
+        return dt
+
+    class Kit:
+        pass
+    kit = Kit()
+    kit.dt1_cache = {"data\\a.dt1": fake_dt1("data\\a.dt1", 5)}
+    built = []
+
+    def original(k, lid, seed=None, player=None):
+        b = Built(8, 8)
+        dt = k.dt1_cache["data\\a.dt1"]
+        for x in range(8):
+            for y in range(8):
+                b.tm.floor[(x, y)] = (dt, dt.tiles[(x + y) % 5])
+        b.gen_objects = [(7, (3, 3), lid)]
+        g = Grid(40, 40, FLOOR)
+        built.append(lid)
+        return b, g, random.Random(seed)
+    mapcache._ORIGINAL = original
+    rift.forget(None)
+    try:
+        lid = rift.level_id(3)
+        key = mapcache.theme_of(rift.plan(lid))
+        q = mapcache.quota(key)
+        check(sum(mapcache.quota(k) for k, _a in mapcache.themes()) == mapcache.MAP_POOL,
+              "the pool's %d floors are shared out over every place" % mapcache.MAP_POOL)
+        for i in range(q):
+            mapcache.build_level(kit, lid, seed=i)
+        check(len(built) == q and mapcache.have(key) == q, "a place's first %d floors are built and kept" % q)
+        files = os.listdir(tmp)
+        raw = b"".join(open(os.path.join(tmp, f), "rb").read() for f in files)
+        check(files and all(f.endswith(".map") for f in files), "kept as .map files in map_cache/")
+        kit2 = Kit()
+        kit2.dt1_cache = {"data\\a.dt1": fake_dt1("data\\a.dt1", 5)}
+        lid2 = rift.level_id(4)
+        rift.PLANS[lid2] = dict(rift.plan(lid), depth=4)
+        b, g, _r = mapcache.build_level(kit2, lid2, seed=99)
+        dt2 = kit2.dt1_cache["data\\a.dt1"]
+        check(len(built) == q, "the next floor of that place is loaded, not built")
+        check(all(v[0] is dt2 and v[1] is dt2.tiles[(x + y) % 5] for (x, y), v in b.tm.floor.items()),
+              "with the very tiles of the player's own tile file")
+        check(b.gen_objects == [(7, (3, 3), lid2)] and lid2 in b.areas, "and belonging to its new floor")
+        check(rift.PLANS[lid2]["start"] is not None and g.walkable(*rift.PLANS[lid2]["start"]),
+              "with an arrival spot picked anew")
+    finally:
+        mapcache.FOLDER, mapcache._ORIGINAL, mapcache._INDEX = old_folder, old_orig, old_index
+        rift.forget(None)
+
+
 def test_runeword_bases():
     """Home: exceptional / elite plain items with all their sockets go to the stash; other plain
     gear is sold with the magic and rare items."""
@@ -1149,6 +1219,7 @@ if __name__ == "__main__":
     test_next_floor_built_ahead()
     test_waiting_floor_goes_first()
     test_build_ahead_dropped_for_waiting_run()
+    test_premade_floors()
     test_runeword_bases()
     test_rare_cores()
     test_horadric_cube()

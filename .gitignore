@@ -46,3 +46,4 @@ autobattler.ini
 perf.log
 build_profile.log
 stuck.log
+map_cache/

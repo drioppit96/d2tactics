@@ -32,6 +32,13 @@ OPEN_FLOORS = [("wild", 1, "Wild Moors"), ("desert", 2, "Scorched Waste"), ("jun
                ("steppes", 4, "Burning Steppes"), ("plains", 4, "Plains of Ash"), ("damned", 4, "Damned Streets"),
                ("highlands", 5, "Frozen Highlands"), ("plateau", 5, "Windswept Plateau")]
 OPEN_SHARE = 0.35          # about a third of the BIG floors are outdoors
+#: the BIG floors' area, as a share of their full size (the D2 Autobattler sets 0.5: half as big)
+AREA = 1.0
+
+
+def _side(n, least=1):
+    """A BIG floor's side of n (blocks, tiles) for its AREA."""
+    return max(least, int(round(n * AREA ** 0.5)))
 
 
 #: the D2 Autobattler: a floor's monsters take their level from the act, not from the hero
@@ -276,7 +283,7 @@ def build_level(kit, lid, seed=None, player=None):
     if tactics.ACTIVE:
         rooms = max(3, rooms - 2)               # the shrunken maps of tactics mode
     elif BIG:
-        rooms = rooms * 2                       # the autobattler: twice the rooms on a wider floor
+        rooms = max(2, int(round(rooms * 2 * AREA)))    # the autobattler: twice the rooms on a wider floor
     seed = p["seed"] if seed is None else seed
     if p["kit"] == FIELD and BIG and p.get("open"):
         try:
@@ -321,7 +328,7 @@ def _fit(kit, name, rooms, small):
         side = max(mk.rw, mk.rh)
     except Exception:
         side = 16
-    cap = (SMALL_TILES if small else (BIG_TILES if BIG else MAX_TILES)) // max(1, side)
+    cap = (SMALL_TILES if small else (_side(BIG_TILES) if BIG else MAX_TILES)) // max(1, side)
     g = max(2, min(6 if BIG and not small else 4, cap))
     return dict(rooms=max(2, min(rooms, g * g - 1)), grid=g)
 
@@ -331,7 +338,7 @@ def _build_open(kit, lid, seed, theme):
     the map generator's open-world builder (game/randmap.py) at 10 x 10 blocks, without its own
     monsters or objects: the rift fills it like any other floor."""
     from . import custommap, randmap
-    o = dict(kind="open", open_theme=theme, width=10, height=10, seed=int(seed) & 0x3FFFFFFF,
+    o = dict(kind="open", open_theme=theme, width=_side(10, 6), height=_side(10, 6), seed=int(seed) & 0x3FFFFFFF,
              monsters=[], open_packs=0, packs=0, champions=0, uniques=0, boss="", shrines=0, wells=0,
              chests=0, breakables=0, bodies=0, racks=0, bookshelves=0, lights=0, room_objects=False)
     data = randmap.generate(kit, CONTENT, None, o)
@@ -344,7 +351,7 @@ def _build_field(kit, lid, seed, small=False):
     """An open plain: Act 1's wilderness ground inside its border ring, with a few fills."""
     from .act1 import BLOCK, SUB, Built, OutdoorKit, stamp, make_grid
     rng = random.Random(seed)
-    size = 5 if small else (8 if BIG else 6)    # (8: 6x6 inner blocks instead of 4x4)
+    size = 5 if small else (_side(8, 5) if BIG else 6)    # (8: 6x6 inner blocks instead of 4x4)
     b = Built(size * BLOCK + 1, size * BLOCK + 1)
     from .acts import apply_act_tables
     apply_act_tables(b, 1, kit)

@@ -274,6 +274,17 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
   leader (the engine puts its player at the new floor's start; the real one is still fighting).
   Through the portal it is usually ready at once. It is thrown away if the run goes elsewhere
   (a death, another farm or difficulty).
+- Rift floors are half the area they were (autobattler.ini map_area = 0.5; 1 = the old size):
+  about 5 rooms instead of 10, outdoor floors 7 x 7 blocks instead of 10 x 10.
+- Premade floors (premade_maps = yes): a pool of 54 floor layouts kept in map_cache/ in the game
+  folder, shared out over every place the rift builds floors from (each act's dungeons and
+  outdoors, about 2 each). A floor whose place has its share loads one of them; its monsters,
+  arrival spot and boss spot are placed new each time. Until then floors are built as before
+  and kept, and the missing ones are built in the background while no run waits for a floor
+  (perf.log shows "premade floor n/54" while it works). The layouts are made on the player's PC
+  from his own D2 files and are never in the repository; they hold no art, only the names of
+  D2's tile files and tile numbers, read from the MPQs again when loaded. A layout that can't
+  be kept or loaded is skipped and the floor is built as before. Delete map_cache/ to make new ones.
 - Each run keeps its own count of game frames owed. Every screen frame the run on screen is
   played in full; the others share 10 ms of game time, the one most behind first, and one that
   got nothing for 3 screen frames goes next whatever the time. On a PC too slow for all the runs,

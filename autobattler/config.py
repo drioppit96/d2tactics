@@ -18,6 +18,11 @@ max_active = 8
 max_group = 4
 # rift floors are about twice the area of the D2 Tactics ones (yes / no)
 big_maps = yes
+# rift floors' area as a share of that (0.5 = half: quicker to build and to clear)
+map_area = 0.5
+# floors from a pool of 54 premade layouts kept in map_cache/ (made on this PC from your D2
+# files the first time; monsters, portal and boss spot are placed new each time) (yes / no)
+premade_maps = yes
 # game speed: 1 = D2's own 25 frames a second, 2 = twice as fast ...
 speed = 1.0
 # walking speed in cells per second for each point of D2's velocity (CharStats / MonStats)
@@ -28,7 +33,7 @@ floor_pause = 1
 """
 
 DEFAULTS = {"max_heroes": 30, "max_active": 8, "max_group": 4, "big_maps": True, "speed": 1.0,
-            "move_scale": 1.0, "floor_pause": 1.0}
+            "move_scale": 1.0, "floor_pause": 1.0, "map_area": 0.5, "premade_maps": True}
 
 
 def load():
@@ -49,6 +54,8 @@ def load():
         out["max_active"] = max(1, min(8, s.getint("max_active")))
         out["max_group"] = max(1, min(out["max_active"], s.getint("max_group")))
         out["big_maps"] = s.getboolean("big_maps")
+        out["map_area"] = max(0.2, min(1.0, s.getfloat("map_area")))
+        out["premade_maps"] = s.getboolean("premade_maps")
         out["speed"] = max(0.25, min(8.0, s.getfloat("speed")))
         out["move_scale"] = max(0.2, min(4.0, s.getfloat("move_scale")))
         out["floor_pause"] = max(0.0, min(30.0, s.getfloat("floor_pause")))
