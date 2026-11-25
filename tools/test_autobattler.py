@@ -625,6 +625,68 @@ def test_rare_cores():
     check(gear.rare_cores(h) == c0 + 4, "three rares sold on the trip home: +3 cores")
 
 
+def test_horadric_cube():
+    """The cube menu: Craft Rare takes one white or blue item and a Rare Core (account-wide)."""
+    import types
+    from autobattler import gear, account, recipes
+    from game.items import Item
+    h = _hero("Cuber")
+    box = Item("Horadric Cube", "box", None, kind="misc")
+    inside = Item("Gem", "gcr", None, kind="misc")
+    box.contents = [inside]
+    h.inv_add(box)
+    h.qol = {}
+    h.cube_inv = None
+    gear.prepare(h)
+    check(box not in h.inventory and inside in h.cube_inv, "a carried cube becomes the cube menu (its contents kept)")
+    h.cube_inv[:] = []
+
+    def make_item(base, ilvl, rng, quality="normal", sockets=None, identified=None):
+        it = Item("Grim Visage", base["code"], "helm", rarity=quality)
+        it.base, it.ilvl = base, ilvl
+        return it
+    content = types.SimpleNamespace(make_item=make_item)
+    b = gear.Bench(h, content)
+    cap = Item("Cap of the Fox", "cap", "helm", rarity="magic")
+    cap.base = {"code": "cap"}
+    h.inv_add(cap)
+    check(b.backpack_to_cube(cap) and cap in h.cube_inv, "into the cube")
+    rare = recipes.RECIPES[0]
+    account.data()["rare_cores"] = 0
+    check(not b.transmute(rare) and cap in h.cube_inv, "no Rare Core: nothing happens")
+    account.add("rare_cores", 2)
+    check(b.transmute(rare) and len(h.cube_inv) == 1 and h.cube_inv[0].rarity == "rare"
+          and h.cube_inv[0].ilvl == h.level and account.amount("rare_cores") == 1,
+          "Craft Rare: a rare of the same base at his level, one core paid")
+    ring_unique = Item("Unique Ring", "rin", "ring", rarity="unique")
+    h.cube_inv[:] = [ring_unique]
+    check(rare.check(h.cube_inv, h) is not None, "a unique can't be crafted")
+
+
+def test_socketing():
+    """A rune dropped on an item with a free socket goes into it."""
+    import types
+    from autobattler import gear
+    from game.items import Item
+    h = _hero("Socketer")
+    msgs = []
+    sword = Item("Long Sword", "lsd", "weapon")
+    sword.sockets, sword.socketed = 2, []
+    h.inv_add(sword)
+    rune = Item("El Rune", "r01", None, kind="misc")
+    rune.gem, rune.levelreq = ("rune", "el", 0), 1
+    import game.d2items as d2i
+    old = d2i.insert
+    d2i.insert = lambda content, host, filler, rng: (host.socketed.append(filler), "Inserted El Rune.")[1]
+    try:
+        b = gear.Bench(h, types.SimpleNamespace())
+        b.held = rune
+        check(b.click_cell(*sword.inv_pos) and rune in sword.socketed and b.held is None,
+              "the rune goes into the socket")
+    finally:
+        d2i.insert = old
+
+
 def test_cast_breakpoints():
     from autobattler.brain import CAST_FRAMES0
     sor = [timing.cast_frames(CAST_FRAMES0["sor"] + 1, f) for f in (0, 9, 20, 37, 63, 105, 200)]
@@ -847,6 +909,8 @@ if __name__ == "__main__":
     test_line_of_fire()
     test_runeword_bases()
     test_rare_cores()
+    test_horadric_cube()
+    test_socketing()
     test_inventory_screen()
     print("\n%s" % ("all passed" if not FAILS else "%d FAILED" % len(FAILS)))
     sys.exit(1 if FAILS else 0)

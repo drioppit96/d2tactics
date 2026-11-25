@@ -345,10 +345,23 @@ is drawn with plain boxes and a system font.
     gem or rune in the backpack puts it on its stack. Gold stays each hero's own.
   - Leaving the screen with an item on the cursor puts it in the backpack, or in the stash when
     the backpack is full.
-- Rare Cores: a crafting material. Every rare (yellow) item a hero sells gives him one Rare Core,
-  whether he sells it by hand (the sell box, Ctrl + right click, the shop's shelves) or on the
-  automatic trip home (gear.on_sold). Each hero keeps his own (his profile, saved with him); the
-  hero card and the inventory purse show how many. Nothing uses them yet.
+- Rare Cores: an account-wide currency (autobattler/account.py, saves_auto/_account.json), shared
+  by every hero. Every rare (yellow) item any hero sells gives one, whether by hand (the sell box,
+  Ctrl + right click, the shop's shelves) or on the automatic trip home (gear.on_sold). The hero
+  card and the inventory purse show the account's count. Cores a hero had of his own before moved
+  to the account once.
+- Horadric Cube (roster button, key H; it replaces the Pickup button - the Pickup screen is still
+  key P): the cube is a menu of its own, not an item. A cube a hero carried is taken apart and what
+  was in it goes into his cube (3 x 4, saved with him as cube_inv). The screen lists the recipes
+  (autobattler/recipes.py: only the player's own), the cube's grid and D2's inventory panel. Click
+  or Ctrl + click in the backpack puts items in, right click takes them out. Transmute checks the
+  selected recipe against what is in the cube and pays its cost from the account; it is greyed out
+  when it can't.
+  - Craft Rare (1 Rare Core): one white or blue weapon, armor, ring or amulet becomes a new rare item
+    of the same base, rolled at the hero's level, identified, with no sockets.
+- Socketing: a gem, rune or jewel dropped on an item with a free socket (in the backpack or worn)
+  goes into it, with the game's own runeword rules (ItemActions.insert_into); runewords form as
+  in D2.
 - No essences: the three account currencies of D2 Tactics (game/essences.py) don't drop in the
   autobattler (essences.DROPS is turned off by config.apply_d2_rules) and aren't shown anywhere.
   D2's own boss essences (the Token of Absolution's) are untouched.

@@ -303,6 +303,7 @@ def save_character(player, difficulty="normal"):
         equipment={k: _item_dict(v) for k, v in p.equipment.items()},
         inventory=[_item_dict(it) for it in p.inventory], belt=[_item_dict(it) for it in p.belt],
         charm_inv=[_item_dict(it) for it in (getattr(p, "charm_inv", None) or [])],
+        cube_inv=[_item_dict(it) for it in (getattr(p, "cube_inv", None) or [])],
         merc=(dict(kind=p.merc["kind"], hid=p.merc["hid"], name=p.merc["name"], level=p.merc["level"],
                    xp=p.merc["xp"], dead=bool(p.merc.get("dead")),
                    items={k: _item_dict(v) for k, v in (p.merc.get("items") or {}).items() if v is not None})
@@ -415,6 +416,7 @@ def build_player(data, content):
         p.equipment[k] = _item_from(data.get("equipment", {}).get(k), content)
     p.inventory = [it for it in (_item_from(d, content) for d in data.get("inventory", [])) if it is not None]
     p.charm_inv = [it for it in (_item_from(d, content) for d in data.get("charm_inv", []) or []) if it is not None]
+    p.cube_inv = [it for it in (_item_from(d, content) for d in data.get("cube_inv", []) or []) if it is not None]
     p.belt = [it for it in (_item_from(d, content) for d in data.get("belt", [])) if it is not None]
     p.belt_unlocks = list(data.get("belt_unlocks") or [])
     if "belt_unlocks" not in data and p.quests.get("shenk") in ("cleared", "done"):

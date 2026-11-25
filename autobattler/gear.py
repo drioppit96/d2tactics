@@ -23,21 +23,33 @@ CHARM_W, CHARM_H = 4, 8     # the charm inventory beside the backpack
 GREY = (170, 170, 170)
 
 
-def rare_cores(hero):
-    """His Rare Cores: a crafting material, one for every rare (yellow) item he sells. Kept in his
-    profile (saved with him)."""
-    from . import brain
-    return int(brain.profile(hero).get("rare_cores", 0) or 0)
+def rare_cores(hero=None):
+    """The account's Rare Cores (shared by every hero): a crafting material, one for every rare
+    (yellow) item any hero sells."""
+    from . import account
+    return account.amount("rare_cores")
 
 
 def on_sold(hero, it):
-    """Every sale goes through here: a rare item gives him a Rare Core. -> cores gained."""
+    """Every sale goes through here: a rare item gives the account a Rare Core. -> cores gained."""
     if getattr(it, "rarity", "") != "rare":
         return 0
-    from . import brain
-    prof = brain.profile(hero)
-    prof["rare_cores"] = int(prof.get("rare_cores", 0) or 0) + 1
+    from . import account
+    account.add("rare_cores", 1)
     return 1
+
+
+CUBE_W, CUBE_H = 3, 4       # the Horadric Cube (D2's 3 x 4), a menu of its own here
+
+
+class CubeBox:
+    """A hero's Horadric Cube contents as a grid the cube helpers understand."""
+    def __init__(self, hero):
+        if getattr(hero, "cube_inv", None) is None:
+            hero.cube_inv = []
+        self.contents = hero.cube_inv
+        self.grid_size = (CUBE_W, CUBE_H)
+        self.code = "cubemenu"
 
 
 def is_charm(it):
@@ -66,6 +78,24 @@ def prepare(p):
     q["inv_rows"] = ROWS
     if getattr(p, "charm_inv", None) is None:
         p.charm_inv = []
+    if getattr(p, "cube_inv", None) is None:
+        p.cube_inv = []
+    # the Horadric Cube is a menu here, not an item: a cube he carries is taken apart, what was in
+    # it goes into his cube menu
+    from game import cube as cb
+    for box in [x for x in list(p.inventory) if getattr(x, "code", "") == "box"]:
+        p.inventory.remove(box)
+        for it in list(getattr(box, "contents", None) or []):
+            it.cube_pos = None
+            if not cb.cube_add(CubeBox(p), it):
+                if not p.inv_add(it):
+                    p.inventory.append(it)
+    # Rare Cores used to be each hero's own: they move to the account once
+    from . import brain
+    prof = brain.profile(p)
+    if int(prof.get("rare_cores", 0) or 0):
+        from . import account
+        account.add("rare_cores", int(prof.pop("rare_cores")))
     if not q.get("charm_grid"):
         q["charm_grid"] = True
         from game import cube as cb
@@ -118,6 +148,7 @@ class Bench:
     equip_held = World.equip_held
     use_inventory_potion = World.use_inventory_potion
     # the vendors (town): D2's own stock rules, prices and gambling odds
+    insert_into = ItemActions.insert_into
     open_store = ItemActions.open_store
     buy = ItemActions.buy
     price_of = ItemActions.price_of
@@ -156,6 +187,8 @@ class Bench:
         p = self.player
         if self.cursor_mode:
             return self.identify_target(p.equipment.get(slot))
+        if self._socket_into(p.equipment.get(slot)):
+            return True
         if self.held is None:
             ok = self.pick_from_slot(slot)
         else:
@@ -176,10 +209,40 @@ class Bench:
                 return self.identify_target(it)
             ok = self.pick_from_inventory(it)
         else:
+            # a gem, rune or jewel dropped on an item with a free socket goes into it (D2)
+            under = self._under_held(cx, cy)
+            if under is not None and self._socket_into(under):
+                return True
             ok = self.place_held(cx, cy)
             if not ok:
                 self.log("No room there.", GREY)
         self.changed |= bool(ok)
+        return ok
+
+    def _under_held(self, cx, cy):
+        """The one backpack item the cursor item would land on at (cx, cy), if just one."""
+        p = self.player
+        w, h = p._size(self.held)
+        found = set()
+        for x in range(cx, cx + w):
+            for y in range(cy, cy + h):
+                it = p.inv_at(x, y)
+                if it is not None:
+                    found.add(id(it))
+                    last = it
+        return last if len(found) == 1 else None
+
+    def _socket_into(self, host):
+        """The cursor gem / rune / jewel into `host`'s free socket (runewords form as in D2)."""
+        filler = self.held
+        if host is None or filler is None or getattr(filler, "gem", None) is None:
+            return False
+        if not getattr(host, "sockets", 0):
+            return False
+        ok = bool(self.insert_into(host, filler))
+        if ok:
+            self.held = None
+            self.changed = True
         return ok
 
     def right_click(self, it, sell=False):
@@ -372,6 +435,94 @@ class Bench:
             self.log("The charm inventory is full.", GREY)
             return False
         p.recalc()
+        self.changed = True
+        return True
+
+    # ------------------------------------------------------------ the Horadric Cube (a menu)
+    def cube_box(self):
+        return CubeBox(self.player)
+
+    def cube_click(self, cx, cy):
+        """Click on the cube's grid: pick up the item there, or put the cursor item down."""
+        from game import cube as cb
+        box = self.cube_box()
+        if self.held is None:
+            it = cb.at(box, cx, cy)
+            if it is None:
+                return False
+            box.contents.remove(it)
+            it.cube_pos = None
+            self.held = it
+            self.changed = True
+            return True
+        ok, over = cb.fits(box, self.held, cx, cy)
+        if not ok or len(over) > 1:
+            self.log("No room there.", GREY)
+            return False
+        swap = over[0] if over else None
+        if swap is not None:
+            box.contents.remove(swap)
+            swap.cube_pos = None
+        self.held.cube_pos = (cx, cy)
+        box.contents.append(self.held)
+        self.held = swap
+        self.changed = True
+        return True
+
+    def cube_to_backpack(self, it):
+        box = self.cube_box()
+        if it not in box.contents or self.held is not None:
+            return False
+        box.contents.remove(it)
+        pos, it.cube_pos = it.cube_pos, None
+        if not self.player.inv_add(it):
+            it.cube_pos = pos
+            box.contents.append(it)
+            self.log("The backpack is full.", GREY)
+            return False
+        self.changed = True
+        return True
+
+    def backpack_to_cube(self, it):
+        from game import cube as cb
+        p = self.player
+        if it not in p.inventory:
+            return False
+        p.inventory.remove(it)
+        pos, it.inv_pos = it.inv_pos, None
+        if not cb.cube_add(self.cube_box(), it):
+            it.inv_pos = pos
+            p.inventory.append(it)
+            self.log("The cube is full.", GREY)
+            return False
+        self.changed = True
+        return True
+
+    def transmute(self, recipe):
+        """The recipe on what is in the cube: checked, paid for from the account, made. -> bool."""
+        from . import account
+        box = self.cube_box()
+        items = list(box.contents)
+        why = recipe.check(items, self.player)
+        if why:
+            self.log(why, GREY)
+            return False
+        if not account.can_pay(recipe.cost):
+            self.log("Not enough: %s needed." % recipe.cost_text(), GREY)
+            return False
+        out = recipe.make(items, self.player, self.content, self.rng)
+        if not out:
+            self.log("The cube could not make it.", GREY)
+            return False
+        account.pay(recipe.cost)
+        from game import cube as cb
+        del box.contents[:]
+        for it in out:
+            it.cube_pos = None
+            if not cb.cube_add(box, it) and not self.player.inv_add(it):
+                self.ground.setdefault(self.player.pos, []).append(it)
+        self.log("%s: %s." % (recipe.name, ", ".join(getattr(x, "shown_name", x.name) for x in out)),
+                 getattr(out[0], "color", GREY))
         self.changed = True
         return True
 

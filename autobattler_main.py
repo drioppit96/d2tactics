@@ -269,7 +269,7 @@ class App:
 
     # ------------------------------------------------------------ actions
     def go(self, name):
-        if name != "inventory":
+        if name not in ("inventory", "cube"):
             self._close_bench()          # the cursor item goes back in the backpack
         self.screen_name = name
         self.focus = {"create": "name", "pickup": "words"}.get(name)    # (the loot search: on a click)
@@ -381,9 +381,11 @@ class App:
                 if rect.collidepoint(pos):
                     action(*args)
                     return
-        elif ev.type == pygame.MOUSEBUTTONUP and ev.button == 3 and self.screen_name in ("inventory", "town"):
+        elif ev.type == pygame.MOUSEBUTTONUP and ev.button == 3 and self.screen_name in ("inventory", "town", "cube"):
             self.mouse = self.logical(ev.pos)
             if self.screen_name == "town" and self.town_right():
+                return
+            if self.screen_name == "cube" and self.cube_right():
                 return
             self.inv_right()
         elif ev.type == pygame.MOUSEWHEEL and self.screen_name == "roster":
@@ -435,7 +437,7 @@ class App:
             act = {pygame.K_s: self.start_run, pygame.K_x: self.stop_run, pygame.K_t: self.cycle_style,
                    pygame.K_w: lambda: self.go("watch"), pygame.K_l: lambda: self.go("inventory"),
                    pygame.K_i: lambda: self.go("inventory"), pygame.K_p: lambda: self.go("pickup"),
-                   pygame.K_c: lambda: self.go("character")}.get(ev.key)
+                   pygame.K_c: lambda: self.go("character"), pygame.K_h: lambda: self.go("cube")}.get(ev.key)
             if act is not None and (self.hero() is not None or ev.key == pygame.K_s):
                 act()
 
@@ -461,7 +463,7 @@ class App:
         self.canvas.fill((0, 0, 0))
         {"roster": self.draw_roster, "create": self.draw_create,
          "inventory": self.draw_inventory, "pickup": self.draw_pickup, "watch": self.draw_watch,
-         "character": self.draw_character, "town": self.draw_town
+         "character": self.draw_character, "town": self.draw_town, "cube": self.draw_cube
          }.get(self.screen_name, self.draw_roster)()
         if self.message and self.screen_name != "watch":
             self.look.text(self.canvas, "small", self.message, GOLD, 12, 580)
@@ -593,7 +595,7 @@ class App:
                 ("Style", self.cycle_style, has)]
         row2 = [("Inventory / Loot", lambda: self.go("inventory"), has),
                 ("Abilities", lambda: self.go("character"), has),
-                ("Pickup", lambda: self.go("pickup"), has),
+                ("Horadric Cube", lambda: self.go("cube"), has),
                 ("Farm: %s" % FARM_SHORT[farm_of(h)] if has else "Farm", self.cycle_farm, has and not on_run),
                 ("Shop", lambda: self.open_town("shop"), has and (not on_run or town_run)),
                 ("Stash", lambda: self.open_town("stash"), has and (not on_run or town_run))]
@@ -838,6 +840,10 @@ class App:
                     it = b.player.inv_at(*cell)
                     if it is not None and b.backpack_to_stash(it):
                         self.save_stash()
+                elif cell is not None and ctrl and b.held is None and self.screen_name == "cube":
+                    it = b.player.inv_at(*cell)
+                    if it is not None:
+                        b.backpack_to_cube(it)
                 elif cell is not None:
                     b.click_cell(*cell)
         self._gear_saved(b)
@@ -1002,6 +1008,132 @@ class App:
             self._tip = None
         elif b.cursor_mode:
             L.text(c, "small", "?", GOLD, self.mouse[0] + 10, self.mouse[1] - 4)
+
+    # ------------------------------------------------------------ the Horadric Cube (a menu)
+    def _cube_xy(self):
+        return 18 + (self.LEFT_W - 12 - gear.CUBE_W * 29) // 2, 300
+
+    def _cube_cell(self, item=None):
+        x0, y0 = self._cube_xy()
+        k = 29
+        mx, my = self.mouse[0] - x0, self.mouse[1] - y0
+        if not (0 <= mx < gear.CUBE_W * k and 0 <= my < gear.CUBE_H * k):
+            return None
+        if item is None:
+            return int(mx // k), int(my // k)
+        w, hh = max(1, item.invw or 1), max(1, item.invh or 1)
+        cx = int(round(mx / float(k) - w / 2.0))
+        cy = int(round(my / float(k) - hh / 2.0))
+        return max(0, min(gear.CUBE_W - w, cx)), max(0, min(gear.CUBE_H - hh, cy))
+
+    def cube_grid_click(self):
+        b = self.gear_bench()
+        if b is None:
+            return
+        cell = self._cube_cell(b.held)
+        if cell is not None:
+            b.cube_click(*cell)
+            self._gear_saved(b)
+
+    def cube_right(self):
+        """Right click on an item in the cube: back into the backpack."""
+        b = self.bench
+        cell = self._cube_cell()
+        if b is None or cell is None or b.held is not None:
+            return False
+        from game import cube as cb
+        it = cb.at(b.cube_box(), *cell)
+        if it is not None and b.cube_to_backpack(it):
+            self._gear_saved(b)
+        return True
+
+    def pick_recipe(self, i):
+        self.recipe_i = i
+
+    def transmute(self):
+        from autobattler import recipes
+        b = self.gear_bench()
+        if b is None:
+            return
+        r = recipes.RECIPES[getattr(self, "recipe_i", 0)]
+        if b.transmute(r):
+            self._gear_saved(b)
+
+    def draw_cube(self):
+        """The Horadric Cube: its recipes (the player's own), the cube's 3 x 4 grid, and D2's
+        inventory panel beside it. A recipe's cost is paid from the account's currencies."""
+        from autobattler import recipes, account
+        c, L = self.canvas, self.look
+        b = self.gear_bench()
+        h = b.player if b else None
+        self._title("Horadric Cube")
+        if h is None:
+            self.button((340, 540, 120, 28), "Back", lambda: self.go("roster"))
+            return
+        LW = self.LEFT_W
+        L.panel(c, (6, 40, LW, 534))
+        L.text(c, "med", "%s - Rare Cores %d" % (h.name, account.amount("rare_cores")), GOLD, 6, 50, "center", LW)
+        L.text(c, "small", "Recipes", GOLD, 18, 74)
+        ri = getattr(self, "recipe_i", 0)
+        for i, r in enumerate(recipes.RECIPES):
+            rect = pygame.Rect(18, 92 + i * 30, LW - 24, 26)
+            self.button(rect, r.name, self.pick_recipe, i)
+            if i == ri:
+                pygame.draw.rect(c, GOLD, rect.inflate(2, 2), 1)
+        r = recipes.RECIPES[ri] if recipes.RECIPES else None
+        y = 104 + len(recipes.RECIPES) * 30
+        if r is not None:
+            for j, line in enumerate(r.lines):
+                L.text(c, "small", line, WHITE, 18, y + j * 15)
+            y += len(r.lines) * 15 + 6
+            ok = account.can_pay(r.cost)
+            L.text(c, "small", "Cost: %s" % r.cost_text(), GREEN if ok else RED, 18, y)
+        # the cube
+        x0, y0 = self._cube_xy()
+        k = 29
+        frame = pygame.Rect(x0 - 10, y0 - 10, gear.CUBE_W * k + 20, gear.CUBE_H * k + 20)
+        L.panel(c, frame)
+        art = self._grid_art()
+        if art is not None:
+            c.blit(art, (x0, y0), pygame.Rect(0, 0, gear.CUBE_W * k, gear.CUBE_H * k))
+        else:
+            L.inset(c, (x0 - 1, y0 - 1, gear.CUBE_W * k + 2, gear.CUBE_H * k + 2))
+            for i in range(gear.CUBE_W + 1):
+                pygame.draw.line(c, (34, 32, 28), (x0 + i * k, y0), (x0 + i * k, y0 + gear.CUBE_H * k))
+            for j in range(gear.CUBE_H + 1):
+                pygame.draw.line(c, (34, 32, 28), (x0, y0 + j * k), (x0 + gear.CUBE_W * k, y0 + j * k))
+        for it in b.cube_box().contents:
+            pos = getattr(it, "cube_pos", None)
+            if pos is None:
+                continue
+            w, hh = max(1, it.invw or 1), max(1, it.invh or 1)
+            rect = pygame.Rect(x0 + pos[0] * k, y0 + pos[1] * k, w * k, hh * k)
+            tint = pygame.Surface((rect.w - 1, rect.h - 1), pygame.SRCALPHA)
+            tint.fill((10, 10, 40, 120))
+            c.blit(tint, rect.topleft)
+            L.icon(c, it, rect.x, rect.y, rect.w - 1, rect.h - 1)
+            if self.hot(rect) and b.held is None:
+                self._tip = L.item_lines(it, h) + [("Right click: back into the backpack", GREY)]
+        if b.held is not None:
+            cell = self._cube_cell(b.held)
+            if cell is not None:
+                from game import cube as cb
+                okf, over = cb.fits(b.cube_box(), b.held, *cell)
+                w, hh = max(1, b.held.invw or 1), max(1, b.held.invh or 1)
+                tint = pygame.Surface((w * k, hh * k), pygame.SRCALPHA)
+                tint.fill((0, 120, 0, 70) if okf and len(over) <= 1 else (140, 0, 0, 70))
+                c.blit(tint, (x0 + cell[0] * k, y0 + cell[1] * k))
+        self.region(frame, self.cube_grid_click)
+        why = r.check(list(b.cube_box().contents), h) if r is not None else "No recipe."
+        can = r is not None and not why and account.can_pay(r.cost)
+        self.button((18, frame.bottom + 12, LW - 24, 30), "Transmute", self.transmute, enabled=can)
+        if why and b.cube_box().contents:
+            L.text(c, "small", why, GREY, 18, frame.bottom + 48)
+        for i, (text, colr) in enumerate(b.messages[-2:]):
+            L.text(c, "small", text, colr or GREY, 18, frame.bottom + 66 + i * 14)
+        L.text(c, "small", "Ctrl + click in the backpack: into the cube", GREY, 18, 528)
+        self.button((226, 546, 90, 22), "Back", lambda: self.go("roster"))
+        self._inventory_right(b)
 
     # ------------------------------------------------------------ the charm inventory
     def _charm_geometry(self, h):
