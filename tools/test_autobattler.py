@@ -722,6 +722,35 @@ def test_next_floor_built_ahead():
     r.finish("stopped")
 
 
+def test_waiting_floor_goes_first():
+    """A floor a run is waiting for is built before any floor built ahead."""
+    import threading
+    from autobattler import runs
+    runs.BUILD_LOCK.acquire()
+    order = []
+    ahead = {"needed": False}
+    due = {"needed": True}
+
+    def take(job, name):
+        runs._take_build_lock(job)
+        order.append(name)
+        runs.BUILD_LOCK.release()
+    runs.WAITING.add(id(due))
+    t1 = threading.Thread(target=take, args=(ahead, "ahead"))
+    t1.start()
+    import time
+    time.sleep(0.1)
+    t2 = threading.Thread(target=take, args=(due, "due"))
+    t2.start()
+    time.sleep(0.1)
+    runs.BUILD_LOCK.release()
+    t2.join(5)
+    runs.WAITING.discard(id(due))
+    t1.join(5)
+    check(order == ["due", "ahead"], "the floor a run waits for is built first (%s)" % order)
+    check(not runs.WAITING, "and nothing is left waiting")
+
+
 def test_runeword_bases():
     """Home: exceptional / elite plain items with all their sockets go to the stash; other plain
     gear is sold with the magic and rare items."""
@@ -1094,6 +1123,7 @@ if __name__ == "__main__":
     test_shot_monsters_come()
     test_act_boss_moves_in_real_time()
     test_next_floor_built_ahead()
+    test_waiting_floor_goes_first()
     test_runeword_bases()
     test_rare_cores()
     test_horadric_cube()

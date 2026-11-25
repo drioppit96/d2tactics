@@ -29,7 +29,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 from main import load_settings, load_assets, log_error          # noqa: E402  (the same engine)
-from autobattler import brain, config, gear, points, roster     # noqa: E402
+from autobattler import brain, config, gear, points, roster, runs     # noqa: E402
 from autobattler import stash as abstash                        # noqa: E402
 from autobattler.runs import RunManager, FARMS, FARM_NAMES, farm_of  # noqa: E402
 from autobattler.runs import DIFF_NAMES, unlocked, difficulty_of        # noqa: E402
@@ -95,6 +95,9 @@ class Perf:
                 r.id, r.state, r.depth, len(w.monsters) if w is not None else 0,
                 "%dx%d cells" % (w.grid.w, w.grid.h) if w is not None else "building",
                 1000 * getattr(r, "game_secs", 0.0) / gf, getattr(r, "builds", 0), getattr(r, "build_secs", 0.0)))
+            if r.state == "build" and getattr(r, "_wait_since", None) is not None:
+                out.append("  waiting %.0f s for its floor; building now: %s" % (
+                    time.perf_counter() - r._wait_since, runs.HOLDER[0] or "nothing"))
         if el > 5:
             self.since = time.time()
             self.t, self.n, self.worst, self.frames = {}, {}, {}, 0

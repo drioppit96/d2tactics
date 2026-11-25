@@ -27,20 +27,25 @@ from . import brain, gear, realtime, roster, timing
 BUILD_LOCK = threading.Lock()       # one floor built at a time
 PREBUILD = True                     # build the next floor while this one is played
 
-#: set by the screen while it works out and draws a frame: floor building waits meanwhile
+#: set by the screen while it works out and draws a frame: floors built ahead wait meanwhile
 MAIN_BUSY = [False]
 
+#: build jobs a run is waiting for (its floor is due): they go before any floor built ahead,
+#: and while there is one, nothing steps aside for the screen
+WAITING = set()
+HOLDER = [None]     # the thread building now (for perf.log)
 
 _GIVE = [0.0]
 
 
-def _give_way(frame, event, arg, _busy=MAIN_BUSY, _give=_GIVE, _sleep=__import__("time").sleep, _now=_clock):
-    """The building thread's profile hook. Python runs one thread at a time; a floor being
-    built took about half of that time, so the screen stuttered. While the screen is busy the
-    builder steps aside a millisecond at a time - for 20 ms, then it builds 5 ms (so a slow PC
-    whose screen is never idle still gets its floors) - and it builds freely while the screen
-    waits for its next frame."""
-    if not _busy[0]:
+def _give_way(frame, event, arg, _busy=MAIN_BUSY, _waiting=WAITING, _give=_GIVE,
+              _sleep=__import__("time").sleep, _now=_clock):
+    """The profile hook of a thread building a floor ahead. Python runs one thread at a time; a
+    floor being built took about half of that time, so the screen stuttered. While the screen
+    is busy the builder steps aside a millisecond at a time - for 20 ms, then it builds 5 ms -
+    and it builds freely while the screen waits for its next frame. Once any run is waiting for
+    its floor it stops stepping aside (that floor is next, and the screen can wait)."""
+    if not _busy[0] or _waiting:
         _give[0] = 0.0
         return
     t = _now()
@@ -51,6 +56,29 @@ def _give_way(frame, event, arg, _busy=MAIN_BUSY, _give=_GIVE, _sleep=__import__
         _sleep(0.001)
     elif waited > 0.025:
         _give[0] = t
+
+
+def _take_build_lock(job, _sleep=__import__("time").sleep):
+    """One floor is built at a time. A floor a run is waiting for goes first: a floor built
+    ahead takes its turn only when no run is waiting."""
+    while True:
+        if job.get("needed") or not WAITING:
+            if BUILD_LOCK.acquire(timeout=0.05):
+                if job.get("needed") or not WAITING:
+                    HOLDER[0] = threading.current_thread().name
+                    return
+                BUILD_LOCK.release()
+        _sleep(0.02)
+
+
+def _need(job):
+    """A run is waiting for this job's floor now."""
+    job["needed"] = True
+    WAITING.add(id(job))
+    if not job["thread"].is_alive():     # (finished meanwhile: nothing to wait for)
+        WAITING.discard(id(job))
+
+
 SESSION_SEED = random.randrange(1, 1 << 30)
 
 STATES = ("build", "fight", "pause", "town", "gate", "over")
@@ -162,6 +190,8 @@ class Run:
                 self._job = pre                 # (built - or being built - while the last floor was played)
             else:
                 self._job = self._start_job(self.depth)
+            _need(self._job)
+            self._wait_since = _clock()
             self._thread = self._job["thread"]
             for h in self.heroes:
                 q = getattr(h, "qol", None)
@@ -210,10 +240,12 @@ class Run:
         of the leader: the engine puts its player at the floor's start, and the real one is
         still fighting on this floor."""
         import copy
-        job = {"key": self._job_key(depth), "built": None, "error": None,
+        job = {"key": self._job_key(depth), "built": None, "error": None, "needed": not stand_in,
                "stand_in": copy.copy(self.leader) if stand_in else None}
         job["thread"] = threading.Thread(target=self._build_world, args=(job,),
                                          name="floor-%d-%d" % (self.id, depth), daemon=True)
+        if job["needed"]:
+            WAITING.add(id(job))
         job["thread"].start()
         return job
 
@@ -237,11 +269,13 @@ class Run:
         import sys
         import time as _time
         t0 = _time.perf_counter()
-        sys.setprofile(_give_way)               # (the screen goes first: see _give_way)
+        if not job.get("needed"):
+            sys.setprofile(_give_way)           # (built ahead: the screen goes first, see _give_way)
         try:
             self._build_world_inner(job)
         finally:
             sys.setprofile(None)
+            WAITING.discard(id(job))
             # (for perf.log: how long floors take to build, on their own thread)
             self.build_secs = getattr(self, "build_secs", 0.0) + _time.perf_counter() - t0
             self.builds = getattr(self, "builds", 0) + 1
@@ -250,7 +284,8 @@ class Run:
         depth = job["key"][0]
         player = job["stand_in"] or self.leader
         try:
-            with BUILD_LOCK:
+            _take_build_lock(job)
+            try:
                 a = self.assets
                 if getattr(a, "act_kit", None) is not None:
                     from game import rift
@@ -288,6 +323,9 @@ class Run:
                     w = World(seed=random.randrange(1 << 30), depth_level=depth, player=player)
                     self._mark_boss(w)
                 job["built"] = w
+            finally:
+                HOLDER[0] = None
+                BUILD_LOCK.release()
         except Exception as e:
             import traceback
             job["error"] = e

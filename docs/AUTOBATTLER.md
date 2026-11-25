@@ -274,7 +274,11 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
   leader (the engine puts its player at the new floor's start; the real one is still fighting).
   Through the portal it is usually ready at once. It is thrown away if the run goes elsewhere
   (a death, another farm or difficulty).
-- While the screen works out and draws a frame, a floor being built steps aside (a millisecond
+- A floor a run is waiting for is built before any floor built ahead, and it never steps aside
+  for the screen; while any run waits, a floor being built ahead doesn't step aside either (so
+  it is out of the way sooner). perf.log shows, for a run waiting for its floor, how long it
+  has waited and which floor is being built.
+- While the screen works out and draws a frame, a floor being built ahead steps aside (a millisecond
   at a time, for up to 20 ms, then it builds 5 ms) and it builds freely while the screen waits
   for its next frame. Before, the build took about half of Python's time and the screen stuttered.
   Measured: a 7-8 ms screen frame took 15 ms on average during a build, now 9 ms.
