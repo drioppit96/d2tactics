@@ -44,6 +44,18 @@ update never overwrites them.
   Act 3 23-26, Act 4 27-30, Act 5 31-40; Nightmare and Hell by their MonStats levels), and after
   floor 50 the acts come round again 40 levels higher (at most 99). The act bosses on every tenth
   floor are D2's own.
+- The rift runs to floor 60 before it starts over: 1-10 Act 1 ... 41-50 Act 5, and 51-60 a
+  sixth stretch in Act 5's places with levels going on past Baal's (Normal: 61-70), Baal again on
+  floor 60 (rift.SIXTH). After 60 the acts come round again, 70 levels higher (at most 99).
+- Before every act boss (floors 10, 20, 30, 40, 50, 60) the run goes back to town when the floor
+  before it is cleared (the heroes are mended and their gems, runes, uniques, sets and runeword
+  bases go to the stash, as on any trip home) and waits: the roster's Fight boss button sends them
+  in (Run.fight_boss). Beating the boss lets the rift go on. Stop run ends the run there.
+- Difficulty (button, by hero): Normal at first; clearing rift floor 60 on Normal opens Nightmare,
+  on Nightmare opens Hell (profile "unlocked"). A run plays its hero's chosen difficulty: monster
+  stats, levels and drops from D2's (N) / (H) columns (the content's difficulty is set for each
+  floor built and each run's frames, never under a floor being built). Each difficulty keeps its
+  own deepest floor (profile "rift_by"); dying resets the one he died on to floor 1.
 - A stopped run is picked up again: the next run starts one floor below the deepest he cleared
   (kept on the hero and in his profile); only dying sends him back to floor 1.
 - Drops are Diablo II's own (D2Content.D2_DROPS, set by the run manager; D2 Tactics keeps its
@@ -315,8 +327,8 @@ is drawn with plain boxes and a system font.
   card lists them ("Summons up: Oak Sage"), and each summon he casts goes in the run's log.
 - Farm (Rift / Boss / Runes): what the selected heroes farm on their next run (profile "farm"; a
   group farms what its first hero does):
-  - Rift: the Infernal Rift, floor after floor, going on below the deepest floor cleared; an act
-    boss every tenth floor.
+  - Rift: the Infernal Rift, floor after floor, going on below the deepest floor cleared on the
+    chosen difficulty; an act boss every tenth floor, which waits in town for Fight boss.
   - Boss: the Black Road (game/arena.py): a small walled room with one of the Great Evils in it,
     chosen at random each time; when it dies a portal opens and the next room follows.
   - Runes: the Forgotten Tower's cellar, Tower Cellar levels 1 to 5 (D2's own maps and monsters).

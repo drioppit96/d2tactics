@@ -26,7 +26,34 @@ from . import brain, gear, realtime, roster, timing
 BUILD_LOCK = threading.Lock()       # one floor built at a time
 SESSION_SEED = random.randrange(1, 1 << 30)
 
-STATES = ("build", "fight", "pause", "town", "over")
+STATES = ("build", "fight", "pause", "town", "gate", "over")
+
+DIFFICULTIES = ("normal", "nightmare", "hell")
+DIFF_NAMES = {"normal": "Normal", "nightmare": "Nightmare", "hell": "Hell"}
+UNLOCK_AT = 60          # clearing rift floor 60 opens the next difficulty
+
+
+def unlocked(h):
+    prof = brain.profile(h)
+    got = [d for d in DIFFICULTIES if d in (prof.get("unlocked") or ["normal"])]
+    return got or ["normal"]
+
+
+def difficulty_of(h):
+    d = brain.profile(h).get("difficulty", "normal")
+    return d if d in unlocked(h) else "normal"
+
+
+def rift_cleared(h, diff):
+    """The deepest rift floor he has cleared on this difficulty since he last died there."""
+    return int((brain.profile(h).get("rift_by") or {}).get(diff, 0) or 0)
+
+
+def set_rift_cleared(h, diff, n):
+    prof = brain.profile(h)
+    prof.setdefault("rift_by", {})[diff] = int(n)
+    if diff == "normal":
+        prof["cleared"] = int(n)
 
 #: what a run farms (the hero's choice, profile "farm")
 #:   rift    the Infernal Rift, floor after floor, an act boss every tenth
@@ -55,7 +82,8 @@ class Run:
         self.timings = timings
         self.state = "build"
         self.farm = farm_of(self.heroes[0])
-        self.depth = max(1, max(cleared(h) for h in self.heroes) + 1) if self.farm == "rift" else 1
+        self.difficulty = difficulty_of(self.heroes[0])
+        self.depth = max(1, max(cleared(h, self.difficulty) for h in self.heroes) + 1) if self.farm == "rift" else 1
         self.deaths = 0
         self.world = None
         self.sim = None
@@ -80,7 +108,8 @@ class Run:
             return "Black Road %d" % self.depth
         if self.farm == "runes":
             return "Tower Cellar %d (run %d)" % ((self.depth - 1) % 5 + 1, (self.depth - 1) // 5 + 1)
-        return "floor %d" % self.depth
+        tag = "" if self.difficulty == "normal" else " (%s)" % DIFF_NAMES[self.difficulty]
+        return "floor %d%s" % (self.depth, tag)
 
     def level_key(self):
         from game import arena, rift
@@ -141,6 +170,9 @@ class Run:
                 if getattr(a, "act_kit", None) is not None:
                     from game import rift
                     from game.actworld import make_world
+                    content = getattr(self.assets, "content", None)
+                    if content is not None:
+                        content.set_difficulty(self.difficulty)
                     lid = self.level_key()
                     if self.farm == "rift":
                         # every floor is rolled anew: its place (dungeon or outdoors of the act),
@@ -269,6 +301,33 @@ class Run:
             return False
         return True
 
+    def to_gate(self):
+        """The floor before an act boss: back to town (mended, the stash and the traders as on any
+        trip home), and the boss waits until the player sends them in (Fight boss)."""
+        from . import stash
+        st = stash.get(getattr(self.assets, "content", None))
+        for h in self.heroes:
+            if h.alive:
+                h.hp, h.mana = h.max_hp, getattr(h, "max_mana", getattr(h, "mana", 0))
+            h._town_visit = int(getattr(h, "_town_visit", 0) or 0) + 1
+            stash.deposit(h, st, getattr(self.assets, "content", None))
+            roster.save(h)
+        stash.save()
+        self.depth += 1
+        self.state = "gate"
+        self.note("Floor %d: the act boss waits. Back in town - Fight boss when ready." % self.depth)
+
+    def fight_boss(self):
+        """The player sends them in: the boss floor is built and the run goes on."""
+        if self.state != "gate":
+            return False
+        for h in self.heroes:
+            h.recalc()
+            gear.prepare(h)
+        self.state = "build"
+        self.note("Into floor %d to face the act boss." % self.depth)
+        return True
+
     def resume(self):
         """Back through the portal: the run goes on where it was left."""
         if self.state != "town":
@@ -336,6 +395,7 @@ class Run:
                 if self.farm == "rift":
                     prof["best"] = max(int(prof.get("best", 0) or 0), int(getattr(h, "rift_depth", 0) or 0))
                     h.rift_depth = 0
+                    set_rift_cleared(h, self.difficulty, 0)
                     prof["cleared"] = 0
                 h.alive = True
                 roster.save(h)
@@ -362,14 +422,22 @@ class Run:
                 if self.farm == "rift":
                     h.rift_depth = max(int(getattr(h, "rift_depth", 0) or 0), self.depth)
                     prof = brain.profile(h)
-                    prof["cleared"] = h.rift_depth    # (kept in his profile too: the next run goes on from here)
+                    set_rift_cleared(h, self.difficulty, max(rift_cleared(h, self.difficulty), self.depth))
                     prof["best"] = max(int(prof.get("best", 0) or 0), h.rift_depth)
+                    if self.depth >= UNLOCK_AT:
+                        i = DIFFICULTIES.index(self.difficulty)
+                        if i + 1 < len(DIFFICULTIES) and DIFFICULTIES[i + 1] not in unlocked(h):
+                            prof["unlocked"] = unlocked(h) + [DIFFICULTIES[i + 1]]
+                            self.note("%s: %s is open." % (h.name, DIFF_NAMES[DIFFICULTIES[i + 1]]))
                 roster.save(h)
             for who, what in self.sim.picked:
                 self.note("%s picked up %s." % (who, what))
             self.note("%s cleared: through the portal." % self.where())
-            self.state = "pause"
-            self.pause = int(self.cfg.get("floor_pause", 1) * timing.FPS)
+            if self.farm == "rift" and (self.depth + 1) % 10 == 0 and not self.stop_requested:
+                self.to_gate()
+            else:
+                self.state = "pause"
+                self.pause = int(self.cfg.get("floor_pause", 1) * timing.FPS)
         elif self.stop_requested:
             self.finish("stopped")
 
@@ -469,9 +537,13 @@ class Run:
         self.sim = None
 
 
-def cleared(h):
-    """The deepest floor he has cleared since he last died: the next run starts one deeper."""
-    return max(int(getattr(h, "rift_depth", 0) or 0), int(brain.profile(h).get("cleared", 0) or 0))
+def cleared(h, diff="normal"):
+    """The deepest floor he has cleared on a difficulty since he last died there: the next run
+    starts one deeper. (Normal also reads the older single count.)"""
+    n = rift_cleared(h, diff)
+    if diff == "normal":
+        n = max(n, int(getattr(h, "rift_depth", 0) or 0), int(brain.profile(h).get("cleared", 0) or 0))
+    return n
 
 
 def scale_for_players(w, players):
@@ -541,6 +613,7 @@ class RunManager:
             rift.BIG = bool(cfg.get("big_maps", True))
             rift.CONTENT = assets.content
             rift.ACT_LEVELS = True           # monsters by the act's own levels, not the hero's
+            rift.SIXTH = True                # floors 51-60 in Act 5's places, Baal on 60
             # Diablo II's own drops: every monster's own treasure classes, ItemRatio.txt quality
             # with D2's magic find, no D2 Tactics boosts (act bosses' x1.8, the two-piece floor,
             # the Countess's chest hoard every kill)
@@ -557,7 +630,7 @@ class RunManager:
 
     def on_floor_names(self):
         """Heroes on a rift floor now (not in town)."""
-        return {h.name for r in self.active() if r.state != "town" for h in r.heroes}
+        return {h.name for r in self.active() if r.state not in ("town", "gate") for h in r.heroes}
 
     def free_slots(self):
         return self.cfg["max_active"] - sum(len(r.heroes) for r in self.active())
@@ -584,7 +657,15 @@ class RunManager:
             # the frame's path searches are shared: a different run goes first each frame
             self._turn = (getattr(self, "_turn", 0) + 1) % len(runs)
             runs = runs[self._turn:] + runs[:self._turn]
+        content = getattr(self.assets, "content", None)
         for r in runs:
+            if content is not None and r.state == "fight" and BUILD_LOCK.acquire(False):
+                # (drops and levels read this run's difficulty; never changed under a floor being
+                # built, which sets its own)
+                try:
+                    content.set_difficulty(getattr(r, "difficulty", "normal"))
+                finally:
+                    BUILD_LOCK.release()
             try:
                 r.tick()
             except Exception:

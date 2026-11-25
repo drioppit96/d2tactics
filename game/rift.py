@@ -37,7 +37,9 @@ OPEN_SHARE = 0.35          # about a third of the BIG floors are outdoors
 #: the D2 Autobattler: a floor's monsters take their level from the act, not from the hero
 ACT_LEVELS = False
 #: the act bosses' own levels on Normal, when MonStats can't be read
-BOSS_LEVELS = {"andariel": 12, "duriel": 22, "mephisto": 26, "diablo": 30, "baalcrab": 40}
+BOSS_LEVELS = {"andariel": 12, "duriel": 22, "mephisto": 26, "diablo": 40, "baalcrab": 60}
+#: the D2 Autobattler: floors 51-60 are a sixth stretch in Act 5's places, its tenth floor Baal again
+SIXTH = False
 
 
 def _boss_level(act):
@@ -55,25 +57,37 @@ def _boss_level(act):
     return BOSS_LEVELS[mid]
 
 
+def _sixth(depth):
+    return SIXTH and 51 <= ((max(1, int(depth)) - 1) % 60) + 1 <= 60
+
+
 def act_level(depth):
     """The monsters' level on a floor: the ten floors of an act climb from just above the last
     act boss's level to this act's boss's level (Normal: Act 1 1-12, Act 2 13-22, Act 3 23-26,
     Act 4 27-30, Act 5 31-40; Nightmare and Hell by their own MonStats levels). After floor 50 the
     acts come round again, 40 levels higher each time round (at most 99)."""
     depth = max(1, int(depth))
+    if _sixth(depth):
+        # past Baal: from his level, ten more (and 70 more each time round)
+        hi = _boss_level(5)
+        i = (depth - 1) % 10
+        return max(1, min(99, hi + i + 1 + 70 * ((depth - 1) // 60)))
     act = act_of_depth(depth)
     hi = _boss_level(act)
     lo = _boss_level(act - 1) + 1 if act > 1 else max(1, hi - 11)
     i = (depth - 1) % 10
     lvl = lo + (max(lo, hi) - lo) * i / 9.0
-    lap = (depth - 1) // 50
-    return max(1, min(99, int(round(lvl)) + 40 * lap))
+    lap = (depth - 1) // (60 if SIXTH else 50)
+    return max(1, min(99, int(round(lvl)) + (70 if SIXTH else 40) * lap))
 
 
 def act_of_depth(depth):
     """BIG floors follow the acts: 1-10 Act 1, 11-20 Act 2, 21-30 Act 3, 31-40 Act 4, 41-50 Act 5,
     then round again (51-60 Act 1 ...). The tenth floor of each is that act's boss."""
-    return ((max(1, int(depth)) - 1) // 10) % 5 + 1
+    if _sixth(depth):
+        return 5
+    return ((max(1, int(depth)) - 1) // 10) % (6 if SIXTH else 5) + 1 if not SIXTH else \
+        min(5, ((max(1, int(depth)) - 1) % 60) // 10 + 1)
 
 # where a floor can be built from: maze kit (act1.MAZES) or FIELD, the act whose palette it wears,
 # and what the floor is called. Every act of the game is in here.

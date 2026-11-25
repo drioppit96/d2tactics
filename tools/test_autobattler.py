@@ -401,12 +401,18 @@ def test_summons_once():
 
 
 def test_act_levels():
-    """Monster levels follow the acts: each act climbs to its boss's level."""
+    """Monster levels follow the acts: each act climbs to its boss's level; 51-60 go on past Baal."""
     from game import rift
-    lv = [rift.act_level(d) for d in (1, 10, 11, 20, 21, 30, 31, 40, 41, 50, 51)]
-    check(lv[:10] == [1, 12, 13, 22, 23, 26, 27, 30, 31, 40] and lv[10] == 41,
-          "floor levels (1, 10, 11, 20, 21, 30, 31, 40, 41, 50, 51): %s" % lv)
-    check(all(rift.act_level(d) <= rift.act_level(d + 1) for d in range(1, 99)), "they never go down")
+    keep = rift.SIXTH
+    rift.SIXTH = True
+    try:
+        lv = [rift.act_level(d) for d in (1, 10, 11, 20, 21, 30, 31, 40, 41, 50, 51, 60, 61)]
+        check(lv == [1, 12, 13, 22, 23, 26, 27, 40, 41, 60, 61, 70, 71],
+              "floor levels (1, 10, 11, 20, 21, 30, 31, 40, 41, 50, 51, 60, 61): %s" % lv)
+        check(all(rift.act_level(d) <= rift.act_level(d + 1) for d in range(1, 119)), "they never go down")
+        check(rift.act_of_depth(60) == 5 and rift.act_of_depth(61) == 1, "floor 60 is Act 5's (Baal), 61 starts over")
+    finally:
+        rift.SIXTH = keep
 
 
 def test_charm_inventory():
@@ -687,6 +693,44 @@ def test_socketing():
         d2i.insert = old
 
 
+def test_boss_gate_and_difficulty():
+    """Before every act boss the run waits in town until the player sends it in; floor 60 opens the
+    next difficulty; each difficulty keeps its own depth."""
+    from autobattler import brain
+    from autobattler.runs import unlocked, difficulty_of, set_rift_cleared, cleared
+    config.apply_d2_rules()
+    random.seed(3)
+    h = _hero("Gatekeeper")
+    h.base_vit, h.base_str = 400, 300
+    h.recalc()
+    h.hp = h.max_hp
+    set_rift_cleared(h, "normal", 8)
+    h.rift_depth = 8
+    mgr = RunManager(_NoAssets(), _cfg())
+    r = mgr.start([h])
+    check(r.depth == 9, "starts on floor 9")
+    for _ in range(10):
+        _tick(mgr)
+    r.sim.at_portal = True                       # (floor 9 done)
+    _tick(mgr)
+    check(r.state == "gate" and r.depth == 10, "floor 9 cleared: back in town, the floor 10 boss waits (%s, %d)" % (r.state, r.depth))
+    for _ in range(50):
+        _tick(mgr)
+    check(r.state == "gate", "it waits for the player")
+    check(r.fight_boss() and r.state == "build", "Fight boss: into floor 10")
+    r.finish("stopped")
+    # unlocks and depth by difficulty
+    check(unlocked(h) == ["normal"] and difficulty_of(h) == "normal", "only Normal at first")
+    brain.profile(h)["unlocked"] = ["normal", "nightmare"]
+    brain.profile(h)["difficulty"] = "nightmare"
+    set_rift_cleared(h, "nightmare", 3)
+    r2 = mgr.start([h])
+    check(r2.difficulty == "nightmare" and r2.depth == 4 and "Nightmare" in r2.where(),
+          "Nightmare goes on from its own depth: %s" % r2.where())
+    r2.finish("stopped")
+    brain.profile(h)["difficulty"] = "normal"
+
+
 def test_cast_breakpoints():
     from autobattler.brain import CAST_FRAMES0
     sor = [timing.cast_frames(CAST_FRAMES0["sor"] + 1, f) for f in (0, 9, 20, 37, 63, 105, 200)]
@@ -911,6 +955,7 @@ if __name__ == "__main__":
     test_rare_cores()
     test_horadric_cube()
     test_socketing()
+    test_boss_gate_and_difficulty()
     test_inventory_screen()
     print("\n%s" % ("all passed" if not FAILS else "%d FAILED" % len(FAILS)))
     sys.exit(1 if FAILS else 0)

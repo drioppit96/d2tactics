@@ -32,6 +32,7 @@ from main import load_settings, load_assets, log_error          # noqa: E402  (t
 from autobattler import brain, config, gear, points, roster     # noqa: E402
 from autobattler import stash as abstash                        # noqa: E402
 from autobattler.runs import RunManager, FARMS, FARM_NAMES, farm_of  # noqa: E402
+from autobattler.runs import DIFF_NAMES, unlocked, difficulty_of        # noqa: E402
 from autobattler.timing import FPS, Timings                     # noqa: E402
 from autobattler.ui import Look, GOLD, WHITE, GREY, RED, GREEN, BLUE, W, H   # noqa: E402
 YELLOW = (255, 255, 100)            # D2's rare-item colour (Rare Cores)
@@ -241,6 +242,10 @@ class App:
             self.look.text(self.canvas, "med", "In town. %s waits (Continue run)." % run.where(), GOLD,
                            r.x, r.centery - 8, "center", r.w)
             return
+        if run is not None and run.state == "gate":
+            self.look.text(self.canvas, "med", "In town. The act boss of %s waits (Fight boss)." % run.where(), GOLD,
+                           r.x, r.centery - 8, "center", r.w)
+            return
         if run is not None and run.state in ("pause", "build") and lv is not None:
             # between floors: the old floor is over (and the heroes already stand on the new one)
             self.look.text(self.canvas, "med", "Next: floor %d..." % run.depth, GOLD,
@@ -292,13 +297,35 @@ class App:
     def stop_run(self):
         for n in self.selected:
             r = self.run_of(n)
-            if r is not None and r.state == "town":
+            if r is not None and r.state in ("town", "gate"):
                 r.note("Run ended in town.")
                 r.finish("stopped")              # (in town already: it ends now)
                 self.message = "%s: run ended." % ", ".join(h.name for h in r.heroes)
             elif r is not None:
                 r.stop_requested = True
                 self.message = "%s will stop after this floor." % ", ".join(h.name for h in r.heroes)
+
+    def cycle_difficulty(self):
+        """Normal, then Nightmare once a hero has cleared rift floor 60 on Normal, then Hell once he
+        has on Nightmare. The rift goes on from his deepest floor on that difficulty."""
+        for n in self.selected:
+            h = self.heroes.get(n)
+            if h is None or n in self.mgr.busy_names():
+                continue
+            opts = unlocked(h)
+            cur = difficulty_of(h)
+            brain.profile(h)["difficulty"] = opts[(opts.index(cur) + 1) % len(opts)]
+            roster.save(h)
+            self.message = "%s: %s" % (n, DIFF_NAMES[difficulty_of(h)])
+
+    def fight_boss(self):
+        for n in list(self.selected):
+            r = self.run_of(n)
+            if r is not None and r.state == "gate":
+                if self.bench is not None and self.bench.player in r.heroes:
+                    self._close_bench()
+                if r.fight_boss():
+                    self.message = "%s: into floor %d to face the act boss." % (", ".join(h.name for h in r.heroes), r.depth)
 
     def cycle_farm(self):
         """What the selected heroes farm on their next run: the Infernal Rift, the Black Road (one of
@@ -547,7 +574,7 @@ class App:
                 getattr(h, "gold", 0), gear.rare_cores(h), int(getattr(h, "rift_depth", 0) or 0),
                 int(brain.profile(h).get("best", 0) or 0)), WHITE, x + 250, y + 16)
             if run is not None and run.sim is not None:
-                now = "in town, floor %d waits" % run.depth if run.state == "town" else (run.sim.brain(h).last or "...")
+                now = "in town, floor %d waits" % run.depth if run.state in ("town", "gate") else (run.sim.brain(h).last or "...")
                 L.text(c, "small", "Now: %s" % now, GOLD, x, y + 36)
                 L.text(c, "small", "This run: %d floors, %d kills, %d deaths" % (run.floors, run.kills + run.sim.kills,
                                                                                 getattr(run, "deaths", 0)), WHITE, x + 250, y + 36)
@@ -584,25 +611,29 @@ class App:
         # buttons
         has = h is not None
         on_run = has and run is not None
-        town_run = on_run and run.state == "town"
-        bh, gap = 32, 8
+        gate_run = on_run and run.state == "gate"
+        town_run = on_run and run.state in ("town", "gate")
+        bh, gap = 28, 8
         row1 = [("New hero", lambda: self.go("create"), roster.count() < self.cfg["max_heroes"]),
                 ("Start run", self.start_run, has and not on_run),
                 ("Stop run", self.stop_run, on_run),
+                ("Fight boss", self.fight_boss, True) if gate_run else
                 ("Continue run", self.continue_run, True) if town_run else
                 ("To town", self.to_town, on_run and run.state == "fight"),
-                ("Watch", lambda: self.go("watch"), on_run and not town_run),
-                ("Style", self.cycle_style, has)]
+                ("Watch", lambda: self.go("watch"), on_run and not town_run)]
         row2 = [("Inventory / Loot", lambda: self.go("inventory"), has),
                 ("Abilities", lambda: self.go("character"), has),
                 ("Horadric Cube", lambda: self.go("cube"), has),
                 ("Farm: %s" % FARM_SHORT[farm_of(h)] if has else "Farm", self.cycle_farm, has and not on_run),
                 ("Shop", lambda: self.open_town("shop"), has and (not on_run or town_run)),
                 ("Stash", lambda: self.open_town("stash"), has and (not on_run or town_run))]
-        for j, row in enumerate((row1, row2)):
-            bw = (W - 20 + gap) // len(row) - gap
+        diff = difficulty_of(h) if has else "normal"
+        row3 = [("Style", self.cycle_style, has),
+                ("Difficulty: %s" % DIFF_NAMES[diff], self.cycle_difficulty, has and not on_run and len(unlocked(h)) > 1)]
+        for j, row in enumerate((row1, row2, row3)):
+            bw = (W - 20 + gap) // max(len(row), 5) - gap
             for i, (label, act, en) in enumerate(row):
-                self.button((10 + i * (bw + gap), 476 + j * (bh + 6), bw, bh), label, act, enabled=en)
+                self.button((10 + i * (bw + gap), 474 + j * (bh + 5), bw, bh), label, act, enabled=en)
 
     def _role_of(self, h):
         """His build as his brain sees it (for a hero not on a floor)."""
@@ -917,7 +948,7 @@ class App:
         LW = self.LEFT_W
         L.panel(c, (6, 40, LW, 534))
         L.text(c, "med", "%s - level %d %s" % (h.name, h.level, CLASS_NAMES.get(h.cls, h.cls)), GOLD, 6, 50, "center", LW)
-        self._draw_loot_area(h, run if run is not None and run.state != "town" else None, 18, 70)
+        self._draw_loot_area(h, run if run is not None and run.state not in ("town", "gate") else None, 18, 70)
         # the buttons
         y0 = 418
         n_unid = b.unidentified()
@@ -1270,7 +1301,7 @@ class App:
 
     def in_town(self, name):
         r = self.run_of(name)
-        return r is None or r.state == "town"
+        return r is None or r.state in ("town", "gate")
 
     def open_town(self, tab):
         """Shop and Stash are two windows: the shop's traders, or the account's stash."""
