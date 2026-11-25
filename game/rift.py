@@ -333,12 +333,13 @@ def _fit(kit, name, rooms, small):
     return dict(rooms=max(2, min(rooms, g * g - 1)), grid=g)
 
 
-def _build_open(kit, lid, seed, theme):
+def _build_open(kit, lid, seed, theme, size=None):
     """An outdoor floor of any act (desert, jungle, Kurast, the steppes, the highlands ...), built by
     the map generator's open-world builder (game/randmap.py) at 10 x 10 blocks, without its own
     monsters or objects: the rift fills it like any other floor."""
     from . import custommap, randmap
-    o = dict(kind="open", open_theme=theme, width=_side(10, 6), height=_side(10, 6), seed=int(seed) & 0x3FFFFFFF,
+    side = size or _side(10, 6)        # (size: blocks a side, its border ring included)
+    o = dict(kind="open", open_theme=theme, width=side, height=side, seed=int(seed) & 0x3FFFFFFF,
              monsters=[], open_packs=0, packs=0, champions=0, uniques=0, boss="", shrines=0, wells=0,
              chests=0, breakables=0, bodies=0, racks=0, bookshelves=0, lights=0, room_objects=False)
     data = randmap.generate(kit, CONTENT, None, o)

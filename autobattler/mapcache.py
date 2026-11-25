@@ -20,7 +20,9 @@ import random
 import threading
 import zlib
 
-MAP_POOL = 54
+MAP_POOL = 204          # 54, then 150 more
+ARENA_POOL = 2          # premade arenas for each act's boss (the tenth floors)
+ARENA_SIZE = 4          # blocks a side, the border ring included: 2 x 2 blocks of ground inside
 VERSION = 1
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FOLDER = os.path.join(HERE, "map_cache")
@@ -31,6 +33,9 @@ _INDEX = None           # theme key -> [file names]
 
 
 # ------------------------------------------------------------------ the places and their shares
+ARENA = "@arena"
+
+
 def themes():
     """Every place a BIG rift floor is built from, as (key, act)."""
     from game import rift
@@ -39,15 +44,31 @@ def themes():
     return sorted(set(out))
 
 
+def arenas():
+    """The act bosses' arenas, one place per act, as (key, act)."""
+    from game import rift
+    acts = sorted(set(act for _t, act, _f in rift.OPEN_FLOORS))
+    return [((ARENA, str(a)), a) for a in acts]
+
+
 def theme_of(p):
     from game import rift
+    if is_boss_floor(p):
+        return (ARENA, str(p.get("act")))
     if p.get("kit") == rift.FIELD:
         return (rift.FIELD, p.get("open"))
     return (p.get("kit"), None)
 
 
+def is_boss_floor(p):
+    from game import rift
+    return bool(rift.BIG) and p.get("depth", 1) % rift.BOSS_EVERY == 0
+
+
 def quota(key):
     """This place's share of the pool."""
+    if key[0] == ARENA:
+        return ARENA_POOL if key in [k for k, _a in arenas()] else 0
     keys = [k for k, _a in themes()]
     if key not in keys:
         return 0
@@ -75,7 +96,7 @@ def index():
             except OSError:
                 names = []
             tag = _tag()
-            for k, _a in themes():
+            for k, _a in themes() + arenas():
                 pre = "%s__%s__" % (tag, _slug(k))
                 _INDEX[k] = sorted(n for n in names if n.startswith(pre) and n.endswith(".map"))
         return _INDEX
@@ -87,7 +108,7 @@ def have(key):
 
 def missing():
     """Places still short of their share, the emptiest first."""
-    out = [(have(k) - quota(k), k, a) for k, a in themes() if have(k) < quota(k)]
+    out = [(have(k) - quota(k), k, a) for k, a in arenas() + themes() if have(k) < quota(k)]
     out.sort()
     return [(k, a) for _d, k, a in out]
 
@@ -255,10 +276,41 @@ def build_level(kit, lid, seed=None, player=None):
             rift._pick_ends(b, grid, p, rng)        # (a new arrival spot and boss spot each time)
             b.custom_start = p["start"]
             return b, grid, rng
+    if key[0] == ARENA:
+        b, grid, rng = build_arena(kit, lid, rng.randrange(1 << 30), int(key[1]))
+        if rift.ACT_LEVELS:
+            p["mlvl"] = rift.act_level(p["depth"])
+        rift._pick_ends(b, grid, p, rng)
+        b.custom_start = p["start"]
+        save(key, b, grid, lid, kit)
+        return b, grid, rng
     b, grid, rng = _ORIGINAL(kit, lid, seed, player)
     if quota(key) and theme_of(p) == key:           # (not if it fell back to an open plain)
         save(key, b, grid, lid, kit)
     return b, grid, rng
+
+
+def build_arena(kit, lid, seed, act):
+    """An act boss's arena: a small walled stretch of his own act's outdoors (2 x 2 blocks of
+    ground inside its border), nothing else in it. Falls back on the Black Road's arena (Act 1's
+    wilderness) if the act's outdoors can't be built that small."""
+    from game import arena, rift
+    rng = random.Random(seed)
+    themes_ = [t for t, a, _f in rift.OPEN_FLOORS if a == act]
+    rng.shuffle(themes_)
+    for theme in themes_:
+        for size in (ARENA_SIZE, ARENA_SIZE + 1):
+            try:
+                b, grid, _r = rift._build_open(kit, lid, seed, theme, size=size)
+                if sum(1 for y in range(grid.h) for x in range(grid.w) if grid.walkable(x, y)) > 200:
+                    b.npcs, b.objects, b.presets = [], [], []
+                    b.areas = {lid: (0, 0, b.tm.tw * 5, b.tm.th * 5)}
+                    return b, grid, random.Random(seed)
+            except Exception:
+                _log("an Act %d arena (%s, %d blocks)" % (act, theme, size))
+    b, grid, _r = arena.build(kit, lid, seed, rift.CONTENT)
+    b.areas = {lid: (0, 0, b.tm.tw * 5, b.tm.th * 5)}
+    return b, grid, random.Random(seed)
 
 
 def install():
@@ -281,7 +333,9 @@ def build_missing_one(kit):
     kit_name, theme = key
     seed = random.randrange(1 << 30)
     lid = rift.level_id(rift.MAX_FLOORS)               # (a level id of the rift's, for the tiles' owner)
-    if kit_name == rift.FIELD:
+    if kit_name == ARENA:
+        b, grid, _r = build_arena(kit, lid, seed, act)
+    elif kit_name == rift.FIELD:
         b, grid, _r = rift._build_open(kit, lid, seed, theme)
     else:
         spec = dict(kit=kit_name, roles=[], act=act, **rift._fit(kit, kit_name, max(2, int(round(10 * rift.AREA))), False))

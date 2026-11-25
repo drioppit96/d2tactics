@@ -820,6 +820,12 @@ def test_premade_floors():
         lid = rift.level_id(3)
         key = mapcache.theme_of(rift.plan(lid))
         q = mapcache.quota(key)
+        old_big = rift.BIG
+        rift.BIG = True
+        check(mapcache.theme_of(dict(depth=20, act=2, kit="tomb")) == (mapcache.ARENA, "2") and
+              all(mapcache.quota(k) == mapcache.ARENA_POOL for k, _a in mapcache.arenas()),
+              "every tenth floor is its act's arena, with premade arenas of its own")
+        rift.BIG = old_big
         check(sum(mapcache.quota(k) for k, _a in mapcache.themes()) == mapcache.MAP_POOL,
               "the pool's %d floors are shared out over every place" % mapcache.MAP_POOL)
         for i in range(q):

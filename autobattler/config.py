@@ -20,7 +20,7 @@ max_group = 4
 big_maps = yes
 # rift floors' area as a share of that (0.5 = half: quicker to build and to clear)
 map_area = 0.5
-# floors from a pool of 54 premade layouts kept in map_cache/ (made on this PC from your D2
+# floors from a pool of 204 premade layouts (and act boss arenas) kept in map_cache/ (made on this PC from your D2
 # files the first time; monsters, portal and boss spot are placed new each time) (yes / no)
 premade_maps = yes
 # game speed: 1 = D2's own 25 frames a second, 2 = twice as fast ...

@@ -362,11 +362,17 @@ class Run:
                         rift.PLANS.pop(lid, None)
                     boss_floor = self.farm == "rift" and depth % rift.BOSS_EVERY == 0
                     if boss_floor:
-                        # every tenth floor: the Black Road's walled arena (2x2 blocks inside its
-                        # border), with the act's boss in it and nothing else
-                        from game import arena
-                        w = make_world(a.act_kit, a.act_info, a.content, arena.BOSS_LEVEL,
-                                       player=player, seed=random.randrange(1 << 30))
+                        # every tenth floor: an arena of the act's own outdoors (2x2 blocks inside
+                        # its border), with the act's boss in it and nothing else (premade ones
+                        # from map_cache/; without premade maps the Black Road's arena)
+                        from . import mapcache
+                        if mapcache._ORIGINAL is not None:
+                            w = make_world(a.act_kit, a.act_info, a.content, lid, player=player,
+                                           seed=random.randrange(1 << 30))
+                        else:
+                            from game import arena
+                            w = make_world(a.act_kit, a.act_info, a.content, arena.BOSS_LEVEL,
+                                           player=player, seed=random.randrange(1 << 30))
                         self._act_boss_arena(w, lid, depth)
                     else:
                         w = make_world(a.act_kit, a.act_info, a.content, lid, player=player,
@@ -834,7 +840,7 @@ class RunManager:
             rift.AREA = float(cfg.get("map_area", 0.5))     # floors half the size they were
             if cfg.get("premade_maps", True):
                 from . import mapcache
-                mapcache.install()           # floors from a pool of 54 kept layouts
+                mapcache.install()           # floors from a pool of 204 kept layouts
             rift.SIXTH = True                # floors 51-60 in Act 5's places, Baal on 60
             # Diablo II's own drops: every monster's own treasure classes, ItemRatio.txt quality
             # with D2's magic find, no D2 Tactics boosts (act bosses' x1.8, the two-piece floor,
@@ -959,7 +965,7 @@ class RunManager:
             try:
                 _take_build_lock(job)
                 try:
-                    HOLDER[0] = "premade floor %d/%d" % (mapcache.total() + 1, mapcache.MAP_POOL)
+                    HOLDER[0] = "premade floor %d/%d" % (mapcache.total() + 1, mapcache.MAP_POOL + mapcache.ARENA_POOL * len(mapcache.arenas()))
                     mapcache.build_missing_one(kit)
                 finally:
                     HOLDER[0] = None

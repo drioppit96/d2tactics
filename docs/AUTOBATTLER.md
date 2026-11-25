@@ -276,15 +276,19 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
   (a death, another farm or difficulty).
 - Rift floors are half the area they were (autobattler.ini map_area = 0.5; 1 = the old size):
   about 5 rooms instead of 10, outdoor floors 7 x 7 blocks instead of 10 x 10.
-- Premade floors (premade_maps = yes): a pool of 54 floor layouts kept in map_cache/ in the game
-  folder, shared out over every place the rift builds floors from (each act's dungeons and
-  outdoors, about 2 each). A floor whose place has its share loads one of them; its monsters,
-  arrival spot and boss spot are placed new each time. Until then floors are built as before
-  and kept, and the missing ones are built in the background while no run waits for a floor
-  (perf.log shows "premade floor n/54" while it works). The layouts are made on the player's PC
-  from his own D2 files and are never in the repository; they hold no art, only the names of
-  D2's tile files and tile numbers, read from the MPQs again when loaded. A layout that can't
-  be kept or loaded is skipped and the floor is built as before. Delete map_cache/ to make new ones.
+- Premade floors (premade_maps = yes): a pool of 204 floor layouts kept in map_cache/ in the game
+  folder, shared out over the 24 places the rift builds floors from (each act's dungeons and
+  outdoors: 8-9 each), and 2 premade arenas for each act's boss. A floor whose place has its
+  share loads one of them; its monsters, arrival spot and boss spot are placed new each time.
+  Until then floors are built as before and kept, and the missing ones are built in the
+  background while no run waits for a floor, arenas first (perf.log shows "premade floor n/204"
+  while it works). The layouts are made on the player's PC from his own D2 files and are never in
+  the repository; they hold no art, only the names of D2's tile files and tile numbers, read
+  from the MPQs again when loaded. A layout that can't be kept or loaded is skipped and the floor
+  is built as before. Delete map_cache/ to make new ones.
+- With premade maps, floors 10/20/30/40/50/60 are an arena of the boss's own act's outdoors
+  (desert for Duriel, jungle or Kurast for Mephisto, ...): 2 x 2 blocks of ground inside the
+  act's border ring. If that can't be built, the Black Road's arena (Act 1) is used.
 - Each run keeps its own count of game frames owed. Every screen frame the run on screen is
   played in full; the others share 10 ms of game time, the one most behind first, and one that
   got nothing for 3 screen frames goes next whatever the time. On a PC too slow for all the runs,
