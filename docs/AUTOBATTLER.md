@@ -274,6 +274,15 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
   leader (the engine puts its player at the new floor's start; the real one is still fighting).
   Through the portal it is usually ready at once. It is thrown away if the run goes elsewhere
   (a death, another farm or difficulty).
+- Each run keeps its own count of game frames owed. Every screen frame the run on screen is
+  played in full; the others share 10 ms of game time, the one most behind first, and one that
+  got nothing for 3 screen frames goes next whatever the time. On a PC too slow for all the runs,
+  the runs nobody watches slow down a little instead of the screen stuttering. A run owes at
+  most 3 game frames (times the speed); beyond that it slows.
+- A hero who has neither moved a cell nor taken life off a monster for 8 seconds, with awake
+  monsters near him, leaves that monster for 10 seconds and walks off 3-6 cells to look again.
+  What he was doing (target, distance, line of fire, the missile's path, life and mana, the
+  engine's last messages) is written to stuck.log in the game folder.
 - A floor being built ahead is dropped the moment a run is waiting for its own floor (one floor
   is built at a time, and the waiting run must not wait for a floor nobody needs yet). It is
   started again once no run waits, or built when its run reaches it.

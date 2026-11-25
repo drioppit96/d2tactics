@@ -881,6 +881,58 @@ class RunManager:
             # the frame's path searches are shared: a different run goes first each frame
             self._turn = (getattr(self, "_turn", 0) + 1) % len(runs)
             runs = runs[self._turn:] + runs[:self._turn]
+        self._tick_runs(runs)
+
+    #: game time per screen frame (s) for the runs nobody is watching; the watched run always
+    #: gets all its frames
+    BUDGET = 0.010
+    MAX_BEHIND = 3          # game frames a run may owe before the rest are dropped (it slows down)
+
+    def step(self, dt, speed=1.0, fps=25):
+        """Play dt seconds of every run, the screen first: the run being watched gets all its game
+        frames; the others share what is left of BUDGET, the one most behind first. On a PC too
+        slow for all of them, the runs nobody is watching slow down instead of the screen
+        stuttering. Returns the number of run-frames played."""
+        runs = self.active()
+        cap = self.MAX_BEHIND * max(1.0, speed)
+        for r in runs:
+            r.acc = min(getattr(r, "acc", 0.0) + dt * fps * speed, cap)
+        start = _clock()
+        n = 0
+        ticked = set()
+
+        def first(r):
+            # the watched run, and one that has had nothing for 3 screen frames, can't be put off
+            return (r.sim is not None and getattr(r.sim, "watched", False)) or \
+                (getattr(r, "_starved", 0) >= 3 and id(r) not in ticked)
+        while True:
+            due = [r for r in runs if r.acc >= 1.0 and r in self.runs]
+            if not due:
+                break
+            due.sort(key=lambda r: (not first(r), -r.acc))
+            if n and _clock() - start > self.BUDGET:
+                due = [r for r in due if first(r)]
+                if not due:
+                    break
+            realtime.new_frame()
+            for r in due:
+                if r is not due[0] and not first(r) and _clock() - start > self.BUDGET:
+                    break
+                self._tick_runs([r])
+                ticked.add(id(r))
+                r.acc -= 1.0
+                n += 1
+        for r in runs:
+            r._starved = 0 if (id(r) in ticked or r.acc < 1.0) else getattr(r, "_starved", 0) + 1
+        if not WAITING:
+            for r in self.runs:
+                pre = getattr(r, "_pre", None)
+                if pre is not None and pre.get("aborted") and r.state == "fight" and \
+                        pre["key"] == r._job_key(r.depth + 1):
+                    r._pre = r._start_job(r.depth + 1, stand_in=True)
+        return n
+
+    def _tick_runs(self, runs):
         content = getattr(self.assets, "content", None)
         for r in runs:
             if content is not None and r.state == "fight" and BUILD_LOCK.acquire(False):

@@ -75,7 +75,7 @@ MONSTER_VEL = 4.0       # when MonStats can't be read
 class State:
     __slots__ = ("mode", "frames", "hit_at", "target", "path", "prog", "next_path", "next_drink",
                  "speed", "kind", "plan", "stunned", "total", "next_think", "skip", "path_goal",
-                 "last_pos", "moved_at", "next_kite", "anim", "futile")
+                 "last_pos", "moved_at", "next_kite", "anim", "futile", "dealt_at")
 
     def __init__(self):
         self.mode = "idle"          # idle | walk | attack | gethit
@@ -99,6 +99,7 @@ class State:
         self.next_kite = 0          # the frame he may step away from melee monsters again
         self.anim = None            # the animation of the swing / cast under way (A1, TH, SC, S1...)
         self.futile = None          # [id(target), its life, blows and casts since it last went down]
+        self.dealt_at = 0           # the frame he last took life off a monster
 
 
 class Sim:
@@ -416,6 +417,8 @@ class Sim:
     def _hero_think(self, h, s):
         b = self.brain(h)
         self._unstick(h, s)
+        if self._no_progress(h, s, b):
+            return
         if self._survive(h, s, b):
             return
         if self._loot_or_leave(h, s, b):
@@ -732,6 +735,9 @@ class Sim:
                 for m in self.foes():
                     if m.hp < hp0.get(id(m), m.hp):
                         self._wake(m)        # (hurt by it, wherever it stood: it comes)
+                        s.dealt_at = self.frame
+                if len(self.foes()) < len(hp0):
+                    s.dealt_at = self.frame  # (and one it killed is gone from the list)
                 if not ok:
                     # why the engine said no, for the run's log (once per skill per floor)
                     why = [e[1] for e in w.events[n0:] if e and e[0] == "log"]
@@ -1082,6 +1088,7 @@ class Sim:
         was_alive = tgt.alive
         if u.is_player:
             self._count_blow(s, tgt)
+            self._dealt_check = (s, tgt, before)
         try:
             el = getattr(u, "missile_elem", None) if getattr(u, "ally", False) and not u.is_player else None
             if el and s.kind == "arrow":
@@ -1238,6 +1245,75 @@ class Sim:
                 return False
             px, py = cx, cy
         return True
+
+    NO_PROGRESS = 8     # seconds without moving a cell or taking life off a monster, monsters about
+
+    def _no_progress(self, h, s, b):
+        """A hero who for 8 seconds has neither moved a cell nor hurt a monster, with monsters
+        awake near him (shooting into a wall, a skill the engine refuses, a target he can't
+        reach...): what he was doing is written to stuck.log, he leaves that monster for 10 s and
+        walks off a few cells to look again."""
+        chk = getattr(self, "_dealt_check", None)
+        if chk is not None:
+            self._dealt_check = None
+            st, tgt, before = chk
+            if tgt.hp < before or not tgt.alive:
+                st.dealt_at = self.frame
+        last = max(s.moved_at, s.dealt_at, getattr(self, "_floor_start", 0))
+        if self.frame - last < self.NO_PROGRESS * timing.FPS:
+            return False
+        if not self._awake_near(h):
+            s.dealt_at = self.frame
+            return False
+        s.dealt_at = s.moved_at = self.frame
+        tgt = s.target
+        self._write_stuck(h, s, b, tgt)
+        if tgt is not None:
+            s.skip[id(tgt)] = self.frame + 10 * timing.FPS
+        s.target, s.plan, s.path, s.path_goal = None, None, [], None
+        s.mode, s.frames = "idle", 0
+        self.st.pop(("route", id(h)), None)
+        g = self.w.grid
+        here = h.pos
+        cells = [(here[0] + dx, here[1] + dy) for dx in range(-6, 7) for dy in range(-6, 7)
+                 if 3 <= max(abs(dx), abs(dy)) and g.walkable(here[0] + dx, here[1] + dy)
+                 and (here[0] + dx, here[1] + dy) not in self.occ]
+        random.shuffle(cells)
+        for c in cells[:6]:
+            if self._walk_to(h, s, c, reach=0):
+                break
+        b.last = "stuck: moving off to look again"
+        self.notes.append("%s was stuck (nothing hit, not moving for %d s): moved off. Details in stuck.log." % (
+            h.name, self.NO_PROGRESS))
+        return True
+
+    def _write_stuck(self, h, s, b, tgt):
+        try:
+            import os
+            import time
+            here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            lines = ["%s  %s (%s) at %s, floor %s, frame %d" % (
+                time.strftime("%Y-%m-%d %H:%M:%S"), h.name, getattr(h, "cls", "?"), h.pos,
+                getattr(self.w, "level_name", "?"), self.frame)]
+            lines.append("  doing: %s; mode %s; plan %s; life %d/%d mana %d/%d" % (
+                b.last, s.mode, getattr(s.plan, "skill", None) or getattr(s.plan, "kind", None),
+                h.hp, h.max_hp, getattr(h, "mana", 0), getattr(h, "max_mana", 0)))
+            if tgt is not None:
+                lines.append("  target: %s at %s, %d cells, life %d/%d, line of fire %s, missile path %s, walkable %s" % (
+                    getattr(tgt, "name", "?"), tgt.pos, chebyshev(h.pos, tgt.pos), tgt.hp, tgt.max_hp,
+                    self._can_shoot(h, tgt.pos), self._missile_reaches(h, tgt),
+                    self.w.grid.walkable(*tgt.pos)))
+            near = sorted(self._awake_near(h), key=lambda m: chebyshev(h.pos, m.pos))[:6]
+            lines.append("  awake near: " + ", ".join("%s %s %d/%d" % (getattr(m, "name", "?"), m.pos, m.hp, m.max_hp)
+                                                      for m in near))
+            lines.append("  reasons: " + "; ".join(self.notes[-4:]))
+            logs = [e[1] for e in list(getattr(self.w, "events", []))[-200:]
+                    if isinstance(e, tuple) and len(e) > 1 and e[0] == "log"]
+            lines.append("  engine log: " + " | ".join(str(t) for t in logs[-6:]))
+            with open(os.path.join(here, "stuck.log"), "a") as f:
+                f.write("\n".join(lines) + "\n\n")
+        except Exception:
+            pass
 
     def _unstick(self, h, s):
         """A hero who hasn't moved for 3 seconds while he means to go somewhere (and isn't

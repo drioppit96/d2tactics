@@ -480,15 +480,9 @@ class App:
 
     def step(self, dt):
         t0 = time.perf_counter()
-        self.acc += dt * FPS * self.cfg["speed"]
-        n = 0
-        limit = self.MAX_CATCH_UP * max(1, int(round(self.cfg["speed"])))
-        while self.acc >= 1.0 and n < limit:
-            self.mgr.tick()
-            self.acc -= 1.0
-            n += 1
-        if self.acc > 2:
-            self.acc = 0.0                       # (behind: drop the backlog)
+        # every run keeps its own count of game frames owed: the one on screen is played in full,
+        # the others in what is left of the frame's game time (see RunManager.step)
+        n = self.mgr.step(dt, self.cfg["speed"], FPS)
         self.perf.add("game", time.perf_counter() - t0, n)
 
     def draw(self):
