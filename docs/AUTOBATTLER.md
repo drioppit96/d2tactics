@@ -296,6 +296,14 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
   heroes works the same way. (D2 Tactics keeps its 2-second turns.) Tooltips say it D2's way:
   skills "Poison Damage: 42 over 4 seconds", items "+42 Poison Damage over 6 Seconds" /
   "Adds 10-20 Poison Damage over 6 Seconds".
+- A skill (Tiger Strike, Rabies, any melee or aimed skill) on a big monster counts its body: the
+  hero strikes from beside it. It measured from the monster's middle, so he walked "closer" to a
+  cell inside its body, found no way, gave up on it for 2 seconds, and again - a player's
+  assassin stood 3 minutes beside a Keeper of the Rift, and those failed searches took 25 of 30
+  seconds of the game's time (the lag).
+- A hero's path search to somewhere within 12 cells looks at 800 cells at most (3000 further).
+- The 3-second "drop the path and look again" no longer resets the 8-second stall check's clock
+  (it did, so the stall check never fired for a hero standing still).
 - A floor counts as done when no monster left can be reached - but not when the hero has only
   given up on some for a moment (he looks again later): that ended act-boss floors early, with
   the boss alive, as soon as the hero gave up on it once (his shot blocked, its big body in the

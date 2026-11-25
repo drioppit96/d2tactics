@@ -1061,6 +1061,45 @@ def test_boss_floor_not_skipped():
     r.finish("stopped")
 
 
+def test_melee_skill_on_a_big_monster():
+    """A melee skill on a big monster (its body reaches a cell further than its middle) is used
+    from beside its body, not given up on."""
+    from game.skills import Skill
+    random.seed(6)
+    mgr = RunManager(_NoAssets(), _cfg())
+    h = _hero("Claws", "ass")
+    h.base_vit = 400
+    h.recalc()
+    h.hp, h.mana = h.max_hp, h.max_mana
+    s = Skill("Tiger Strike", 1, 1, 1, 1, [], 3, 0, "melee")
+    s.cls, s.weapon = "ass", True
+    s.data = {"anim": "A1", "mana": "1", "manashift": "8", "minmana": "1"}
+    h.skills.tree["Tiger Strike"] = s
+    h.skills.levels["Tiger Strike"] = 5
+    r = mgr.start([h])
+    for _ in range(3):
+        _tick(mgr)
+    sim = r.sim
+    big = next(iter(sim.foes()))
+    for m in list(sim.foes()):
+        if m is not big:
+            sim.w.monsters.remove(m)
+    sim._foes_frame = None
+    g = sim.w.grid
+    spot = next((x, y) for y in range(2, g.h - 4) for x in range(2, g.w - 4)
+                if all(g.walkable(x + a, y + b) for a in range(-1, 4) for b in range(-1, 2)))
+    h.x, h.y = spot
+    big.x, big.y = spot[0] + 2, spot[1]
+    big.radius = 1
+    big.aware = True
+    sim._rebuild_occ()
+    st = sim._state(h)
+    from autobattler.brain import Plan
+    sim._start_cast(h, st, Plan("skill", "Tiger Strike", big, big.pos, 10, 1.0, "Tiger Strike"))
+    check(st.mode == "cast" and not st.skip.get(id(big)), "two cells from its middle, beside its body: he strikes")
+    r.finish("stopped")
+
+
 def test_runeword_bases():
     """Home: exceptional / elite plain items with all their sockets go to the stash; other plain
     gear is sold with the magic and rare items."""
@@ -1443,6 +1482,7 @@ if __name__ == "__main__":
     test_poison_over_time()
     test_shamans_first()
     test_boss_floor_not_skipped()
+    test_melee_skill_on_a_big_monster()
     test_runeword_bases()
     test_rare_cores()
     test_horadric_cube()

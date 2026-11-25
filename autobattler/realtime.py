@@ -77,7 +77,7 @@ MONSTER_VEL = 4.0       # when MonStats can't be read
 class State:
     __slots__ = ("mode", "frames", "hit_at", "target", "path", "prog", "next_path", "next_drink",
                  "speed", "kind", "plan", "stunned", "total", "next_think", "skip", "path_goal",
-                 "last_pos", "moved_at", "next_kite", "anim", "futile", "dealt_at")
+                 "last_pos", "moved_at", "next_kite", "anim", "futile", "dealt_at", "unstuck_at")
 
     def __init__(self):
         self.mode = "idle"          # idle | walk | attack | gethit
@@ -102,6 +102,7 @@ class State:
         self.anim = None            # the animation of the swing / cast under way (A1, TH, SC, S1...)
         self.futile = None          # [id(target), its life, blows and casts since it last went down]
         self.dealt_at = 0           # the frame he last took life off a monster
+        self.unstuck_at = 0         # the frame his path was last dropped for not moving
 
 
 class Sim:
@@ -689,6 +690,8 @@ class Sim:
         if plan.skill == "throw":
             reach = int(getattr(h, "throw_range", brains.THROW_RANGE))
         aim = plan.target.pos if plan.target is not None else plan.cell
+        tr = getattr(plan.target, "radius", 0) if plan.target is not None else 0
+        reach += tr                          # (a big monster's body is nearer than its middle)
         aimed = (sk is not None and sk.kind not in ("aura", "buff", "cry", "nova", "passive")
                  and sk.kind not in brains.SUMMON_KINDS) or plan.skill == "throw"
         if aim is not None and aimed and chebyshev(h.pos, aim) <= reach and (
@@ -696,13 +699,13 @@ class Sim:
                 (sk is not None and sk.kind == "missile" and plan.target is not None
                  and not self._missile_reaches(h, plan.target))):
             # a pillar or a wall between: walk round until the way is open
-            if not self._walk_to(h, s, aim, reach=1) and plan.target is not None:
+            if not self._walk_to(h, s, aim, reach=1, target_r=tr) and plan.target is not None:
                 s.skip[id(plan.target)] = self.frame + 2 * timing.FPS
                 s.target = None
             return
         if aim is not None and sk is not None and sk.kind not in ("aura", "buff", "cry") and \
                 sk.kind not in brains.SUMMON_KINDS and chebyshev(h.pos, aim) > reach:
-            if not self._walk_to(h, s, aim, reach=reach) and plan.target is not None:
+            if not self._walk_to(h, s, aim, reach=reach - tr, target_r=tr) and plan.target is not None:
                 s.skip[id(plan.target)] = self.frame + 2 * timing.FPS     # no way to it: another one
                 s.target = None
             return
@@ -1399,6 +1402,8 @@ class Sim:
             self._paths_left -= 1
             BUDGET["paths"] += 1
             limit = 3000 if u.is_player else (600 if getattr(u, "ally", False) else 1500)
+            if u.is_player and d <= 12:
+                limit = 800                  # (somewhere close: a long search means there is no way)
             blocked = None
             if u.is_player or getattr(u, "ally", False):
                 # his own side moves out of his way (they change places): only monsters block him
@@ -1564,9 +1569,9 @@ class Sim:
         if s.last_pos != h.pos:
             s.last_pos, s.moved_at = h.pos, self.frame
             return False
-        if s.mode in ("attack", "cast", "gethit") or self.frame - s.moved_at < 3 * timing.FPS:
+        if s.mode in ("attack", "cast", "gethit") or self.frame - max(s.moved_at, s.unstuck_at) < 3 * timing.FPS:
             return False
-        s.moved_at = self.frame
+        s.unstuck_at = self.frame            # (not moved_at: the 8-second stall check counts on it)
         s.path, s.path_goal = [], None
         self.st.pop(("route", id(h)), None)
         if s.target is not None:
