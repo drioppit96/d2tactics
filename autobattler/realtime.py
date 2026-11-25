@@ -38,6 +38,7 @@ from . import brain as brains
 from . import timing
 
 AGGRO = 14              # cells: a monster this close to a hero wakes up
+PACK = 6                # cells: the monsters round one that is attacked wake with it
 HERO_SIGHT = 18         # cells: how far a hero looks for something to fight
 AI_DELAY = 8            # frames a monster waits after its attack before the next decision
 ROUND = 50              # frames per turn of the turn-based upkeep (2 seconds)
@@ -646,6 +647,7 @@ class Sim:
             return
         if aim is not None and aim != h.pos:
             h.face(*aim)
+        self._wake(plan.target)
         s.anim = self.skill_anim(sk, plan.skill)
         s.mode, s.frames, s.plan, s.path = "cast", max(1, plan.frames), plan, []
         s.total = s.frames
@@ -685,7 +687,11 @@ class Sim:
                 h.ap = max(getattr(h, "ap", 0), 20)
                 n0 = len(w.events)
                 before = set(id(m) for m in w.monsters)
+                hp0 = {id(m): m.hp for m in self.foes()}
                 ok = bool(self._engine(w.use_skill, plan.skill, plan.target, plan.cell))
+                for m in self.foes():
+                    if m.hp < hp0.get(id(m), m.hp):
+                        self._wake(m)        # (hurt by it, wherever it stood: it comes)
                 if not ok:
                     # why the engine said no, for the run's log (once per skill per floor)
                     why = [e[1] for e in w.events[n0:] if e and e[0] == "log"]
@@ -998,7 +1004,21 @@ class Sim:
         return None, []
 
     # ------------------------------------------------------------ actions
+    def _wake(self, m):
+        """A monster a hero or a summon goes for wakes up, and so does its pack (as in D2: shoot
+        one from off screen and they all come for you)."""
+        if m is None or getattr(m, "ally", False) or getattr(m, "is_player", False):
+            return
+        if not getattr(m, "aware", False):
+            m.aware = True
+            mx, my = m.pos
+            for o in self.foes():
+                if not getattr(o, "aware", False) and abs(o.x - mx) <= PACK and abs(o.y - my) <= PACK:
+                    o.aware = True
+
     def _start_attack(self, u, s, tgt, ranged=False):
+        if u.is_player or getattr(u, "ally", False):
+            self._wake(tgt)
         u.face(*tgt.pos)
         fpd, speed = self.t.fpd(u, "A1")
         if u.is_player:
@@ -1072,12 +1092,11 @@ class Sim:
         if hero is not None and getattr(hero, "is_player", False):
             step = self._flow_step(u, hero)
             if step is False:
-                # beyond the map's reach: straight at him while that works, else it waits
-                step = self._direct_step(u, goal) if d <= 2 * FLOW_R else None
+                # beyond the map's reach: straight at him while the way is open, else a path
+                # search below (an awake monster far off still comes - it never just waits)
+                step = self._direct_step(u, goal) if self._line_clear(u.pos, goal) else None
                 if step is None:
-                    s.path, s.mode = [], "idle"
-                    s.next_think = self.frame + timing.FPS
-                    return True
+                    step = False
             if step is not False:
                 if step is None:
                     s.path, s.mode = [], "idle"

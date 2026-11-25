@@ -639,6 +639,43 @@ def test_caster_paths_capped():
         Grid.find_path = full
 
 
+def test_shot_monsters_come():
+    """A monster shot at from afar wakes with its pack, and comes even from beyond the heroes'
+    distance map."""
+    import types
+    from autobattler.realtime import Sim, PACK, FLOW_R
+    sim = Sim.__new__(Sim)
+    near = types.SimpleNamespace(x=10 + PACK, y=10, pos=(10 + PACK, 10), aware=False)
+    far = types.SimpleNamespace(x=10 + PACK + 5, y=10, pos=(10 + PACK + 5, 10), aware=False)
+    shot = types.SimpleNamespace(x=10, y=10, pos=(10, 10), aware=False)
+    sim.foes = lambda: [shot, near, far]
+    sim._wake(shot)
+    check(shot.aware and near.aware and not far.aware, "the one shot and its pack wake, not the rest")
+    h = _hero("Shooter")
+    h.base_vit = 400
+    h.recalc()
+    h.hp = h.max_hp
+    mgr = RunManager(_NoAssets(), _cfg())
+    r = mgr.start([h])
+    for _ in range(10):
+        _tick(mgr)
+    sim = r.sim
+    far_ones = [m for m in sim.foes() if FLOW_R + 2 < max(abs(m.x - h.x), abs(m.y - h.y)) <= FLOW_R + 12]
+    if not far_ones:
+        check(True, "(no monster far enough on this floor to test the walk)")
+        r.finish("stopped")
+        return
+    m = far_ones[0]
+    start = m.pos
+    h.speed_hold = True
+    sim._wake(m)
+    for _ in range(60):
+        sim._monster_think(m, sim._state(m)) if sim._state(m).mode == "idle" else None
+        _tick(mgr)
+    check(m.pos != start or not m.alive, "an awake monster beyond the distance map still walks to him")
+    r.finish("stopped")
+
+
 def test_runeword_bases():
     """Home: exceptional / elite plain items with all their sockets go to the stash; other plain
     gear is sold with the magic and rare items."""
@@ -1008,6 +1045,7 @@ if __name__ == "__main__":
     test_line_of_fire()
     test_futile_target()
     test_caster_paths_capped()
+    test_shot_monsters_come()
     test_runeword_bases()
     test_rare_cores()
     test_horadric_cube()

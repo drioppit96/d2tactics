@@ -270,6 +270,10 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
 - Summons think every 6 frames and share the list of monsters round their summoner each frame;
   their path searches look at 600 cells at most. At most 4 full path searches run per frame for
   all runs together.
+- A monster a hero or a summon attacks or casts at wakes up at once, and so does every monster
+  within 6 cells of it; so does any monster a spell hurts. An awake monster far from the hero
+  (beyond his 24-cell distance map) walks straight at him or searches a path; it no longer waits
+  there. Shooting monsters from off screen brings them and their pack.
 - Caster monsters (shamans, mages, ...) still move with the engine's own code. Its path search
   could look over a whole floor (up to 60000 cells) when no hero could be reached, which took a
   second or more on big outdoor floors every round. In the autobattler such a search now stops
