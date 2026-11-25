@@ -640,7 +640,7 @@ class App:
         gate_run = on_run and run.state == "gate"
         town_run = on_run and run.state in ("town", "gate")
         bh, gap = 28, 8
-        row1 = [("New hero", lambda: self.go("create"), roster.count() < self.cfg["max_heroes"]),
+        row1 = [("New hero", lambda: self.go("create"), len(self.heroes) < self.cfg["max_heroes"]),
                 ("Start run", self.start_run, has and not on_run),
                 ("Stop run", self.stop_run, on_run),
                 ("Fight boss", self.fight_boss, True) if gate_run else
@@ -686,7 +686,7 @@ class App:
         field = pygame.Rect(190, 310, 420, 28)
         L.inset(c, field)
         L.text(c, "med", self.new_name + ("_" if int(time.time() * 2) % 2 else ""), WHITE, field.x + 8, field.y + 6)
-        self.button((190, 400, 200, 34), "Create", self.create, enabled=roster.count() < self.cfg["max_heroes"])
+        self.button((190, 400, 200, 34), "Create", self.create, enabled=len(self.heroes) < self.cfg["max_heroes"])
         self.button((410, 400, 200, 34), "Back", lambda: self.go("roster"))
 
     def _loot_items(self, run):

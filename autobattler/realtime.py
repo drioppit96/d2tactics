@@ -57,6 +57,7 @@ FRAME_NODES = 2000      # floor cells searched for routes (goal_route) per frame
 SEARCH_CHUNK = 500      # cells searched in one go
 FLOW_R = 24            # cells: how far round each hero the monsters' distance map reaches
 FLOW_EVERY = 25         # frames: the distance map is made again at most this often (when he moved)
+BIG_PATH = 800          # cells a big monster's path search looks at, at most
 CASTER_REACH = 40       # cells: a caster monster further than this from every hero doesn't act
 CASTER_PATH = 1500      # cells a caster monster's path search looks at, at most
 ROUTE_SECONDS = 10      # a route to a far monster is kept this long (or until it is walked)
@@ -310,6 +311,7 @@ class Sim:
         self._rounds_done = getattr(self, "_rounds_done", 0) + 1
         if self._rounds_done % 15 == 0:
             self._nb_cache.clear()            # (every 30 s: a door may have opened)
+            self.__dict__.get("_fit_cache", {}).clear()
         g = self.w.grid
         for m in self.foes():
             if not g.walkable(*m.pos):
@@ -911,6 +913,88 @@ class Sim:
         else:
             f[2] += 1
 
+    def _fits_terrain(self, r):
+        """{cell: can a body of radius r stand there (floor under all of it)}, filled as asked."""
+        cache = self.__dict__.setdefault("_fit_cache", {})
+        return cache.setdefault(r, {})
+
+    def _path_big(self, u, goal, reach, target_r, limit):
+        """The engine's path_near for a big monster (radius 1 or more), without its cost: there
+        every cell looked at checked the monster's whole body against the floor and every unit
+        (Python's profiler on a player's PC: 79 ms a search, two thirds of all the game's time).
+        Here the floor under a body is worked out once per cell and floor, and the other units'
+        cells are widened by the body once per search."""
+        import heapq
+        r = getattr(u, "radius", 0)
+        g = self.w.grid
+        fit = self._fits_terrain(r)
+        cells, gw, gh = g.cells, g.w, g.h
+        from game.grid import FLOOR
+        exact = type(g).walkable is __import__("game.grid", fromlist=["Grid"]).Grid.walkable
+
+        def terrain(c):
+            v = fit.get(c)
+            if v is None:
+                x, y = c
+                v = True
+                for dy in range(-r, r + 1):
+                    for dx in range(-r, r + 1):
+                        cx, cy = x + dx, y + dy
+                        if exact:
+                            if not (0 <= cx < gw and 0 <= cy < gh) or cells[cy][cx] != FLOOR:
+                                v = False
+                                break
+                        elif not g.walkable(cx, cy):
+                            v = False
+                            break
+                    if not v:
+                        break
+                fit[c] = v
+            return v
+        mine = set()
+        for dy in range(-r, r + 1):
+            for dx in range(-r, r + 1):
+                mine.add((u.x + dx, u.y + dy))
+        wide = set()
+        blockers = [c for c, o in self.occ.items() if o is not u and c not in mine]
+        blockers += [c for c in (getattr(self.w, "obj_block", None) or ()) if c not in mine]
+        for c in blockers:
+            x, y = c
+            for dy in range(-r, r + 1):
+                for dx in range(-r, r + 1):
+                    wide.add((x + dx, y + dy))
+        start = u.pos
+        want = reach + r + target_r
+        if chebyshev(start, goal) <= want:
+            return []
+        heap = [(chebyshev(start, goal), 0, start)]
+        came = {start: None}
+        cost = {start: 0}
+        n = 0
+        while heap:
+            _, gc, cur = heapq.heappop(heap)
+            n += 1
+            if n > limit:
+                return None
+            if cur != start and chebyshev(cur, goal) <= want:
+                path = []
+                while cur != start:
+                    path.append(cur)
+                    cur = came[cur]
+                path.reverse()
+                return path
+            if gc > cost.get(cur, 1 << 30):
+                continue
+            for nb in g.neighbors(*cur):
+                if nb in wide or not terrain(nb):
+                    continue
+                ng = gc + 1
+                if ng < cost.get(nb, 1 << 30):
+                    cost[nb] = ng
+                    came[nb] = cur
+                    heapq.heappush(heap, (ng + max(0, chebyshev(nb, goal) - want), ng, nb))
+        return None
+
     def _relocate(self, m):
         """Put a monster on the nearest free floor cell: one inside a wall, a rock or a pillar
         (a big monster set down partly on one) can't be hit by missiles and can't move itself, so
@@ -1205,7 +1289,10 @@ class Sim:
             if u.is_player or getattr(u, "ally", False):
                 # his own side moves out of his way (they change places): only monsters block him
                 blocked = {c for c, o in self.occ.items() if o is not u and not self._friendly(u, o)}
-            path = self.w.path_near(u, goal, reach=reach, target_r=target_r, limit=limit, blocked=blocked)
+            if getattr(u, "radius", 0):
+                path = self._path_big(u, goal, reach, target_r, BIG_PATH)
+            else:
+                path = self.w.path_near(u, goal, reach=reach, target_r=target_r, limit=limit, blocked=blocked)
             s.path_goal = goal
             s.next_path = self.frame + (REPATH * 3 if u.is_player and d > DIRECT else REPATH)
             s.path = list(path or [])

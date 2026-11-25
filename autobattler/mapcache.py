@@ -273,7 +273,14 @@ def build_level(kit, lid, seed=None, player=None):
             _relabel(b, old, lid)
             b.npcs, b.objects, b.presets = [], [], []
             b.areas = {lid: (0, 0, b.tm.tw * 5, b.tm.th * 5)}
-            rift._pick_ends(b, grid, p, rng)        # (a new arrival spot and boss spot each time)
+            ends = getattr(b, "_ends", None)
+            if ends and all(e is not None and grid.walkable(*e) for e in ends):
+                # the floor's two far ends, found when it was built (three searches over the
+                # whole floor: most of a premade floor's loading time); either way round
+                a, z = ends if rng.random() < 0.5 else (ends[1], ends[0])
+                p["start"], p["boss_cell"] = a, z
+            else:
+                rift._pick_ends(b, grid, p, rng)
             b.custom_start = p["start"]
             return b, grid, rng
     if key[0] == ARENA:
@@ -282,10 +289,12 @@ def build_level(kit, lid, seed=None, player=None):
             p["mlvl"] = rift.act_level(p["depth"])
         rift._pick_ends(b, grid, p, rng)
         b.custom_start = p["start"]
+        b._ends = (p.get("start"), p.get("boss_cell"))
         save(key, b, grid, lid, kit)
         return b, grid, rng
     b, grid, rng = _ORIGINAL(kit, lid, seed, player)
     if quota(key) and theme_of(p) == key:           # (not if it fell back to an open plain)
+        b._ends = (p.get("start"), p.get("boss_cell"))
         save(key, b, grid, lid, kit)
     return b, grid, rng
 
@@ -341,5 +350,8 @@ def build_missing_one(kit):
         spec = dict(kit=kit_name, roles=[], act=act, **rift._fit(kit, kit_name, max(2, int(round(10 * rift.AREA))), False))
         b, grid, _r = act1.build_maze(kit, lid, spec, seed)
     b.npcs, b.objects, b.presets = [], [], []
+    p = {}
+    rift._pick_ends(b, grid, p, random.Random(seed))
+    b._ends = (p.get("start"), p.get("boss_cell"))
     save(key, b, grid, lid, kit)       # (one that can't be kept counts the place as full)
     return True

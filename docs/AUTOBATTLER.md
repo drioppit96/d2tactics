@@ -290,6 +290,16 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
 - With premade maps, floors 10/20/30/40/50/60 are an arena of the boss's own act's outdoors
   (desert for Duriel, jungle or Kurast for Mephisto, ...): 2 x 2 blocks of ground inside the
   act's border ring. If that can't be built, the Black Road's arena (Act 1) is used.
+- Big monsters (radius 1 or more) search their way with the autobattler's own search: the floor
+  under a body is worked out once per cell and floor, the other units' cells are widened by the
+  body once per search, and a search looks at 800 cells at most. The engine's path_near checked
+  the whole body against the floor and every unit at every cell it looked at: a player's test
+  drive spent 121 of 180 seconds there (79 ms a search; runs at 200-450 ms a game frame, which
+  looked like heroes standing still). Same paths, about 5 times quicker before the cache fills.
+- The hero list's "can make a new hero" check counted the heroes by reading every save file
+  from disk, every frame (25 of the 180 seconds); it counts the heroes already loaded.
+- A premade floor keeps its two far ends; loading it no longer searches the whole floor three
+  times for them (0.9 of 1.2 seconds).
 - The 800 x 600 picture is fitted to the window by the graphics card (autobattler.ini
   screen_scale = gpu; pygame's SCALED window). It used to be smoothed on the processor every
   frame (smoothscale), several milliseconds a frame on its own - more on an older PC.

@@ -898,6 +898,36 @@ def test_monster_in_wall_moved_out():
           and max(abs(m.x - 5), abs(m.y - 5)) == 1, "moved to a free floor cell next to the wall (%s)" % (m.pos,))
 
 
+def test_big_monster_paths():
+    """A big monster's path search finds the same ways as the engine's, only quicker."""
+    random.seed(5)
+    mgr = RunManager(_NoAssets(), _cfg())
+    r = mgr.start([_hero("Big")])
+    for _ in range(5):
+        _tick(mgr)
+    sim, w = r.sim, r.sim.w
+    g = w.grid
+    ms = list(sim.foes())[:4]
+    for m in ms:
+        m.radius = 1
+    sim._rebuild_occ()
+    cells = [(x, y) for y in range(g.h) for x in range(g.w) if g.walkable(x, y)]
+    same = valid = True
+    for m in ms:
+        for _ in range(10):
+            goal = random.choice(cells)
+            p1 = w.path_near(m, goal, reach=1, target_r=0, limit=800, blocked=None)
+            p2 = sim._path_big(m, goal, 1, 0, 800)
+            same = same and (p1 is None) == (p2 is None) and (p1 is None or len(p1) == len(p2))
+            prev = m.pos
+            for c in p2 or []:
+                valid = valid and max(abs(c[0] - prev[0]), abs(c[1] - prev[1])) == 1 and \
+                    all(g.walkable(c[0] + dx, c[1] + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1))
+                prev = c
+    check(same and valid, "same ways as the engine's search, every step with floor under the whole body")
+    r.finish("stopped")
+
+
 def test_runeword_bases():
     """Home: exceptional / elite plain items with all their sockets go to the stash; other plain
     gear is sold with the magic and rare items."""
@@ -1275,6 +1305,7 @@ if __name__ == "__main__":
     test_premade_floors()
     test_monster_levels_capped()
     test_monster_in_wall_moved_out()
+    test_big_monster_paths()
     test_runeword_bases()
     test_rare_cores()
     test_horadric_cube()
