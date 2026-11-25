@@ -290,6 +290,20 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
 - With premade maps, floors 10/20/30/40/50/60 are an arena of the boss's own act's outdoors
   (desert for Duriel, jungle or Kurast for Mephisto, ...): 2 x 2 blocks of ground inside the
   act's border ring. If that can't be built, the Black Road's arena (Act 1) is used.
+- How heroes weigh their skills (brain.py), on top of damage per second against each monster's
+  resistances and the mana rules:
+  - poison counts only on monsters not poisoned already (D2 doesn't stack poison; a refresh is
+    worth a little only as the old one is about to run out), and a poison skill goes for a
+    monster in reach that isn't poisoned yet;
+  - Rabies counts its poison once for every monster within 3 cells of the one bitten (it
+    spreads to them, as in D2 - the engine now spreads it to up to 8);
+  - surrounded (3 or more monsters within 2 cells): skills that hit several, stun, knock back
+    or are novas are worth 12% more per monster round him (up to 8);
+  - hurt: stuns, knock-backs and life stealing (Hunger, Feral Rage, Cobra Strike) are worth
+    more the more he is hurt - half as much for an aggressive hero, half again for a careful one;
+  - charge-up skills (Maul, Feral Rage, the Assassin's) are worth up to 50% more while their
+    charges are below 3;
+  - a skill that costs mana and adds less than 10% over a plain blow loses to the blow.
 - Big monsters (radius 1 or more) search their way with the autobattler's own search: the floor
   under a body is worked out once per cell and floor, the other units' cells are widened by the
   body once per search, and a search looks at 800 cells at most. The engine's path_near checked

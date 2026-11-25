@@ -130,6 +130,8 @@ def _extend(a, b, length):
     return _line(a, far)[:length]
 
 
+CONTAGION_MAX = 8           # monsters one bite of Rabies can spread its poison to
+
 class SkillCaster:
     # ------------------------------------------------------------ helpers
     def enemies(self):
@@ -508,6 +510,14 @@ class SkillCaster:
                     elif dealt > 0:
                         # D2R 2.4: Leap Attack lands with a thump that hurts everyone around it
                         self.phys_hit(m, max(1, dealt // 2), max(1, dealt // 2), p)
+        if x.get("contagion") and dealt is not None:
+            # D2's Rabies: the poison spreads to the monsters around the one bitten
+            ed = env.elem_damage()
+            if ed and ed[0] == "pois":
+                near = sorted((m for m in self.enemies() if m is not target and m.alive
+                               and self.udist(m, target) <= x["contagion"]), key=lambda m: self.udist(m, target))
+                for m in near[:CONTAGION_MAX]:
+                    self.elem_hit(m, "pois", ed[1], ed[2], p, ed[3], show=False)
         if x.get("slow_hit") and target.alive and not getattr(target, "is_player", False):
             # D2R: Impale, Grim Ward and the spirit wolves slow what they hit
             target.effects["chill"] = max(target.effects.get("chill", 0), int(x["slow_hit"]))

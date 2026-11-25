@@ -466,6 +466,7 @@ class Brain:
                 plans.append(Plan("skill", "throw", target, None, tframes, dps * (1.6 if far else 1.2), "throw"))
                 dps *= 0.8
             plans.append(Plan("attack", None, target, None, frames, dps, "attack"))
+        base = max([p.score for p in plans] or [0.0])
 
         if book is not None:
             for name in book.actives():
@@ -492,6 +493,10 @@ class Brain:
                     p.score *= min(1.0, 0.3 + mana_left_pct / 100.0)
                     if target is not None and target.hp <= self.weapon_avg() * 1.2 and len(near) <= 2:
                         p.score *= 0.3        # a nearly dead monster isn't worth a spell
+                if mana > 0 and p.what == "skill" and p.score < 4e4 and base > 0 and p.score < base * 1.1:
+                    # costs mana for (nearly) nothing more than a plain blow (a poison skill on a
+                    # monster already poisoned, a weak spell): the blow it is
+                    p.score = min(p.score, base * 0.9)
                 if name == fav or getattr(s, "title", "") == fav:
                     p.score *= 1.25
                 plans.append(p)
@@ -650,6 +655,14 @@ class Brain:
         if eavg <= 0 and pavg <= 0:
             return None
         main = target if target is not None else min(near, key=lambda m: chebyshev(m.pos, h.pos))
+        x = getattr(s, "extra", None) or {}
+        dot = elem == "pois" and eavg > 0
+        if dot and self._poisoned(main):
+            # a poison skill goes on a monster that isn't poisoned yet, if one is in reach
+            fresh = [m for m in near if not self._poisoned(m) and
+                     chebyshev(m.pos, h.pos) <= max(1, int(getattr(h, "reach", 1) or 1)) + getattr(m, "radius", 0) + (0 if weapon else SPELL_RANGE)]
+            if fresh:
+                main = min(fresh, key=lambda m: chebyshev(m.pos, h.pos))
         if weapon:
             reach = max(1, int(getattr(h, "reach", 1) or 1))
             if getattr(h, "ranged", False) or k == "missile":
@@ -693,20 +706,82 @@ class Brain:
         else:
             reach_ok = True
         total = 0.0
+        useful = 0                           # monsters it does something to beyond a plain blow
         for m in hit:
             part = pavg * self.res_factor(m, "phys") * (self.hit_chance(m, ar_bonus) if weapon else 1.0)
-            part += eavg * self.res_factor(m, elem)
+            ev = self._elem_value(m, elem, eavg)
+            part += ev
+            if ev > 0 or not weapon or len(hit) > 1:
+                useful += 1
             if getattr(m, "rift_boss", False):
                 part *= 1.3                  # the boss is what ends the floor
             total += part * times
+        if x.get("contagion"):
+            # Rabies: the poison spreads to everything round the one bitten - in a crowd it is
+            # worth its poison once for every monster near
+            spread = [m for m in near if m is not main and chebyshev(m.pos, main.pos) <= x["contagion"]]
+            for m in spread[:8]:
+                ev = self._elem_value(m, elem, eavg)
+                total += 0.8 * ev
+                useful += 1 if ev > 0 else 0
         score = total * per_sec
         if not reach_ok:
             score *= 0.6                     # he would have to walk first
+        score *= self._situation(name, s, x, useful, near)
         title = getattr(s, "title", name)
         why = "%s on %d" % (title, len(hit)) if len(hit) > 1 else title
         p = Plan("skill", name, main if k not in ("nova", "area", "corpse_blast") else None, cell, frames, score, why)
         p.why = why
         return p
+
+    @staticmethod
+    def _poisoned(m):
+        """Poisoned for another second or more."""
+        p = (getattr(m, "effects", None) or {}).get("poison")
+        return bool(p) and p[1] >= 1
+
+    def _elem_value(self, m, elem, eavg):
+        """What a skill's elemental part is worth on this monster: after its resistance, and for
+        poison only if the monster isn't poisoned already (D2: a poison doesn't stack, a weaker one
+        doesn't even replace the one there)."""
+        if eavg <= 0:
+            return 0.0
+        v = eavg * self.res_factor(m, elem)
+        if elem == "pois" and self._poisoned(m):
+            left = (getattr(m, "effects", None) or {}).get("poison")[1]
+            v *= 0.4 if left <= 1 else 0.0    # (worth something only as it is about to run out)
+        return v
+
+    def _situation(self, name, s, x, hits, near):
+        """How the moment changes a damage skill's worth (multiplied in):
+        - surrounded (3 or more monsters within 2 cells): skills that hit several, stun or knock
+          back count for more, the more there are round him;
+        - hurt: what stuns, knocks back or steals life counts for more, the more he is hurt
+          (and more so for a careful hero, less for an aggressive one);
+        - charge-up skills (Maul, Feral Rage, the Assassin's martial arts): worth more while their
+          charges are below 3, as each one makes the next blows better;
+        - Hunger and other life stealers: worth more the more he is hurt."""
+        h = self.h
+        style = profile(h).get("style") or "balanced"
+        k = 1.0
+        crowd = len(self.foes_near(h.pos, 2, near))
+        control = bool(x.get("stun") or x.get("knock") or getattr(s, "kind", "") == "nova")
+        if crowd >= 3 and (hits > 1 or control):
+            k *= 1.0 + 0.12 * min(crowd, 8)
+        hurt = 1.0 - h.hp / float(max(1, h.max_hp))
+        weight = {"careful": 1.5, "aggressive": 0.5}.get(style, 1.0)
+        if control and hurt > 0.3 and crowd >= 1:
+            k *= 1.0 + hurt * weight
+        if x.get("charges"):
+            n = (getattr(h, "charges", None) or {}).get(name, 0)
+            if n < 3:
+                k *= 1.0 + 0.5 * (3 - n) / 3.0
+        title = getattr(s, "title", name)
+        if title in self.LEECH or x.get("leech"):
+            k *= 1.0 + hurt * 1.5 * weight
+        return k
+
+    LEECH = ("Hunger", "Feral Rage", "Cobra Strike", "Vampire Bite")
 
     def _best_cluster(self, near, r, uncursed=None):
         best, bn = None, 0

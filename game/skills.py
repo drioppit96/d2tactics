@@ -138,7 +138,7 @@ OVERRIDES = {
     "Twister": dict(kind="missile", targets=3, spread=True, stun=1), "Tornado": dict(kind="missile", splash=1),
     "Shock Wave": dict(kind="nova", radius=3, stun=2), "Wearwolf": dict(kind="buff", shift=True),
     "Wearbear": dict(kind="buff", shift=True), "Feral Rage": dict(kind="melee", charges=True),
-    "Maul": dict(kind="melee", charges=True), "Rabies": dict(kind="melee"), "Fire Claws": dict(kind="melee"),
+    "Maul": dict(kind="melee", charges=True), "Rabies": dict(kind="melee", contagion=3), "Fire Claws": dict(kind="melee"),
     "Hunger": dict(kind="melee"), "Fury": dict(kind="melee", hits="calc1"),
     "Raven": dict(kind="summon"), "Plague Poppy": dict(kind="summon"), "Cycle of Life": dict(kind="summon"),
     "Vines": dict(kind="summon"), "Oak Sage": dict(kind="summon"), "Heart of Wolverine": dict(kind="summon"),

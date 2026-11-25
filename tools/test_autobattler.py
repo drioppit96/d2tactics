@@ -928,6 +928,44 @@ def test_big_monster_paths():
     r.finish("stopped")
 
 
+def test_rabies_in_a_crowd():
+    """A druid among monsters bites with Rabies (its poison spreads to them all); once they are
+    all poisoned, a plain blow does as much for no mana."""
+    from game.skills import Skill, OVERRIDES
+    random.seed(1)
+    mgr = RunManager(_NoAssets(), _cfg())
+    h = _hero("Wolf", "dru")
+    h.recalc()
+    h.hp, h.mana = h.max_hp, h.max_mana
+    s = Skill("Rabies", 1, 1, 1, 1, [], 3, 0, "melee")
+    s.cls, s.weapon, s.element = "dru", True, "pois"
+    s.data = {"anim": "A1", "etype": "pois", "emin": "16", "emax": "16", "elen": "100", "eminlev1": "8",
+              "emaxlev1": "8", "hitshift": "4", "mana": "4", "manashift": "8", "minmana": "4"}
+    s.extra = dict(OVERRIDES.get("Rabies", {}))
+    h.skills.tree["Rabies"] = s
+    h.skills.levels["Rabies"] = 8
+    r = mgr.start([h])
+    for _ in range(5):
+        _tick(mgr)
+    sim = r.sim
+    foes = sorted(sim.foes(), key=lambda m: (m.x - h.x) ** 2 + (m.y - h.y) ** 2)[:5]
+    ring = [(h.x + dx, h.y + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1) if (dx, dy) != (0, 0)
+            and sim.w.grid.walkable(h.x + dx, h.y + dy)]
+    for m, c in zip(foes, ring):
+        m.x, m.y = c
+        m.aware = True
+    foes = foes[:len(ring)]
+    sim._rebuild_occ()
+    b = sim.brain(h)
+    p = b.decide(foes[0], foes)
+    check(p is not None and p.skill == "Rabies", "surrounded: Rabies (%s)" % (p and p.why))
+    for m in foes:
+        m.effects["poison"] = [5, 3]
+    p = b.decide(foes[0], foes)
+    check(p is not None and p.what == "attack", "all of them poisoned already: a plain blow (%s)" % (p and p.why))
+    r.finish("stopped")
+
+
 def test_runeword_bases():
     """Home: exceptional / elite plain items with all their sockets go to the stash; other plain
     gear is sold with the magic and rare items."""
@@ -1306,6 +1344,7 @@ if __name__ == "__main__":
     test_monster_levels_capped()
     test_monster_in_wall_moved_out()
     test_big_monster_paths()
+    test_rabies_in_a_crowd()
     test_runeword_bases()
     test_rare_cores()
     test_horadric_cube()
