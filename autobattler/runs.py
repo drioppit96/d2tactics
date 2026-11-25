@@ -377,7 +377,11 @@ class Run:
                         # its border), with the act's boss in it and nothing else (premade ones
                         # from map_cache/; without premade maps the Black Road's arena)
                         from . import mapcache
-                        if mapcache._ORIGINAL is not None:
+                        if rift.act_of_depth(depth) == 2:
+                            # Act 2's boss: D2's own Duriel's Lair (one preset, built at once)
+                            w = make_world(a.act_kit, a.act_info, a.content, DURIEL_LAIR,
+                                           player=player, seed=random.randrange(1 << 30))
+                        elif mapcache._ORIGINAL is not None:
                             w = make_world(a.act_kit, a.act_info, a.content, lid, player=player,
                                            seed=random.randrange(1 << 30))
                         else:
@@ -426,6 +430,9 @@ class Run:
         mid = rift.ACT_BOSSES[rift.act_of_depth(depth) - 1]
         tag = "baal" if mid == "baalcrab" else mid
         lvl = rift.act_level(depth) if rift.ACT_LEVELS else max(1, getattr(w.player, "level", 1))
+        if getattr(w, "level_key", None) == DURIEL_LAIR:
+            # (the lair's way back to the Tomb: the run opens its own portal when he dies)
+            w.objects[:] = [o for o in w.objects if o.get("kind") not in actworld.PORTAL_KINDS]
         far = arena._far_cell(w, w.player.pos)
         taken = set(w.occupied())
         boss = actworld._spawn(w, mid, far, lvl, taken, unique=True)
@@ -874,6 +881,9 @@ def _probe(kind):
     it = Item("probe", "hp1" if kind == "heal" else "mp1", None, kind="potion")
     it.potion = kind
     return it
+
+
+DURIEL_LAIR = 73       # D2's Duriel's Lair: Act 2's boss floors (20, 70, ...) are fought in it
 
 
 class RunManager:

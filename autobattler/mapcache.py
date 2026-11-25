@@ -48,6 +48,7 @@ def arenas():
     """The act bosses' arenas, one place per act, as (key, act)."""
     from game import rift
     acts = sorted(set(act for _t, act, _f in rift.OPEN_FLOORS))
+    acts = [a for a in acts if a != 2]           # (Act 2's boss is fought in Duriel's Lair)
     return [((ARENA, str(a)), a) for a in acts]
 
 

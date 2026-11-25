@@ -290,6 +290,10 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
 - With premade maps, floors 10/20/30/40/50/60 are an arena of the boss's own act's outdoors
   (desert for Duriel, jungle or Kurast for Mephisto, ...): 2 x 2 blocks of ground inside the
   act's border ring. If that can't be built, the Black Road's arena (Act 1) is used.
+- Act 2's boss floors (20, and 70 the next time round) are D2's own Duriel's Lair (level 73,
+  tomb\duriel.ds1), with or without premade maps. Duriel is set down at the far end from where
+  the heroes start; the lair's portal back to the Tomb is removed, and the run opens its own red
+  portal when he dies. No Act 2 arenas are premade any more.
 - Poison works as in D2: a hit does (almost) nothing at once; its total is spread evenly over
   its length (the skill's own length; 6 seconds for weapon and charm poison), ticked every 5
   frames. A weaker poison doesn't replace a stronger one still running. Monsters' poison on the
