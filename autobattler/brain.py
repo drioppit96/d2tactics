@@ -737,7 +737,11 @@ class Brain:
     @staticmethod
     def _poisoned(m):
         """Poisoned for another second or more."""
-        p = (getattr(m, "effects", None) or {}).get("poison")
+        eff = getattr(m, "effects", None) or {}
+        rt = eff.get("poison_rt")
+        if rt:
+            return rt[1] >= 25
+        p = eff.get("poison")
         return bool(p) and p[1] >= 1
 
     def _elem_value(self, m, elem, eavg):
@@ -748,8 +752,10 @@ class Brain:
             return 0.0
         v = eavg * self.res_factor(m, elem)
         if elem == "pois" and self._poisoned(m):
-            left = (getattr(m, "effects", None) or {}).get("poison")[1]
-            v *= 0.4 if left <= 1 else 0.0    # (worth something only as it is about to run out)
+            eff = getattr(m, "effects", None) or {}
+            rt = eff.get("poison_rt")
+            soon = rt[1] <= 25 if rt else (eff.get("poison") or [0, 0])[1] <= 1
+            v *= 0.4 if soon else 0.0         # (worth something only as it is about to run out)
         return v
 
     def _situation(self, name, s, x, hits, near):

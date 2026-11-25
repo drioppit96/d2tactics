@@ -90,6 +90,8 @@ def _update_old_file():
 def apply_d2_rules():
     """Diablo II's own odds and damage, not the D2 Tactics adjustments in settings.ini
     (min_hit_chance, monster_hit_chance, normal_monster_damage, normal_monster_hit_bonus)."""
+    from game import skillcast
+    skillcast.REALTIME_POISON = True     # D2's poison: a little every frame over its length
     from game import essences
     essences.DROPS = False          # the account currencies are D2 Tactics' own: none here
     # monsters and bosses as D2 makes them for one player (/players 1); a group is scaled the D2

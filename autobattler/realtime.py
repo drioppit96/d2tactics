@@ -57,6 +57,7 @@ FRAME_NODES = 2000      # floor cells searched for routes (goal_route) per frame
 SEARCH_CHUNK = 500      # cells searched in one go
 FLOW_R = 24            # cells: how far round each hero the monsters' distance map reaches
 FLOW_EVERY = 25         # frames: the distance map is made again at most this often (when he moved)
+POISON_EVERY = 5        # frames between poison ticks (D2 ticks every frame: same total)
 BIG_PATH = 800          # cells a big monster's path search looks at, at most
 CASTER_REACH = 40       # cells: a caster monster further than this from every hero doesn't act
 CASTER_PATH = 1500      # cells a caster monster's path search looks at, at most
@@ -213,6 +214,8 @@ class Sim:
             for m in self.foes():
                 if not getattr(m, "aware", False) and any(chebyshev(m.pos, h.pos) <= AGGRO for h in heroes):
                     m.aware = True
+        if self.frame % POISON_EVERY == 0:
+            self._tick_poison()
         if self.frame % ROUND == 0:
             self._round()
         if self.phase == "loot" and (self.frame >= self.loot_until or not any(self._next_item(h) for h in heroes)):
@@ -437,8 +440,17 @@ class Sim:
             seen = [m for m in self.foes() if s.skip.get(id(m), 0) <= self.frame
                     and chebyshev(m.pos, h.pos) <= HERO_SIGHT
                     and (chebyshev(m.pos, h.pos) <= 2 or self._line_clear(h.pos, m.pos))]
-            tgt = self._nearest(h, seen, HERO_SIGHT)
+            tgt = self._pick_target(h, seen)
             s.target = tgt
+        elif not self._priority(tgt) and self.frame % 10 == 0:
+            # a resurrecting monster (a Fallen Shaman, a Greater Mummy...) comes into sight while
+            # he is busy with one of its minions: that one first, or it raises them again
+            seen = [m for m in self.foes() if s.skip.get(id(m), 0) <= self.frame and self._priority(m) >= 2
+                    and chebyshev(m.pos, h.pos) <= HERO_SIGHT
+                    and (chebyshev(m.pos, h.pos) <= 2 or self._line_clear(h.pos, m.pos))]
+            if seen:
+                tgt = self._pick_target(h, seen)
+                s.target, s.plan = tgt, None
         if tgt is not None and self._futile(h, s, tgt):
             s.target = None
             s.next_think = self.frame + 1
@@ -996,6 +1008,37 @@ class Sim:
                     heapq.heappush(heap, (ng + max(0, chebyshev(nb, goal) - want), ng, nb))
         return None
 
+    def _tick_poison(self):
+        """D2's poison: its damage a little at a time over its length (here every POISON_EVERY
+        frames, what those frames would have done). Who poisoned it gets the kill."""
+        w = self.w
+        units = [u for u in w.monsters if u.alive and (getattr(u, "effects", None) or {}).get("poison_rt")]
+        units += [h for h in self.heroes if h.alive and (getattr(h, "effects", None) or {}).get("poison_rt")]
+        if not units:
+            return
+        from game import dmglog
+        with self._Guard(w):
+            for u in units:
+                eff = u.effects
+                rate, left, src = eff["poison_rt"]
+                n = min(POISON_EVERY, left)
+                acc = eff.get("poison_acc", 0.0) + rate * n
+                dmg = int(acc)
+                eff["poison_acc"] = acc - dmg
+                left -= n
+                if left <= 0:
+                    for k in ("poison_rt", "poison", "poison_src", "poison_acc"):
+                        eff.pop(k, None)
+                else:
+                    eff["poison_rt"] = [rate, left, src]
+                    eff["poison"] = [max(1, int(rate * 25)), max(1, left // 50)]
+                if dmg > 0:
+                    try:
+                        dmglog.new_blow(w)
+                        self._engine(w._damage, u, dmg, src)
+                    except Exception:
+                        u.hp = max(0, u.hp - dmg)
+
     def _relocate(self, m):
         """Put a monster on the nearest free floor cell: one inside a wall, a rock or a pillar
         (a big monster set down partly on one) can't be hit by missiles and can't move itself, so
@@ -1062,6 +1105,44 @@ class Sim:
             s.skip[id(tgt)] = self.frame + (2 if self.phase == "fight" else 10) * timing.FPS
             s.target = None
             s.next_think = self.frame
+
+    RAISERS = ("resurrect", "raise", "revive")
+
+    def _priority(self, m):
+        """How much sooner than its distance says a hero goes for this monster:
+        2 - it brings the dead back (Fallen and Fetish Shamans, Greater Mummies...): kill it first,
+            or everything else killed gets up again;
+        1 - another caster (mages, priests...): it hurts from afar and hides behind the others;
+        0 - the rest."""
+        p = getattr(m, "_ab_priority", None)
+        if p is None:
+            skills = " ".join(str(x) for x in (getattr(m, "mskills", None) or [])).lower()
+            name = str(getattr(m, "name", "")).lower()
+            if getattr(m, "ai", "") == "shaman" or "shaman" in name or any(k in skills for k in self.RAISERS):
+                p = 2
+            elif getattr(m, "caster", False):
+                p = 1
+            else:
+                p = 0
+            try:
+                m._ab_priority = p
+            except Exception:
+                pass
+        return p
+
+    PRIORITY_CELLS = (0, 4, 10)    # cells nearer a monster of priority 0 / 1 / 2 counts as
+
+    def _pick_target(self, h, units):
+        """The monster in sight to go for: the nearest, but resurrecting monsters count as 10
+        cells nearer and other casters 4 (and the floor's boss 3)."""
+        best, bd = None, None
+        for o in units:
+            d = chebyshev(h.pos, o.pos) - self.PRIORITY_CELLS[self._priority(o)]
+            if getattr(o, "rift_boss", False):
+                d -= 3
+            if bd is None or d < bd:
+                best, bd = o, d
+        return best
 
     def _nearest(self, u, units, limit):
         best, bd = None, limit + 1

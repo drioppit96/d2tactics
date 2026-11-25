@@ -705,7 +705,10 @@ def damage_lines(env):
         et, lo, hi, ln = ed
         name = ELEMENT_NAMES.get(et, et.title())
         if et == "pois":
-            out.append("Poison Damage: %d-%d over %s seconds" % (lo, hi, _seconds(ln)))
+            if lo == hi:
+                out.append("Poison Damage: %d over %s seconds" % (hi, _seconds(ln)))
+            else:
+                out.append("Poison Damage: %d-%d over %s seconds" % (lo, hi, _seconds(ln)))
         else:
             out.append("%s Damage: %d-%d%s" % (name, lo, hi, " per second" if s.extra.get("per_second") else ""))
             if et == "cold" and ln:

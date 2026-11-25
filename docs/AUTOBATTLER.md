@@ -290,6 +290,16 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
 - With premade maps, floors 10/20/30/40/50/60 are an arena of the boss's own act's outdoors
   (desert for Duriel, jungle or Kurast for Mephisto, ...): 2 x 2 blocks of ground inside the
   act's border ring. If that can't be built, the Black Road's arena (Act 1) is used.
+- Poison works as in D2: a hit does (almost) nothing at once; its total is spread evenly over
+  its length (the skill's own length; 6 seconds for weapon and charm poison), ticked every 5
+  frames. A weaker poison doesn't replace a stronger one still running. Monsters' poison on the
+  heroes works the same way. (D2 Tactics keeps its 2-second turns.) Tooltips say it D2's way:
+  skills "Poison Damage: 42 over 4 seconds", items "+42 Poison Damage over 6 Seconds" /
+  "Adds 10-20 Poison Damage over 6 Seconds".
+- Which monster a hero goes for: the nearest in sight, but monsters that bring the dead back
+  (Fallen and Fetish Shamans, Greater Mummies - anything with a resurrect/raise skill) count as
+  10 cells nearer, other casters 4, the floor's boss 3. Busy with another monster, he switches to
+  a resurrecting one as soon as it is in sight.
 - How heroes weigh their skills (brain.py), on top of damage per second against each monster's
   resistances and the mana rules:
   - poison counts only on monsters not poisoned already (D2 doesn't stack poison; a refresh is

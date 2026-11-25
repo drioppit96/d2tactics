@@ -130,7 +130,10 @@ def _extend(a, b, length):
     return _line(a, far)[:length]
 
 
-CONTAGION_MAX = 8           # monsters one bite of Rabies can spread its poison to
+CONTAGION_MAX = 8
+#: poison spread over its length frame by frame (the D2 Autobattler sets it; D2 Tactics keeps
+#: poison in 2-second turns)
+REALTIME_POISON = False           # monsters one bite of Rabies can spread its poison to
 
 class SkillCaster:
     # ------------------------------------------------------------ helpers
@@ -208,6 +211,20 @@ class SkillCaster:
                 if show:
                     self.log("%s is immune to poison." % target.name, GREY)
                 return 0
+            if REALTIME_POISON:
+                # D2: the total is spread evenly over the poison's length, a little every frame
+                # (the D2 Autobattler ticks it: autobattler/realtime.py); a weaker poison doesn't
+                # replace a stronger one still running
+                frames = max(1, int(length or 1))
+                cur = target.effects.get("poison_rt")
+                if cur and cur[0] * cur[1] > total:
+                    return 0
+                target.effects["poison_rt"] = [total / float(frames), frames, src]
+                target.effects["poison"] = [max(1, total // max(1, frames // 25)), max(1, frames // 50)]
+                target.effects["poison_src"] = src
+                from . import dmglog
+                dmglog.note(self, src, target, "pois", total, total)
+                return total
             secs = max(1, length) / float(FRAMES)
             turns = max(1, min(4, int(round(secs / TURN_SECONDS))))
             per = max(1, total // turns)
@@ -2153,8 +2170,8 @@ class SkillCaster:
     def tick_poison(self, u):
         """One turn of poison: D2 poison keeps eating life after the hit, and the unit stays green."""
         eff = getattr(u, "effects", None)
-        if not eff or not eff.get("poison") or not u.alive:
-            return
+        if not eff or not eff.get("poison") or not u.alive or eff.get("poison_rt"):
+            return                         # (real-time poison ticks every frame elsewhere)
         per, turns = eff["poison"]
         src = eff.get("poison_src") or (self.player if not getattr(u, "is_player", False) else None)
         if per > 0:

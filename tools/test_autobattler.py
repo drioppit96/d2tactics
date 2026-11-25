@@ -966,6 +966,52 @@ def test_rabies_in_a_crowd():
     r.finish("stopped")
 
 
+def test_poison_over_time():
+    """Poison works as in D2: nothing much at once, the total spread evenly over its length."""
+    from game.items import pois_text
+    random.seed(2)
+    mgr = RunManager(_NoAssets(), _cfg())
+    h = _hero("Venom", "nec")
+    h.base_vit = 400
+    h.recalc()
+    h.hp = h.max_hp
+    r = mgr.start([h])
+    for _ in range(3):
+        _tick(mgr)
+    sim = r.sim
+    m = max(sim.foes(), key=lambda m: (m.x - h.x) ** 2 + (m.y - h.y) ** 2)     # (the one furthest off)
+    m.max_hp = m.hp = 1000
+    m.res = {}
+    m.aware = False
+    with sim._Guard(sim.w):
+        sim.w.elem_hit(m, "pois", 100, 100, h, 100)              # 100 poison over 4 seconds
+    check(m.hp >= 999, "poison does (almost) nothing at once (%d)" % (1000 - m.hp))
+    for _ in range(50):
+        sim.tick()
+    half = 1000 - m.hp
+    for _ in range(60):
+        sim.tick()
+    full = 1000 - m.hp
+    check(40 <= half <= 60 and 95 <= full <= 100 and not m.effects.get("poison_rt"),
+          "half of it after 2 seconds (%d), all of it after 4 (%d), then it is over" % (half, full))
+    check(pois_text(42, 42) == "+42 Poison Damage over 6 Seconds" and
+          pois_text(10, 20) == "Adds 10-20 Poison Damage over 6 Seconds", "items say it the D2 way")
+    r.finish("stopped")
+
+
+def test_shamans_first():
+    """A hero goes for the Fallen Shaman before its Fallen (or it raises them again)."""
+    import types
+    from autobattler.realtime import Sim
+    sim = Sim.__new__(Sim)
+    h = types.SimpleNamespace(pos=(10, 10))
+    fallen = types.SimpleNamespace(pos=(11, 10), name="Fallen", ai="fallen", mskills=[], caster=False)
+    shaman = types.SimpleNamespace(pos=(17, 10), name="Fallen Shaman", ai="shaman", mskills=["Resurrect"], caster=True)
+    mage = types.SimpleNamespace(pos=(13, 10), name="Returned Mage", ai="d2", mskills=[], caster=True)
+    check(sim._pick_target(h, [fallen, mage, shaman]) is shaman, "the shaman first, 7 cells off")
+    check(sim._pick_target(h, [fallen, mage]) is mage, "then a caster before a fighter next to him")
+
+
 def test_runeword_bases():
     """Home: exceptional / elite plain items with all their sockets go to the stash; other plain
     gear is sold with the magic and rare items."""
@@ -1345,6 +1391,8 @@ if __name__ == "__main__":
     test_monster_in_wall_moved_out()
     test_big_monster_paths()
     test_rabies_in_a_crowd()
+    test_poison_over_time()
+    test_shamans_first()
     test_runeword_bases()
     test_rare_cores()
     test_horadric_cube()

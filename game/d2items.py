@@ -212,7 +212,9 @@ class SocketRules:
 
 
 def prop_text(code, lo, hi):
-    from .items import MOD_TEXT
+    from .items import MOD_TEXT, pois_text
+    if code == "dmg-pois":
+        return pois_text(lo, hi)
     fmt = MOD_TEXT.get(code) or EXTRA_TEXT.get(code) or (code + " {0}")
     try:
         if "{1}" in fmt:

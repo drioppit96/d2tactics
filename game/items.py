@@ -18,6 +18,16 @@ D2_COLORS = {"normal": (230, 230, 230), "magic": (105, 105, 255), "rare": (255, 
 RED_TEXT = (255, 80, 80)
 
 # D2-style property lines for mods; {0}/{1} = value or min/max
+POIS_SECONDS = 6       # weapon / charm poison works over 6 seconds (world.POIS_FRAMES = 150 frames)
+
+
+def pois_text(lo, hi):
+    """D2's own line for poison damage on an item: its total over how long it works."""
+    if not lo or lo == hi:
+        return "+%d Poison Damage over %d Seconds" % (hi, POIS_SECONDS)
+    return "Adds %d-%d Poison Damage over %d Seconds" % (lo, hi, POIS_SECONDS)
+
+
 MOD_TEXT = {
     "dmg%": "+{0}% Enhanced Damage", "att": "+{0} to Attack Rating", "att%": "{0}% Bonus to Attack Rating",
     "ac": "+{0} Defense", "ac%": "+{0}% Enhanced Defense", "hp": "+{0} to Life", "mana": "+{0} to Mana",

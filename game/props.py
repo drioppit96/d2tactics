@@ -163,6 +163,9 @@ def text(code, v, param=""):
         return "+%d to a Skill Tab" % hi
     if code in ("skill", "oskill"):
         return "+%d to %s" % (hi, skill_name(param)) + (" (Class Only)" if code == "skill" else "")
+    if code == "dmg-pois":
+        from .items import pois_text
+        return pois_text(lo, hi)
     if code == "aura":
         return "Level %d %s Aura When Equipped" % (hi, skill_name(param))
     if code == "charged":
