@@ -270,6 +270,16 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
 - Summons think every 6 frames and share the list of monsters round their summoner each frame;
   their path searches look at 600 cells at most. At most 4 full path searches run per frame for
   all runs together.
+- The next floor is built in the background as soon as a floor starts, round a copy of the
+  leader (the engine puts its player at the new floor's start; the real one is still fighting).
+  Through the portal it is usually ready at once. It is thrown away if the run goes elsewhere
+  (a death, another farm or difficulty).
+- While the screen works out and draws a frame, a floor being built steps aside (a millisecond
+  at a time, for up to 20 ms, then it builds 5 ms) and it builds freely while the screen waits
+  for its next frame. Before, the build took about half of Python's time and the screen stuttered.
+  Measured: a 7-8 ms screen frame took 15 ms on average during a build, now 9 ms.
+- The screen's frame clock is kept from frame to frame. A new clock was made every frame, and
+  each one waited a full 1/60 s on top of the frame's own time.
 - Floors 10, 20, 30, 40, 50 and 60 (after Fight boss) are the Black Road's walled arena (2x2
   blocks inside its border) with the act's boss in it and no other monster, at the rift's
   monster level for that floor.

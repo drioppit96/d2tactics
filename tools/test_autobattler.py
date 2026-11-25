@@ -686,6 +686,42 @@ def test_act_boss_moves_in_real_time():
           "a Fallen Shaman moves with the engine, Andariel in real time")
 
 
+def test_next_floor_built_ahead():
+    """The next floor is built while this one is played, round a copy of the leader: the real
+    one is not moved, and through the portal the floor is ready."""
+    h = _hero("Ahead")
+    h.base_vit = 400
+    h.recalc()
+    h.hp = h.max_hp
+    mgr = RunManager(_NoAssets(), _cfg())
+    r = mgr.start([h])
+    for _ in range(3):
+        _tick(mgr)
+    pre = getattr(r, "_pre", None)
+    check(pre is not None and pre["key"][0] == r.depth + 1, "the next floor is being built ahead")
+    pos = h.pos
+    pre["thread"].join()
+    check(h.pos == pos and pre["built"] is not None and pre["built"].player is not h,
+          "built round a copy: the hero fighting here is not moved")
+    sim = r.sim
+    for m in list(sim.foes()):
+        m.hp = 0
+        m.alive = False
+    waited = None
+    for i in range(400):
+        mgr.tick()
+        if r.state == "build" and waited is None:
+            waited = 0
+        if waited is not None and r.state == "build":
+            waited += 1
+        if r.depth == 2 and r.state == "fight":
+            break
+    check(r.depth == 2 and r.state == "fight" and r.world is pre["built"] and r.world.player is h,
+          "through the portal the floor built ahead is used, with the real hero in it")
+    check((waited or 0) <= 1, "and there is no wait for it (%s frames)" % waited)
+    r.finish("stopped")
+
+
 def test_runeword_bases():
     """Home: exceptional / elite plain items with all their sockets go to the stash; other plain
     gear is sold with the magic and rare items."""
@@ -1057,6 +1093,7 @@ if __name__ == "__main__":
     test_caster_paths_capped()
     test_shot_monsters_come()
     test_act_boss_moves_in_real_time()
+    test_next_floor_built_ahead()
     test_runeword_bases()
     test_rare_cores()
     test_horadric_cube()

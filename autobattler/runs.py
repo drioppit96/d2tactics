@@ -25,6 +25,32 @@ from time import perf_counter as _clock
 from . import brain, gear, realtime, roster, timing
 
 BUILD_LOCK = threading.Lock()       # one floor built at a time
+PREBUILD = True                     # build the next floor while this one is played
+
+#: set by the screen while it works out and draws a frame: floor building waits meanwhile
+MAIN_BUSY = [False]
+
+
+_GIVE = [0.0]
+
+
+def _give_way(frame, event, arg, _busy=MAIN_BUSY, _give=_GIVE, _sleep=__import__("time").sleep, _now=_clock):
+    """The building thread's profile hook. Python runs one thread at a time; a floor being
+    built took about half of that time, so the screen stuttered. While the screen is busy the
+    builder steps aside a millisecond at a time - for 20 ms, then it builds 5 ms (so a slow PC
+    whose screen is never idle still gets its floors) - and it builds freely while the screen
+    waits for its next frame."""
+    if not _busy[0]:
+        _give[0] = 0.0
+        return
+    t = _now()
+    if not _give[0]:
+        _give[0] = t
+    waited = t - _give[0]
+    if waited < 0.020:
+        _sleep(0.001)
+    elif waited > 0.025:
+        _give[0] = t
 SESSION_SEED = random.randrange(1, 1 << 30)
 
 STATES = ("build", "fight", "pause", "town", "gate", "over")
@@ -113,13 +139,14 @@ class Run:
         tag = "" if self.difficulty == "normal" else " (%s)" % DIFF_NAMES[self.difficulty]
         return "floor %d%s" % (self.depth, tag)
 
-    def level_key(self):
+    def level_key(self, depth=None):
         from game import arena, rift
+        depth = self.depth if depth is None else depth
         if self.farm == "boss":
             return arena.BOSS_LEVEL
         if self.farm == "runes":
-            return TOWER[(self.depth - 1) % 5]
-        return rift.level_id(self.depth)
+            return TOWER[(depth - 1) % 5]
+        return rift.level_id(depth)
 
     def note(self, text):
         self.log.append(text)
@@ -128,7 +155,14 @@ class Run:
     # ------------------------------------------------------------ floors
     def build(self):
         """Start building the floor in the background; finish setting it up once it's built."""
-        if getattr(self, "_thread", None) is None:
+        if getattr(self, "_job", None) is None or self._job["key"] != self._job_key():
+            pre = getattr(self, "_pre", None)
+            self._pre = None
+            if pre is not None and pre["key"] == self._job_key():
+                self._job = pre                 # (built - or being built - while the last floor was played)
+            else:
+                self._job = self._start_job(self.depth)
+            self._thread = self._job["thread"]
             for h in self.heroes:
                 q = getattr(h, "qol", None)
                 if not isinstance(q, dict):
@@ -140,19 +174,18 @@ class Run:
                 self._refill_belt(h)
                 h.hp, h.alive = h.max_hp, True
                 h.mana = getattr(h, "max_mana", getattr(h, "mana", 0))
-            self._built, self._error = None, None
-            self._thread = threading.Thread(target=self._build_world, name="floor-%d" % self.id, daemon=True)
-            self._thread.start()
             return
-        if self._thread.is_alive():
+        job = self._job
+        if job["thread"].is_alive():
             return                              # still building: the other runs play on
-        self._thread = None
-        if self._error is not None or self._built is None:
+        self._job = self._thread = None
+        if job["error"] is not None or job["built"] is None:
             self.note("This floor could not be built (see errors.log).")
             self.finish("error")
             return
-        w = self._built
-        self._built = None
+        w = job["built"]
+        if job["stand_in"] is not None:
+            self._adopt(w, job["stand_in"])
         self._place_group(w)
         scale_for_players(w, len(self.heroes))
         w.mode = "explore"
@@ -164,18 +197,58 @@ class Run:
                 self.note("%s starts the floor with %d raised." % (h.name, n))
         self.state = "fight"
         self.note("%s: %s" % (self.where()[:1].upper() + self.where()[1:], getattr(w, "level_name", "") or "rift"))
+        if PREBUILD and not self.stop_requested:
+            # the next floor is built now, in the background, while this one is played: through
+            # the portal it is (nearly always) ready at once
+            self._pre = self._start_job(self.depth + 1, stand_in=True)
 
-    def _build_world(self):
+    def _job_key(self, depth=None):
+        return (self.depth if depth is None else depth, self.farm, self.difficulty)
+
+    def _start_job(self, depth, stand_in=False):
+        """Build floor `depth` on a thread. A floor built ahead (stand_in) is built round a copy
+        of the leader: the engine puts its player at the floor's start, and the real one is
+        still fighting on this floor."""
+        import copy
+        job = {"key": self._job_key(depth), "built": None, "error": None,
+               "stand_in": copy.copy(self.leader) if stand_in else None}
+        job["thread"] = threading.Thread(target=self._build_world, args=(job,),
+                                         name="floor-%d-%d" % (self.id, depth), daemon=True)
+        job["thread"].start()
+        return job
+
+    def _adopt(self, w, stand_in):
+        """A floor built ahead round a copy of the leader: the real leader takes the copy's place."""
+        p = self.leader
+        p.x, p.y = stand_in.x, stand_in.y
+        for k in ("arena_visit", "rift_seed"):
+            if hasattr(stand_in, k):
+                setattr(p, k, getattr(stand_in, k))
+        for k, v in list(vars(stand_in).items()):
+            if getattr(v, "__self__", None) is w:
+                setattr(p, k, v)                 # (hooks into the new floor: its auras ...)
+        for k, v in list(vars(w).items()):
+            if v is stand_in:
+                setattr(w, k, p)
+            elif isinstance(v, list) and any(x is stand_in for x in v):
+                setattr(w, k, [p if x is stand_in else x for x in v])
+
+    def _build_world(self, job):
+        import sys
         import time as _time
         t0 = _time.perf_counter()
+        sys.setprofile(_give_way)               # (the screen goes first: see _give_way)
         try:
-            self._build_world_inner()
+            self._build_world_inner(job)
         finally:
+            sys.setprofile(None)
             # (for perf.log: how long floors take to build, on their own thread)
             self.build_secs = getattr(self, "build_secs", 0.0) + _time.perf_counter() - t0
             self.builds = getattr(self, "builds", 0) + 1
 
-    def _build_world_inner(self):
+    def _build_world_inner(self, job):
+        depth = job["key"][0]
+        player = job["stand_in"] or self.leader
         try:
             with BUILD_LOCK:
                 a = self.assets
@@ -185,7 +258,7 @@ class Run:
                     content = getattr(self.assets, "content", None)
                     if content is not None:
                         content.set_difficulty(self.difficulty)
-                    lid = self.level_key()
+                    lid = self.level_key(depth)
                     if self.farm == "rift":
                         # every floor is rolled anew: its place (dungeon or outdoors of the act),
                         # its monsters and its map - the same depth is a different floor each time
@@ -194,16 +267,16 @@ class Run:
                         for h in self.heroes:
                             h.rift_seed = seed
                         rift.PLANS.pop(lid, None)
-                    boss_floor = self.farm == "rift" and self.depth % rift.BOSS_EVERY == 0
+                    boss_floor = self.farm == "rift" and depth % rift.BOSS_EVERY == 0
                     if boss_floor:
                         # every tenth floor: the Black Road's walled arena (2x2 blocks inside its
                         # border), with the act's boss in it and nothing else
                         from game import arena
                         w = make_world(a.act_kit, a.act_info, a.content, arena.BOSS_LEVEL,
-                                       player=self.leader, seed=random.randrange(1 << 30))
-                        self._act_boss_arena(w, lid)
+                                       player=player, seed=random.randrange(1 << 30))
+                        self._act_boss_arena(w, lid, depth)
                     else:
-                        w = make_world(a.act_kit, a.act_info, a.content, lid, player=self.leader,
+                        w = make_world(a.act_kit, a.act_info, a.content, lid, player=player,
                                        seed=random.randrange(1 << 30))
                     for h in self.heroes:
                         # (the engine ends a rift run when its hero "leaves the rift"; here only
@@ -212,12 +285,12 @@ class Run:
                     self._mark_farm_boss(w, lid)
                 else:
                     from game.world import World
-                    w = World(seed=random.randrange(1 << 30), depth_level=self.depth, player=self.leader)
+                    w = World(seed=random.randrange(1 << 30), depth_level=depth, player=player)
                     self._mark_boss(w)
-                self._built = w
+                job["built"] = w
         except Exception as e:
             import traceback
-            self._error = e
+            job["error"] = e
             traceback.print_exc()
             try:
                 from main import log_error
@@ -225,16 +298,16 @@ class Run:
             except Exception:
                 pass
 
-    def _act_boss_arena(self, w, lid):
+    def _act_boss_arena(self, w, lid, depth):
         """The act boss of this stretch of ten floors, alone in the arena, at the rift's level
         for this floor."""
         from game import actworld, arena, rift
         w._arena_done = True                     # (not the Black Road's own random Great Evil)
         w.monsters[:] = [m for m in w.monsters if getattr(m, "ally", False) or getattr(m, "is_player", False)
                          or getattr(m, "ai", "") == "npc"]
-        mid = rift.ACT_BOSSES[rift.act_of_depth(self.depth) - 1]
+        mid = rift.ACT_BOSSES[rift.act_of_depth(depth) - 1]
         tag = "baal" if mid == "baalcrab" else mid
-        lvl = rift.act_level(self.depth) if rift.ACT_LEVELS else max(1, getattr(self.leader, "level", 1))
+        lvl = rift.act_level(depth) if rift.ACT_LEVELS else max(1, getattr(w.player, "level", 1))
         far = arena._far_cell(w, w.player.pos)
         boss = actworld._spawn(w, mid, far, lvl, set(w.occupied()), unique=True)
         if boss is None:
@@ -406,7 +479,7 @@ class Run:
                     self.depth += 1
                 self._restart = False
                 self._next_set = True
-            if getattr(self, "_thread", None) is None:
+            if getattr(self, "_job", None) is None or self._job["key"] != self._job_key():
                 self.build()                    # (starts the build thread, nothing more)
             self.pause -= 1
             if self.pause <= 0:

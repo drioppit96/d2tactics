@@ -1905,16 +1905,22 @@ class App:
         self.region((0, 0, W, H), lambda: None)
 
     def run(self):
+        from autobattler import runs
         last = time.perf_counter()
+        clock = pygame.time.Clock()     # (one clock: a new one each frame added a full 16 ms to every frame)
         while self.running:
             now = time.perf_counter()
             self._dt = min(0.25, now - last)
             last = now
-            for ev in pygame.event.get():
-                self.handle(ev)
-            self.step(self._dt)
-            self.draw()
-            pygame.time.Clock().tick(60)
+            runs.MAIN_BUSY[0] = True    # (floors being built step aside meanwhile)
+            try:
+                for ev in pygame.event.get():
+                    self.handle(ev)
+                self.step(self._dt)
+                self.draw()
+            finally:
+                runs.MAIN_BUSY[0] = False
+            clock.tick(60)
         for r in self.mgr.active():
             r.finish("stopped")
         pygame.quit()
