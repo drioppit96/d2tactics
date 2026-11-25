@@ -503,7 +503,12 @@ class Sim:
             s.target = None
             s.next_think = self.frame + 1
             return
-        awake = [m for m in self.foes() if getattr(m, "aware", False) or chebyshev(m.pos, h.pos) <= HERO_SIGHT]
+        # (what the skills are weighed against: awake ones he hasn't given up on for a moment, and
+        # can walk to or shoot - not one across a railing he would cast at for ever)
+        awake = [m for m in self.foes() if (getattr(m, "aware", False) or chebyshev(m.pos, h.pos) <= HERO_SIGHT)
+                 and s.skip.get(id(m), 0) <= self.frame
+                 and (m is tgt or self.reachable(h, m) or
+                      (chebyshev(m.pos, h.pos) <= brains.SPELL_RANGE and self._can_shoot(h, m)))]
         if self._kite(h, s, b):
             return
         plan = b.decide(tgt, awake)
@@ -746,6 +751,10 @@ class Sim:
                 (sk is not None and sk.kind == "missile" and plan.target is not None
                  and not self._missile_reaches(h, plan.target))):
             # a pillar or a wall between: walk round until the way is open
+            if plan.target is not None and not self.reachable(h, plan.target):
+                s.skip[id(plan.target)] = self.frame + 5 * timing.FPS     # (no way round there is)
+                s.target = None
+                return
             if not self._walk_to(h, s, aim, reach=1, target_r=tr) and plan.target is not None:
                 s.skip[id(plan.target)] = self.frame + 2 * timing.FPS
                 s.target = None
@@ -1183,7 +1192,9 @@ class Sim:
             # (after the boss, longer: the floor is done and the portal waits)
             s.skip[id(tgt)] = self.frame + (2 if self.phase == "fight" else 10) * timing.FPS
             s.target = None
-            s.next_think = self.frame
+            # (a hero looks for another at once; a monster has only the heroes to go for, so it
+            # waits 2 s before it searches again - not a failed search every frame)
+            s.next_think = self.frame if u.is_player else self.frame + 2 * timing.FPS
 
     RAISERS = ("resurrect", "raise", "revive")
 
@@ -1493,7 +1504,7 @@ class Sim:
             else:
                 path = self.w.path_near(u, goal, reach=reach, target_r=target_r, limit=limit, blocked=blocked)
             s.path_goal = goal
-            s.next_path = self.frame + (REPATH * 3 if u.is_player and d > DIRECT else REPATH)
+            s.next_path = self.frame + (REPATH * 3 if (u.is_player and d > DIRECT) or d > FLOW_R else REPATH)
             s.path = list(path or [])
             if not s.path:
                 s.mode = "idle"

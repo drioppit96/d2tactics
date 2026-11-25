@@ -1149,6 +1149,36 @@ def test_across_a_railing():
     r.finish("stopped")
 
 
+def test_no_casting_across_a_railing():
+    """A sorceress whose spell can't reach a monster across a railing gives it up at once (no
+    walking round a wall that has no way round); and a monster that can't find a way to her
+    waits 2 s before it searches again."""
+    import types
+    from autobattler import brain
+    from autobattler.realtime import Sim, timing
+    sim = Sim.__new__(Sim)
+    sim.frame = 100
+    sim.reachable = lambda a, b: False
+    sim._can_shoot = lambda a, b: False
+    walked = []
+    sim._walk_to = lambda *a, **k: walked.append(1) or False
+    sk = types.SimpleNamespace(kind="missile", weapon=False, data={})
+    h = types.SimpleNamespace(pos=(10, 10), skills=types.SimpleNamespace(tree={"Lightning": sk}))
+    m = types.SimpleNamespace(pos=(14, 10), radius=0, alive=True)
+    st = types.SimpleNamespace(skip={}, target=m)
+    plan = brain.Plan("skill", "Lightning", m, None, 10, 1.0, "Lightning")
+    sim._start_cast(h, st, plan)
+    check(not walked and st.skip.get(id(m), 0) > sim.frame and st.target is None,
+          "across a railing: left alone, no search for a way round")
+    sim.phase = "fight"
+    sim._can_shoot = lambda a, b: True
+    u = types.SimpleNamespace(pos=(0, 0), radius=0, is_player=False)
+    hero = types.SimpleNamespace(pos=(40, 0), radius=0, alive=True)
+    st2 = types.SimpleNamespace(skip={}, target=hero, next_think=0)
+    sim._engage(u, st2, hero, 1)
+    check(st2.next_think >= sim.frame + 2 * timing.FPS, "a monster with no way waits 2 s before searching again")
+
+
 def test_runeword_bases():
     """Home: exceptional / elite plain items with all their sockets go to the stash; other plain
     gear is sold with the magic and rare items."""
@@ -1533,6 +1563,7 @@ if __name__ == "__main__":
     test_boss_floor_not_skipped()
     test_melee_skill_on_a_big_monster()
     test_across_a_railing()
+    test_no_casting_across_a_railing()
     test_runeword_bases()
     test_rare_cores()
     test_horadric_cube()

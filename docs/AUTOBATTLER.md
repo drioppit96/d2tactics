@@ -290,6 +290,11 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
 - With premade maps, floors 10/20/30/40/50/60 are an arena of the boss's own act's outdoors
   (desert for Duriel, jungle or Kurast for Mephisto, ...): 2 x 2 blocks of ground inside the
   act's border ring. If that can't be built, the Black Road's arena (Act 1) is used.
+- A hero's skills are weighed only against monsters he can walk to or shoot. A spell aimed at a
+  monster across a railing (no line, no way round) gives that monster up for 5 s at once instead
+  of walking round a wall that has no way round. A monster whose path search to a hero fails
+  waits 2 s before it searches again; one beyond the heroes' distance map (24 cells) searches
+  again every 36 frames instead of every 12.
 - Act 2's boss floors (20, and 70 the next time round) are D2's own Duriel's Lair (level 73,
   tomb\duriel.ds1), with or without premade maps. Duriel is set down at the far end from where
   the heroes start; the lair's portal back to the Tomb is removed, and the run opens its own red
