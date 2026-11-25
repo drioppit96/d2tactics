@@ -469,7 +469,7 @@ class App:
                 act()
 
     # ------------------------------------------------------------ the frame
-    MAX_CATCH_UP = 6       # game frames per screen frame at most: a slow PC slows the game, never freezes it
+    MAX_CATCH_UP = 3       # game frames per screen frame at most: a slow PC slows the game, never stutters
 
     def step(self, dt):
         t0 = time.perf_counter()

@@ -48,13 +48,14 @@ MANA_DRINK_AT = 25      # mana %% below which a hero drinks a mana potion
 REPATH = 12             # frames between two path searches while chasing
 THINK = 6               # frames between two decisions while a hero is walking
 MONSTER_THINK = 4       # the same for monsters
+PET_THINK = 6           # the same for summons
 DIRECT = 12             # cells: closer than this, walk straight at the goal (no path search)
 PATH_BUDGET = 3         # full path searches per run per frame; the rest wait a frame or two
-FRAME_PATHS = 6         # full path searches per frame for all runs together
+FRAME_PATHS = 4         # full path searches per frame for all runs together
 FRAME_NODES = 2000      # floor cells searched for routes (goal_route) per frame, all runs together
 SEARCH_CHUNK = 500      # cells searched in one go
 FLOW_R = 24            # cells: how far round each hero the monsters' distance map reaches
-FLOW_EVERY = 15         # frames: the distance map is made again at most this often (when he moved)
+FLOW_EVERY = 25         # frames: the distance map is made again at most this often (when he moved)
 ROUTE_SECONDS = 10      # a route to a far monster is kept this long (or until it is walked)
 #: what the runs have used of this frame's searches (reset by new_frame, once per game frame)
 BUDGET = {"paths": 0, "nodes": 0}
@@ -99,6 +100,7 @@ class State:
 class Sim:
     def __init__(self, world, heroes, timings=None, move_scale=1.0, rng=None):
         self.w = world
+        self._nb_cache = self._cache_neighbors(world)
         self.heroes = list(heroes)
         self.t = timings or timing.Timings(getattr(getattr(world, "content", None), "src", None))
         self.move_scale = move_scale
@@ -258,8 +260,32 @@ class Sim:
                     pass
             return None
 
+    @staticmethod
+    def _cache_neighbors(world):
+        """The floor's walkable neighbours of a cell, worked out once and kept (the route, flow
+        and path searches ask for them millions of times). Emptied every 30 seconds, in case a
+        door opened or something was knocked down."""
+        g = getattr(world, "grid", None)
+        if g is None:
+            return {}
+        from game.grid import Grid
+        cache = {}
+        plain = Grid.neighbors
+
+        def neighbors(x, y, _c=cache, _g=g):
+            k = (x, y)
+            r = _c.get(k)
+            if r is None:
+                r = _c[k] = tuple(plain(_g, x, y))
+            return r
+        g.neighbors = neighbors
+        return cache
+
     def _round(self):
         from game import tactics
+        self._rounds_done = getattr(self, "_rounds_done", 0) + 1
+        if self._rounds_done % 15 == 0:
+            self._nb_cache.clear()            # (every 30 s: a door may have opened)
         w = self.w
         with self._Guard(w):
             if hasattr(w, "aura_turn"):
@@ -314,7 +340,7 @@ class Sim:
         if s.mode == "walk" and s.path and self.frame < s.next_think:
             self._advance(u, s)              # keep walking; the next decision comes in a moment
             return
-        s.next_think = self.frame + (THINK if u.is_player else MONSTER_THINK)
+        s.next_think = self.frame + (THINK if u.is_player else PET_THINK if getattr(u, "ally", False) else MONSTER_THINK)
         if u.is_player:
             self._hero_think(u, s)
         elif getattr(u, "ally", False):
@@ -649,6 +675,8 @@ class Sim:
         """The heroes' summons that walk and fight (skeletons, golems, wolves, Valkyries,
         revives ...), played frame by frame like everyone else. Turrets, traps, vines and spirits
         keep to the engine's round (allies_turn), which skips these."""
+        if getattr(self, "_pets_frame", -1) == self.frame:
+            return self._pets
         out = []
         for m in self.w.monsters:
             if m.alive and getattr(m, "ally", False) and not getattr(m, "is_player", False) \
@@ -656,6 +684,7 @@ class Sim:
                     and not getattr(m, "party_member", False):
                 m.realtime = True
                 out.append(m)
+        self._pets_frame, self._pets = self.frame, out
         return out
 
     #: summons a hero has up from the start of every floor, as many as his skill level allows
@@ -709,9 +738,19 @@ class Sim:
         owner = self._owner(a)
         if owner is None:
             return
-        foes = [m for m in self.foes() if chebyshev(m.pos, owner.pos) <= self.PET_GUARD
-                or chebyshev(m.pos, a.pos) <= 6]
-        foes = [m for m in foes if s.skip.get(id(m), 0) <= self.frame]
+        key = (self.frame, id(owner))
+        if getattr(self, "_guard_key", None) != key:
+            # the monsters round a summoner, once a frame for all his summons
+            ox, oy = owner.pos
+            g = self.PET_GUARD
+            self._guard_key = key
+            self._guard = [m for m in self.foes() if abs(m.x - ox) <= g and abs(m.y - oy) <= g]
+        foes = self._guard
+        if not foes:
+            ax, ay = a.pos
+            foes = [m for m in self.foes() if abs(m.x - ax) <= 6 and abs(m.y - ay) <= 6]
+        if s.skip:
+            foes = [m for m in foes if s.skip.get(id(m), 0) <= self.frame]
         tgt = s.target if (s.target is not None and s.target.alive and s.target in foes) else \
             self._nearest(a, foes, 10 ** 6)
         if tgt is not None:
@@ -975,7 +1014,7 @@ class Sim:
                 return True
             self._paths_left -= 1
             BUDGET["paths"] += 1
-            limit = 3000 if u.is_player else 1500
+            limit = 3000 if u.is_player else (600 if getattr(u, "ally", False) else 1500)
             blocked = None
             if u.is_player or getattr(u, "ally", False):
                 # his own side moves out of his way (they change places): only monsters block him
@@ -1006,8 +1045,8 @@ class Sim:
         Every monster after him walks down this map, so one search a few times a second serves
         the whole pack instead of a path search per monster."""
         ent = self.flow.get(id(h))
-        if ent is not None and (ent[1] == h.pos or self.frame - ent[0] < FLOW_EVERY):
-            return ent[2]
+        if ent is not None and (chebyshev(ent[1], h.pos) <= 2 or self.frame - ent[0] < FLOW_EVERY):
+            return ent[2]                   # (a step or two off: still good enough to close in)
         g = self.w.grid
         hx, hy = h.pos
         dist = {h.pos: 0}

@@ -263,7 +263,16 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
 - Measured without Diablo II files, 8 runs for 4 minutes: frames in which a hero stayed within 3
   cells for 4 seconds without fighting went from 8156 / 18917 (two seeds) to 0 / 258.
 - Line of sight for the map is only worked out for the run being watched.
-- At most 6 game frames are played per screen frame (more at higher speeds): a slow PC slows the
+- Each floor keeps every cell's walkable neighbours once worked out (emptied every 30 s, in case a
+  door opened): the route, distance-map and path searches ask for them millions of times.
+- A hero's distance map (for the monsters and summons closing in on him) is made again only when he
+  has moved more than 2 cells and at least 25 frames have passed.
+- Summons think every 6 frames and share the list of monsters round their summoner each frame;
+  their path searches look at 600 cells at most. At most 4 full path searches run per frame for
+  all runs together.
+- Measured on a 240 x 240 cave with 4 runs (one a necromancer with 5 skeletons), 1500 frames:
+  7.4 ms per frame on average (95% under 29 ms) before, 3.0 ms (95% under 15 ms) after.
+- At most 3 game frames are played per screen frame (more at higher speeds): a slow PC slows the
   game down instead of freezing it.
 - F3 shows the timings on screen; perf.log in the game folder gets them every 30 seconds.
 - Measured without Diablo II files, 8 runs at 25 frames a second: 2.6 ms per game frame on
