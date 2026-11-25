@@ -423,8 +423,24 @@ class Run:
         tag = "baal" if mid == "baalcrab" else mid
         lvl = rift.act_level(depth) if rift.ACT_LEVELS else max(1, getattr(w.player, "level", 1))
         far = arena._far_cell(w, w.player.pos)
-        boss = actworld._spawn(w, mid, far, lvl, set(w.occupied()), unique=True)
+        taken = set(w.occupied())
+        boss = actworld._spawn(w, mid, far, lvl, taken, unique=True)
         if boss is None:
+            # (that cell was taken or no floor: any free floor cell, the furthest first)
+            g = w.grid
+            cells = [(x, y) for y in range(g.h) for x in range(g.w) if g.walkable(x, y) and (x, y) not in taken]
+            cells.sort(key=lambda c: -max(abs(c[0] - w.player.x), abs(c[1] - w.player.y)))
+            for c in cells[:200]:
+                boss = actworld._spawn(w, mid, c, lvl, taken, unique=True)
+                if boss is not None:
+                    break
+        if boss is None:
+            w.log("The act boss could not be set down in the arena.")
+            try:
+                from main import log_error
+                log_error("act boss arena: %s could not be spawned (floor %d)" % (mid, depth))
+            except Exception:
+                pass
             return
         boss.boss = tag
         boss.rift_boss = True

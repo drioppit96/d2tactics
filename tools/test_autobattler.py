@@ -1012,6 +1012,55 @@ def test_shamans_first():
     check(sim._pick_target(h, [fallen, mage]) is mage, "then a caster before a fighter next to him")
 
 
+def test_boss_floor_not_skipped():
+    """A boss the hero has given up on for a moment doesn't end the floor; one nobody can reach
+    is brought out to him."""
+    random.seed(4)
+    mgr = RunManager(_NoAssets(), _cfg())
+    h = _hero("Gate")
+    h.base_vit = 400
+    h.recalc()
+    h.hp = h.max_hp
+    r = mgr.start([h])
+    for _ in range(3):
+        _tick(mgr)
+    sim = r.sim
+    boss = next((m for m in sim.w.monsters if getattr(m, "rift_boss", False)), None)
+    for m in list(sim.foes()):
+        if m is not boss:
+            sim.w.monsters.remove(m)
+    sim._foes_frame = None
+    sim._rebuild_occ()
+    s = sim._state(h)
+    s.skip[id(boss)] = sim.frame + 500
+    sim.st.pop(("route", id(h)), None)
+    from autobattler import realtime
+    for _ in range(40):
+        realtime.new_frame()
+        sim.goal_route(h)
+    check(not getattr(sim, "stranded", False) and not sim.cleared(), "given up on for a moment: the floor goes on")
+    s.skip.clear()
+    g = sim.w.grid
+    for dx in (-1, 0, 1):                       # walled in where no one can walk to it
+        for dy in (-1, 0, 1):
+            if (dx, dy) != (0, 0):
+                g.cells[boss.y + dy][boss.x + dx] = 0 if g.cells[boss.y + dy][boss.x + dx] != 1 else 0
+    from game.grid import WALL
+    for dx in (-1, 0, 1):
+        for dy in (-1, 0, 1):
+            if (dx, dy) != (0, 0):
+                g.cells[boss.y + dy][boss.x + dx] = WALL
+    sim._nb_cache.clear()
+    sim.st.pop(("route", id(h)), None)
+    sim.st.pop(("search", id(h)), None)
+    for _ in range(60):
+        realtime.new_frame()
+        sim.goal_route(h)
+    check(not getattr(sim, "stranded", False) and boss.alive and max(abs(boss.x - h.x), abs(boss.y - h.y)) <= 8,
+          "walled in: it is brought out near the hero, the floor isn't skipped")
+    r.finish("stopped")
+
+
 def test_runeword_bases():
     """Home: exceptional / elite plain items with all their sockets go to the stash; other plain
     gear is sold with the magic and rare items."""
@@ -1393,6 +1442,7 @@ if __name__ == "__main__":
     test_rabies_in_a_crowd()
     test_poison_over_time()
     test_shamans_first()
+    test_boss_floor_not_skipped()
     test_runeword_bases()
     test_rare_cores()
     test_horadric_cube()

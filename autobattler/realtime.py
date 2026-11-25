@@ -1202,8 +1202,40 @@ class Sim:
             return old
         self.st[key] = (self.frame + ROUTE_SECONDS * timing.FPS, foe, route)
         if foe is None and self.foes():
-            self.stranded = True             # monsters left, none of them reachable: floor done
+            skip = self._state(h).skip
+            if any(skip.get(id(m), 0) > self.frame for m in self.foes()):
+                pass                         # (only some he has given up on for a moment: not
+                                             # "none left to reach" - he looks again later)
+            elif any(getattr(m, "rift_boss", False) for m in self.foes()):
+                self._bring_boss(h)          # the floor's boss can't be reached: it comes to him
+            else:
+                self.stranded = True         # monsters left, none of them reachable: floor done
         return route
+
+    def _bring_boss(self, h):
+        """The floor's boss stands where no hero can walk to: it is put on open floor 5-8 cells
+        from the hero (the floor is only done when it is dead, so it can't be left there)."""
+        g = self.w.grid
+        for m in self.foes():
+            if not getattr(m, "rift_boss", False):
+                continue
+            r = getattr(m, "radius", 0)
+            for d in (6, 5, 7, 8, 4, 3):
+                ring = [(h.x + dx, h.y + dy) for dx in range(-d, d + 1) for dy in range(-d, d + 1)
+                        if max(abs(dx), abs(dy)) == d]
+                random.shuffle(ring)
+                for c in ring:
+                    if all(g.walkable(c[0] + a, c[1] + b) and ((c[0] + a, c[1] + b) not in self.occ
+                                                                or self.occ.get((c[0] + a, c[1] + b)) is m)
+                           for a in range(-r, r + 1) for b in range(-r, r + 1)) and self._line_clear(h.pos, c):
+                        m.x, m.y = c
+                        m.aware = True
+                        self._rebuild_occ()
+                        st = self._state(m)
+                        st.path, st.path_goal, st.prog = [], None, 0.0
+                        self.notes.append("%s couldn't be reached: it comes out." % getattr(m, "name", "The boss"))
+                        return True
+        return False
 
     def _route_search(self, h):
         """Breadth-first over the floor from the hero, SEARCH_CHUNK cells per step (a generator:

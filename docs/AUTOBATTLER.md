@@ -296,6 +296,12 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
   heroes works the same way. (D2 Tactics keeps its 2-second turns.) Tooltips say it D2's way:
   skills "Poison Damage: 42 over 4 seconds", items "+42 Poison Damage over 6 Seconds" /
   "Adds 10-20 Poison Damage over 6 Seconds".
+- A floor counts as done when no monster left can be reached - but not when the hero has only
+  given up on some for a moment (he looks again later): that ended act-boss floors early, with
+  the boss alive, as soon as the hero gave up on it once (his shot blocked, its big body in the
+  way). A floor's boss nobody can reach is put on open floor 5-8 cells from the hero instead. An
+  act boss that can't be set down on the arena's far cell is set down on any free cell (the
+  furthest first); if that fails too, errors.log says so.
 - Which monster a hero goes for: the nearest in sight, but monsters that bring the dead back
   (Fallen and Fetish Shamans, Greater Mummies - anything with a resurrect/raise skill) count as
   10 cells nearer, other casters 4, the floor's boss 3. Busy with another monster, he switches to
