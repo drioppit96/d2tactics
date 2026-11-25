@@ -397,6 +397,10 @@ class Run:
                     from game.world import World
                     w = World(seed=random.randrange(1 << 30), depth_level=depth, player=player)
                     self._mark_boss(w)
+                try:
+                    realtime.label_areas(w)    # (which parts of the floor join: on this thread)
+                except Exception:
+                    pass
                 job["built"] = w
             finally:
                 HOLDER[0] = None

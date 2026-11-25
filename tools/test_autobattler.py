@@ -1100,6 +1100,55 @@ def test_melee_skill_on_a_big_monster():
     r.finish("stopped")
 
 
+def test_across_a_railing():
+    """Monsters across a wall nobody can walk round: no path searches for a way that isn't
+    there, the hero doesn't wait for them, and a floor whose only monsters are there is done."""
+    import types
+    from autobattler.realtime import Sim, label_areas
+    from game.grid import Grid, FLOOR, WALL
+    g = Grid(30, 20, FLOOR)
+    for y in range(20):
+        g.cells[y][15] = WALL                    # a wall all the way down: two halves
+    w = types.SimpleNamespace(grid=g)
+    areas = label_areas(w)
+    check(areas[(2, 2)] != areas[(20, 2)] and areas[(2, 2)] == areas[(2, 19)], "two areas, one each side")
+    sim = Sim.__new__(Sim)
+    sim.w = w
+    a = types.SimpleNamespace(pos=(14, 5))
+    b = types.SimpleNamespace(pos=(16, 5))
+    check(not sim.reachable(a, b) and sim.reachable(a, types.SimpleNamespace(pos=(0, 0))),
+          "two cells apart across the wall: not reachable")
+    random.seed(8)
+    mgr = RunManager(_NoAssets(), _cfg())
+    h = _hero("Rail")
+    r = mgr.start([h])
+    for _ in range(3):
+        _tick(mgr)
+    sim = r.sim
+    other = {c for c, n in sim.w._areas.items() if n != sim.area_of(h)}
+    if other:
+        for m in list(sim.foes()):
+            if getattr(m, "rift_boss", False):
+                sim.w.monsters.remove(m)
+        sim._foes_frame = None
+        far = sorted(other)
+        for m, c in zip(list(sim.foes()), far):
+            m.x, m.y = c
+        for m in list(sim.foes())[len(far):]:
+            sim.w.monsters.remove(m)
+        sim._foes_frame = None
+        sim._rebuild_occ()
+        from autobattler import realtime
+        sim.st.pop(("route", id(h)), None)
+        for _ in range(30):
+            realtime.new_frame()
+            sim.goal_route(h)
+        check(getattr(sim, "stranded", False), "only monsters he can't get to are left: the floor is done")
+    else:
+        check(True, "(this floor is all one area)")
+    r.finish("stopped")
+
+
 def test_runeword_bases():
     """Home: exceptional / elite plain items with all their sockets go to the stash; other plain
     gear is sold with the magic and rare items."""
@@ -1483,6 +1532,7 @@ if __name__ == "__main__":
     test_shamans_first()
     test_boss_floor_not_skipped()
     test_melee_skill_on_a_big_monster()
+    test_across_a_railing()
     test_runeword_bases()
     test_rare_cores()
     test_horadric_cube()

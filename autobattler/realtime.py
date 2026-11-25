@@ -66,6 +66,51 @@ ROUTE_SECONDS = 10      # a route to a far monster is kept this long (or until i
 BUDGET = {"paths": 0, "nodes": 0}
 
 
+def label_areas(world):
+    """Which cells of a floor are joined by walkable ground: {cell: area number}, worked out once
+    per floor (on the thread that builds it). Two units in different areas can't walk to each
+    other however long they search - a railing, a chasm, a wall all the way round - so nobody
+    has to find that out by searching the whole floor, over and over."""
+    from game.grid import FLOOR, Grid
+    g = world.grid
+    exact = type(g).walkable is Grid.walkable
+    cells, w, h = g.cells, g.w, g.h
+    area = {}
+    n = 0
+
+    def nbs(x, y):
+        if not exact:
+            return list(Grid.neighbors(g, x, y))
+        out = []
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                if not dx and not dy:
+                    continue
+                nx, ny = x + dx, y + dy
+                if not (0 <= nx < w and 0 <= ny < h) or cells[ny][nx] != FLOOR:
+                    continue
+                if dx and dy and (cells[y][nx] != FLOOR or cells[ny][x] != FLOOR):
+                    continue
+                out.append((nx, ny))
+        return out
+    for y in range(h):
+        row = cells[y]
+        for x in range(w):
+            if (row[x] != FLOOR if exact else not g.walkable(x, y)) or (x, y) in area:
+                continue
+            n += 1
+            area[(x, y)] = n
+            q = deque([(x, y)])
+            while q:
+                cx, cy = q.popleft()
+                for c in nbs(cx, cy):
+                    if c not in area:
+                        area[c] = n
+                        q.append(c)
+    world._areas = area
+    return area
+
+
 def new_frame():
     BUDGET["paths"] = BUDGET["nodes"] = 0
 CROWD = 3               # cells: a monster this close whose way in is blocked waits for a gap
@@ -438,9 +483,11 @@ class Sim:
             # what he can see: in the open in front of him, not behind a wall (one behind a wall
             # is found by the route below, by walking - so he doesn't turn back and forth
             # between a monster he sees through the wall and the way round to another)
+            ranged = self._reach(h) > 1
             seen = [m for m in self.foes() if s.skip.get(id(m), 0) <= self.frame
                     and chebyshev(m.pos, h.pos) <= HERO_SIGHT
-                    and (chebyshev(m.pos, h.pos) <= 2 or self._line_clear(h.pos, m.pos))]
+                    and (chebyshev(m.pos, h.pos) <= 2 or self._line_clear(h.pos, m.pos))
+                    and (self.reachable(h, m) or (ranged and self._can_shoot(h, m)))]
             tgt = self._pick_target(h, seen)
             s.target = tgt
         elif not self._priority(tgt) and self.frame % 10 == 0:
@@ -878,10 +925,39 @@ class Sim:
         else:
             s.mode, s.path = "idle", []
 
+    def area_of(self, u_or_cell):
+        """The walkable area a unit or cell is in (see label_areas), None if unknown."""
+        areas = getattr(self.w, "_areas", None)
+        if areas is None:
+            areas = label_areas(self.w)
+        c = u_or_cell if isinstance(u_or_cell, tuple) else u_or_cell.pos
+        a = areas.get(c)
+        if a is None:
+            # (standing on a cell that isn't floor - a big body over an edge: the area of a
+            # floor cell next to it)
+            x, y = c
+            for dx in (-1, 0, 1, -2, 2):
+                for dy in (-1, 0, 1, -2, 2):
+                    a = areas.get((x + dx, y + dy))
+                    if a is not None:
+                        return a
+        return a
+
+    def reachable(self, a, b):
+        """a can walk to b (or next to it)."""
+        x, y = self.area_of(a), self.area_of(b)
+        return x is None or y is None or x == y
+
     def _monster_think(self, m, s):
         heroes = self.living_heroes() + self.pets()      # (summons are fought like heroes)
-        tgt = self._nearest(m, heroes, 10 ** 6)
+        near = [u for u in heroes if self.reachable(m, u) or
+                (self._reach(m) > 1 and chebyshev(m.pos, u.pos) <= self._reach(m) + 2 and self._can_shoot(m, u))]
+        tgt = self._nearest(m, near, 10 ** 6)
         if tgt is None:
+            # every hero is where it can't walk (across a railing, a chasm): it waits there -
+            # no search for a way that isn't there
+            s.mode, s.path = "idle", []
+            s.next_think = self.frame + 2 * timing.FPS
             return
         s.target = tgt
         self._engage(m, s, tgt, self._reach(m))
@@ -1206,7 +1282,7 @@ class Sim:
         self.st[key] = (self.frame + ROUTE_SECONDS * timing.FPS, foe, route)
         if foe is None and self.foes():
             skip = self._state(h).skip
-            if any(skip.get(id(m), 0) > self.frame for m in self.foes()):
+            if any(skip.get(id(m), 0) > self.frame and self.reachable(h, m) for m in self.foes()):
                 pass                         # (only some he has given up on for a moment: not
                                              # "none left to reach" - he looks again later)
             elif any(getattr(m, "rift_boss", False) for m in self.foes()):
@@ -1244,7 +1320,7 @@ class Sim:
         """Breadth-first over the floor from the hero, SEARCH_CHUNK cells per step (a generator:
         it returns (monster, cells to beside it), or (None, []) when none can be reached)."""
         skip = self._state(h).skip
-        foes = [m for m in self.foes() if skip.get(id(m), 0) <= self.frame]
+        foes = [m for m in self.foes() if skip.get(id(m), 0) <= self.frame and self.reachable(h, m)]
         at = {}
         for m in foes:
             for dx in (-1, 0, 1):
@@ -1507,7 +1583,8 @@ class Sim:
         last = max(s.moved_at, s.dealt_at, getattr(self, "_floor_start", 0))
         if self.frame - last < self.NO_PROGRESS * timing.FPS:
             return False
-        if not any(getattr(m, "aware", False) and chebyshev(m.pos, h.pos) <= HERO_SIGHT for m in self.foes()):
+        if not any(getattr(m, "aware", False) and chebyshev(m.pos, h.pos) <= HERO_SIGHT
+                   and (self.reachable(h, m) or self._can_shoot(h, m)) for m in self.foes()):
             # (every awake monster near counts here, also one he has given up on for a while:
             # one he can't hit and that can't reach him is what holds him)
             s.dealt_at = self.frame
@@ -1525,7 +1602,8 @@ class Sim:
         here = h.pos
         cells = [(here[0] + dx, here[1] + dy) for dx in range(-6, 7) for dy in range(-6, 7)
                  if 3 <= max(abs(dx), abs(dy)) and g.walkable(here[0] + dx, here[1] + dy)
-                 and (here[0] + dx, here[1] + dy) not in self.occ]
+                 and (here[0] + dx, here[1] + dy) not in self.occ
+                 and self.reachable(here, (here[0] + dx, here[1] + dy))]
         random.shuffle(cells)
         for c in cells[:6]:
             if self._walk_to(h, s, c, reach=0):
