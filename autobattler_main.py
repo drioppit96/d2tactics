@@ -126,7 +126,22 @@ class App:
         roster.use_folder()
         pygame.init()
         w, h = self.cfg_game.getint("display", "width"), self.cfg_game.getint("display", "height")
-        self.window = pygame.display.set_mode((w, h), pygame.RESIZABLE)
+        self._gpu = False
+        if self.cfg.get("screen_scale", "gpu") == "gpu":
+            # the graphics card scales the 800 x 600 picture to the window: on the processor
+            # (smoothscale, every frame) that alone took several milliseconds a frame
+            try:
+                self.window = pygame.display.set_mode((W, H), pygame.SCALED | pygame.RESIZABLE)
+                self._gpu = True
+                try:
+                    from pygame._sdl2.video import Window
+                    Window.from_display_module().size = (w, h)
+                except Exception:
+                    pass
+            except Exception:
+                self._gpu = False
+        if not self._gpu:
+            self.window = pygame.display.set_mode((w, h), pygame.RESIZABLE)
         pygame.display.set_caption("D2 Autobattler")
         serif = "georgia,palatinolinotype,timesnewroman,serif"
         self.sysfonts = {"small": pygame.font.SysFont(serif, 13), "med": pygame.font.SysFont(serif, 16, bold=True),
@@ -170,6 +185,11 @@ class App:
 
     def _present(self):
         """The 800 x 600 canvas, scaled to fit the window (black bars where the shape differs)."""
+        if self._gpu:
+            self._ofs, self._k = (0, 0), 1.0     # (mouse positions come in the canvas's own pixels)
+            self.window.blit(self.canvas, (0, 0))
+            pygame.display.flip()
+            return
         ww, wh = self.window.get_size()
         k = min(ww / float(W), wh / float(H))
         size = (max(1, int(W * k)), max(1, int(H * k)))
@@ -178,8 +198,10 @@ class App:
         self.window.fill((0, 0, 0))
         if size == (W, H):
             self.window.blit(self.canvas, self._ofs)
-        else:
+        elif self.cfg.get("screen_scale") == "smooth":
             self.window.blit(pygame.transform.smoothscale(self.canvas, size), self._ofs)
+        else:
+            self.window.blit(pygame.transform.scale(self.canvas, size), self._ofs)
         pygame.display.flip()
 
     def logical(self, pos):
@@ -401,7 +423,8 @@ class App:
         if ev.type == pygame.QUIT:
             self.running = False
         elif ev.type == pygame.VIDEORESIZE:
-            self.window = pygame.display.set_mode((ev.w, ev.h), pygame.RESIZABLE)
+            if not self._gpu:                  # (scaled by the graphics card: it follows by itself)
+                self.window = pygame.display.set_mode((ev.w, ev.h), pygame.RESIZABLE)
         elif ev.type == pygame.MOUSEMOTION:
             self.mouse = self.logical(ev.pos)
         elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:

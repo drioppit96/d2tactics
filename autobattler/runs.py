@@ -329,8 +329,11 @@ class Run:
         elif PROFILED[0] < PROFILE_BUILDS:
             PROFILED[0] += 1
             import cProfile
-            prof = cProfile.Profile()
-            prof.enable()
+            try:
+                prof = cProfile.Profile()
+                prof.enable()
+            except Exception:
+                prof = None                     # (another profiler already running: no timing)
         try:
             self._build_world_inner(job)
         except _Aborted:

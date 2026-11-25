@@ -290,6 +290,16 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
 - With premade maps, floors 10/20/30/40/50/60 are an arena of the boss's own act's outdoors
   (desert for Duriel, jungle or Kurast for Mephisto, ...): 2 x 2 blocks of ground inside the
   act's border ring. If that can't be built, the Black Road's arena (Act 1) is used.
+- The 800 x 600 picture is fitted to the window by the graphics card (autobattler.ini
+  screen_scale = gpu; pygame's SCALED window). It used to be smoothed on the processor every
+  frame (smoothscale), several milliseconds a frame on its own - more on an older PC.
+  screen_scale = sharp or smooth go back to the processor (plain or smoothed pixels).
+- "Diagnose D2 Autobattler.bat" (tools/diagnose_autobattler.py): a 3-minute test drive on a copy
+  of the heroes (the real saves are never touched). It starts a run for up to four heroes (an
+  Amazon first), shows the first, and writes diagnose_report.txt: frame times, the game's own
+  timing, each run's log, each hero every second (position, what he does, his target, its
+  distance and life, line of fire), every 8-second stall with the monsters near, a profile of
+  where the time went, and what perf.log, stuck.log, build_profile.log and errors.log got.
 - Each run keeps its own count of game frames owed. Every screen frame the run on screen is
   played in full; the others share 10 ms of game time, the one most behind first, and one that
   got nothing for 3 screen frames goes next whatever the time. On a PC too slow for all the runs,
