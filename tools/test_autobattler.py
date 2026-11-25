@@ -595,11 +595,17 @@ def test_futile_target():
     from autobattler.realtime import Sim, State
     from game import skillcast
     check(brain.SPELL_RANGE == skillcast.SPELL_RANGE, "heroes aim spells only as far as they fly")
+    from game.grid import Grid, FLOOR
     sim = Sim.__new__(Sim)
     sim.frame, sim.notes = 100, []
+    sim.w = types.SimpleNamespace(grid=Grid(10, 10, FLOOR))
+    sim.occ, sim.st = {}, {}
+    sim._state = lambda u: sim.st.setdefault(id(u), State())
     h = types.SimpleNamespace(name="Sorc")
     s = State()
-    m = types.SimpleNamespace(hp=50, pos=(3, 4), name="Fallen", rift_boss=False)
+    M = type("M", (), {"pos": property(lambda self: (self.x, self.y))})
+    m = M()
+    m.x, m.y, m.hp, m.name, m.rift_boss = 3, 4, 50, "Fallen", False
     for _ in range(Sim.FUTILE_BLOWS - 1):
         Sim._count_blow(s, m)
     check(not sim._futile(h, s, m), "a few blows without damage: keep at it")
@@ -849,6 +855,47 @@ def test_premade_floors():
     finally:
         mapcache.FOLDER, mapcache._ORIGINAL, mapcache._INDEX = old_folder, old_orig, old_index
         rift.forget(None)
+
+
+def test_monster_levels_capped():
+    """A monster above the hero's level is brought down to it; one below stays as it is."""
+    import types
+    from autobattler.runs import cap_levels
+    monlvl = {lv: {"hp": str(10 * lv), "dm": str(lv), "th": str(5 * lv), "ac": str(3 * lv), "xp": str(20 * lv)}
+              for lv in range(1, 100)}
+    w = types.SimpleNamespace(content=types.SimpleNamespace(monlvl=monlvl, sfx=""), monsters=[])
+
+    def mon(lv):
+        return types.SimpleNamespace(level=lv, max_hp=100 * lv, hp=100 * lv, dmg=(lv, 2 * lv), ar=10 * lv,
+                                     defense=lv, xp_value=lv, alive=True)
+    hi, lo = mon(30), mon(8)
+    lo_before = (lo.max_hp, lo.dmg, lo.level)
+    w.monsters = [hi, lo]
+    cap_levels(w, 20)
+    check(hi.level == 20 and hi.max_hp == 2000 and hi.dmg == (20, 40),
+          "a level 30 monster against a level 20 hero becomes level 20 (life %d)" % hi.max_hp)
+    check((lo.max_hp, lo.dmg, lo.level) == lo_before, "a level 8 one stays as it is")
+
+
+def test_monster_in_wall_moved_out():
+    """A monster standing inside a wall is put on the nearest free floor cell."""
+    import types
+    from collections import deque
+    from autobattler.realtime import Sim, State
+    from game.grid import Grid, FLOOR, WALL
+    g = Grid(10, 10, FLOOR)
+    g.cells[5][5] = WALL
+    sim = Sim.__new__(Sim)
+    sim.w = types.SimpleNamespace(grid=g)
+    m = types.SimpleNamespace(x=5, y=5, pos=None)
+    type_ = type("M", (), {"pos": property(lambda self: (self.x, self.y))})
+    m = type_()
+    m.x, m.y = 5, 5
+    sim.occ = {(5, 5): m, (4, 4): object()}
+    sim.st = {}
+    sim._state = lambda u: sim.st.setdefault(id(u), State())
+    check(sim._relocate(m) and g.walkable(*m.pos) and m.pos != (4, 4) and sim.occ.get(m.pos) is m
+          and max(abs(m.x - 5), abs(m.y - 5)) == 1, "moved to a free floor cell next to the wall (%s)" % (m.pos,))
 
 
 def test_runeword_bases():
@@ -1226,6 +1273,8 @@ if __name__ == "__main__":
     test_waiting_floor_goes_first()
     test_build_ahead_dropped_for_waiting_run()
     test_premade_floors()
+    test_monster_levels_capped()
+    test_monster_in_wall_moved_out()
     test_runeword_bases()
     test_rare_cores()
     test_horadric_cube()

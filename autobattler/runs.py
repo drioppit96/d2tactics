@@ -266,6 +266,7 @@ class Run:
         if job["stand_in"] is not None:
             self._adopt(w, job["stand_in"])
         self._place_group(w)
+        cap_levels(w, self.level_cap())
         scale_for_players(w, len(self.heroes))
         w.mode = "explore"
         self.world = w
@@ -280,6 +281,10 @@ class Run:
             # the next floor is built now, in the background, while this one is played: through
             # the portal it is (nearly always) ready at once
             self._pre = self._start_job(self.depth + 1, stand_in=True)
+
+    def level_cap(self):
+        """No monster is above this level: the group's highest hero level."""
+        return max(1, max(getattr(h, "level", 1) for h in self.heroes))
 
     def _job_key(self, depth=None):
         return (self.depth if depth is None else depth, self.farm, self.difficulty)
@@ -601,6 +606,8 @@ class Run:
             return                              # (town: the floor waits)
         xp0 = self.leader.xp
         self.sim.town_spent = self.town_used     # (no retreat home once the floor's trip is spent)
+        if self.sim.frame % 25 == 0:
+            cap_levels(self.world, self.level_cap())    # (monsters raised or called up meanwhile)
         self.sim.tick()
         while self.sim.notes:
             self.note(self.sim.notes.pop(0))
@@ -771,6 +778,23 @@ def cleared(h, diff="normal"):
     if diff == "normal":
         n = max(n, int(getattr(h, "rift_depth", 0) or 0), int(brain.profile(h).get("cleared", 0) or 0))
     return n
+
+
+def cap_levels(w, cap):
+    """A monster above the hero's level is brought down to it (its life, damage, attack rating,
+    defence and experience by D2's MonLvl tables, the same way the rift scales its bosses); one at
+    or below it stays as it is. Its drops follow its new level."""
+    from game import rift
+    if getattr(w, "content", None) is None:
+        return
+    for m in w.monsters:
+        if getattr(m, "ally", False) or getattr(m, "is_player", False) or getattr(m, "ai", "") == "npc" \
+                or not getattr(m, "alive", True):
+            continue
+        if getattr(m, "level", 1) > cap:
+            frac = m.hp / float(max(1, m.max_hp))
+            rift.scale_to_level(w, m, cap)
+            m.hp = max(1, int(m.max_hp * frac))
 
 
 def scale_for_players(w, players):

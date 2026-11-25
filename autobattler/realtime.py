@@ -310,6 +310,10 @@ class Sim:
         self._rounds_done = getattr(self, "_rounds_done", 0) + 1
         if self._rounds_done % 15 == 0:
             self._nb_cache.clear()            # (every 30 s: a door may have opened)
+        g = self.w.grid
+        for m in self.foes():
+            if not g.walkable(*m.pos):
+                self._relocate(m)             # (one standing in a wall: no arrow reaches it, it can't move)
         w = self.w
         with self._Guard(w):
             if hasattr(w, "aura_turn"):
@@ -907,6 +911,32 @@ class Sim:
         else:
             f[2] += 1
 
+    def _relocate(self, m):
+        """Put a monster on the nearest free floor cell: one inside a wall, a rock or a pillar
+        (a big monster set down partly on one) can't be hit by missiles and can't move itself, so
+        hero and monster would stand facing each other for ever."""
+        g = self.w.grid
+        seen = {m.pos}
+        q = deque([m.pos])
+        while q and len(seen) < 4000:
+            c = q.popleft()
+            if c != m.pos and g.walkable(*c) and c not in self.occ:
+                if self.occ.get(m.pos) is m:
+                    del self.occ[m.pos]
+                m.x, m.y = c
+                self.occ[c] = m
+                st = self._state(m)
+                st.path, st.path_goal, st.prog = [], None, 0.0
+                return True
+            x, y = c
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    n = (x + dx, y + dy)
+                    if n not in seen and g.in_bounds(*n):
+                        seen.add(n)
+                        q.append(n)
+        return False
+
     def _futile(self, h, s, tgt):
         """A monster whose life doesn't go down whatever he does (one stuck in a wall that
         missiles can't reach, one immune to all he has): leave it and go on to the others.
@@ -918,10 +948,15 @@ class Sim:
             f[1], f[2] = tgt.hp, 0
             return False
         f[1] = max(f[1], tgt.hp)
-        if f[2] < self.FUTILE_BLOWS or getattr(tgt, "rift_boss", False):
+        if f[2] < self.FUTILE_BLOWS:
+            return False
+        if getattr(tgt, "rift_boss", False):
+            f[2] = 0
+            self._relocate(tgt)              # (the boss isn't left: it is put on open floor)
             return False
         s.futile = None
         s.skip[id(tgt)] = self.frame + self.FUTILE_SKIP * timing.FPS
+        self._relocate(tgt)                  # (wherever it stood, it stands on open floor now)
         self.notes.append("%s leaves %s at %d,%d: %d attacks did nothing to it." % (
             h.name, getattr(tgt, "name", "a monster"), tgt.pos[0], tgt.pos[1], self.FUTILE_BLOWS))
         return True
@@ -1270,6 +1305,7 @@ class Sim:
         self._write_stuck(h, s, b, tgt)
         if tgt is not None:
             s.skip[id(tgt)] = self.frame + 10 * timing.FPS
+            self._relocate(tgt)
         s.target, s.plan, s.path, s.path_goal = None, None, [], None
         s.mode, s.frames = "idle", 0
         self.st.pop(("route", id(h)), None)
