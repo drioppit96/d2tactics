@@ -217,7 +217,7 @@ class Sim:
             self.phase = "portal"
         for h in heroes:
             self._quaff(h)
-        for u in heroes + self.pets() + [m for m in self.foes() if getattr(m, "aware", False) and not getattr(m, "caster", False)]:
+        for u in heroes + self.pets() + [m for m in self.foes() if getattr(m, "aware", False) and not self._engine_moved(m)]:
             if u.alive:
                 self._step(u)
         for m in self.w.monsters:
@@ -305,7 +305,16 @@ class Sim:
                 self._engine(w.tick_hazards)
         heroes = self.living_heroes()
         for m in [m for m in self.foes() if getattr(m, "aware", False)]:
-            if getattr(m, "caster", False):
+            if getattr(m, "boss", None) and getattr(m, "caster", False):
+                # an act boss: walks and strikes in real time like any monster (below), and
+                # casts its spells (poison, fire, lightning ...) on top, once a round
+                if any(chebyshev(m.pos, h.pos) <= CASTER_REACH for h in heroes) and \
+                        self._state(m).mode not in ("attack", "cast"):
+                    from game import monskills
+                    m.ap = max(getattr(m, "ap", 0), getattr(m, "max_ap", 0), getattr(m, "attack_cost", 0))
+                    with self._Guard(w, "monsters"), self._short_paths(w.grid):
+                        self._engine(monskills.try_cast, w, m)
+            if self._engine_moved(m):
                 if not any(chebyshev(m.pos, h.pos) <= CASTER_REACH for h in heroes):
                     continue                    # (far from every hero: it waits, as in D2)
                 with self._Guard(w, "monsters"), self._short_paths(w.grid):
@@ -323,6 +332,12 @@ class Sim:
             if ok is False and m.alive:
                 s.stunned = self.frame + ROUND
                 s.mode, s.frames, s.path, s.hit_at = "idle", 0, [], -1
+
+    @staticmethod
+    def _engine_moved(m):
+        """Caster monsters move with the engine's own code, once a round; act bosses don't (they
+        would strike once a second at best and stand about between): the sim moves them."""
+        return getattr(m, "caster", False) and not getattr(m, "boss", None)
 
     class _short_paths:
         """The engine's caster monsters search their way with grid.find_path, which may look
@@ -480,7 +495,9 @@ class Sim:
         if self._awake_near(h):
             return False
         nxt = self._next_item(h)
+        ready = self.__dict__.setdefault("_ready", set())
         if nxt is not None:
+            ready.discard(id(h))
             cell, it = nxt
             if chebyshev(h.pos, cell) <= 1:
                 self.take(h, cell, it)
@@ -490,14 +507,18 @@ class Sim:
                     self.skip_items.add(id(it))
             return True
         if self.phase == "portal" and self.portal is not None:
+            # the group goes through together, once every hero has picked up what he wants
             if chebyshev(h.pos, self.portal) <= 1:
-                if h is self.living_heroes()[0]:
-                    self.at_portal = True
+                ready.add(id(h))
                 b.last = "at the portal"
             else:
                 b.last = "to the portal"
                 if not self._walk_to(h, s, self.portal, reach=1):
-                    self.at_portal = True    # (no way to it: go through anyway)
+                    ready.add(id(h))         # (no way to it: he goes through anyway)
+            living = self.living_heroes()
+            if living and (all(id(x) in ready for x in living) or
+                           self.frame >= self.loot_until + LOOT_SECONDS * timing.FPS):
+                self.at_portal = True
             return True
         return False
 
@@ -1237,6 +1258,12 @@ class Sim:
         while s.prog >= 1.0 and s.path:
             nxt = s.path[0]
             other = self.occ.get(nxt)
+            if other is not None and other is not u and self._friendly(u, other) and \
+                    self._state(other).mode == "walk" and self._state(other).path:
+                # one of his own side walking on ahead: follow, don't change places (two who
+                # swap back and forth undo each other's steps and never get anywhere)
+                s.prog = min(s.prog, 1.0)
+                break
             if other is not None and other is not u and self._friendly(u, other) and not getattr(other, "radius", 0) \
                     and self._state(other).mode not in ("attack", "cast"):
                 # one of his own side in the way: they change places, as D2's minions make way

@@ -676,6 +676,16 @@ def test_shot_monsters_come():
     r.finish("stopped")
 
 
+def test_act_boss_moves_in_real_time():
+    """Act bosses (casters too) are moved and strike in real time; other casters use the engine."""
+    import types
+    from autobattler.realtime import Sim
+    shaman = types.SimpleNamespace(caster=True, boss=None)
+    andy = types.SimpleNamespace(caster=True, boss="andariel")
+    check(Sim._engine_moved(shaman) and not Sim._engine_moved(andy),
+          "a Fallen Shaman moves with the engine, Andariel in real time")
+
+
 def test_runeword_bases():
     """Home: exceptional / elite plain items with all their sockets go to the stash; other plain
     gear is sold with the magic and rare items."""
@@ -1046,6 +1056,7 @@ if __name__ == "__main__":
     test_futile_target()
     test_caster_paths_capped()
     test_shot_monsters_come()
+    test_act_boss_moves_in_real_time()
     test_runeword_bases()
     test_rare_cores()
     test_horadric_cube()

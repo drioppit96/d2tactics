@@ -194,8 +194,17 @@ class Run:
                         for h in self.heroes:
                             h.rift_seed = seed
                         rift.PLANS.pop(lid, None)
-                    w = make_world(a.act_kit, a.act_info, a.content, lid, player=self.leader,
-                                   seed=random.randrange(1 << 30))
+                    boss_floor = self.farm == "rift" and self.depth % rift.BOSS_EVERY == 0
+                    if boss_floor:
+                        # every tenth floor: the Black Road's walled arena (2x2 blocks inside its
+                        # border), with the act's boss in it and nothing else
+                        from game import arena
+                        w = make_world(a.act_kit, a.act_info, a.content, arena.BOSS_LEVEL,
+                                       player=self.leader, seed=random.randrange(1 << 30))
+                        self._act_boss_arena(w, lid)
+                    else:
+                        w = make_world(a.act_kit, a.act_info, a.content, lid, player=self.leader,
+                                       seed=random.randrange(1 << 30))
                     for h in self.heroes:
                         # (the engine ends a rift run when its hero "leaves the rift"; here only
                         # the run decides that, so it never sees him as having been in one)
@@ -215,6 +224,29 @@ class Run:
                 log_error(traceback.format_exc())
             except Exception:
                 pass
+
+    def _act_boss_arena(self, w, lid):
+        """The act boss of this stretch of ten floors, alone in the arena, at the rift's level
+        for this floor."""
+        from game import actworld, arena, rift
+        w._arena_done = True                     # (not the Black Road's own random Great Evil)
+        w.monsters[:] = [m for m in w.monsters if getattr(m, "ally", False) or getattr(m, "is_player", False)
+                         or getattr(m, "ai", "") == "npc"]
+        mid = rift.ACT_BOSSES[rift.act_of_depth(self.depth) - 1]
+        tag = "baal" if mid == "baalcrab" else mid
+        lvl = rift.act_level(self.depth) if rift.ACT_LEVELS else max(1, getattr(self.leader, "level", 1))
+        far = arena._far_cell(w, w.player.pos)
+        boss = actworld._spawn(w, mid, far, lvl, set(w.occupied()), unique=True)
+        if boss is None:
+            return
+        boss.boss = tag
+        boss.rift_boss = True
+        if not rift.BIG:
+            rift.scale_to_level(w, boss, lvl)
+            boss.max_hp = int(boss.max_hp * 1.5)
+        boss.hp = boss.max_hp
+        boss.aware = True
+        w.log("%s waits in the arena, alone." % boss.name)
 
     def _mark_farm_boss(self, w, lid):
         """The Black Road's Great Evil and the Countess end their floor; a cellar level above hers

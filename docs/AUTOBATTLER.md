@@ -270,6 +270,17 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
 - Summons think every 6 frames and share the list of monsters round their summoner each frame;
   their path searches look at 600 cells at most. At most 4 full path searches run per frame for
   all runs together.
+- Floors 10, 20, 30, 40, 50 and 60 (after Fight boss) are the Black Road's walled arena (2x2
+  blocks inside its border) with the act's boss in it and no other monster, at the rift's
+  monster level for that floor.
+- Act bosses walk and strike in real time like other monsters, and cast their spells on top
+  once a second. (They used to be moved by the engine's turn code, like the caster monsters,
+  which left them standing about.)
+- After a floor's boss the group goes through the portal together, once every hero has picked
+  up what he wants (or 25 seconds after the loot time is over). It used to go as soon as the
+  first hero reached the portal.
+- Heroes of one group no longer change places with one who is walking on ahead: they follow.
+  Two who kept swapping in a narrow passage undid each other's steps and never moved on.
 - A monster a hero or a summon attacks or casts at wakes up at once, and so does every monster
   within 6 cells of it; so does any monster a spell hurts. An awake monster far from the hero
   (beyond his 24-cell distance map) walks straight at him or searches a path; it no longer waits
