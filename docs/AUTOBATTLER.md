@@ -274,6 +274,11 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
   leader (the engine puts its player at the new floor's start; the real one is still fighting).
   Through the portal it is usually ready at once. It is thrown away if the run goes elsewhere
   (a death, another farm or difficulty).
+- A floor being built ahead is dropped the moment a run is waiting for its own floor (one floor
+  is built at a time, and the waiting run must not wait for a floor nobody needs yet). It is
+  started again once no run waits, or built when its run reaches it.
+- The first floor a run waits for in each session is timed function by function into
+  build_profile.log in the game folder, to find what makes building real D2 floors slow.
 - A floor a run is waiting for is built before any floor built ahead, and it never steps aside
   for the screen; while any run waits, a floor being built ahead doesn't step aside either (so
   it is out of the way sooner). perf.log shows, for a run waiting for its floor, how long it

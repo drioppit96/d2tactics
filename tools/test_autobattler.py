@@ -751,6 +751,30 @@ def test_waiting_floor_goes_first():
     check(not runs.WAITING, "and nothing is left waiting")
 
 
+def test_build_ahead_dropped_for_waiting_run():
+    """A floor being built ahead is dropped at once when a run needs its own floor now, and the
+    lock is free for it."""
+    import time
+    from autobattler import runs
+    h = _hero("Drop")
+    mgr = RunManager(_NoAssets(), _cfg())
+    r = mgr.start([h])
+    _tick(mgr)
+    job = r._start_job(9, stand_in=True)
+    t = time.time()
+    while not job.get("locked") and job["thread"].is_alive() and time.time() - t < 5:
+        time.sleep(0.001)
+    if not job["thread"].is_alive():
+        check(True, "(the floor ahead was built before it could be dropped)")
+    else:
+        runs.WAITING.add(-1)
+        job["thread"].join(5)
+        runs.WAITING.discard(-1)
+        check(job.get("aborted") and job["built"] is None and not runs.BUILD_LOCK.locked(),
+              "a floor built ahead is dropped for a run waiting, and the lock is free")
+    r.finish("stopped")
+
+
 def test_runeword_bases():
     """Home: exceptional / elite plain items with all their sockets go to the stash; other plain
     gear is sold with the magic and rare items."""
@@ -1124,6 +1148,7 @@ if __name__ == "__main__":
     test_act_boss_moves_in_real_time()
     test_next_floor_built_ahead()
     test_waiting_floor_goes_first()
+    test_build_ahead_dropped_for_waiting_run()
     test_runeword_bases()
     test_rare_cores()
     test_horadric_cube()

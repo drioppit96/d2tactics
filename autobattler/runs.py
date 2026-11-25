@@ -38,6 +38,21 @@ HOLDER = [None]     # the thread building now (for perf.log)
 _GIVE = [0.0]
 
 
+class _Aborted(BaseException):
+    """A floor being built ahead is dropped when a run needs its own floor now: one floor is
+    built at a time, and the run waiting must not wait for a floor that isn't needed yet. (Not
+    an Exception, so the engine's own "except Exception" doesn't catch it.)"""
+
+
+def _hook_for(job):
+    """The profile hook of a thread building a floor ahead (see _give_way)."""
+    def hook(frame, event, arg, _job=job, _waiting=WAITING, _give=_give_way):
+        if _waiting and _job.get("locked") and not _job.get("needed"):
+            raise _Aborted()
+        _give(frame, event, arg)
+    return hook
+
+
 def _give_way(frame, event, arg, _busy=MAIN_BUSY, _waiting=WAITING, _give=_GIVE,
               _sleep=__import__("time").sleep, _now=_clock):
     """The profile hook of a thread building a floor ahead. Python runs one thread at a time; a
@@ -66,9 +81,35 @@ def _take_build_lock(job, _sleep=__import__("time").sleep):
             if BUILD_LOCK.acquire(timeout=0.05):
                 if job.get("needed") or not WAITING:
                     HOLDER[0] = threading.current_thread().name
+                    job["locked"] = True
                     return
                 BUILD_LOCK.release()
         _sleep(0.02)
+
+
+PROFILE_BUILDS = 1      # the first floor a run waits for each session is timed in build_profile.log
+PROFILED = [0]
+
+
+def _write_profile(prof, job, secs):
+    """Where a floor's build time goes, for the first few floors of a session: build_profile.log
+    in the game folder (to find what makes building slow on a real D2 floor)."""
+    try:
+        import io
+        import os
+        import pstats
+        import time
+        out = io.StringIO()
+        st = pstats.Stats(prof, stream=out)
+        out.write("%s  floor %s (%s, %s): %.1f s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), job["key"][0],
+                                                      job["key"][1], job["key"][2], secs))
+        st.sort_stats("cumulative").print_stats(30)
+        st.sort_stats("tottime").print_stats(25)
+        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(here, "build_profile.log"), "a") as f:
+            f.write(out.getvalue() + "\n")
+    except Exception:
+        pass
 
 
 def _need(job):
@@ -208,6 +249,11 @@ class Run:
         job = self._job
         if job["thread"].is_alive():
             return                              # still building: the other runs play on
+        if job.get("aborted"):
+            # (it was being built ahead and was dropped for another run's floor: build it now)
+            self._job = self._start_job(self.depth)
+            self._thread = self._job["thread"]
+            return
         self._job = self._thread = None
         if job["error"] is not None or job["built"] is None:
             self.note("This floor could not be built (see errors.log).")
@@ -269,11 +315,23 @@ class Run:
         import sys
         import time as _time
         t0 = _time.perf_counter()
+        prof = None
         if not job.get("needed"):
-            sys.setprofile(_give_way)           # (built ahead: the screen goes first, see _give_way)
+            sys.setprofile(_hook_for(job))      # (built ahead: the screen goes first, see _give_way)
+        elif PROFILED[0] < PROFILE_BUILDS:
+            PROFILED[0] += 1
+            import cProfile
+            prof = cProfile.Profile()
+            prof.enable()
         try:
             self._build_world_inner(job)
+        except _Aborted:
+            job["aborted"] = True
+            job["built"] = None
         finally:
+            if prof is not None:
+                prof.disable()
+                _write_profile(prof, job, _time.perf_counter() - t0)
             sys.setprofile(None)
             WAITING.discard(id(job))
             # (for perf.log: how long floors take to build, on their own thread)
@@ -325,6 +383,7 @@ class Run:
                 job["built"] = w
             finally:
                 HOLDER[0] = None
+                job["locked"] = False
                 BUILD_LOCK.release()
         except Exception as e:
             import traceback
@@ -810,6 +869,12 @@ class RunManager:
         return r
 
     def tick(self):
+        if not WAITING:
+            for r in self.runs:
+                pre = getattr(r, "_pre", None)
+                if pre is not None and pre.get("aborted") and r.state == "fight" and \
+                        pre["key"] == r._job_key(r.depth + 1):
+                    r._pre = r._start_job(r.depth + 1, stand_in=True)   # (dropped earlier: again)
         realtime.new_frame()
         runs = self.active()
         if runs:
