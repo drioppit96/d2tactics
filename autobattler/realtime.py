@@ -56,6 +56,8 @@ FRAME_NODES = 2000      # floor cells searched for routes (goal_route) per frame
 SEARCH_CHUNK = 500      # cells searched in one go
 FLOW_R = 24            # cells: how far round each hero the monsters' distance map reaches
 FLOW_EVERY = 25         # frames: the distance map is made again at most this often (when he moved)
+CASTER_REACH = 40       # cells: a caster monster further than this from every hero doesn't act
+CASTER_PATH = 1500      # cells a caster monster's path search looks at, at most
 ROUTE_SECONDS = 10      # a route to a far monster is kept this long (or until it is walked)
 #: what the runs have used of this frame's searches (reset by new_frame, once per game frame)
 BUDGET = {"paths": 0, "nodes": 0}
@@ -300,9 +302,12 @@ class Sim:
                 self._engine(w.allies_turn)
             if hasattr(w, "tick_hazards"):
                 self._engine(w.tick_hazards)
+        heroes = self.living_heroes()
         for m in [m for m in self.foes() if getattr(m, "aware", False)]:
             if getattr(m, "caster", False):
-                with self._Guard(w, "monsters"):
+                if not any(chebyshev(m.pos, h.pos) <= CASTER_REACH for h in heroes):
+                    continue                    # (far from every hero: it waits, as in D2)
+                with self._Guard(w, "monsters"), self._short_paths(w.grid):
                     self._engine(w._monster_turn, m)       # (its own status, spells and moves)
                 continue
             s = self._state(m)
@@ -317,6 +322,29 @@ class Sim:
             if ok is False and m.alive:
                 s.stunned = self.frame + ROUND
                 s.mode, s.frames, s.path, s.hit_at = "idle", 0, [], -1
+
+    class _short_paths:
+        """The engine's caster monsters search their way with grid.find_path, which may look
+        over the whole floor (60000 cells) when the hero can't be reached - over a second on a
+        big outdoor floor, every round. While they move here, a search gives up after
+        CASTER_PATH cells; one that far off waits."""
+
+        def __init__(self, grid):
+            self.g = grid
+
+        def __enter__(self):
+            g = self.g
+            full = type(g).find_path
+
+            def find_path(start, goal, blocked=frozenset(), max_cost=None, allow_goal_blocked=False,
+                          limit=60000, _full=full, _g=g):
+                return _full(_g, start, goal, blocked, max_cost, allow_goal_blocked, min(limit, CASTER_PATH))
+            g.find_path = find_path
+            return self
+
+        def __exit__(self, *exc):
+            self.g.__dict__.pop("find_path", None)
+            return False
 
     def _step(self, u):
         s = self._state(u)

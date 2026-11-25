@@ -616,6 +616,29 @@ def test_futile_target():
     check(not sim._futile(h, s, m), "the floor's boss is never left")
 
 
+def test_caster_paths_capped():
+    """Caster monsters' path searches give up early instead of searching the whole floor."""
+    from autobattler.realtime import Sim, CASTER_PATH
+    from game.grid import Grid, FLOOR, WALL
+    g = Grid(300, 300, FLOOR)
+    for y in range(300):
+        g.cells[y][150] = WALL                 # a wall right across: no way to the far side
+    seen = []
+    full = Grid.find_path
+
+    def counting(self, *a, **kw):
+        seen.append(a[5] if len(a) > 5 else kw.get("limit"))
+        return full(self, *a, **kw)
+    Grid.find_path = counting
+    try:
+        with Sim._short_paths(g):
+            got = g.find_path((10, 10), (290, 290))
+        check(got is None and seen == [CASTER_PATH], "a caster's search stops after %d cells" % CASTER_PATH)
+        check("find_path" not in g.__dict__, "and the floor's own search is back afterwards")
+    finally:
+        Grid.find_path = full
+
+
 def test_runeword_bases():
     """Home: exceptional / elite plain items with all their sockets go to the stash; other plain
     gear is sold with the magic and rare items."""
@@ -984,6 +1007,7 @@ if __name__ == "__main__":
     test_ready_skeletons()
     test_line_of_fire()
     test_futile_target()
+    test_caster_paths_capped()
     test_runeword_bases()
     test_rare_cores()
     test_horadric_cube()

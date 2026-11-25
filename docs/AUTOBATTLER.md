@@ -270,6 +270,10 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
 - Summons think every 6 frames and share the list of monsters round their summoner each frame;
   their path searches look at 600 cells at most. At most 4 full path searches run per frame for
   all runs together.
+- Caster monsters (shamans, mages, ...) still move with the engine's own code. Its path search
+  could look over a whole floor (up to 60000 cells) when no hero could be reached, which took a
+  second or more on big outdoor floors every round. In the autobattler such a search now stops
+  after 1500 cells, and a caster more than 40 cells from every hero waits.
 - perf.log (every 30 seconds, and F3 on screen) lists for each run its time per game frame and how
   many floors it built and how long that took.
 - Spells are aimed only as far as the engine lets them fly (12 cells); a cast further away used to
