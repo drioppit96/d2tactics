@@ -30,13 +30,34 @@ def rare_cores(hero=None):
     return account.amount("rare_cores")
 
 
-def on_sold(hero, it):
-    """Every sale goes through here: a rare item gives the account a Rare Core. -> cores gained."""
-    if getattr(it, "rarity", "") != "rare":
-        return 0
+def platinum(hero=None):
+    """The account's Platinum (shared by every hero): one for every socketed item sold."""
     from . import account
-    account.add("rare_cores", 1)
-    return 1
+    return account.amount("platinum")
+
+
+def on_sold(hero, it):
+    """Every sale goes through here: a rare item gives the account a Rare Core, a socketed one
+    (any kind) a Platinum. -> (cores, platinum) gained."""
+    from . import account
+    core = plat = 0
+    if getattr(it, "rarity", "") == "rare":
+        account.add("rare_cores", 1)
+        core = 1
+    if int(getattr(it, "sockets", 0) or 0) > 0:
+        account.add("platinum", 1)
+        plat = 1
+    return core, plat
+
+
+def gains_text(core, plat):
+    """" and a Rare Core and 2 Platinum" - what a sale brought besides gold."""
+    parts = []
+    if core:
+        parts.append("a Rare Core" if core == 1 else "%d Rare Cores" % core)
+    if plat:
+        parts.append("%d Platinum" % plat)
+    return "".join(" and " + p for p in parts)
 
 
 CUBE_W, CUBE_H = 3, 4       # the Horadric Cube (D2's 3 x 4), a menu of its own here
@@ -347,9 +368,9 @@ class Bench:
             return False
         it.inv_pos = None
         p.gold += value
-        core = on_sold(p, it)
+        core, plat = on_sold(p, it)
         self.log("Sold %s for %d gold%s." % (getattr(it, "shown_name", it.name), value,
-                                              " and a Rare Core" if core else ""), GREY)
+                                              gains_text(core, plat)), GREY)
         self.changed = True
         return True
 
@@ -615,6 +636,21 @@ class Bench:
             st.bank[it.code] = st.bank.get(it.code, 0) + 1
             self.changed = True
             return True
+        if (getattr(st, "view", None) or ("",))[0] == "sets":
+            # the set pages: a set item onto its own place (taken: into Spares)
+            from . import stash as abstash
+            if abstash.set_of(it) is None:
+                self.log("Only set items go on the set pages.", GREY)
+                return False
+            p.inventory.remove(it)
+            pos, it.inv_pos = it.inv_pos, None
+            if not (abstash.into_set(st, it) or abstash.into_pages(st, st.spares, it)):
+                it.inv_pos = pos
+                p.inventory.append(it)
+                self.log("No room in %s." % abstash.SPARE_NAME, GREY)
+                return False
+            self.changed = True
+            return True
         page = self.stash_page()
         if page is None:
             return False
@@ -625,6 +661,47 @@ class Bench:
             p.inventory.append(it)
             self.log("This stash tab is full.", GREY)
             return False
+        self.changed = True
+        return True
+
+    def set_slot_click(self, set_idx, item_idx):
+        """Click on a set item's place on its set's page: take the item there, or put the cursor
+        item down if this is its place."""
+        from . import stash as abstash
+        st = self.stash
+        if st is None:
+            return False
+        page = st.sets.setdefault(set_idx, {})
+        if self.held is None:
+            it = page.get(item_idx)
+            if it is None:
+                return False
+            page.pop(item_idx, None)
+            self.held = it
+            return True
+        if abstash.set_of(self.held) != (set_idx, item_idx):
+            self.log("That isn't this item's place.", GREY)
+            return False
+        if page.get(item_idx) is not None:
+            self.held, page[item_idx] = page[item_idx], self.held
+        else:
+            page[item_idx] = self.held
+            self.held = None
+        page[item_idx].cube_pos = None
+        return True
+
+    def set_slot_to_backpack(self, set_idx, item_idx):
+        st = self.stash
+        if st is None or self.held is not None:
+            return False
+        page = st.sets.get(set_idx) or {}
+        it = page.get(item_idx)
+        if it is None:
+            return False
+        if not self.player.inv_add(it):
+            self.log("The backpack is full.", GREY)
+            return False
+        page.pop(item_idx, None)
         self.changed = True
         return True
 
@@ -661,19 +738,11 @@ class Bench:
 
     # ------------------------------------------------------------ closing the screen
     def _into_stash(self, it):
-        from game import cube as cb
         st = self.stash
         if st is None:
             return False
-        if cb.bankable(it):
-            st.bank[it.code] = st.bank.get(it.code, 0) + 1
-            return True
-        for i, page in enumerate(st.pages):
-            box = type("Page", (), {})()
-            box.contents, box.grid_size = page, st.grid_size
-            if cb.cube_add(box, it):
-                return True
-        return False
+        from . import stash as abstash
+        return abstash.place(st, it) or abstash.into_pages(st, st.pages, it)
 
     def finish(self):
         """The cursor item and the floor go back into the backpack (in town, else into the stash);

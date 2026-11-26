@@ -26,6 +26,9 @@ premade_maps = yes
 # how the 800 x 600 picture is fitted to the window: gpu (by the graphics card, fastest),
 # sharp (by the processor, plain pixels) or smooth (by the processor, smoothed - the slowest)
 screen_scale = gpu
+# the window when the game starts: fit (as big as the desktop allows, in the game's 4:3 shape) or
+# settings (settings.ini's display width and height)
+window_size = fit
 # game speed: 1 = D2's own 25 frames a second, 2 = twice as fast ...
 speed = 1.0
 # walking speed in cells per second for each point of D2's velocity (CharStats / MonStats)
@@ -37,7 +40,7 @@ floor_pause = 1
 
 DEFAULTS = {"max_heroes": 30, "max_active": 8, "max_group": 4, "big_maps": True, "speed": 1.0,
             "move_scale": 1.0, "floor_pause": 1.0, "map_area": 0.5, "premade_maps": True,
-            "screen_scale": "gpu"}
+            "screen_scale": "gpu", "window_size": "fit"}
 
 
 def load():
@@ -62,6 +65,8 @@ def load():
         out["premade_maps"] = s.getboolean("premade_maps")
         sc = s.get("screen_scale", "gpu").strip().lower()
         out["screen_scale"] = sc if sc in ("gpu", "sharp", "smooth") else "gpu"
+        ws = s.get("window_size", "fit").strip().lower()
+        out["window_size"] = ws if ws in ("fit", "settings") else "fit"
         out["speed"] = max(0.25, min(8.0, s.getfloat("speed")))
         out["move_scale"] = max(0.2, min(4.0, s.getfloat("move_scale")))
         out["floor_pause"] = max(0.0, min(30.0, s.getfloat("floor_pause")))

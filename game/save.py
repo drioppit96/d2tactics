@@ -57,6 +57,32 @@ def load_shared_stash(content):
                     st.contents.append(it)
                 else:
                     cube_add(st, it)
+    # (the D2 Autobattler's own tabs: unique items, spares, and a page per set)
+    for key in ("uniques", "spares"):
+        if sd.get(key) is None:
+            continue
+        pages = []
+        for page in sd.get(key) or []:
+            box = type("Page", (), {})()
+            box.contents, box.grid_size = [], st.grid_size
+            for d in page or []:
+                it = _item_from(d, content)
+                if it is None:
+                    continue
+                if getattr(it, "cube_pos", None) is not None:
+                    box.contents.append(it)
+                else:
+                    cube_add(box, it)
+            pages.append(box.contents)
+        setattr(st, key, pages)
+    if sd.get("sets") is not None:
+        st.sets = {}
+        for sname, members in (sd.get("sets") or {}).items():
+            for idx, d in (members or {}).items():
+                it = _item_from(d, content)
+                if it is not None:
+                    it.cube_pos = None
+                    st.sets.setdefault(sname, {})[idx] = it
     stash_tab(st, 1)
     return st
 
@@ -75,7 +101,22 @@ def _stash_dict(st):
                 # the account's own things: the four essences and the party's purse
                 essences={k: int(v) for k, v in (getattr(st, "essences", None) or {}).items()},
                 purse=int(getattr(st, "purse", 0) or 0),
-                pages=[[_item_dict(it) for it in page] for page in pages])
+                pages=[[_item_dict(it) for it in page] for page in pages],
+                **_extra_tabs(st))
+
+
+def _extra_tabs(st):
+    """The D2 Autobattler's own tabs (unique items, spares, a page per set), when it has them."""
+    out = {}
+    for key in ("uniques", "spares"):
+        pages = getattr(st, key, None)
+        if pages is not None:
+            out[key] = [[_item_dict(it) for it in page] for page in pages]
+    sets = getattr(st, "sets", None)
+    if sets is not None:
+        out["sets"] = {s: {i: _item_dict(it) for i, it in members.items() if it is not None}
+                       for s, members in sets.items()}
+    return out
 
 
 def _item_dict(it):

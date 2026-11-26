@@ -20,6 +20,7 @@ F3 timings (also written to perf.log every 30 seconds), F9 a 30-second report (s
 group.
 """
 import os
+import random
 import sys
 import time
 
@@ -36,6 +37,7 @@ from autobattler.runs import DIFF_NAMES, unlocked, difficulty_of        # noqa: 
 from autobattler.timing import FPS, Timings                     # noqa: E402
 from autobattler.ui import Look, GOLD, WHITE, GREY, RED, GREEN, BLUE, W, H   # noqa: E402
 YELLOW = (255, 255, 100)            # D2's rare-item colour (Rare Cores)
+PLATINUM = (205, 215, 230)          # Platinum (socketed items sold)
 
 CLASS_NAMES = {"ama": "Amazon", "sor": "Sorceress", "nec": "Necromancer", "pal": "Paladin",
                "bar": "Barbarian", "dru": "Druid", "ass": "Assassin"}
@@ -118,6 +120,20 @@ class Perf:
             pass
 
 
+def fit_window(w, h):
+    """The biggest window of the game's own 4:3 shape that fits on the desktop (with room for the
+    taskbar and the title bar); the settings' size if the desktop can't be asked."""
+    try:
+        sizes = pygame.display.get_desktop_sizes()
+        dw, dh = sizes[0]
+    except Exception:
+        return w, h
+    k = min((dw - 16) / float(W), (dh - 90) / float(H))
+    if k <= 0:
+        return w, h
+    return int(W * k), int(H * k)
+
+
 class App:
     def __init__(self):
         self.cfg_game = load_settings()
@@ -126,6 +142,8 @@ class App:
         roster.use_folder()
         pygame.init()
         w, h = self.cfg_game.getint("display", "width"), self.cfg_game.getint("display", "height")
+        if self.cfg.get("window_size", "fit") == "fit":
+            w, h = fit_window(w, h)
         self._gpu = False
         if self.cfg.get("screen_scale", "gpu") == "gpu":
             # the graphics card scales the 800 x 600 picture to the window: on the processor
@@ -1433,8 +1451,32 @@ class App:
         self._gear_saved(b)
 
     def stash_set_tab(self, tab):
-        from game.cube import stash_tab
-        stash_tab(self.shared_stash(), tab)
+        st = self.shared_stash()
+        if tab == 0:
+            abstash.show(st, "bank", 1, self.content)
+        else:
+            abstash.show(st, "stash", tab, self.content)
+
+    def stash_view(self, view):
+        st = self.shared_stash()
+        abstash.ensure(st)
+        keep = self.__dict__.setdefault("_stash_pages", {})
+        keep[st.view[0]] = st.view[1]
+        abstash.show(st, view, keep.get(view, 1), self.content)
+
+    def stash_page_to(self, page):
+        st = self.shared_stash()
+        abstash.ensure(st)
+        abstash.show(st, st.view[0], page, self.content)
+
+    def set_slot_click(self, arg):
+        b = self.bench
+        if b is None or arg is None:
+            return
+        if b.set_slot_click(*arg):
+            self.save_stash()
+            b.changed = True
+            self._gear_saved(b)
 
     def stash_grid_click(self):
         b = self.bench
@@ -1473,6 +1515,9 @@ class App:
                     self.save_stash()
             elif kind == "bank":
                 if b.bank_take(arg, to_backpack=True):
+                    self.save_stash()
+            elif kind == "setslot":
+                if b.set_slot_to_backpack(*arg):
                     self.save_stash()
             self._gear_saved(b)
             return True
@@ -1563,26 +1608,39 @@ class App:
         L.text(c, "small", "or Ctrl + right click it: sell.", GREY, 18, y + 14)
         L.text(c, "small", "New stock each visit to town.", GREY, 18, y + 28)
 
+    STASH_VIEWS = [("bank", "Gems"), ("stash", "Stash"), ("uniques", "Uniques"), ("sets", "Sets"),
+                   ("spares", abstash.SPARE_NAME)]
+
     def _draw_stash(self, b):
         c, L, h = self.canvas, self.look, b.player
         st = self.shared_stash()
-        from game.cube import STASH_TABS
-        self.button((18, 72, 120, 22), "Gems & Runes", self.stash_set_tab, 0)
-        if st.tab == 0:
-            pygame.draw.rect(c, GOLD, pygame.Rect(18, 72, 120, 22).inflate(2, 2), 1)
-        cur = max(1, st.tab)
-        self.button((150, 72, 30, 22), "<", self.stash_set_tab, cur - 1 if cur > 1 else STASH_TABS - 1)
-        self.button((184, 72, 96, 22), "Tab %d / %d" % (cur, STASH_TABS - 1), self.stash_set_tab, cur)
-        if st.tab != 0:
-            pygame.draw.rect(c, GOLD, pygame.Rect(184, 72, 96, 22).inflate(2, 2), 1)
-        self.button((284, 72, 30, 22), ">", self.stash_set_tab, cur + 1 if cur < STASH_TABS - 1 else 1)
-
-        if st.tab == 0:
+        abstash.ensure(st)
+        view, page = st.view
+        for i, (key, label) in enumerate(self.STASH_VIEWS):
+            r = pygame.Rect(18 + i * 60, 72, 58, 22)
+            self.button(r, label, self.stash_view, key)
+            if key == view:
+                pygame.draw.rect(c, GOLD, r.inflate(2, 2), 1)
+        if view != "bank":
+            n = abstash.page_count(st, view, self.content)
+            if view == "sets":
+                sets = abstash.set_list(self.content)
+                title = sets[page - 1][1] if sets else "Sets"
+                title = "%s  (%d/%d)" % (title, page, n)
+            else:
+                title = "Tab %d / %d" % (page, n)
+            self.button((18, 98, 30, 22), "<", self.stash_page_to, page - 1)
+            self.button((52, 98, 228, 22), title, self.stash_page_to, page)
+            self.button((284, 98, 30, 22), ">", self.stash_page_to, page + 1)
+        if view == "bank":
             self._draw_bank(b, st)
+            return
+        if view == "sets":
+            self._draw_set_page(b, st, page)
             return
         k = self.STASH_CELL
         gw, gh = st.grid_size
-        gx, gy = 18 + (300 - gw * k) // 2, 104
+        gx, gy = 18 + (300 - gw * k) // 2, 126
         self._stash_xy = (gx, gy)
         grid = pygame.Rect(gx - 1, gy - 1, gw * k + 2, gh * k + 2)
         L.inset(c, grid)
@@ -1615,6 +1673,109 @@ class App:
                 c.blit(tint, (gx + cell[0] * k, gy + cell[1] * k))
         L.text(c, "small", "Shared by every hero. Ctrl + click in the", GREY, 18, gy + gh * k + 4)
         L.text(c, "small", "backpack: straight into the stash.", GREY, 18, gy + gh * k + 18)
+
+    SET_ORDER = ("helm", "amul", "tors", "weap", "shie", "glov", "belt", "boot", "ring")
+
+    def _set_ghost(self, si_index):
+        """A stand-in of a set item, to show its place on its set's page (made once)."""
+        cache = self.__dict__.setdefault("_set_ghosts", {})
+        if si_index in cache:
+            return cache[si_index]
+        it = None
+        c = self.content
+        try:
+            si = c.set_item_by_index[si_index]
+            base = c.base_by_code.get(si["code"])
+            if base is not None:
+                it = c.make_set_item(base, max(1, si.get("lvl", 1)), random.Random(1), identified=True, which=si)
+        except Exception:
+            it = None
+        cache[si_index] = it
+        return it
+
+    def _set_rank(self, it):
+        anc = set((getattr(it, "base", None) or {}).get("ancestors") or ())
+        anc.add((getattr(it, "base", None) or {}).get("type", ""))
+        for i, k in enumerate(self.SET_ORDER):
+            if k in anc:
+                return i
+        return len(self.SET_ORDER)
+
+    def _draw_set_page(self, b, st, page):
+        """One set: every item of it has its own place, shown dim until it is in the stash."""
+        c, L, h = self.canvas, self.look, b.player
+        area = pygame.Rect(18, 126, 300, 352)
+        L.inset(c, area)
+        sets = abstash.set_list(self.content)
+        if not sets:
+            L.text(c, "small", "Needs the Diablo II files.", GREY, area.x, area.y + 20, "center", area.w)
+            return
+        set_idx, name, members = sets[page - 1]
+        have = st.sets.get(set_idx) or {}
+        ghosts = [(m, self._set_ghost(m)) for m in members]
+        ghosts.sort(key=lambda mg: self._set_rank(mg[1]) if mg[1] is not None else 99)
+        k = self.STASH_CELL
+        cols = 3
+        cw = area.w // cols
+        rows = [ghosts[i:i + cols] for i in range(0, len(ghosts), cols)]
+        y = area.y + 10
+        for row in rows:
+            rh = max((max(1, g.invh or 1) if g is not None else 2) for _m, g in row) * k
+            for j, (m, g) in enumerate(row):
+                real = have.get(m)
+                show_it = real if real is not None else g
+                w = max(1, getattr(show_it, "invw", 1) or 1) * k if show_it is not None else 2 * k
+                hh = max(1, getattr(show_it, "invh", 1) or 1) * k if show_it is not None else 2 * k
+                cx = area.x + j * cw + cw // 2
+                r = pygame.Rect(cx - w // 2, y + (rh - hh) // 2, w, hh)
+                pygame.draw.rect(c, (24, 22, 18), r)
+                pygame.draw.rect(c, (0, 160, 0) if real is not None else (70, 62, 48), r, 1)
+                if show_it is not None:
+                    L.icon(c, show_it, r.x + 1, r.y + 1, r.w - 2, r.h - 2)
+                if real is None:
+                    dim = pygame.Surface(r.size, pygame.SRCALPHA)
+                    dim.fill((0, 0, 0, 170))
+                    c.blit(dim, r.topleft)
+                label = self.content.set_item_by_index[m]["name"] if m in self.content.set_item_by_index else m
+                for li, line in enumerate(self._wrap2(label, cw - 6)):
+                    L.text(c, "small", line, (0, 255, 0) if real is not None else GREY,
+                           area.x + j * cw, y + rh + 3 + li * 13, "center", cw)
+                self.region(r, self.set_slot_click, (set_idx, m))
+                if real is not None:
+                    self._town_hot.append((r, "setslot", (set_idx, m)))
+                if self.hot(r) and b.held is None:
+                    if real is not None:
+                        self._tip = L.item_lines(real, h) + [("Right click: into the backpack", GREY)]
+                    else:
+                        self._tip = ([(label, (0, 255, 0)), ("Not in the stash yet: its place on the %s page" % name, GREY)]
+                                     + ([(t, col) for t, col in L.item_lines(g, h)[1:]] if g is not None else []))
+            y += rh + 34
+        got = sum(1 for m in members if have.get(m) is not None)
+        L.text(c, "small", "%d of %d pieces. A second one goes to %s." % (got, len(members), abstash.SPARE_NAME),
+               GREY, 18, area.bottom + 4)
+        L.text(c, "small", "Ctrl + click a set item in the backpack: onto its place.", GREY, 18, area.bottom + 18)
+
+    def _wrap2(self, text, width):
+        """A name in at most two lines of this width (the second cut short if it must be)."""
+        f = self.sysfonts["small"]
+        words, lines = text.split(), [""]
+        for wd in words:
+            t = (lines[-1] + " " + wd).strip()
+            if f.size(t)[0] <= width or not lines[-1]:
+                lines[-1] = t
+            elif len(lines) < 2:
+                lines.append(wd)
+            else:
+                lines[-1] = t
+        return [self._fit_text(l, width) for l in lines]
+
+    def _fit_text(self, text, width):
+        f = self.sysfonts["small"]
+        while text and f.size(text)[0] > width:
+            text = text[:-2] + "."
+            if len(text) <= 3:
+                break
+        return text
 
     def _draw_bank(self, b, st):
         """The gem & rune tab: one stack per kind, with how many."""
@@ -1695,6 +1856,7 @@ class App:
                 pygame.draw.rect(sub, (74, 66, 50), box, 1)
                 L.text(sub, "med", "Gold  %d" % h.gold, GOLD, box.x + 10, box.y + 6)
                 L.text(sub, "med", "Rare Cores  %d" % gear.rare_cores(h), YELLOW, box.x + 10, box.y + 24)
+                L.text(sub, "med", "Platinum  %d" % gear.platinum(h), PLATINUM, box.x + 150, box.y + 24)
                 if tip and b.held is None:
                     self._tip = tip
                 return
@@ -1721,6 +1883,7 @@ class App:
                 self._tip = L.item_lines(it, h)
         L.text(sub, "med", "Gold  %d" % h.gold, GOLD, 60, gy + rows * ic + 12)
         L.text(sub, "med", "Rare Cores  %d" % gear.rare_cores(h), YELLOW, 60, gy + rows * ic + 30)
+        L.text(sub, "med", "Platinum  %d" % gear.platinum(h), PLATINUM, 200, gy + rows * ic + 30)
 
     # ------------------------------------------------------------ character: stats and skills
     CHAR_X, TREE_X, PANEL_Y = 80, 400, 40      # D2's two 320 x 432 panels side by side

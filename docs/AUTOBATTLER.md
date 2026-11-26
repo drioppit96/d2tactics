@@ -468,9 +468,10 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
 - A full backpack: when a hero finds something he wants and has no room for it, and he carries
   gems, runes, unique or set items, his run goes to town on its own (the floor waits). Every
   return to town, automatic or by the To town button, puts the gems and runes from the backpack on
-  their stacks in the stash's gems & runes tab, and the unique and set items and the runeword bases
-  (exceptional or elite plain items with all the sockets their base can have at their item level)
-  into the first stash tabs with room (autobattler/stash.py). On an automatic trip he also sells
+  their stacks in the stash's gems & runes tab, unique items into the Uniques tabs, each set item
+  onto its own place on its set's page (one already there: into Spares), and the kept socketed
+  bases (plain - white or grey - items with sockets that are elite, tier III, or ethereal) into
+  Spares (autobattler/stash.py place()). On an automatic trip he also sells
   every magic (blue) and rare (yellow) item and every other plain weapon and armor in his backpack
   at D2's sell price (runs.sellable_on_trip); charms and what he wears are kept, and a trip by the
   To town button sells nothing. After an automatic trip he goes
@@ -533,12 +534,21 @@ is drawn with plain boxes and a system font.
   - Gamble: Hadriel's gambling, with D2's odds.
   - Stash: the account's stash, the same one for every hero (saves_auto/_stash.json): the gems
     and runes tab (one stack per kind; click takes one onto the cursor, right click puts one in the
-    backpack, a gem or rune dropped on it goes on its stack) and 29 tabs of 12 x 16. Click picks up
+    backpack, a gem or rune dropped on it goes on its stack), 29 Stash tabs of 12 x 16 (filled by
+    hand), 10 Uniques tabs, a Sets page for every set in Sets.txt (32 in D2) and 10 Spares tabs
+    (kept socketed bases, and set items whose place is already taken; the tab has no name of its
+    own yet: stash.SPARE_NAME). On a set page every item of the set has a fixed place, shown dim
+    with its name until that item is in the stash; a set item can only go on its own place, and
+    Ctrl + click on one in the backpack puts it there (taken: into Spares). Click picks up
     and puts down (swapping with one item, like D2); right click moves an item to the backpack;
     Ctrl + click in the backpack moves one into the stash; with the stash open, a right click on a
     gem or rune in the backpack puts it on its stack. Gold stays each hero's own.
   - Leaving the screen with an item on the cursor puts it in the backpack, or in the stash when
     the backpack is full.
+- Platinum: an account-wide currency (account.py, beside Rare Cores): one for every socketed
+  item sold, whatever its quality, by hand or on a trip home. Shown under the backpack.
+- The window opens at the biggest 4:3 size that fits on the desktop (config window_size = fit;
+  settings uses settings.ini's display width and height).
 - Rare Cores: an account-wide currency (autobattler/account.py, saves_auto/_account.json), shared
   by every hero. Every rare (yellow) item any hero sells gives one, whether by hand (the sell box,
   Ctrl + right click, the shop's shelves) or on the automatic trip home (gear.on_sold). The hero

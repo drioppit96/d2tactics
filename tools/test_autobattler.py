@@ -353,15 +353,16 @@ def test_full_bag_trip():
     r = mgr.start([h])
     for _ in range(60):
         _tick(mgr)
-    bank0, items0 = st.bank.get("gcr", 0), sum(len(p) for p in st.pages)
+    stash.ensure(st)
+    bank0, items0 = st.bank.get("gcr", 0), sum(len(p) for p in st.uniques)
     worn = Item("Magic Boots", "lbt", "boots", rarity="magic")
     h.equipment["boots"] = worn
     gold0 = h.gold
     r.sim.no_room = True
     _tick(mgr)
     check(r.state == "town", "a full backpack sends him home")
-    check(st.bank.get("gcr", 0) > bank0 and sum(len(p) for p in st.pages) > items0
-          and not any(stash.keeps(it) for it in h.inventory), "gems and unique items go to the stash")
+    check(st.bank.get("gcr", 0) > bank0 and sum(len(p) for p in st.uniques) > items0
+          and not any(stash.keeps(it) for it in h.inventory), "gems and unique items go to the stash (Uniques tabs)")
     check(not any(it.rarity in ("magic", "rare") for it in h.inventory) and h.gold > gold0
           and h.equipment["boots"] is worn, "magic and rare items in the backpack are sold, worn ones kept")
     for _ in range(int(r.AUTO_TOWN_SECONDS * 25) + 2):
@@ -1239,30 +1240,68 @@ def test_no_stun_lock():
 
 
 def test_runeword_bases():
-    """Home: exceptional / elite plain items with all their sockets go to the stash; other plain
-    gear is sold with the magic and rare items."""
-    from autobattler import stash
+    """Home: plain socketed bases that are elite (tier III) or ethereal go to the stash's Spares
+    tab; other plain gear is sold with the magic and rare items, and each socketed item sold
+    gives a Platinum."""
+    from autobattler import stash, gear as abgear
     from autobattler.runs import sell_magic_and_rare
     from game.items import Item
 
-    def gear(code, tiers, sockets, maxsock=4):
+    def gear(code, tiers, sockets, maxsock=4, eth=False):
         it = Item(code, code, "armor", rarity="normal")
         it.base = {"code": code, "tiers": tiers, "maxsock": maxsock}
         it.sockets = sockets
+        it.ethereal = eth
         return it
-    elite4 = gear("uar", ("aar", "xar", "uar"), 4)          # an elite 4-socket armor: a base
-    exc3 = gear("xar", ("aar", "xar", "uar"), 3)            # exceptional, one socket short
-    norm4 = gear("aar", ("aar", "xar", "uar"), 4)           # normal tier: no
-    check(stash.keeps(elite4) and not stash.keeps(exc3) and not stash.keeps(norm4),
-          "only tier II / III with all their sockets are kept")
+    tiers = ("aar", "xar", "uar")
+    elite2 = gear("uar", tiers, 2)              # elite, not all its sockets: kept
+    exc3 = gear("xar", tiers, 3)                # exceptional: sold
+    eth_norm = gear("aar", tiers, 2, eth=True)  # ethereal, normal tier: kept
+    norm4 = gear("aar", tiers, 4)               # normal tier: sold
+    elite0 = gear("uar", tiers, 0)              # no sockets: sold, no Platinum
+    check(stash.keeps(elite2) and stash.keeps(eth_norm) and not stash.keeps(exc3)
+          and not stash.keeps(norm4) and not stash.keeps(elite0),
+          "kept: socketed elite or ethereal bases only")
     h = _hero("Sorter")
-    for it in (elite4, exc3, norm4):
+    for it in (elite2, exc3, eth_norm, norm4, elite0):
         h.inv_add(it)
     st = stash.get(None)
+    p0 = abgear.platinum(h)
     stash.deposit(h, st)
     sold, _ = sell_magic_and_rare(h)
-    check(any(elite4 in p for p in st.pages) and exc3 not in h.inventory and norm4 not in h.inventory and sold == 2,
-          "the base goes to the stash, the rest is sold")
+    check(any(elite2 in p for p in st.spares) and any(eth_norm in p for p in st.spares) and sold == 3,
+          "the bases go to Spares, the rest is sold")
+    check(abgear.platinum(h) - p0 == 2, "two socketed items sold: 2 Platinum (%d)" % (abgear.platinum(h) - p0))
+
+
+def test_stash_tabs():
+    """Unique items into the Uniques tabs; a set item onto its own place on its set's page, a
+    second one of it into Spares; all of it kept through a save and a load."""
+    from autobattler import stash
+    from game import save as gsave
+    from game.items import Item
+    st = stash.get(None)
+    uni = Item("Shako", "uap", "helm", rarity="unique")
+    uni.invw, uni.invh = 2, 2
+    s1 = Item("Tal Rasha's Horadric Crest", "xsk", "helm", rarity="set")
+    s1.set_name, s1.set_item = "Tal Rasha's Wrappings", "Tal Rasha's Horadric Crest"
+    s2 = Item("Tal Rasha's Horadric Crest", "xsk", "helm", rarity="set")
+    s2.set_name, s2.set_item = s1.set_name, s1.set_item
+    h = _hero("Keeper")
+    for it in (uni, s1, s2):
+        h.inv_add(it)
+    stash.deposit(h, st)
+    check(any(uni in p for p in st.uniques), "a unique goes to the Uniques tabs")
+    check(st.sets.get(s1.set_name, {}).get(s1.set_item) is s1, "a set item goes onto its place on its set's page")
+    check(any(s2 in p for p in st.spares), "the same set item again: into Spares")
+    d = gsave._stash_dict(st)
+    check(d.get("sets", {}).get(s1.set_name, {}).get(s1.set_item) is not None and d.get("uniques") and d.get("spares"),
+          "the new tabs are saved")
+    stash.show(st, "uniques", 1)
+    check(st.contents is st.uniques[0] and st.tab != 0, "the Uniques tab is a grid page")
+    stash.show(st, "sets", 1)
+    check(st.tab == 0, "a set page is not a grid page")
+    stash.show(st, "stash", 1)
 
 
 def test_rare_cores():
@@ -1569,6 +1608,21 @@ def test_inventory_screen():
         app.inv_click()
         check(app.bench.held is None and first.inv_pos[1] + p._size(first)[1] == 8,
               "and puts it down in the bottom row")
+    app.open_town("stash")
+    ok = True
+    for v, _label in app.STASH_VIEWS:
+        app.stash_view(v)
+        app.regions = []
+        try:
+            app.draw_town()
+            app.stash_page_to(2)
+            app.regions = []
+            app.draw_town()
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            ok = False
+    check(ok, "the stash screen draws every view (Gems, Stash, Uniques, Sets, Spares)")
     app.go("roster")
     check(app.bench is None, "leaving the screen closes the bench")
     roster.delete(p.name)
@@ -1625,6 +1679,7 @@ if __name__ == "__main__":
     test_no_casting_across_a_railing()
     test_no_stun_lock()
     test_runeword_bases()
+    test_stash_tabs()
     test_rare_cores()
     test_horadric_cube()
     test_socketing()

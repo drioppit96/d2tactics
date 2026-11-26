@@ -1,11 +1,12 @@
 """Account-wide currencies of the D2 Autobattler (saves_auto/_account.json), shared by every hero.
 
     rare_cores   one for every rare (yellow) item any hero sells; spent in the Horadric Cube
+    platinum     one for every socketed item any hero sells
 """
 import json
 import os
 
-CURRENCIES = {"rare_cores": "Rare Cores"}
+CURRENCIES = {"rare_cores": "Rare Cores", "platinum": "Platinum"}
 _DATA = [None]
 
 
