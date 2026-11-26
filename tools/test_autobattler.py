@@ -1643,6 +1643,33 @@ def test_inventory_screen():
         app.inv_click()
         check(app.bench.held is None and first.inv_pos[1] + p._size(first)[1] == 8,
               "and puts it down in the bottom row")
+    # the four panels, each on its own
+    app.go("roster")
+    app.open_panel("inventory", True)
+    check(app.screen_name == "panels" and app.panels == {"left": None, "right": "inventory"},
+          "Inventory opens alone")
+    app.open_panel("loot")
+    check(app.panels == {"left": "loot", "right": "inventory"}, "Loot opens beside it")
+    app.open_panel("stats")
+    check(app.panels == {"left": "stats", "right": "inventory"}, "Stats takes the left side's place")
+    app.open_panel("skills")
+    check(app.panels == {"left": "stats", "right": "skills"}, "Skills takes the right side's place")
+    ok = True
+    for combo in ({"left": "loot", "right": None}, {"left": "stats", "right": None},
+                  {"left": None, "right": "inventory"}, {"left": None, "right": "skills"},
+                  {"left": "loot", "right": "skills"}, {"left": "stats", "right": "inventory"}):
+        app.panels = dict(combo)
+        app.regions = []
+        try:
+            app.draw_panels()
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            ok = False
+    check(ok, "every mix of panels draws")
+    app.panels = {"left": None, "right": "skills"}
+    app.open_panel("skills")
+    check(app.screen_name == "roster", "the last panel closed: back to the roster")
     app.open_town("stash")
     ok = True
     for v, _label in app.STASH_VIEWS:

@@ -503,7 +503,8 @@ is drawn with plain boxes and a system font.
 - Heroes: the roster (a red + marks a hero with points to spend); a live view of the selected
   hero's floor (click it to watch full screen); his life, mana, level, style, gold, points to
   spend, what his brain is doing and the run's last events; buttons New hero, Start run, Stop
-  run, To town, Watch, Style, Inventory / Loot, Abilities, Pickup, Shop, Stash. A hero not on a
+  run, To town, Watch, Inventory, Loot, Stats, Skills, Shop, Stash, Horadric Cube, Farm, Style,
+  Difficulty. A hero not on a
   run is in town (Sanctuary, the Act 6 town). The speed buttons are gone; `speed` in
   autobattler.ini still sets the game speed.
 - The hero card shows his build (as his brain sees it) and how he fights with it. While he has summons up, the
@@ -576,15 +577,21 @@ is drawn with plain boxes and a system font.
 - No essences: the three account currencies of D2 Tactics (game/essences.py) don't drop in the
   autobattler (essences.DROPS is turned off by config.apply_d2_rules) and aren't shown anywhere.
   D2's own boss essences (the Token of Absolution's) are untouched.
-- Inventory / Loot: the loot window on the left, D2's own inventory panel (invchar6) on the right,
-  drawn by the game's HUD code, with the equipment slots, the I / II weapon tabs and the backpack
+- The hero's four panels open and close on their own, like D2's (screen "panels"): Loot and
+  Stats on the left (one at a time), Inventory and Skills on the right (one at a time). Each is
+  always in the same place whatever else is open; opening one closes the other on its side, and
+  clicking an open one (or its key, or its own close button) closes it. The roster's buttons open
+  one alone; the buttons at the top of the screen open the others beside it. With the last one
+  closed it is back to the roster. With Inventory open and no Loot, the item tools (Identify all,
+  Swap weapons, sell box, floor box) sit at the bottom left on their own.
+- Inventory: D2's own inventory panel (invchar6) on the right, drawn by the game's HUD code, with the equipment slots, the I / II weapon tabs and the backpack
   grown to 8 rows.
   - Charms: a 4 x 8 charm inventory right of the panel, level with the backpack, in the panel's own
     cell art. Only charms go in it, and only the charms in it work (Player._charm_items, through
     qol["charm_grid"]); a charm in the backpack does nothing. Right click moves a charm between the
     backpack and the charm inventory. Charms are never sold on the trip home. The first time, the
     charms a hero carries move into it.
-  - Loot: every item on the selected hero's floor laid out like the stash (13 x 10, pages), with
+- Loot (left): every item on the selected hero's floor laid out like the stash (13 x 10, pages), with
     filters (All, Gold, Potions, Runes, Gems, Charms, Jewelry, Unique, Set, Rare, Magic, Bases) and
     a search field (click it to type) that matches the name and the item's description lines.
     Green items are ones his pickup rules want. Click an item to take it with him (the engine's
@@ -606,8 +613,9 @@ is drawn with plain boxes and a system font.
     not fit is sold, and the screen says so.
   - A hero who is not on a run is saved after each change; one on a run is saved by the run at
     the end of the floor.
-- Abilities: D2's character panel on the left and the skill tree on the right, both drawn by the
-  game's HUD code (`autobattler/points.py` does the spending).
+- Stats (left: D2's character panel) and Skills (right: the skill tree), both drawn by the
+  game's HUD code (`autobattler/points.py` does the spending); the Points switch is under
+  whichever is open.
   - + beside a stat puts a point in it (Shift + click: all of them). New life and mana are there
     at once, as in D2. Reset Stats gives every spent stat point back, free.
   - Click a skill to learn it (the game's rules: a point left, his level, the skills before it).
@@ -624,9 +632,9 @@ is drawn with plain boxes and a system font.
 - Pickup: his pickup rules and words.
 - Watch: his floor full screen at 1:1, with each hero's life, mana and decision.
 
-Keys: S start, X stop, W watch, T style, I or L inventory and loot, C abilities, P pickup,
-Esc back, Ctrl+click adds heroes to a group. On the Inventory and Sanctuary screens W swaps
-weapons; I / L close the Inventory screen, C the Abilities screen.
+Keys: S start, X stop, W watch, T style, I inventory, L loot, C stats, K skills, H cube, P pickup,
+Esc back, Ctrl+click adds heroes to a group. With the panels open, I / L / C / K open or close
+their own panel, and W swaps weapons while the inventory is open (and on the Sanctuary screens).
 
 ## Not done yet
 

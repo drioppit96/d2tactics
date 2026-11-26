@@ -326,8 +326,52 @@ class App:
             traceback.print_exc()
 
     # ------------------------------------------------------------ actions
+    #: the hero's panels: two on the left (one at a time) and two on the right, each always in
+    #: its own place, opened and closed on their own like D2's
+    PANEL_SIDE = {"loot": "left", "stats": "left", "inventory": "right", "skills": "right"}
+    PANEL_NAMES = {"loot": "Loot", "stats": "Stats", "inventory": "Inventory", "skills": "Skills"}
+    PANEL_KEYS = {"loot": "L", "stats": "C", "inventory": "I", "skills": "K"}
+
+    def panels_open(self):
+        if self.screen_name != "panels":
+            return {}
+        return self.__dict__.setdefault("panels", {"left": None, "right": None})
+
+    def panel_is(self, name):
+        return self.panels_open().get(self.PANEL_SIDE[name]) == name
+
+    def open_panel(self, name, alone=False):
+        """Open a panel (closing the other one on its side); clicked again, it closes. From
+        another screen, or alone, it opens by itself. All closed: back to the roster."""
+        p = self.panels_open()
+        if not p or alone:
+            p = {"left": None, "right": None}
+        side = self.PANEL_SIDE[name]
+        p[side] = None if p.get(side) == name and not alone else name
+        if not p["left"] and not p["right"]:
+            self.go("roster")
+            return
+        if self.screen_name != "panels":
+            self.go("panels")
+        self.panels = p
+        if not (p["right"] == "inventory" or p["left"] == "loot"):
+            self._close_bench()          # (no item panel open: the cursor item back in the backpack)
+
+    def close_panel(self, name):
+        if self.panel_is(name):
+            self.open_panel(name)
+
     def go(self, name):
-        if name not in ("inventory", "cube"):
+        if name == "inventory":
+            # (the old combined screen: loot and inventory together)
+            self.go("panels")
+            self.panels = {"left": "loot", "right": "inventory"}
+            return
+        if name == "character":
+            self.go("panels")
+            self.panels = {"left": "stats", "right": "skills"}
+            return
+        if name not in ("panels", "cube"):
             self._close_bench()          # the cursor item goes back in the backpack
         self.screen_name = name
         self.focus = {"create": "name", "pickup": "words"}.get(name)    # (the loot search: on a click)
@@ -454,15 +498,16 @@ class App:
         elif ev.type == pygame.MOUSEBUTTONUP and ev.button == 1:
             pos = self.logical(ev.pos)
             self.down = None
-            if self.screen_name == "character" and self.char_click(pos):
+            if self.screen_name == "panels" and self.char_click(pos):
                 return
-            if self.screen_name == "inventory":
+            if self.screen_name == "panels" and self.panel_is("loot"):
                 self.focus = None                # (a click on the search field gives it back)
             for rect, action, args in reversed(self.regions):
                 if rect.collidepoint(pos):
                     action(*args)
                     return
-        elif ev.type == pygame.MOUSEBUTTONUP and ev.button == 3 and self.screen_name in ("inventory", "town", "cube"):
+        elif ev.type == pygame.MOUSEBUTTONUP and ev.button == 3 and (
+                self.screen_name in ("town", "cube") or (self.screen_name == "panels" and self.panel_is("inventory"))):
             self.mouse = self.logical(ev.pos)
             if self.screen_name == "town" and self.town_right():
                 return
@@ -510,18 +555,20 @@ class App:
             return
         if self.screen_name == "town" and ev.key == pygame.K_w:
             self.inv_swap()
-        elif self.screen_name == "inventory" and ev.key in (pygame.K_w, pygame.K_l, pygame.K_i):
+        elif self.screen_name == "panels" and ev.key in (pygame.K_w, pygame.K_l, pygame.K_i, pygame.K_c, pygame.K_k):
             if ev.key == pygame.K_w:
-                self.inv_swap()
+                if self.panel_is("inventory"):
+                    self.inv_swap()
             else:
-                self.go("roster")             # (I / L close it again, like D2's I)
-        elif self.screen_name == "character" and ev.key == pygame.K_c:
-            self.go("roster")
+                # (each key opens or closes its own panel, like D2's I and C)
+                self.open_panel({pygame.K_l: "loot", pygame.K_i: "inventory", pygame.K_c: "stats",
+                                 pygame.K_k: "skills"}[ev.key])
         elif self.screen_name == "roster":
             act = {pygame.K_s: self.start_run, pygame.K_x: self.stop_run, pygame.K_t: self.cycle_style,
-                   pygame.K_w: lambda: self.go("watch"), pygame.K_l: lambda: self.go("inventory"),
-                   pygame.K_i: lambda: self.go("inventory"), pygame.K_p: lambda: self.go("pickup"),
-                   pygame.K_c: lambda: self.go("character"), pygame.K_h: lambda: self.go("cube")}.get(ev.key)
+                   pygame.K_w: lambda: self.go("watch"), pygame.K_l: lambda: self.open_panel("loot", True),
+                   pygame.K_i: lambda: self.open_panel("inventory", True), pygame.K_p: lambda: self.go("pickup"),
+                   pygame.K_c: lambda: self.open_panel("stats", True), pygame.K_k: lambda: self.open_panel("skills", True),
+                   pygame.K_h: lambda: self.go("cube")}.get(ev.key)
             if act is not None and (self.hero() is not None or ev.key == pygame.K_s):
                 act()
 
@@ -605,7 +652,7 @@ class App:
         self.canvas.fill((0, 0, 0))
         {"roster": self.draw_roster, "create": self.draw_create,
          "inventory": self.draw_inventory, "pickup": self.draw_pickup, "watch": self.draw_watch,
-         "character": self.draw_character, "town": self.draw_town, "cube": self.draw_cube
+         "character": self.draw_character, "panels": self.draw_panels, "town": self.draw_town, "cube": self.draw_cube
          }.get(self.screen_name, self.draw_roster)()
         if self.message and self.screen_name != "watch":
             self.look.text(self.canvas, "small", self.message, GOLD, 12, 580)
@@ -685,8 +732,8 @@ class App:
                 frac = 0.0
             L.text(c, "small", "Level %d %s   %s" % (h.level, CLASS_NAMES.get(h.cls, h.cls),
                                                    STYLE_NAMES[brain.profile(h)["style"]]), GOLD, x + 250, y)
-            L.text(c, "small", "Gold %d   Cores %d   Floor %d   Best %d" % (
-                getattr(h, "gold", 0), gear.rare_cores(h), int(getattr(h, "rift_depth", 0) or 0),
+            L.text(c, "small", "Gold %d  Frag. %d  Plat. %d  Floor %d  Best %d" % (
+                getattr(h, "gold", 0), gear.rare_cores(h), gear.platinum(h), int(getattr(h, "rift_depth", 0) or 0),
                 int(brain.profile(h).get("best", 0) or 0)), WHITE, x + 250, y + 16)
             if run is not None and run.sim is not None:
                 now = "in town, floor %d waits" % run.depth if run.state in ("town", "gate") else (run.sim.brain(h).last or "...")
@@ -737,14 +784,16 @@ class App:
                 ("To town (used)" if on_run and run.town_used else "To town", self.to_town,
                  on_run and run.state == "fight" and not run.town_used),
                 ("Watch", lambda: self.go("watch"), on_run and not town_run)]
-        row2 = [("Inventory / Loot", lambda: self.go("inventory"), has),
-                ("Abilities", lambda: self.go("character"), has),
-                ("Horadric Cube", lambda: self.go("cube"), has),
-                ("Farm: %s" % FARM_SHORT[farm_of(h)] if has else "Farm", self.cycle_farm, has and not on_run),
+        row2 = [("Inventory", lambda: self.open_panel("inventory", True), has),
+                ("Loot", lambda: self.open_panel("loot", True), has),
+                ("Stats", lambda: self.open_panel("stats", True), has),
+                ("Skills", lambda: self.open_panel("skills", True), has),
                 ("Shop", lambda: self.open_town("shop"), has and (not on_run or town_run)),
                 ("Stash", lambda: self.open_town("stash"), has and (not on_run or town_run))]
         diff = difficulty_of(h) if has else "normal"
-        row3 = [("Style", self.cycle_style, has),
+        row3 = [("Horadric Cube", lambda: self.go("cube"), has),
+                ("Farm: %s" % FARM_SHORT[farm_of(h)] if has else "Farm", self.cycle_farm, has and not on_run),
+                ("Style", self.cycle_style, has),
                 ("Difficulty: %s" % DIFF_NAMES[diff], self.cycle_difficulty, has and not on_run and len(unlocked(h)) > 1)]
         for j, row in enumerate((row1, row2, row3)):
             bw = (W - 20 + gap) // max(len(row), 5) - gap
@@ -969,7 +1018,10 @@ class App:
         dy = gy + b.player.INV_H * ic - 371          # the panel's bottom row moves down with the grid
         close = pygame.Rect(self.INV_X + INV_CLOSE[0], self.INV_Y + INV_CLOSE[1] + dy, INV_CLOSE[2], INV_CLOSE[3])
         if b.held is None and close.collidepoint(self.mouse):
-            self.go("roster")
+            if self.screen_name == "panels":
+                self.close_panel("inventory")
+            else:
+                self.go("roster")
             return
         tab = self._inv_tab()
         if tab is not None:
@@ -1054,20 +1106,91 @@ class App:
             self._gear_saved(b)
 
     def draw_inventory(self):
+        """(The old combined screen: loot and inventory together - now two panels.)"""
+        if self.screen_name != "panels":
+            self.screen_name = "panels"
+            self.panels = {"left": "loot", "right": "inventory"}
+        self.draw_panels()
+
+    def draw_panels(self):
+        """The hero's panels: Loot or Stats on the left, Inventory or Skills on the right, each in
+        its own place whatever else is open; the buttons at the top open and close them."""
         c, L = self.canvas, self.look
-        b = self.gear_bench()
-        h = b.player if b else None
-        self._title("Inventory")
+        h = self.hero()
+        p = self.panels_open()
+        left, right = p.get("left"), p.get("right")
+        self._title(" / ".join(self.PANEL_NAMES[x] for x in (left, right) if x) or "Hero")
+        self._char_regions, self._tree_regions = [], []
+        # the panel buttons: left side's two at the left, right side's two at the right
+        for i, name in enumerate(("loot", "stats")):
+            r = pygame.Rect(8 + i * 82, 8, 78, 24)
+            self.button(r, "%s (%s)" % (self.PANEL_NAMES[name], self.PANEL_KEYS[name]), self.open_panel, name)
+            if name == left:
+                pygame.draw.rect(c, GOLD, r.inflate(2, 2), 1)
+        for i, name in enumerate(("inventory", "skills")):
+            r = pygame.Rect(546 + i * 92, 8, 88, 24)
+            self.button(r, "%s (%s)" % (self.PANEL_NAMES[name], self.PANEL_KEYS[name]), self.open_panel, name)
+            if name == right:
+                pygame.draw.rect(c, GOLD, r.inflate(2, 2), 1)
+        self.button((730, 8, 62, 24), "Back", lambda: self.go("roster"))
         if h is None:
-            self.button((640, 540, 140, 30), "Back", lambda: self.go("roster"))
             return
+        b = self.gear_bench() if (left == "loot" or right == "inventory") else None
+        if left == "loot":
+            self._draw_loot_panel(b, h)
+        elif left == "stats":
+            self._draw_one_char_panel(h, "stats")
+        elif right == "inventory":
+            # (no loot panel: the item tools - identify, swap, sell, floor - on their own)
+            L.panel(c, (6, 404, self.LEFT_W, 170))
+            self._draw_item_tools(b, h)
+        if right == "inventory":
+            self._inventory_right(b)
+        elif right == "skills":
+            self._draw_one_char_panel(h, "skills")
+        if b is not None and b.held is not None and right != "inventory":
+            w, hh = h._size(b.held)
+            L.icon(c, b.held, self.mouse[0] - w * 14.5, self.mouse[1] - hh * 14.5, w * 29 - 1, hh * 29 - 1)
+            self._tip = None
+        if left == "stats" or right == "skills":
+            x = self.CHAR_X if left == "stats" else self.TREE_X
+            by_hand = points.by_hand(h)
+            self.button((x, 480, 320, 28), "Points: by hand" if by_hand else "Points: by class plan", self.char_auto)
+            L.text(c, "small", "By hand: you spend them here." if by_hand else
+                   "His points go by his class's build.", GREY, x, 512)
+            L.text(c, "small", "+ : one stat point, Shift + click: all." if left == "stats" else
+                   "Click a skill to learn it.", GREY, x, 528)
+
+    def _draw_one_char_panel(self, h, which):
+        """D2's character panel (stats) or skill tree, in its own place."""
+        hud = self.look.hud
+        done = False
+        if hud is not None:
+            try:
+                (self._draw_char_panel if which == "stats" else self._draw_tree_panel)(hud, h)
+                done = True
+            except Exception:
+                import traceback
+                traceback.print_exc()
+                if not getattr(self, "_char_error_logged", False):
+                    self._char_error_logged = True
+                    log_error(traceback.format_exc())
+        if not done:
+            (self._draw_stats_plain if which == "stats" else self._draw_tree_plain)(h)
+
+    def _draw_loot_panel(self, b, h):
+        """The loot window: what lies on his floor, with the item tools below."""
+        c, L = self.canvas, self.look
         run = self.run_of(h.name)
-        # ---- left: what lies on his floor (the loot window)
         LW = self.LEFT_W
         L.panel(c, (6, 40, LW, 534))
         L.text(c, "med", "%s - level %d %s" % (h.name, h.level, CLASS_NAMES.get(h.cls, h.cls)), GOLD, 6, 50, "center", LW)
         self._draw_loot_area(h, run if run is not None and run.state not in ("town", "gate") else None, 18, 70)
-        # the buttons
+        self._draw_item_tools(b, h)
+
+    def _draw_item_tools(self, b, h):
+        """Identify all, swap weapons, the sell box and the floor (under the loot)."""
+        c, L = self.canvas, self.look
         y0 = 418
         n_unid = b.unidentified()
         self.button((18, y0, 146, 26), "Identify all (%d)" % n_unid, self.inv_identify_all, enabled=n_unid > 0)
@@ -1098,14 +1221,11 @@ class App:
             L.text(c, "small", text, colr or GREY, 18, y0 + 82 + i * 14)
         if b.cursor_mode:
             L.text(c, "small", "Click the item to identify", GOLD, 18, y0 + 110)
-        self.button((226, 546, 90, 22), "Back", lambda: self.go("roster"))
-        # held item: anywhere outside the panel puts it on the floor
+        # held item: anywhere outside the panels puts it on the floor
         if b.held is not None:
             self.regions.insert(0, (pygame.Rect(0, 0, W, H), self.inv_floor, ()))
             self.region(sell, self.inv_sell_held)
             self.region(floor, self.inv_floor)
-        # ---- right: D2's inventory panel, 10 x 8 backpack
-        self._inventory_right(b)
 
     ROW_SHORT = {"heal": "HP", "mana": "MP", "rejuv": "RJ", "any": "ANY"}
     ROW_COLOR = {"heal": (200, 60, 50), "mana": (70, 90, 220), "rejuv": (170, 70, 190), "any": (150, 140, 120)}
@@ -1888,7 +2008,8 @@ class App:
         L.text(sub, "med", "Platinum  %d" % gear.platinum(h), PLATINUM, 200, gy + rows * ic + 30)
 
     # ------------------------------------------------------------ character: stats and skills
-    CHAR_X, TREE_X, PANEL_Y = 80, 400, 40      # D2's two 320 x 432 panels side by side
+    CHAR_X, TREE_X, PANEL_Y = 8, 336, 40       # D2's two 320 x 432 panels: left (where the loot
+                                               # is) and right (where the inventory is)
     STAT_ROWS = [("Strength", "str", "strength", "base_str", 83), ("Dexterity", "dex", "dexterity", "base_dex", 145),
                  ("Vitality", "vit", "vitality", "base_vit", 231), ("Energy", "eng", "energy", "base_eng", 293)]
 
@@ -1952,7 +2073,7 @@ class App:
                 elif action in ("reset_stats", "reset_skills"):
                     self.char_reset("stats" if action == "reset_stats" else "skills")
                 elif action in ("char", "skills"):
-                    self.go("roster")
+                    self.close_panel("stats" if action == "char" else "skills")
                 return True
         return False
 
