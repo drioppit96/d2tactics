@@ -391,6 +391,41 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
   attack rating, defence and experience by D2's MonLvl tables, its drops by its new level. One
   at or below it stays as it is. Act bosses too.
   Hell is not capped: its monsters and act bosses keep their own level (runs.CAPPED_DIFFICULTIES).
+- Torment (autobattler/torment.py): the difficulty after Hell, opened by clearing Hell's floor 60.
+  - Tiers: Torment floors count from 1; every ten floors are a tier, the tenth an act boss (and the
+    gate to the next tier). Tier T's first floor is monster level 100 + 45 T (Torment 1: 145),
+    one level more each floor of the tier; Torment 20 reaches level 1000, the most there is.
+  - Monsters: built from Hell's tables (runs.tables_for) at their own level, brought to 99 by
+    MonLvl, then grown per 45 levels past 99: life x1.6, damage x1.35, attack rating and defence
+    x1.3 - so each tier starts with a step up. Champions +2 levels and uniques +3, as in D2.
+    Experience: an ordinary kill is worth 1/40 of the XP the hero needs at the floor's level
+    (champions x3, uniques x5, act bosses x50); D2's ExpRatio and level-gap rule don't shrink it.
+  - What each tier adds: T1 more champions (5% of plain monsters a tier, at most 30%); T2 every
+    unique an extra modifier; T3 monsters faster (+10% a tier past 2, at most +50%); T4 act bosses
+    enrage below half life (+50% damage); T5 and on +5 a tier to all monster resistances (not past
+    75; immunities stay).
+  - Heroes level on past 99, to 1000 (game/units.LEVEL_CAP, XP_EXTEND): each level past D2's table
+    needs 2% more than the one before, and still gives 5 stat points and a skill point. A skill
+    takes one point more than its 20 for every two levels past 99 (game/skills.EXTRA_CAP); the
+    class plan puts those into its maxed skills in its own order.
+  - Rewards: +25% magic and gold find a tier while on a Torment floor; each Torment floor cleared
+    gives the account its tier in Rare Fragments, each act boss its tier in Platinum.
+  - Death: the run goes back to the start of its tier (floor 21 for a death on floor 25), not to
+    Torment 1.
+  - Gear: what drops on a Torment floor is the tier's (game/world.DROP_HOOK). Plain, magic and rare
+    items are always on the elite base of their kind (rolled again on it, item level 99). Every
+    item carries its tier ("Torment N" in its tooltip) and its numbers grow with it: the base's
+    damage, flat and elemental damage, attack rating and thorns x1.5 a tier; the base's defence,
+    flat defence, life, mana, attributes, flat damage reduction and replenish x1.35 a tier.
+    Speeds, resistances, leech, chances, +skills and percentages of the base (Enhanced Damage,
+    Enhanced Defense) stay as they are. It needs 45 levels more a tier past the first. A set
+    piece's own bonuses grow with it; the set's partial and full bonuses grow with the lowest tier
+    among its worn pieces (game/units.SET_BONUS_HOOK). A runeword made in a Torment base grows its
+    runeword lines with the base's tier (game/d2items.RUNEWORD_HOOK); gems and runes don't.
+  - Skills: a spell's damage (not a weapon blow's) x1.5 per tier of the hero's worn gear on
+    average over ten slots (an empty slot counts 0): full Torment 4 gear, x5.
+  - The engine's hooks are all off for D2 Tactics; torment.install() (from config.apply_d2_rules)
+    turns them on for the autobattler.
 - A monster standing on a cell that isn't floor (inside a wall, a rock, a pillar - a big
   monster set down partly on one) is put on the nearest free floor cell each round: missiles
   couldn't reach it and it couldn't move, so hero and monster stood facing each other. A

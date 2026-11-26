@@ -216,7 +216,8 @@ class Sim:
                 vel = float(int((row.get("velocity") or "0").strip() or 0))
             except ValueError:
                 pass
-        return timing.move_speed(vel, 0, self.move_scale) if vel > 0 else 0.0
+        # (Torment 3 and on: monsters faster - speed_bonus, like Faster Run/Walk)
+        return timing.move_speed(vel, int(getattr(u, "speed_bonus", 0) or 0), self.move_scale) if vel > 0 else 0.0
 
     def living_heroes(self):
         return [h for h in self.heroes if h.alive]

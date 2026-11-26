@@ -237,6 +237,10 @@ def apply_props(item, props, rng):
     P.apply(item, [p if len(p) == 4 else (p[0], "", p[1], p[2]) for p in props], rng)
 
 
+#: called with (the item, how many property lines it had before its runeword's) when one forms
+RUNEWORD_HOOK = None
+
+
 def insert(content, host, filler, rng):
     """Put a gem / rune into a socketed item. Returns a message or None if it doesn't fit."""
     rules = content.sockets
@@ -252,7 +256,10 @@ def insert(content, host, filler, rng):
     if rw is not None:
         host.runeword = rw["name"]
         host.rarity = "unique"
+        n0 = len(host.mod_list or [])
         apply_props(host, rw["props"], rng)
+        if RUNEWORD_HOOK is not None:
+            RUNEWORD_HOOK(host, n0)                 # (a Torment base: its runeword grows with it)
         return "The runes glow - %s!" % rw["name"]
     return "Inserted %s." % filler.name
 

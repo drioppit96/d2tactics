@@ -119,6 +119,10 @@ def _extra_tabs(st):
     return out
 
 
+#: called with each loaded item that has a Torment tier
+ITEM_LOAD_HOOKS = []
+
+
 def _item_dict(it):
     if it is None:
         return None
@@ -148,7 +152,8 @@ def _item_dict(it):
                 charges={k: list(v) for k, v in (getattr(it, "charges", None) or {}).items()} or None,
                 belt_col=getattr(it, "belt_col", None),
                 infused=list(it.infused) if getattr(it, "infused", None) else None,
-                base_name=getattr(it, "_base_name", None))
+                base_name=getattr(it, "_base_name", None),
+                torment=int(getattr(it, "torment", 0) or 0) or None)
 
 
 def _item_from(d, content):
@@ -235,6 +240,10 @@ def _item_from(d, content):
         it.slot = None
     if d.get("contents") is not None or it.code == "box":
         it.contents = [x for x in (_item_from(c, content) for c in d.get("contents") or []) if x is not None]
+    if d.get("torment"):
+        it.torment = int(d["torment"])
+        for hook in ITEM_LOAD_HOOKS:
+            hook(it)                             # (the D2 Autobattler: what the base gives back unscaled)
     return it
 
 

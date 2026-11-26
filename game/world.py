@@ -171,6 +171,10 @@ def hit_chance(attacker, defender, ar_bonus_pct=0, def_bonus_pct=0, ranged=False
     return chance
 
 
+#: called with (world, the monster, its drops) -> drops (None: as they are)
+DROP_HOOK = None
+
+
 def set_difficulty(name):
     """Remember which difficulty is being played: hit_chance() has no world to ask."""
     global DIFFICULTY
@@ -2392,7 +2396,8 @@ class World(SkillCaster, ItemActions):
             return 1.0
         from . import riftmap
         diff = getattr(getattr(self, "content", None), "difficulty", "normal") or "normal"
-        return (NORMAL_MON_DAMAGE if diff == "normal" else 1.0) * riftmap.damage_mult(self)
+        rage = 1.5 if getattr(source, "enrage", False) and source.hp * 2 < source.max_hp else 1.0
+        return (NORMAL_MON_DAMAGE if diff == "normal" else 1.0) * riftmap.damage_mult(self) * rage
 
     def _absorb(self, p, amount):
         for name, b in list(getattr(p, "buffs", {}).items()):
@@ -2526,6 +2531,8 @@ class World(SkillCaster, ItemActions):
                 from . import objects as _obj
                 drops = list(drops) + _obj.countess_hoard(self, dl)
             drops = riftmap.filter_drops(self, drops, unit)
+            if DROP_HOOK is not None:
+                drops = DROP_HOOK(self, unit, drops)       # (the D2 Autobattler's Torment gear)
             from . import d2r
             drops += d2r.sunder_drop(self, unit)      # D2R's Sunder Charms, off champions
         else:

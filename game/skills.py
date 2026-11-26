@@ -437,6 +437,8 @@ class SkillEnv:
         if self.s.extra.get("per_second"):
             lo, hi = lo * FRAMES, hi * FRAMES
         lo, hi = lo * (100 + syn) / 100.0, hi * (100 + syn) / 100.0
+        tp = getattr(self.book, "torment_power", 1.0) or 1.0     # (the D2 Autobattler's Torment gear)
+        lo, hi = lo * tp, hi * tp
         return et, int(lo), int(max(lo, hi)), length
 
     def phys_damage(self):
@@ -445,6 +447,8 @@ class SkillEnv:
             return None
         syn = self.phys_synergy()
         lo, hi = self._shift(lo) * (100 + syn) / 100.0, self._shift(hi) * (100 + syn) / 100.0
+        tp = getattr(self.book, "torment_power", 1.0) or 1.0
+        lo, hi = lo * tp, hi * tp
         return int(lo), int(max(lo, hi))
 
     def mana(self):
@@ -488,6 +492,10 @@ def turns_from_frames(frames):
     if frames <= 0:
         return 0
     return max(1, int(round(frames / float(FRAMES * TURN_SECONDS))))
+
+
+#: extra skill points a skill can take past its maxlvl, by character level (None: none)
+EXTRA_CAP = None
 
 
 # ---------------------------------------------------------------- what a character has learned
@@ -541,9 +549,14 @@ class SkillBook:
     def charged_only(self, name):
         return name in self.charged and not self.levels.get(name) and name not in self.granted
 
+    def cap(self, s, clvl):
+        """The most points a skill can take at this character level (D2: its maxlvl, 20; past
+        level 99 in the D2 Autobattler, more - EXTRA_CAP)."""
+        return s.maxlvl + (EXTRA_CAP(clvl) if EXTRA_CAP is not None else 0)
+
     def can_learn(self, name, clvl):
         s = self.tree.get(name)
-        if not s or self.points <= 0 or clvl < s.reqlevel or self.levels.get(name, 0) >= s.maxlvl:
+        if not s or self.points <= 0 or clvl < s.reqlevel or self.levels.get(name, 0) >= self.cap(s, clvl):
             return False
         return all(self.levels.get(p, 0) > 0 for p in s.prereqs if p in self.tree)
 

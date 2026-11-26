@@ -263,6 +263,17 @@ def spend_points(hero):
                 if _learn_chain(book, s.key, clvl):
                     spent = changed = True
                     break
+            if not spent and hasattr(book, "cap"):
+                # past level 99 (Torment): the plan's maxed skills take more, in the plan's order
+                for title, want in plan:
+                    if title == "@mastery":
+                        title = _mastery_for(hero)
+                    s = book.find(title)
+                    if s is None or want < s.maxlvl:
+                        continue
+                    if s.maxlvl <= book.levels.get(s.key, 0) < book.cap(s, clvl) and book.learn(s.key, clvl):
+                        spent = changed = True
+                        break
             if not spent:
                 break                       # nothing in the plan can take a point yet: keep it
     pts = int(getattr(hero, "stat_points", 0) or 0)

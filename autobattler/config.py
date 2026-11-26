@@ -117,3 +117,5 @@ def apply_d2_rules():
     gw.NORMAL_MON_HIT = 0.0
     from game import tactics
     tactics.ACTIVE = False
+    from . import torment
+    torment.install()                # (Torment: levels past 99, its gear; off for D2 Tactics)

@@ -127,8 +127,14 @@ SESSION_SEED = random.randrange(1, 1 << 30)
 
 STATES = ("build", "fight", "pause", "town", "gate", "over")
 
-DIFFICULTIES = ("normal", "nightmare", "hell")
-DIFF_NAMES = {"normal": "Normal", "nightmare": "Nightmare", "hell": "Hell"}
+DIFFICULTIES = ("normal", "nightmare", "hell", "torment")
+DIFF_NAMES = {"normal": "Normal", "nightmare": "Nightmare", "hell": "Hell", "torment": "Torment"}
+
+
+def tables_for(diff):
+    """Which of D2's difficulty columns a run reads: Torment is built from Hell's (autobattler/
+    torment.py grows it from there)."""
+    return "hell" if diff == "torment" else diff
 CAPPED_DIFFICULTIES = ("normal", "nightmare")   # monsters above the hero brought down to him
 UNLOCK_AT = 60          # clearing rift floor 60 opens the next difficulty
 
@@ -209,6 +215,10 @@ class Run:
             return "Black Road %d" % self.depth
         if self.farm == "runes":
             return "Tower Cellar %d (run %d)" % ((self.depth - 1) % 5 + 1, (self.depth - 1) // 5 + 1)
+        if self.difficulty == "torment":
+            from . import torment
+            return "floor %d (Torment %d, level %d)" % (self.depth, torment.tier_of(self.depth),
+                                                        torment.level_of(self.depth))
         tag = "" if self.difficulty == "normal" else " (%s)" % DIFF_NAMES[self.difficulty]
         return "floor %d%s" % (self.depth, tag)
 
@@ -268,6 +278,14 @@ class Run:
             self._adopt(w, job["stand_in"])
         self._place_group(w)
         cap_levels(w, self.level_cap())
+        tier = getattr(w, "torment_tier", 0) or 0
+        for h in self.heroes:
+            if getattr(h, "_torment_tier", 0) != tier:
+                h._torment_tier = tier            # (Torment's magic and gold find, while here)
+                try:
+                    h.recalc()
+                except Exception:
+                    pass
         scale_for_players(w, len(self.heroes))
         w.mode = "explore"
         self.world = w
@@ -365,7 +383,7 @@ class Run:
                     from game.actworld import make_world
                     content = getattr(self.assets, "content", None)
                     if content is not None:
-                        content.set_difficulty(self.difficulty)
+                        content.set_difficulty(tables_for(self.difficulty))
                     lid = self.level_key(depth)
                     if self.farm == "rift":
                         # every floor is rolled anew: its place (dungeon or outdoors of the act),
@@ -405,6 +423,9 @@ class Run:
                     from game.world import World
                     w = World(seed=random.randrange(1 << 30), depth_level=depth, player=player)
                     self._mark_boss(w)
+                if self.difficulty == "torment" and self.farm == "rift":
+                    from . import torment
+                    torment.apply_floor(w, depth)      # (the floor's Torment level and twists)
                 try:
                     realtime.label_areas(w)    # (which parts of the floor join: on this thread)
                 except Exception:
@@ -644,6 +665,9 @@ class Run:
         self.sim.town_spent = self.town_used     # (no retreat home once the floor's trip is spent)
         if self.sim.frame % 25 == 0:
             cap_levels(self.world, self.level_cap())    # (monsters raised or called up meanwhile)
+            if getattr(self.world, "torment_level", None):
+                from . import torment
+                torment.keep_up(self.world)
         self.sim.tick()
         while self.sim.notes:
             self.note(self.sim.notes.pop(0))
@@ -657,13 +681,17 @@ class Run:
             # death: the run starts again from the first floor (the heroes get up at the start)
             self.kills += self.sim.kills
             self.deaths += 1
-            self.note("Everyone fell on floor %d. Back to floor 1." % self.depth)
+            back = 0
+            if self.farm == "rift" and self.difficulty == "torment":
+                from . import torment
+                back = torment.tier_start(self.depth)    # (Torment: back to the start of the tier)
+            self.note("Everyone fell on floor %d. Back to floor %d." % (self.depth, back + 1))
             for h in self.heroes:
                 prof = brain.profile(h)        # (saved with him; his best floor ever)
                 if self.farm == "rift":
                     prof["best"] = max(int(prof.get("best", 0) or 0), int(getattr(h, "rift_depth", 0) or 0))
-                    h.rift_depth = 0
-                    set_rift_cleared(h, self.difficulty, 0)
+                    h.rift_depth = back
+                    set_rift_cleared(h, self.difficulty, back)
                     prof["cleared"] = 0
                 h.alive = True
                 roster.save(h)
@@ -671,7 +699,7 @@ class Run:
             if self.stop_requested:
                 self.finish("died")
             else:
-                self.depth = 1
+                self.depth = back + 1
                 self.state = "pause"
                 self.pause = int(self.cfg.get("floor_pause", 1) * timing.FPS)
                 self._restart = True
@@ -688,6 +716,15 @@ class Run:
             self.kills += self.sim.kills
             self.floors += 1
             self.town_used = False
+            tier = getattr(self.world, "torment_tier", 0) or 0
+            if tier and self.farm == "rift":
+                # Torment pays the account: its tier in Rare Fragments a floor, in Platinum an act boss
+                from . import account
+                account.add("rare_cores", tier)
+                plat = tier if self.depth % 10 == 0 else 0
+                if plat:
+                    account.add("platinum", plat)
+                self.note("Torment %d: +%d Rare Fragments%s." % (tier, tier, (", +%d Platinum" % plat) if plat else ""))
             for h in self.heroes:
                 if self.farm == "rift":
                     h.rift_depth = max(int(getattr(h, "rift_depth", 0) or 0), self.depth)
@@ -1099,7 +1136,7 @@ class RunManager:
                 # (drops and levels read this run's difficulty; never changed under a floor being
                 # built, which sets its own)
                 try:
-                    content.set_difficulty(getattr(r, "difficulty", "normal"))
+                    content.set_difficulty(tables_for(getattr(r, "difficulty", "normal")))
                 finally:
                     BUILD_LOCK.release()
             t0 = _clock()

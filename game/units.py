@@ -255,19 +255,32 @@ class Player(Unit):
         any_bonus = False
         for name, items in worn.items():
             n = len(self.sets_worn[name])
+            part = holder if SET_BONUS_HOOK is None else Item("Set bonuses", "", None, kind="equip")
+            if part is not holder:
+                part.mod_list = []
             for it in items:
                 for k, plist in getattr(it, "set_bonus", []) or []:
                     if n >= k + 1:
-                        props.apply(holder, plist, roll=False)
+                        props.apply(part, plist, roll=False)
                         any_bonus = True
             sd = getattr(items[0], "set_def", None) or {}
             for k, plist in sd.get("partial", {}).items():
                 if n >= k:
-                    props.apply(holder, plist, roll=False)
+                    props.apply(part, plist, roll=False)
                     any_bonus = True
             if sd.get("members") and n >= len(sd["members"]):
-                props.apply(holder, sd.get("full", []), roll=False)
+                props.apply(part, sd.get("full", []), roll=False)
                 any_bonus = True
+            if part is not holder:
+                SET_BONUS_HOOK(part, items)
+                for key, v in part.mods.items():
+                    old = holder.mods.get(key)
+                    if isinstance(v, tuple):
+                        old = old if isinstance(old, tuple) else (0, 0)
+                        holder.mods[key] = (old[0] + v[0], old[1] + v[1])
+                    elif not isinstance(old, tuple):
+                        holder.mods[key] = (old or 0) + v
+                holder.mod_list += part.mod_list
         holder.defense = 0
         return holder if any_bonus else None
 
@@ -386,6 +399,8 @@ class Player(Unit):
     def recalc(self):
         """Derived stats with D2's formulas for the character's class (CharStats.txt)."""
         self._recalc()
+        for hook in RECALC_HOOKS:
+            hook(self)
         from . import potions
         rows = potions.belt_rows(self)
         if getattr(self, "_belt_rows_seen", rows) > rows:
@@ -544,6 +559,8 @@ class Player(Unit):
     def xp_threshold(level):
         """Total XP needed to leave `level` (D2's real table for the first levels)."""
         table = XP_TABLE
+        if XP_EXTEND is not None and level >= len(table) - 1:
+            return XP_EXTEND(level, table)       # (the D2 Autobattler's levels past 99)
         if level < len(table):
             return table[level]
         return table[-1] + (level - len(table) + 1) * 20000
@@ -555,7 +572,7 @@ class Player(Unit):
         """Returns number of levels gained."""
         self.xp += amount
         gained = 0
-        while self.level < 99 and self.xp >= self.xp_to_next():
+        while self.level < LEVEL_CAP and self.xp >= self.xp_to_next():
             self.level += 1
             self.stat_points += 5
             if hasattr(self, "skills"):
@@ -566,6 +583,15 @@ class Player(Unit):
             self.mana = self.max_mana
         return gained
 
+
+#: the highest character level (the D2 Autobattler raises it for Torment), and how the XP table
+#: goes on past its end (None: D2's table, then a flat 20000 a level)
+LEVEL_CAP = 99
+XP_EXTEND = None
+#: called with the character after every recalc() (the D2 Autobattler's Torment bonuses)
+RECALC_HOOKS = []
+#: called with (bonus holder, the set's worn items) for each set's bonuses (Torment scaling)
+SET_BONUS_HOOK = None
 
 # D2's experience table (experience.txt): total XP to leave each level, and ExpRatio (in 1024ths)
 XP_TABLE = [0, 500, 1500, 3750, 7875, 14175, 22680, 32886, 44396, 57715, 72144]
@@ -604,7 +630,8 @@ def kill_xp(base, clvl, mlvl):
             exp *= mlvl / float(clvl)
         elif mlvl > clvl:
             exp *= clvl / float(mlvl)
-    exp = exp * XP_RATIO.get(clvl, 1024) / 1024.0
+    if mlvl <= 99:
+        exp = exp * XP_RATIO.get(clvl, 1024) / 1024.0    # (past 99: the D2 Autobattler's own curve)
     return max(1, int(exp))
 
 

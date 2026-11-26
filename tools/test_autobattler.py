@@ -1287,6 +1287,101 @@ def test_boss_arena_middle():
     check(boss in on and imp not in on, "a boss next to him counts for kiting; a ranged monster doesn't")
 
 
+def test_torment():
+    """Torment: tiers of ten floors from level 145 to 1000; monsters grown from level 99; heroes
+    past 99; its gear grown by tier (sets by their lowest piece, runewords with their base);
+    saved and loaded as it is; a death back to the start of the tier."""
+    import types
+    from autobattler import torment, runs, brain
+    from autobattler.runs import RunManager
+    from game import units, save as gsave, props as P
+    from game.items import Item
+    config.apply_d2_rules()
+    check((torment.tier_of(1), torment.level_of(1)) == (1, 145) and torment.level_of(10) == 154
+          and (torment.tier_of(11), torment.level_of(11)) == (2, 190)
+          and torment.level_of(191) == 1000 and torment.level_of(200) == 1000,
+          "Torment 1 starts at 145, each tier 45 higher, 1000 at Torment 20")
+    check(torment.tier_start(25) == 20 and torment.tier_start(10) == 0, "a death: back to the start of the tier")
+    check("torment" in runs.DIFFICULTIES and runs.tables_for("torment") == "hell", "Torment reads Hell's tables")
+    # monsters
+    w = types.SimpleNamespace(content=None, rng=random.Random(1), monsters=[])
+    m = types.SimpleNamespace(level=99, max_hp=1000, hp=1000, dmg=(100, 200), ar=500, defense=400, xp_value=10,
+                              alive=True, unique=False, champion=False, res={}, mods=[])
+    w.monsters.append(m)
+    torment.scale_monster(w, m, 144)
+    check(m.max_hp == 1600 and m.dmg == (135, 270) and m.level == 144 and m.drop_level == 99,
+          "45 levels past 99: life x1.6, damage x1.35")
+    # heroes past 99
+    h = _hero("Tormented")
+    h.level = 99
+    h.xp = units.Player.xp_threshold(98)
+    need = units.Player.xp_threshold(99) - h.xp
+    got = h.gain_xp(need + units.Player.xp_threshold(100) - units.Player.xp_threshold(99))
+    check(h.level == 101 and got == 2, "past 99: level 101 (%d)" % h.level)
+    check(units.Player.xp_threshold(500) > units.Player.xp_threshold(499) > units.Player.xp_threshold(99),
+          "each level past 99 needs more")
+    book = h.skills
+    sk = next(iter(book.tree.values()))
+    check(book.cap(sk, 99) == sk.maxlvl and book.cap(sk, 199) == sk.maxlvl + 50,
+          "a skill takes one point more for every two levels past 99")
+    # gear
+    it = Item("Archon Plate", "utp", "armor", rarity="magic")
+    it.mod_list = []
+    P.apply(it, [("hp", "", 50, 50), ("res-all", "", 20, 20), ("fcr", "", 20, 20)], roll=False)
+    it.base_defense, it.dmg, it.levelreq = 100, None, 60
+    it.defense = 100 + it.mods.get("def", 0)
+    torment.make_tier(it, 2)
+    check(it.mods.get("life", it.mods.get("hp")) in (91, 92) and it.levelreq == 105 and it.base_defense == 182
+          and it.extra_lines[0] == "Torment 2",
+          "Torment 2 gear: life x1.35^2, base defence too, 45 levels more needed (%s)" % (it.mods,))
+    res_key = [k for k in it.mods if "res" in k]
+    check(all(it.mods[k] == 20 for k in res_key) and any(e[0] == "fcr" and e[1] == 20 for e in it.mod_list),
+          "resistances and cast rate stay as they are")
+    wpn = Item("Phase Blade", "7cr", "weapon", rarity="unique", dmg=(31, 35))
+    wpn.mod_list = []
+    P.apply(wpn, [("dmg-fire", "", 10, 20)], roll=False)
+    torment.make_tier(wpn, 1)
+    check(wpn.dmg == (46, 52), "a Torment 1 weapon: its base damage x1.5 (%s)" % (wpn.dmg,))
+    d = gsave._item_dict(it)
+    back = gsave._item_from(d, None)
+    check(getattr(back, "torment", 0) == 2 and back.levelreq == 105 and back.extra_lines[0] == "Torment 2",
+          "saved and loaded with its tier")
+    # a runeword in a Torment base
+    rw = Item("Crystal Sword", "crs", "weapon", rarity="normal", dmg=(5, 15))
+    rw.mod_list = []
+    rw.torment = 2
+    n0 = len(rw.mod_list)
+    P.apply(rw, [("str", "", 10, 10)], roll=False)
+    torment.on_runeword(rw, n0)
+    check(rw.mods.get("str") in (18, 19), "a runeword in a Torment 2 base grows with it (%s)" % rw.mods.get("str"))
+    # set bonuses by the lowest worn piece
+    part = Item("Set bonuses", "", None)
+    part.mod_list = []
+    P.apply(part, [("hp", "", 100, 100)], roll=False)
+    torment.on_set_bonus(part, [types.SimpleNamespace(torment=1), types.SimpleNamespace(torment=3)])
+    check(part.mods.get("life", part.mods.get("hp")) == 135, "set bonuses grow with the lowest piece (Torment 1)")
+    # skills with Torment gear on
+    h2 = _hero("Caster", "sor")
+    h2.equipment["armor"] = it
+    torment.on_recalc(h2)
+    check(abs(h2.skills.torment_power - 1.5 ** 0.2) < 1e-6, "one Torment 2 piece in ten slots: skills x1.5^0.2")
+    # a Torment run
+    random.seed(21)
+    mgr = RunManager(_NoAssets(), _cfg())
+    t = _hero("TormentRun")
+    prof = brain.profile(t)
+    prof["unlocked"] = ["normal", "nightmare", "hell", "torment"]
+    prof["difficulty"] = "torment"
+    r = mgr.start([t])
+    for _ in range(4):
+        _tick(mgr)
+    foes = [m for m in r.world.monsters if not getattr(m, "ally", False) and getattr(m, "ai", "") != "npc"]
+    check(r.difficulty == "torment" and foes and all(145 <= m.level <= 148 for m in foes) and t._torment_tier == 1,
+          "a Torment run: floor 1's monsters are level 145 (champions +2, uniques +3), the hero gets Torment 1's finds")
+    check("Torment 1" in r.where(), "the screens say which Torment (%s)" % r.where())
+    r.finish("stopped")
+
+
 def test_runeword_bases():
     """Home: plain socketed bases that are elite (tier III) or ethereal go to the stash's Spares
     tab; other plain gear is sold with the magic and rare items, and each socketed item sold
@@ -1790,6 +1885,7 @@ if __name__ == "__main__":
     test_no_stun_lock()
     test_codex()
     test_boss_arena_middle()
+    test_torment()
     test_runeword_bases()
     test_stash_tabs()
     test_rare_cores()

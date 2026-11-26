@@ -122,7 +122,7 @@ def skill_tooltip(hero, name):
         cur = book.level(name)
         lines.append(("Current Skill Level: %d" % cur, WHITE))
         lines += [(x, WHITE) for x in _real_time(book.describe(name), book, name, cur)]
-        if lv < s.maxlvl:
+        if lv < (book.cap(s, getattr(hero, "level", 1)) if hasattr(book, "cap") else s.maxlvl):
             lines.append(("", WHITE))
             lines.append(("Next Level", WHITE))
             lines += [(x, BLUE) for x in _real_time(book.describe_next(name), book, name, cur + 1)]
