@@ -875,6 +875,18 @@ def test_monster_levels_capped():
     check(hi.level == 20 and hi.max_hp == 2000 and hi.dmg == (20, 40),
           "a level 30 monster against a level 20 hero becomes level 20 (life %d)" % hi.max_hp)
     check((lo.max_hp, lo.dmg, lo.level) == lo_before, "a level 8 one stays as it is")
+    from autobattler.runs import Run
+    run = types.SimpleNamespace(heroes=[types.SimpleNamespace(level=20)])
+    caps = {}
+    for d in ("normal", "nightmare", "hell"):
+        run.difficulty = d
+        caps[d] = Run.level_cap(run)
+    check(caps == {"normal": 20, "nightmare": 20, "hell": None},
+          "Normal and Nightmare are capped at the hero's level, Hell keeps its own levels")
+    hell = mon(30)
+    w.monsters = [hell]
+    cap_levels(w, None)
+    check(hell.level == 30, "in Hell a level 30 monster stays level 30")
 
 
 def test_monster_in_wall_moved_out():

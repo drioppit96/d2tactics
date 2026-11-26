@@ -375,10 +375,11 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
   got nothing for 3 screen frames goes next whatever the time. On a PC too slow for all the runs,
   the runs nobody watches slow down a little instead of the screen stuttering. A run owes at
   most 3 game frames (times the speed); beyond that it slows.
-- No monster is above the group's highest hero level: one above it is brought down to it when
+- Normal and Nightmare: no monster is above the group's highest hero level: one above it is brought down to it when
   the floor starts (and every second, for monsters raised or called up later) - life, damage,
   attack rating, defence and experience by D2's MonLvl tables, its drops by its new level. One
   at or below it stays as it is. Act bosses too.
+  Hell is not capped: its monsters and act bosses keep their own level (runs.CAPPED_DIFFICULTIES).
 - A monster standing on a cell that isn't floor (inside a wall, a rock, a pillar - a big
   monster set down partly on one) is put on the nearest free floor cell each round: missiles
   couldn't reach it and it couldn't move, so hero and monster stood facing each other. A

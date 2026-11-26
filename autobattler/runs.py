@@ -129,6 +129,7 @@ STATES = ("build", "fight", "pause", "town", "gate", "over")
 
 DIFFICULTIES = ("normal", "nightmare", "hell")
 DIFF_NAMES = {"normal": "Normal", "nightmare": "Nightmare", "hell": "Hell"}
+CAPPED_DIFFICULTIES = ("normal", "nightmare")   # monsters above the hero brought down to him
 UNLOCK_AT = 60          # clearing rift floor 60 opens the next difficulty
 
 
@@ -283,7 +284,10 @@ class Run:
             self._pre = self._start_job(self.depth + 1, stand_in=True)
 
     def level_cap(self):
-        """No monster is above this level: the group's highest hero level."""
+        """No monster is above this level: the group's highest hero level. Normal and Nightmare
+        only; in Hell the monsters keep their own level (None: no cap)."""
+        if self.difficulty not in CAPPED_DIFFICULTIES:
+            return None
         return max(1, max(getattr(h, "level", 1) for h in self.heroes))
 
     def _job_key(self, depth=None):
@@ -815,7 +819,7 @@ def cap_levels(w, cap):
     defence and experience by D2's MonLvl tables, the same way the rift scales its bosses); one at
     or below it stays as it is. Its drops follow its new level."""
     from game import rift
-    if getattr(w, "content", None) is None:
+    if cap is None or getattr(w, "content", None) is None:
         return
     for m in w.monsters:
         if getattr(m, "ally", False) or getattr(m, "is_player", False) or getattr(m, "ai", "") == "npc" \
