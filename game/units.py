@@ -575,7 +575,7 @@ class Player(Unit):
         while self.level < LEVEL_CAP and self.xp >= self.xp_to_next():
             self.level += 1
             self.stat_points += 5
-            if hasattr(self, "skills"):
+            if hasattr(self, "skills") and (SKILL_POINT_OK is None or SKILL_POINT_OK(self)):
                 self.skills.points += 1      # D2: one skill point per level
             gained += 1
             self.recalc()
@@ -588,6 +588,8 @@ class Player(Unit):
 #: goes on past its end (None: D2's table, then a flat 20000 a level)
 LEVEL_CAP = 99
 XP_EXTEND = None
+#: whether a level up still gives a skill point (None: always, as in D2)
+SKILL_POINT_OK = None
 #: called with the character after every recalc() (the D2 Autobattler's Torment bonuses)
 RECALC_HOOKS = []
 #: called with (bonus holder, the set's worn items) for each set's bonuses (Torment scaling)

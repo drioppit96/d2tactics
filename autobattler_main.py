@@ -120,6 +120,31 @@ class Perf:
             pass
 
 
+class _TreeView:
+    """A hero seen through another class's tree: that class's art and one tab of its skills, his
+    own points and levels (the fourth skill tree, drawn by the HUD's skill tree code)."""
+
+    def __init__(self, hero, cls, tree):
+        self._h, self.cls = hero, cls
+        self.skills = _BookView(hero.skills, cls, tree)
+
+    def __getattr__(self, k):
+        return getattr(self._h, k)
+
+
+class _BookView:
+    def __init__(self, book, cls, tree):
+        self._b, self._cls, self.tree = book, cls, tree
+        self.foreign = ()
+
+    def page_names(self, strings=None):
+        from game.skills import DEFAULT_PAGE_NAMES
+        return DEFAULT_PAGE_NAMES.get(self._cls, {})
+
+    def __getattr__(self, k):
+        return getattr(self._b, k)
+
+
 def fit_window(w, h):
     """The biggest window of the game's own 4:3 shape that fits on the desktop (with room for the
     taskbar and the title bar); the settings' size if the desktop can't be asked."""
@@ -665,7 +690,8 @@ class App:
         self.canvas.fill((0, 0, 0))
         {"roster": self.draw_roster, "create": self.draw_create,
          "inventory": self.draw_inventory, "pickup": self.draw_pickup, "watch": self.draw_watch,
-         "character": self.draw_character, "panels": self.draw_panels, "codex": self.draw_codex, "town": self.draw_town, "cube": self.draw_cube
+         "character": self.draw_character, "panels": self.draw_panels, "codex": self.draw_codex,
+         "pick_tree": self.draw_pick_tree, "town": self.draw_town, "cube": self.draw_cube
          }.get(self.screen_name, self.draw_roster)()
         if self.message and self.screen_name != "watch":
             self.look.text(self.canvas, "small", self.message, GOLD, 12, 580)
@@ -1192,6 +1218,8 @@ class App:
             w, hh = h._size(b.held)
             L.icon(c, b.held, self.mouse[0] - w * 14.5, self.mouse[1] - hh * 14.5, w * 29 - 1, hh * 29 - 1)
             self._tip = None
+        if right == "skills":
+            self._draw_extra_tree_controls(h)
         if left == "stats" or right == "skills":
             x = self.CHAR_X if left == "stats" else self.TREE_X
             by_hand = points.by_hand(h)
@@ -1200,6 +1228,70 @@ class App:
                    "His points go by his class's build.", GREY, x, 512)
             L.text(c, "small", "+ : one stat point, Shift + click: all." if left == "stats" else
                    "Click a skill to learn it.", GREY, x, 528)
+
+    def _draw_extra_tree_controls(self, h):
+        """Under the skill tree: the fourth tree (after Hell) - choose it, or look at it."""
+        from autobattler import extratree
+        c, L = self.canvas, self.look
+        x, y = self.TREE_X, 548
+        if not extratree.unlocked(h):
+            L.text(c, "small", "A fourth skill tree opens after Hell.", GREY, x, y + 6, "center", 320)
+            return
+        name = extratree.title(h)
+        if name is None:
+            self.button((x, y, 320, 24), "Choose a fourth skill tree", lambda: self.go("pick_tree"))
+            return
+        on = getattr(self, "_extra_view", False)
+        r = pygame.Rect(x, y, 236, 24)
+        self.button(r, ("Own tree" if on else name), self._toggle_extra_view)
+        self.button((x + 240, y, 80, 24), "Change", lambda: self.go("pick_tree"))
+        L.text(c, "small", "Skill points: %d of %d" % (extratree.total_points(h), extratree.point_cap(h)),
+               GREY, x, y + 28, "center", 320)
+
+    def _toggle_extra_view(self):
+        self._extra_view = not getattr(self, "_extra_view", False)
+
+    def draw_pick_tree(self):
+        """Every tab of every other class: the one picked becomes his fourth skill tree."""
+        from autobattler import extratree
+        c, L = self.canvas, self.look
+        h = self.hero()
+        self._title("A fourth skill tree")
+        self.button((W - 90, H - 34, 80, 26), "Back", lambda: self.open_panel("skills", True))
+        if h is None:
+            return
+        if not extratree.unlocked(h):
+            L.text(c, "med", "It opens after Hell.", GOLD, 0, 280, "center", W)
+            return
+        cur = extratree.chosen(h)
+        L.text(c, "small", "Pick one tab of another class. Its skills join his tree as a fourth tab, learned with "
+               "skill points like his own.", GREY, 0, 44, "center", W)
+        L.text(c, "small", "Changing it later gives the points spent in it back.", GREY, 0, 60, "center", W)
+        rows = {}
+        for code, cname, tab, tname in extratree.choices(h):
+            rows.setdefault((code, cname), []).append((tab, tname))
+        y = 84
+        for (code, cname), tabs in rows.items():
+            L.text(c, "med", cname, GOLD, 40, y + 6)
+            for i, (tab, tname) in enumerate(tabs):
+                r = pygame.Rect(170 + i * 205, y, 200, 28)
+                self.button(r, tname, self.pick_tree, (code, tab))
+                if cur == (code, tab):
+                    pygame.draw.rect(c, GOLD, r.inflate(2, 2), 1)
+            y += 36
+
+    def pick_tree(self, arg):
+        from autobattler import extratree
+        h = self.hero()
+        if h is None:
+            return
+        back = extratree.detach(h)
+        extratree.choose(h, self.content, arg[0], arg[1])
+        self.message = "%s: fourth skill tree %s%s." % (h.name, extratree.title(h),
+                                                        (" (%d points back)" % back) if back else "")
+        self._char_saved(h)
+        self._extra_view = True
+        self.open_panel("skills", True)
 
     def _draw_one_char_panel(self, h, which):
         """D2's character panel (stats) or skill tree, in its own place."""
@@ -2110,6 +2202,7 @@ class App:
                     self.char_learn(arg)
                 elif action == "skill_page" and hud is not None:
                     hud.skill_page = arg
+                    self._extra_view = False          # (a tab of his own class's tree)
                 elif action in ("reset_stats", "reset_skills"):
                     self.char_reset("stats" if action == "reset_stats" else "skills")
                 elif action in ("char", "skills"):
@@ -2235,6 +2328,17 @@ class App:
                 if action == "learn" and rect.collidepoint((int(mx), int(my))):
                     return points.skill_tooltip(h, arg)
             return None
+        from autobattler import extratree
+        if getattr(self, "_extra_view", False) and extratree.chosen(h) is not None:
+            # the fourth tree: drawn as its own class's tab, with this hero's points and levels
+            cls, tab = extratree.chosen(h)
+            pv, keep = _TreeView(h, cls, extratree.originals(h, self.content)), hud.skill_page
+            try:
+                hud.skill_page = tab
+                self._tree_regions = self._hud_panel(hud, self.TREE_X, lambda surf: hud._draw_skill_tree(surf, pv), tip)
+            finally:
+                hud.skill_page = keep
+            return
         self._tree_regions = self._hud_panel(hud, self.TREE_X, lambda surf: hud._draw_skill_tree(surf, h), tip)
 
     def _draw_char_plain(self, h, char_done=False, tree_done=False):
@@ -2261,7 +2365,9 @@ class App:
         L.panel(c, (self.TREE_X, self.PANEL_Y, 320, 432))
         book = h.skills
         L.text(c, "med", "Skill points: %d" % book.points, GOLD, self.TREE_X, self.PANEL_Y + 12, "center", 320)
-        names = sorted(book.tree, key=lambda n: (book.tree[n].page, book.tree[n].row, book.tree[n].col))
+        extra = getattr(self, "_extra_view", False)
+        names = sorted([n for n in book.tree if (book.tree[n].page == 4) == extra],
+                       key=lambda n: (book.tree[n].page, book.tree[n].row, book.tree[n].col))
         for i, n in enumerate(names[:30]):
             col, row = i // 15, i % 15
             r = pygame.Rect(self.TREE_X + 10 + col * 152, self.PANEL_Y + 40 + row * 23, 148, 21)

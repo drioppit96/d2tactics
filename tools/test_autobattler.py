@@ -1322,8 +1322,8 @@ def test_torment():
           "each level past 99 needs more")
     book = h.skills
     sk = next(iter(book.tree.values()))
-    check(book.cap(sk, 99) == sk.maxlvl and book.cap(sk, 199) == sk.maxlvl + 50,
-          "a skill takes one point more for every two levels past 99")
+    check(book.cap(sk, 99) == sk.maxlvl and book.cap(sk, 199) == sk.maxlvl,
+          "a skill still takes at most D2's 20 past level 99 (the fourth tree takes the points)")
     # gear
     it = Item("Archon Plate", "utp", "armor", rarity="magic")
     it.mod_list = []
@@ -1380,6 +1380,59 @@ def test_torment():
           "a Torment run: floor 1's monsters are level 145 (champions +2, uniques +3), the hero gets Torment 1's finds")
     check("Torment 1" in r.where(), "the screens say which Torment (%s)" % r.where())
     r.finish("stopped")
+
+
+def test_fourth_tree():
+    """After Hell: a fourth skill tree, one tab of another class, learned with skill points like
+    his own; skill points one a level up to 100 in all before Hell is beaten, 200 after."""
+    import types
+    from autobattler import extratree, brain, roster
+    from game.skills import Skill
+    config.apply_d2_rules()
+    fake = {"Magic Arrow": Skill("Magic Arrow", 1, 1, 2, 1, (), 1, 0, "missile"),
+            "Fire Arrow": Skill("Fire Arrow", 1, 2, 3, 1, (), 3, 2, "missile"),
+            "Multiple Shot": Skill("Multiple Shot", 1, 2, 1, 6, ("Magic Arrow",), 4, 4, "missile"),
+            "Jab": Skill("Jab", 3, 1, 1, 1, (), 2, 6, "attack")}
+    real_source = extratree.source_tree
+    extratree.source_tree = lambda content, cls: fake if cls == "ama" else {}
+    try:
+        h = _hero("FourTrees", "sor")
+        other = _hero("PlainSorc", "sor")
+        prof = brain.profile(h)
+        prof["unlocked"] = ["normal", "nightmare", "hell"]
+        h.level, h.skills.points, h.skills.levels = 99, 0, {}
+        h.skills.points = 100
+        h.xp = h.xp_threshold(98)
+        h.gain_xp(h.xp_threshold(99) - h.xp + 1)
+        check(h.level == 100 and h.skills.points == 100, "Hell not beaten: no skill points past 100 in all")
+        prof["unlocked"].append("torment")
+        h.gain_xp(h.xp_threshold(100) - h.xp + 1)
+        check(h.level == 101 and h.skills.points == 101, "Hell beaten: a point a level again, up to 200")
+        check(extratree.point_cap(h) == 200, "the cap after Hell is 200")
+        extratree.choose(h, None, "ama", 1)
+        book = h.skills
+        mine = [k for k, s in book.tree.items() if getattr(s, "page", 0) == extratree.PAGE]
+        check(sorted(mine) == ["Fire Arrow", "Magic Arrow", "Multiple Shot"] and "Jab" not in book.tree,
+              "the Amazon's Bow and Crossbow tab is his fourth tree")
+        check("Magic Arrow" not in other.skills.tree, "another Sorceress's tree is untouched")
+        check(book.learn("Magic Arrow", h.level) and book.learn("Multiple Shot", h.level),
+              "its skills are learned like his own (prerequisites first)")
+        roster.save(h)
+        d = next(x for x in roster.list_heroes() if x.get("name") == h.name)
+        back = roster.load(d, None)
+        check(back.skills.levels.get("Multiple Shot") == 1 and back.skills.tree["Multiple Shot"].page == 4,
+              "saved and loaded with its levels")
+        n = extratree.detach(h)
+        check(n == 2 and "Magic Arrow" not in h.skills.tree, "changing it gives its points back")
+        extratree.choose(h, None, "ama", 1)
+        prof["auto_points"] = True
+        h.skills.points = 5
+        brain.spend_points(h)
+        check(h.skills.levels.get("Multiple Shot", 0) > 0 and h.skills.points < 5,
+              "by class plan: what the plan can't use goes into the fourth tree")
+        roster.delete(h.name)
+    finally:
+        extratree.source_tree = real_source
 
 
 def test_runeword_bases():
@@ -1810,6 +1863,25 @@ def test_inventory_screen():
             traceback.print_exc()
             ok = False
     check(ok, "every mix of panels draws")
+    from autobattler import brain as _br
+    _br.profile(app.hero())["unlocked"] = ["normal", "nightmare", "hell", "torment"]
+    ok = True
+    try:
+        app.go("pick_tree")
+        app.regions = []
+        app.draw_pick_tree()
+        app.pick_tree(("ama", 1))
+        app.panels = {"left": None, "right": "skills"}
+        app.regions = []
+        app.draw_panels()
+        app._extra_view = False
+        app.regions = []
+        app.draw_panels()
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        ok = False
+    check(ok and app.screen_name == "panels", "the fourth tree: picked on its screen, shown under the skill tree")
     app.panels = {"left": None, "right": "skills"}
     app.open_panel("skills")
     check(app.screen_name == "roster", "the last panel closed: back to the roster")
@@ -1886,6 +1958,7 @@ if __name__ == "__main__":
     test_codex()
     test_boss_arena_middle()
     test_torment()
+    test_fourth_tree()
     test_runeword_bases()
     test_stash_tabs()
     test_rare_cores()

@@ -62,6 +62,12 @@ def create(cls, name, content, max_heroes=30):
 def load(data, content):
     p = gsave.build_player(data, content)
     gear.prepare(p)
+    try:
+        from . import extratree
+        extratree.attach(p, content, data.get("skills") or {})   # (the fourth tree, with its levels)
+    except Exception:
+        import traceback
+        traceback.print_exc()
     return p
 
 

@@ -276,6 +276,9 @@ def spend_points(hero):
                         break
             if not spent:
                 break                       # nothing in the plan can take a point yet: keep it
+    if book is not None and book.points > 0:
+        from . import extratree
+        changed = extratree.spend_auto(hero) or changed      # (what the plan can't use: the fourth tree)
     pts = int(getattr(hero, "stat_points", 0) or 0)
     if pts > 0:
         (s_, d_, v_, e_), cap_s, cap_d = STATS.get(getattr(hero, "cls", ""), ((1, 1, 3, 0), 80, 60))

@@ -405,9 +405,19 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
     enrage below half life (+50% damage); T5 and on +5 a tier to all monster resistances (not past
     75; immunities stay).
   - Heroes level on past 99, to 1000 (game/units.LEVEL_CAP, XP_EXTEND): each level past D2's table
-    needs 2% more than the one before, and still gives 5 stat points and a skill point. A skill
-    takes one point more than its 20 for every two levels past 99 (game/skills.EXTRA_CAP); the
-    class plan puts those into its maxed skills in its own order.
+    needs 2% more than the one before, and still gives 5 stat points. Skills stay at D2's 20 points.
+- Skill points and the fourth skill tree (autobattler/extratree.py):
+  - A level up gives a skill point while the hero has had fewer than 100 in all (spent and
+    unspent) - D2's own count up to level 99 - and fewer than 200 once Hell is beaten (Hell's floor
+    60 cleared: Torment open). Past that, levels give only stat points (game/units.SKILL_POINT_OK).
+  - Once Hell is beaten he picks a fourth skill tree: one tab of any other class (the Skills panel,
+    "Choose a fourth skill tree", under the tree). Its skills join his book as page 4 - copies,
+    the other class's tree untouched - learned with skill points like his own: the same required
+    levels and prerequisites, at most 20 each. The button under the tree switches between his own
+    tree and the fourth (drawn with its class's art); "Change" picks another and gives the points
+    spent in the old one back. Saved in his profile (extra_tree) with its skills' levels.
+  - Points by class plan: what the class plan can't use goes into the fourth tree, its deepest
+    skill he can reach first (prerequisites on the way).
   - Rewards: +25% magic and gold find a tier while on a Torment floor; each Torment floor cleared
     gives the account its tier in Rare Fragments, each act boss its tier in Platinum.
   - Death: the run goes back to the start of its tier (floor 21 for a death on floor 25), not to

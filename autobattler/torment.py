@@ -13,8 +13,8 @@ act boss as everywhere else (and the gate to the next tier).
   adds      tier past 2, at most 50%); T4 act bosses enrage below half life (+50% damage);
              T5 and on +5 to all monster resistances a tier (not past 75, immunities kept).
   Heroes     go on levelling past 99, to 1000: D2's experience table goes on by 2% more a level
-             past its end, every level still 5 stat points and a skill point, and a skill takes
-             one more point than D2's 20 for every two levels past 99.
+             past its end, every level still 5 stat points, and a skill point while he has had
+             fewer than 200 (autobattler/extratree.py: a fourth skill tree takes them).
   Rewards    +25% magic find and gold find a tier while on a Torment floor; a Torment floor
              cleared gives the account its tier in Rare Fragments, an act boss its tier in
              Platinum.
@@ -413,7 +413,9 @@ def install():
     units.XP_EXTEND = lambda level, table: xp_total(level, table)
     units.RECALC_HOOKS.append(on_recalc)
     units.SET_BONUS_HOOK = on_set_bonus
-    skills.EXTRA_CAP = extra_cap
+    skills.EXTRA_CAP = None             # (skills stay at D2's 20; the fourth tree takes the points)
+    from . import extratree
+    units.SKILL_POINT_OK = extratree.may_get_point
     world.DROP_HOOK = on_drops
     d2items.RUNEWORD_HOOK = on_runeword
     save.ITEM_LOAD_HOOKS.append(on_load)
