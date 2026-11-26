@@ -456,7 +456,8 @@ def _cell_pixels(np, xs, ys, ws, hs, dw, with_k=False):
     w = np.asarray(ws, dtype=np.int64)
     h = np.asarray(hs, dtype=np.int64)
     n = w * h
-    cell = np.repeat(np.arange(len(ws)), n)
+    # (repeat counts as the platform's index type: 32-bit Python can't take int64 ones)
+    cell = np.repeat(np.arange(len(ws), dtype=np.int64), n.astype(np.intp))
     first = np.cumsum(n) - n
     k = np.arange(int(n.sum()), dtype=np.int64) - first[cell]
     wc = w[cell]

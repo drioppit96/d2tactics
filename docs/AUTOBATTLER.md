@@ -295,6 +295,11 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
   of walking round a wall that has no way round. A monster whose path search to a hero fails
   waits 2 s before it searches again; one beyond the heroes' distance map (24 cells) searches
   again every 36 frames instead of every 12.
+- No stun-lock: a monster never loses two rounds (2 s) in a row to stuns or blinding; act bosses
+  shrug stuns off and are not kept frozen round after round either. A blinded monster still
+  fights a hero within 5 cells. A big monster (Diablo, Duriel...) a cell or two short of a hero
+  walks in instead of waiting for a gap as a crowded small one does. A hero standing still while
+  he hurts something (shooting from where he stands) is not taken for stuck.
 - Act 2's boss floors (20, and 70 the next time round) are D2's own Duriel's Lair (level 73,
   tomb\duriel.ds1), with or without premade maps. Duriel is set down at the far end from where
   the heroes start; the lair's portal back to the Tomb is removed, and the run opens its own red

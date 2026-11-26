@@ -41,6 +41,7 @@ AGGRO = 14              # cells: a monster this close to a hero wakes up
 PACK = 6                # cells: the monsters round one that is attacked wake with it
 HERO_SIGHT = 18         # cells: how far a hero looks for something to fight
 AI_DELAY = 8            # frames a monster waits after its attack before the next decision
+BLIND_SIGHT = 5         # cells: a blinded monster still sees and fights a hero this close
 ROUND = 50              # frames per turn of the turn-based upkeep (2 seconds)
 LOOT_SECONDS = 25       # after the boss: at most this long picking things up, then the portal
 LOOT_REACH = 30         # cells: how far a hero goes for an item he wants
@@ -122,7 +123,8 @@ MONSTER_VEL = 4.0       # when MonStats can't be read
 class State:
     __slots__ = ("mode", "frames", "hit_at", "target", "path", "prog", "next_path", "next_drink",
                  "speed", "kind", "plan", "stunned", "total", "next_think", "skip", "path_goal",
-                 "last_pos", "moved_at", "next_kite", "anim", "futile", "dealt_at", "unstuck_at")
+                 "last_pos", "moved_at", "next_kite", "anim", "futile", "dealt_at", "unstuck_at",
+                 "lost_round")
 
     def __init__(self):
         self.mode = "idle"          # idle | walk | attack | gethit
@@ -148,6 +150,7 @@ class State:
         self.futile = None          # [id(target), its life, blows and casts since it last went down]
         self.dealt_at = 0           # the frame he last took life off a monster
         self.unstuck_at = 0         # the frame his path was last dropped for not moving
+        self.lost_round = -1        # the frame it last lost a round to a stun or blinding
 
 
 class Sim:
@@ -397,14 +400,26 @@ class Sim:
                 continue
             s = self._state(m)
             eff = getattr(m, "effects", None) or {}
+            frozen = bool(eff.get("freeze"))
             ok = True
             if hasattr(w, "monster_status"):
                 with self._Guard(w, "monsters"):
                     ok = self._engine(w.monster_status, m)
+            boss = bool(getattr(m, "boss", None) or getattr(m, "rift_boss", False))
+            if ok is False and not frozen and m.alive and any(chebyshev(m.pos, h.pos) <= BLIND_SIGHT for h in heroes):
+                # (blinded: D2's blindness shortens its sight, it still fights what is near;
+                # the engine's own test asks only about its single player)
+                ok = True
             if eff.get("stun"):
                 eff["stun"] -= 1
-                ok = False
+                if not boss:
+                    ok = False               # (act bosses shrug stuns off)
+            if ok is False and m.alive and not frozen and s.lost_round >= self.frame - ROUND - 1:
+                ok = True                    # never two rounds in a row lost to stuns: no stun-lock
+            if ok is False and m.alive and frozen and boss and s.lost_round >= self.frame - ROUND - 1:
+                ok = True                    # a boss isn't kept frozen round after round either
             if ok is False and m.alive:
+                s.lost_round = self.frame
                 s.stunned = self.frame + ROUND
                 s.mode, s.frames, s.path, s.hit_at = "idle", 0, [], -1
 
@@ -1476,7 +1491,7 @@ class Sim:
                 s.mode = "walk"
                 self._advance(u, s)
                 return True
-        if not u.is_player and d <= CROWD + target_r:
+        if not u.is_player and not getattr(u, "radius", 0) and d <= CROWD + target_r:
             s.path = []
             s.mode = "idle"
             s.next_think = self.frame + 6        # boxed in by its own pack: wait for a gap
@@ -1658,7 +1673,9 @@ class Sim:
         if s.last_pos != h.pos:
             s.last_pos, s.moved_at = h.pos, self.frame
             return False
-        if s.mode in ("attack", "cast", "gethit") or self.frame - max(s.moved_at, s.unstuck_at) < 3 * timing.FPS:
+        if s.mode in ("attack", "cast", "gethit") or \
+                self.frame - max(s.moved_at, s.unstuck_at, s.dealt_at) < 3 * timing.FPS:
+            # (standing still while he hurts something - shooting from where he stands - isn't stuck)
             return False
         s.unstuck_at = self.frame            # (not moved_at: the 8-second stall check counts on it)
         s.path, s.path_goal = [], None

@@ -1191,6 +1191,53 @@ def test_no_casting_across_a_railing():
     check(st2.next_think >= sim.frame + 2 * timing.FPS, "a monster with no way waits 2 s before searching again")
 
 
+def test_no_stun_lock():
+    """Stuns never take two rounds in a row; act bosses shrug them off; a blinded monster still
+    fights a hero next to it; a big monster a cell short walks in (no waiting for a gap); a hero
+    shooting from where he stands isn't taken for stuck."""
+    from autobattler.realtime import ROUND
+    random.seed(11)
+    mgr = RunManager(_NoAssets(), _cfg())
+    h = _hero("Stunner")
+    r = mgr.start([h])
+    for _ in range(3):
+        _tick(mgr)
+    sim = r.sim
+    mons = [m for m in sim.foes() if not getattr(m, "boss", None) and not getattr(m, "rift_boss", False)
+            and not getattr(m, "caster", False)]
+    m = mons[0]
+    m.aware = True
+    st = sim._state(m)
+    lost = []
+    for i in range(4):
+        m.effects["stun"] = 1
+        sim.frame += ROUND
+        sim._round()
+        lost.append(st.stunned > sim.frame)
+    check(lost == [True, False, True, False], "stunned every round: loses every other one (%s)" % lost)
+    m.boss = "diablo"
+    st.lost_round = -1000
+    m.effects["stun"] = 1
+    sim.frame += ROUND
+    sim._round()
+    check(st.stunned <= sim.frame, "an act boss shrugs a stun off")
+    m.boss = None
+    st.lost_round = -1000
+    m.effects["blinded"] = 2
+    m.x, m.y = h.x + 2, h.y
+    sim.frame += ROUND
+    sim._round()
+    check(st.stunned <= sim.frame, "blinded, a hero two cells off: it still fights")
+    m.effects.pop("blinded", None)
+    hs = sim._state(h)
+    hs.mode, hs.last_pos, hs.moved_at, hs.unstuck_at = "idle", h.pos, sim.frame - 200, 0
+    hs.dealt_at = sim.frame - 10
+    hs.target = m
+    sim._unstick(h, hs)
+    check(hs.target is m, "shooting from where he stands: not stuck")
+    r.finish("stopped")
+
+
 def test_runeword_bases():
     """Home: exceptional / elite plain items with all their sockets go to the stash; other plain
     gear is sold with the magic and rare items."""
@@ -1576,6 +1623,7 @@ if __name__ == "__main__":
     test_melee_skill_on_a_big_monster()
     test_across_a_railing()
     test_no_casting_across_a_railing()
+    test_no_stun_lock()
     test_runeword_bases()
     test_rare_cores()
     test_horadric_cube()
