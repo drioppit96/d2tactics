@@ -1015,10 +1015,12 @@ class App:
         else:
             cell = self._inv_cell()
             it = b.player.inv_at(*cell) if cell else None
-            from game.cube import bankable
-            if it is not None and bankable(it) and self.screen_name == "town" and \
-                    getattr(self, "town_tab", "") == "stash":
-                if b.backpack_to_stash(it):              # a gem or rune onto its stack
+            if it is not None and self.screen_name == "town" and getattr(self, "town_tab", "") == "stash" \
+                    and not pygame.key.get_mods() & pygame.KMOD_CTRL:
+                # the stash open: straight to its place (gems and runes on their stacks, uniques
+                # to Uniques, a set item onto its set page, socketed bases to Spares, the rest
+                # to the Stash tabs)
+                if b.backpack_to_place(it):
                     self.save_stash()
             else:
                 b.right_click(it, sell=bool(pygame.key.get_mods() & pygame.KMOD_CTRL))

@@ -1302,6 +1302,23 @@ def test_stash_tabs():
     stash.show(st, "sets", 1)
     check(st.tab == 0, "a set page is not a grid page")
     stash.show(st, "stash", 1)
+    from autobattler import gear as abgear
+    h2 = _hero("Sorter2")
+    b = abgear.Bench(h2, None, stash=st)
+    u2 = Item("Harlequin Crest", "uap", "helm", rarity="unique")
+    s3 = Item("Tal Rasha's Lidless Eye", "oba", "weapon", rarity="set")
+    s3.set_name, s3.set_item = "Tal Rasha's Wrappings", "Tal Rasha's Lidless Eye"
+    gem = Item("Chipped Ruby", "gcr", None, kind="misc")
+    gem.gem, gem.base = ("gem", "ruby", 0), {"code": "gcr"}
+    plain = Item("Cap", "cap", "helm")
+    for it in (u2, s3, gem, plain):
+        h2.inv_add(it)
+    g0 = st.bank.get("gcr", 0)
+    ok = all(b.backpack_to_place(it) for it in (u2, s3, gem, plain))
+    check(ok and not h2.inventory and any(u2 in p for p in st.uniques)
+          and st.sets[s3.set_name][s3.set_item] is s3 and st.bank.get("gcr", 0) == g0 + 1
+          and any(plain in p for p in st.pages),
+          "right click with the stash open: each item to its own place")
 
 
 def test_rare_cores():

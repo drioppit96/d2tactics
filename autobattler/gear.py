@@ -664,6 +664,24 @@ class Bench:
         self.changed = True
         return True
 
+    def backpack_to_place(self, it):
+        """Right click in the backpack with the stash open: the item to its own place in the
+        stash, by the trip home's rules (stash.place). -> True if it went."""
+        from . import stash as abstash
+        st, p = self.stash, self.player
+        if st is None or it not in p.inventory or getattr(it, "kind", "") == "quest":
+            return False
+        p.inventory.remove(it)
+        pos, it.inv_pos = it.inv_pos, None
+        if not abstash.place(st, it):
+            it.inv_pos = pos
+            p.inventory.append(it)
+            self.log("No room for it in the stash.", GREY)
+            return False
+        self.log("%s: into the stash (%s)." % (getattr(it, "shown_name", it.name), abstash.where(st, it)), GREY)
+        self.changed = True
+        return True
+
     def set_slot_click(self, set_idx, item_idx):
         """Click on a set item's place on its set's page: take the item there, or put the cursor
         item down if this is its place."""

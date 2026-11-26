@@ -541,8 +541,11 @@ is drawn with plain boxes and a system font.
     with its name until that item is in the stash; a set item can only go on its own place, and
     Ctrl + click on one in the backpack puts it there (taken: into Spares). Click picks up
     and puts down (swapping with one item, like D2); right click moves an item to the backpack;
-    Ctrl + click in the backpack moves one into the stash; with the stash open, a right click on a
-    gem or rune in the backpack puts it on its stack. Gold stays each hero's own.
+    Ctrl + click in the backpack moves one into the tab being looked at; with the stash open, a
+    right click on an item in the backpack sends it to its own place by the trip home's rules
+    (gems and runes onto their stacks, uniques to Uniques, a set item onto its set page or Spares,
+    socketed bases to Spares, anything else to the first Stash tab with room); Ctrl + right click
+    still sells. Gold stays each hero's own.
   - Leaving the screen with an item on the cursor puts it in the backpack, or in the stash when
     the backpack is full.
 - Platinum: an account-wide currency (account.py, beside Rare Fragments): one for every socketed

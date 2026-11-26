@@ -155,6 +155,21 @@ def deposit(hero, st, content=None):
     return n
 
 
+def where(st, it):
+    """The name of the tab an item in the stash is in."""
+    from game import cube as cb
+    if cb.bankable(it):
+        return "Gems"
+    key = set_of(it)
+    if key is not None and (st.sets.get(key[0]) or {}).get(key[1]) is it:
+        return "Sets"
+    for name, pages in (("Uniques", st.uniques), (SPARE_NAME, st.spares), ("Stash", st.pages)):
+        for i, page in enumerate(pages):
+            if it in page:
+                return "%s %d" % (name, i + 1)
+    return "Stash"
+
+
 # ------------------------------------------------------------------ the screen's views
 VIEWS = ("bank", "stash", "uniques", "sets", "spares")
 
