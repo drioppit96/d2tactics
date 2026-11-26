@@ -500,6 +500,13 @@ class App:
             self.down = None
             if self.screen_name == "panels" and self.char_click(pos):
                 return
+            if self.screen_name == "codex" and getattr(self, "codex", None) is not None:
+                for rect, action, args in reversed(self.regions):
+                    if rect.collidepoint(pos):
+                        action(*args)
+                        return
+                self.codex.click(pos)
+                return
             if self.screen_name == "panels" and self.panel_is("loot"):
                 self.focus = None                # (a click on the search field gives it back)
             for rect, action, args in reversed(self.regions):
@@ -514,12 +521,18 @@ class App:
             if self.screen_name == "cube" and self.cube_right():
                 return
             self.inv_right()
+        elif ev.type == pygame.MOUSEWHEEL and self.screen_name == "codex" and getattr(self, "codex", None):
+            self.codex.wheel(ev.y)
         elif ev.type == pygame.MOUSEWHEEL and self.screen_name == "roster":
             self.scroll = max(0, self.scroll - ev.y)
         elif ev.type == pygame.KEYDOWN:
             self._key(ev)
 
     def _key(self, ev):
+        if self.screen_name == "codex" and getattr(self, "codex", None) is not None:
+            if not self.codex.key(ev.key, getattr(ev, "unicode", "")):
+                self.go("roster")
+            return
         if self.focus and ev.key not in (pygame.K_ESCAPE, pygame.K_RETURN):
             field = {"name": "new_name", "search": "search", "words": None}[self.focus]
             h = self.hero()
@@ -568,7 +581,7 @@ class App:
                    pygame.K_w: lambda: self.go("watch"), pygame.K_l: lambda: self.open_panel("loot", True),
                    pygame.K_i: lambda: self.open_panel("inventory", True), pygame.K_p: lambda: self.go("pickup"),
                    pygame.K_c: lambda: self.open_panel("stats", True), pygame.K_k: lambda: self.open_panel("skills", True),
-                   pygame.K_h: lambda: self.go("cube")}.get(ev.key)
+                   pygame.K_h: lambda: self.go("cube"), pygame.K_o: self.open_codex}.get(ev.key)
             if act is not None and (self.hero() is not None or ev.key == pygame.K_s):
                 act()
 
@@ -652,7 +665,7 @@ class App:
         self.canvas.fill((0, 0, 0))
         {"roster": self.draw_roster, "create": self.draw_create,
          "inventory": self.draw_inventory, "pickup": self.draw_pickup, "watch": self.draw_watch,
-         "character": self.draw_character, "panels": self.draw_panels, "town": self.draw_town, "cube": self.draw_cube
+         "character": self.draw_character, "panels": self.draw_panels, "codex": self.draw_codex, "town": self.draw_town, "cube": self.draw_cube
          }.get(self.screen_name, self.draw_roster)()
         if self.message and self.screen_name != "watch":
             self.look.text(self.canvas, "small", self.message, GOLD, 12, 580)
@@ -791,7 +804,8 @@ class App:
                 ("Shop", lambda: self.open_town("shop"), has and (not on_run or town_run)),
                 ("Stash", lambda: self.open_town("stash"), has and (not on_run or town_run))]
         diff = difficulty_of(h) if has else "normal"
-        row3 = [("Horadric Cube", lambda: self.go("cube"), has),
+        row3 = [("Codex", self.open_codex, True),
+                ("Horadric Cube", lambda: self.go("cube"), has),
                 ("Farm: %s" % FARM_SHORT[farm_of(h)] if has else "Farm", self.cycle_farm, has and not on_run),
                 ("Style", self.cycle_style, has),
                 ("Difficulty: %s" % DIFF_NAMES[diff], self.cycle_difficulty, has and not on_run and len(unlocked(h)) > 1)]
@@ -1111,6 +1125,32 @@ class App:
             self.screen_name = "panels"
             self.panels = {"left": "loot", "right": "inventory"}
         self.draw_panels()
+
+    def open_codex(self):
+        """D2 Tactics' Codex: every runeword (and this game's cube recipes)."""
+        if self.look.hud is None or self.content is None:
+            self.message = "The Codex needs the Diablo II files."
+            return
+        from autobattler.codexscreen import AutoCodex
+        if getattr(self, "codex", None) is None:
+            self.codex = AutoCodex(self.look.hud, self.content, self.hero(), self.shared_stash())
+        self.go("codex")
+
+    def draw_codex(self):
+        cx = getattr(self, "codex", None)
+        if cx is None:
+            self.go("roster")
+            return
+        cx.set_hero(self.hero())
+        cx.stash = self.shared_stash()
+        hud = self.look.hud
+        keep = (hud.lw, hud.s)
+        try:
+            hud.lw, hud.s = W, 1.0
+            cx.draw(self.canvas, self.mouse)
+        finally:
+            hud.lw, hud.s = keep
+        self.button((W - 90, H - 30, 80, 24), "Back", lambda: self.go("roster"))
 
     def draw_panels(self):
         """The hero's panels: Loot or Stats on the left, Inventory or Skills on the right, each in

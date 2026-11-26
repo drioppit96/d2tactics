@@ -1239,6 +1239,25 @@ def test_no_stun_lock():
     r.finish("stopped")
 
 
+def test_codex():
+    """The Codex counts runes in the backpack and in every stash tab, and lists this game's own
+    cube recipes."""
+    import types
+    from autobattler.codexscreen import AutoCodex
+    from autobattler import stash
+    from game.items import Item
+    h = _hero("Reader")
+    rune = Item("El Rune", "r01", None, kind="misc")
+    h.inv_add(rune)
+    st = types.SimpleNamespace(bank={"r01": 2}, pages=[[]], uniques=[[]], spares=[[Item("El Rune", "r01", None, kind="misc")]])
+    cx = AutoCodex(types.SimpleNamespace(), None, h, st)
+    check(cx.held("r01") == 4, "El runes: 1 carried + 2 on the stack + 1 in a tab (%d)" % cx.held("r01"))
+    names = [r.name for r in cx.filtered_recipes()]
+    check("Add Socket" in names and "Craft Rare" in names, "the cube tab lists this game's recipes")
+    cx.search = "platinum"
+    check([r.name for r in cx.filtered_recipes()] == ["Add Socket"], "searching 'platinum' finds Add Socket")
+
+
 def test_runeword_bases():
     """Home: plain socketed bases that are elite (tier III) or ethereal go to the stash's Spares
     tab; other plain gear is sold with the magic and rare items, and each socketed item sold
@@ -1740,6 +1759,7 @@ if __name__ == "__main__":
     test_across_a_railing()
     test_no_casting_across_a_railing()
     test_no_stun_lock()
+    test_codex()
     test_runeword_bases()
     test_stash_tabs()
     test_rare_cores()

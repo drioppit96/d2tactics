@@ -629,10 +629,18 @@ is drawn with plain boxes and a system font.
   - Points: by hand / by class plan. By hand (the default) the points wait for you; by class plan
     they go by his class's build (brain.BUILDS, brain.STATS) at each level up and before each
     floor. Heroes made before this switch to by hand once.
+- Codex (roster button, key O): D2 Tactics' Codex (render/codex.py, through
+  autobattler/codexscreen.py). Runewords: every runeword from Runes.txt with its runes, item
+  types, required level and properties, the same filters (item group, sockets, level, runes I
+  have) and search; "runes I have" counts the selected hero's backpack and every tab of the
+  account's stash. Horadric Cube: this game's own cube recipes (Craft Rare, Add Socket) with what
+  they take and their cost, green when the account can pay; D2's CubeMain recipes are not listed,
+  as the autobattler's cube doesn't run them. Needs the D2 files (it is drawn with D2's fonts).
+  Esc or Back returns to the roster.
 - Pickup: his pickup rules and words.
 - Watch: his floor full screen at 1:1, with each hero's life, mana and decision.
 
-Keys: S start, X stop, W watch, T style, I inventory, L loot, C stats, K skills, H cube, P pickup,
+Keys: S start, X stop, W watch, T style, I inventory, L loot, C stats, K skills, H cube, O codex, P pickup,
 Esc back, Ctrl+click adds heroes to a group. With the panels open, I / L / C / K open or close
 their own panel, and W swaps weapons while the inventory is open (and on the Sanctuary screens).
 
