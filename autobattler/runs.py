@@ -873,7 +873,7 @@ def sell_magic_and_rare(h):
         h.inventory.remove(it)
         it.inv_pos = None
         h.gold += value
-        gear.on_sold(h, it)                     # (a rare one: a Rare Core; a socketed one: a Platinum)
+        gear.on_sold(h, it)                     # (a rare one: a Rare Fragment; a socketed one: a Platinum)
         sold += 1
         gold += value
     return sold, gold

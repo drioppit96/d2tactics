@@ -1325,7 +1325,8 @@ def test_rare_cores():
 
 
 def test_horadric_cube():
-    """The cube menu: Craft Rare takes one white or blue item and a Rare Core (account-wide)."""
+    """The cube menu: Craft Rare takes one white or blue item and 50 Rare Fragments; Add Socket
+    one weapon or armor and 30 Platinum (account-wide)."""
     import types
     from autobattler import gear, account, recipes
     from game.items import Item
@@ -1352,14 +1353,31 @@ def test_horadric_cube():
     check(b.backpack_to_cube(cap) and cap in h.cube_inv, "into the cube")
     rare = recipes.RECIPES[0]
     account.data()["rare_cores"] = 0
-    check(not b.transmute(rare) and cap in h.cube_inv, "no Rare Core: nothing happens")
+    account.add("rare_cores", 49)
+    check(not b.transmute(rare) and cap in h.cube_inv, "49 Rare Fragments: nothing happens")
     account.add("rare_cores", 2)
     check(b.transmute(rare) and len(h.cube_inv) == 1 and h.cube_inv[0].rarity == "rare"
           and h.cube_inv[0].ilvl == h.level and account.amount("rare_cores") == 1,
-          "Craft Rare: a rare of the same base at his level, one core paid")
+          "Craft Rare: a rare of the same base at his level, 50 fragments paid")
     ring_unique = Item("Unique Ring", "rin", "ring", rarity="unique")
     h.cube_inv[:] = [ring_unique]
     check(rare.check(h.cube_inv, h) is not None, "a unique can't be crafted")
+    sock = next(r for r in recipes.RECIPES if r.key == "add_socket")
+    check(sock.cost == {"platinum": 30}, "Add Socket costs 30 Platinum")
+    armor = Item("Archon Plate", "utp", "armor", rarity="unique")
+    armor.base, armor.ilvl, armor.sockets = {"code": "utp", "maxsock": 4}, 85, 2
+    capped = types.SimpleNamespace(make_item=make_item, max_sockets=lambda base, ilvl: min(3, base.get("maxsock", 0)))
+    b2 = gear.Bench(h, capped)
+    h.cube_inv[:] = [armor]
+    armor.cube_pos = (0, 0)
+    account.data()["platinum"] = 59
+    check(b2.transmute(sock) and armor.sockets == 3 and account.amount("platinum") == 29 and armor in h.cube_inv,
+          "Add Socket: one more socket in the same item, 30 Platinum paid")
+    check(not b2.transmute(sock) and armor.sockets == 3 and account.amount("platinum") == 29,
+          "at its base's most sockets (3 at its item level): no more, nothing paid")
+    ring = Item("Ring", "rin", "ring", rarity="magic")
+    ring.base = {"code": "rin", "maxsock": 0}
+    check(sock.why_not([ring], h, capped) is not None, "a ring can't take a socket")
 
 
 def test_socketing():

@@ -36,7 +36,7 @@ from autobattler.runs import RunManager, FARMS, FARM_NAMES, farm_of  # noqa: E40
 from autobattler.runs import DIFF_NAMES, unlocked, difficulty_of        # noqa: E402
 from autobattler.timing import FPS, Timings                     # noqa: E402
 from autobattler.ui import Look, GOLD, WHITE, GREY, RED, GREEN, BLUE, W, H   # noqa: E402
-YELLOW = (255, 255, 100)            # D2's rare-item colour (Rare Cores)
+YELLOW = (255, 255, 100)            # D2's rare-item colour (Rare Fragments)
 PLATINUM = (205, 215, 230)          # Platinum (socketed items sold)
 
 CLASS_NAMES = {"ama": "Amazon", "sor": "Sorceress", "nec": "Necromancer", "pal": "Paladin",
@@ -1219,7 +1219,7 @@ class App:
             return
         LW = self.LEFT_W
         L.panel(c, (6, 40, LW, 534))
-        L.text(c, "med", "%s - Rare Cores %d" % (h.name, account.amount("rare_cores")), GOLD, 6, 50, "center", LW)
+        L.text(c, "med", "%s - Fragments %d  Platinum %d" % (h.name, account.amount("rare_cores"), account.amount("platinum")), GOLD, 6, 50, "center", LW)
         L.text(c, "small", "Recipes", GOLD, 18, 74)
         ri = getattr(self, "recipe_i", 0)
         for i, r in enumerate(recipes.RECIPES):
@@ -1271,7 +1271,7 @@ class App:
                 tint.fill((0, 120, 0, 70) if okf and len(over) <= 1 else (140, 0, 0, 70))
                 c.blit(tint, (x0 + cell[0] * k, y0 + cell[1] * k))
         self.region(frame, self.cube_grid_click)
-        why = r.check(list(b.cube_box().contents), h) if r is not None else "No recipe."
+        why = r.why_not(list(b.cube_box().contents), h, self.content) if r is not None else "No recipe."
         can = r is not None and not why and account.can_pay(r.cost)
         self.button((18, frame.bottom + 12, LW - 24, 30), "Transmute", self.transmute, enabled=can)
         if why and b.cube_box().contents:
@@ -1855,7 +1855,7 @@ class App:
                 sub.fill((17, 16, 14), box)
                 pygame.draw.rect(sub, (74, 66, 50), box, 1)
                 L.text(sub, "med", "Gold  %d" % h.gold, GOLD, box.x + 10, box.y + 6)
-                L.text(sub, "med", "Rare Cores  %d" % gear.rare_cores(h), YELLOW, box.x + 10, box.y + 24)
+                L.text(sub, "med", "Rare Fragments  %d" % gear.rare_cores(h), YELLOW, box.x + 10, box.y + 24)
                 L.text(sub, "med", "Platinum  %d" % gear.platinum(h), PLATINUM, box.x + 150, box.y + 24)
                 if tip and b.held is None:
                     self._tip = tip
@@ -1882,7 +1882,7 @@ class App:
             if r.collidepoint((mx, my)) and b.held is None:
                 self._tip = L.item_lines(it, h)
         L.text(sub, "med", "Gold  %d" % h.gold, GOLD, 60, gy + rows * ic + 12)
-        L.text(sub, "med", "Rare Cores  %d" % gear.rare_cores(h), YELLOW, 60, gy + rows * ic + 30)
+        L.text(sub, "med", "Rare Fragments  %d" % gear.rare_cores(h), YELLOW, 60, gy + rows * ic + 30)
         L.text(sub, "med", "Platinum  %d" % gear.platinum(h), PLATINUM, 200, gy + rows * ic + 30)
 
     # ------------------------------------------------------------ character: stats and skills

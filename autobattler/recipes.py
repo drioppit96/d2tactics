@@ -13,6 +13,13 @@ class Recipe:
         self.key, self.name, self.lines, self.cost = key, name, lines, cost
         self.check, self.make = check, make
 
+    def why_not(self, items, hero, content=None):
+        """None if the recipe takes what is in the cube, else why not."""
+        try:
+            return self.check(items, hero, content)
+        except TypeError:
+            return self.check(items, hero)
+
     def cost_text(self):
         return ", ".join("%d %s" % (v, CURRENCIES.get(k, k)) for k, v in self.cost.items())
 
@@ -49,10 +56,56 @@ def _rare_make(items, hero, content, rng):
     return [new]
 
 
+# ------------------------------------------------------------------ Add Socket
+def socket_cap(it, content=None):
+    """The most sockets this item's base can have at its item level (D2's MaxSock columns)."""
+    base = getattr(it, "base", None)
+    if not isinstance(base, dict):
+        return 0
+    if content is not None and hasattr(content, "max_sockets"):
+        try:
+            return int(content.max_sockets(base, int(getattr(it, "ilvl", 1) or 1)))
+        except Exception:
+            pass
+    return int(base.get("maxsock", 0) or 0)
+
+
+def _socket_check(items, hero, content=None):
+    if len(items) != 1:
+        return "Put one weapon or armor in the cube."
+    it = items[0]
+    if getattr(it, "kind", "") != "equip" or getattr(it, "charm", False):
+        return "Only weapons and armor take sockets."
+    if getattr(it, "runeword", None):
+        return "A runeword's sockets are fixed."
+    cap = socket_cap(it, content)
+    if cap <= 0:
+        return "This item can't have sockets."
+    if int(getattr(it, "sockets", 0) or 0) >= cap:
+        return "It already has all the sockets it can have (%d)." % cap
+    return None
+
+
+def _socket_make(items, hero, content, rng):
+    """One more socket in the same item (its gems, runes and jewels stay in theirs)."""
+    it = items[0]
+    if _socket_check(items, hero, content):
+        return None
+    it.sockets = int(getattr(it, "sockets", 0) or 0) + 1
+    if getattr(it, "socketed", None) is None:
+        it.socketed = []
+    return [it]
+
+
 RECIPES = [
     Recipe("craft_rare", "Craft Rare",
            ["One white or blue weapon, armor, ring or amulet.",
             "It becomes a new rare item of the same base,",
             "rolled for the hero's level (no sockets)."],
-           {"rare_cores": 1}, _rare_check, _rare_make),
+           {"rare_cores": 50}, _rare_check, _rare_make),
+    Recipe("add_socket", "Add Socket",
+           ["One weapon or armor (any quality but a runeword).",
+            "It gets one more socket, up to the most its",
+            "base can have at its item level."],
+           {"platinum": 30}, _socket_check, _socket_make),
 ]

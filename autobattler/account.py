@@ -1,12 +1,13 @@
 """Account-wide currencies of the D2 Autobattler (saves_auto/_account.json), shared by every hero.
 
-    rare_cores   one for every rare (yellow) item any hero sells; spent in the Horadric Cube
-    platinum     one for every socketed item any hero sells
+    rare_cores   Rare Fragments: one for every rare (yellow) item any hero sells (the key is the
+                 old name, Rare Cores, so saved amounts carry over); Craft Rare in the cube
+    platinum     one for every socketed item any hero sells; Add Socket in the cube
 """
 import json
 import os
 
-CURRENCIES = {"rare_cores": "Rare Cores", "platinum": "Platinum"}
+CURRENCIES = {"rare_cores": "Rare Fragments", "platinum": "Platinum"}
 _DATA = [None]
 
 

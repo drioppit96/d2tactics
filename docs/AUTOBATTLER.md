@@ -545,14 +545,15 @@ is drawn with plain boxes and a system font.
     gem or rune in the backpack puts it on its stack. Gold stays each hero's own.
   - Leaving the screen with an item on the cursor puts it in the backpack, or in the stash when
     the backpack is full.
-- Platinum: an account-wide currency (account.py, beside Rare Cores): one for every socketed
+- Platinum: an account-wide currency (account.py, beside Rare Fragments): one for every socketed
   item sold, whatever its quality, by hand or on a trip home. Shown under the backpack.
 - The window opens at the biggest 4:3 size that fits on the desktop (config window_size = fit;
   settings uses settings.ini's display width and height).
-- Rare Cores: an account-wide currency (autobattler/account.py, saves_auto/_account.json), shared
+- Rare Fragments (called Rare Cores before; the saved key is still rare_cores, so amounts carry
+  over): an account-wide currency (autobattler/account.py, saves_auto/_account.json), shared
   by every hero. Every rare (yellow) item any hero sells gives one, whether by hand (the sell box,
   Ctrl + right click, the shop's shelves) or on the automatic trip home (gear.on_sold). The hero
-  card and the inventory purse show the account's count. Cores a hero had of his own before moved
+  card and the inventory purse show the account's count. Ones a hero had of his own before moved
   to the account once.
 - Horadric Cube (roster button, key H; it replaces the Pickup button - the Pickup screen is still
   key P): the cube is a menu of its own, not an item. A cube a hero carried is taken apart and what
@@ -561,8 +562,11 @@ is drawn with plain boxes and a system font.
   or Ctrl + click in the backpack puts items in, right click takes them out. Transmute checks the
   selected recipe against what is in the cube and pays its cost from the account; it is greyed out
   when it can't.
-  - Craft Rare (1 Rare Core): one white or blue weapon, armor, ring or amulet becomes a new rare item
-    of the same base, rolled at the hero's level, identified, with no sockets.
+  - Craft Rare (50 Rare Fragments): one white or blue weapon, armor, ring or amulet becomes a new
+    rare item of the same base, rolled at the hero's level, identified, with no sockets.
+  - Add Socket (30 Platinum): one weapon or armor of any quality except a runeword gets one more
+    socket, up to the most its base can have at its item level (D2's MaxSock columns by item
+    level: content.max_sockets). What is already in its sockets stays.
 - Socketing: a gem, rune or jewel dropped on an item with a free socket (in the backpack or worn)
   goes into it, with the game's own runeword rules (ItemActions.insert_into); runewords form as
   in D2.

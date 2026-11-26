@@ -24,7 +24,7 @@ GREY = (170, 170, 170)
 
 
 def rare_cores(hero=None):
-    """The account's Rare Cores (shared by every hero): a crafting material, one for every rare
+    """The account's Rare Fragments (shared by every hero; once called Rare Cores): a crafting material, one for every rare
     (yellow) item any hero sells."""
     from . import account
     return account.amount("rare_cores")
@@ -37,7 +37,7 @@ def platinum(hero=None):
 
 
 def on_sold(hero, it):
-    """Every sale goes through here: a rare item gives the account a Rare Core, a socketed one
+    """Every sale goes through here: a rare item gives the account a Rare Fragment, a socketed one
     (any kind) a Platinum. -> (cores, platinum) gained."""
     from . import account
     core = plat = 0
@@ -51,10 +51,10 @@ def on_sold(hero, it):
 
 
 def gains_text(core, plat):
-    """" and a Rare Core and 2 Platinum" - what a sale brought besides gold."""
+    """" and a Rare Fragment and 2 Platinum" - what a sale brought besides gold."""
     parts = []
     if core:
-        parts.append("a Rare Core" if core == 1 else "%d Rare Cores" % core)
+        parts.append("a Rare Fragment" if core == 1 else "%d Rare Fragments" % core)
     if plat:
         parts.append("%d Platinum" % plat)
     return "".join(" and " + p for p in parts)
@@ -524,7 +524,7 @@ class Bench:
         from . import account
         box = self.cube_box()
         items = list(box.contents)
-        why = recipe.check(items, self.player)
+        why = recipe.why_not(items, self.player, self.content)
         if why:
             self.log(why, GREY)
             return False
