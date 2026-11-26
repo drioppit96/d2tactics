@@ -434,12 +434,14 @@ class Run:
         mid = rift.ACT_BOSSES[rift.act_of_depth(depth) - 1]
         tag = "baal" if mid == "baalcrab" else mid
         lvl = rift.act_level(depth) if rift.ACT_LEVELS else max(1, getattr(w.player, "level", 1))
-        if getattr(w, "level_key", None) == DURIEL_LAIR:
-            # (the lair's way back to the Tomb: the run opens its own portal when he dies)
-            w.objects[:] = [o for o in w.objects if o.get("kind") not in actworld.PORTAL_KINDS]
-        far = arena._far_cell(w, w.player.pos)
+        # nothing in the arena but the ground: no chests, shrines, doors or portals (the run opens
+        # its own when he dies)
+        w.objects[:] = []
+        middle, start = arena_cells(w)
+        if start is not None:
+            w.player.x, w.player.y = start
         taken = set(w.occupied())
-        boss = actworld._spawn(w, mid, far, lvl, taken, unique=True)
+        boss = actworld._spawn(w, mid, middle or arena._far_cell(w, w.player.pos), lvl, taken, unique=True)
         if boss is None:
             # (that cell was taken or no floor: any free floor cell, the furthest first)
             g = w.grid
@@ -885,6 +887,65 @@ def _probe(kind):
     it = Item("probe", "hp1" if kind == "heal" else "mp1", None, kind="potion")
     it.potion = kind
     return it
+
+
+def arena_cells(w):
+    """(the boss's cell, the heroes' start) on an act boss floor: the boss in the middle of the
+    arena's open ground - the cell farthest from any wall, tree or rock, so nothing round him can
+    hold him up - and the heroes 9 cells off, in the same open ground, with a clear line to him.
+    (None, None) if the floor has no ground."""
+    from collections import deque
+    from autobattler import realtime
+    g = w.grid
+    areas = realtime.label_areas(w)
+    if not areas:
+        return None, None
+    sizes = {}
+    for a in areas.values():
+        sizes[a] = sizes.get(a, 0) + 1
+    main = max(sizes, key=lambda a: sizes[a])
+    ground = {c for c, a in areas.items() if a == main}
+    # how far each cell of it is from anything that isn't its ground
+    clear = {}
+    todo = deque()
+    for (x, y) in ground:
+        if any((x + dx, y + dy) not in ground for dx in (-1, 0, 1) for dy in (-1, 0, 1)):
+            clear[(x, y)] = 1
+            todo.append((x, y))
+    while todo:
+        x, y = todo.popleft()
+        d = clear[(x, y)]
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                c = (x + dx, y + dy)
+                if c in ground and c not in clear:
+                    clear[c] = d + 1
+                    todo.append(c)
+    cx = sum(c[0] for c in ground) / float(len(ground))
+    cy = sum(c[1] for c in ground) / float(len(ground))
+    middle = max(ground, key=lambda c: (clear.get(c, 0), -abs(c[0] - cx) - abs(c[1] - cy)))
+    best, score = None, None
+    for c in ground:
+        d = max(abs(c[0] - middle[0]), abs(c[1] - middle[1]))
+        if d < 6 or clear.get(c, 0) < 2:
+            continue
+        sc = (abs(d - 9), -clear.get(c, 0))
+        if score is None or sc < score:
+            line = _line_open(g, c, middle)
+            if line:
+                best, score = c, sc
+    return middle, best
+
+
+def _line_open(g, a, b):
+    """Every cell on the straight line from a to b is walkable ground."""
+    n = max(abs(b[0] - a[0]), abs(b[1] - a[1]), 1)
+    for i in range(n + 1):
+        x = int(round(a[0] + (b[0] - a[0]) * i / float(n)))
+        y = int(round(a[1] + (b[1] - a[1]) * i / float(n)))
+        if not g.walkable(x, y):
+            return False
+    return True
 
 
 DURIEL_LAIR = 73       # D2's Duriel's Lair: Act 2's boss floors (20, 70, ...) are fought in it

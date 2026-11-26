@@ -300,9 +300,15 @@ explosions, overlays, damage numbers and deaths still go through the Scene's own
   fights a hero within 5 cells. A big monster (Diablo, Duriel...) a cell or two short of a hero
   walks in instead of waiting for a gap as a crowded small one does. A hero standing still while
   he hurts something (shooting from where he stands) is not taken for stuck.
+- Every act boss floor (arena or Duriel's Lair): nothing in it but the ground (no chests,
+  shrines, doors or portals). The boss stands in the middle of its open ground - the cell
+  farthest from any wall, tree or rock (runs.arena_cells) - so nothing round him can hold him
+  up; the heroes start 6-12 cells off (9 if they can) in the same open ground, with a clear line
+  to him. Ranged heroes, throwers and casters kite an act boss next to them as they kite melee
+  monsters (Mephisto, Diablo and Baal strike in close as well as cast), stepping farther off
+  from a big one.
 - Act 2's boss floors (20, and 70 the next time round) are D2's own Duriel's Lair (level 73,
-  tomb\duriel.ds1), with or without premade maps. Duriel is set down at the far end from where
-  the heroes start; the lair's portal back to the Tomb is removed, and the run opens its own red
+  tomb\duriel.ds1), with or without premade maps. The lair's portal back to the Tomb is removed, and the run opens its own red
   portal when he dies. No Act 2 arenas are premade any more.
 - Poison works as in D2: a hit does (almost) nothing at once; its total is spread evenly over
   its length (the skill's own length; 6 seconds for weapon and charm poison), ticked every 5

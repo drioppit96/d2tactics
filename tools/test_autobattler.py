@@ -1258,6 +1258,35 @@ def test_codex():
     check([r.name for r in cx.filtered_recipes()] == ["Add Socket"], "searching 'platinum' finds Add Socket")
 
 
+def test_boss_arena_middle():
+    """An act boss floor: the boss in the middle of the open ground (as far from any tree or wall
+    as it gets), the heroes 6-12 cells off with a clear line; and a ranged hero kites a boss that
+    casts as well as strikes (Mephisto), not only melee monsters."""
+    import types
+    from autobattler.runs import arena_cells
+    from game.grid import Grid, FLOOR, WALL
+    g = Grid(40, 30, WALL)
+    for y in range(3, 27):
+        for x in range(3, 37):
+            g.cells[y][x] = FLOOR
+    for (x, y) in ((10, 8), (11, 8), (10, 9), (28, 20), (29, 21)):
+        g.cells[y][x] = WALL                     # (trees)
+    w = types.SimpleNamespace(grid=g)
+    middle, start = arena_cells(w)
+    check(middle is not None and 16 <= middle[0] <= 23 and 12 <= middle[1] <= 17,
+          "the boss in the middle of the open ground (%s)" % (middle,))
+    d = max(abs(start[0] - middle[0]), abs(start[1] - middle[1])) if start else -1
+    check(6 <= d <= 12, "the heroes start %d cells off" % d)
+    from autobattler.realtime import Sim
+    sim = Sim.__new__(Sim)
+    boss = types.SimpleNamespace(pos=(11, 10), aware=True, range=4, radius=1, rift_boss=True, boss="mephisto")
+    imp = types.SimpleNamespace(pos=(12, 10), aware=True, range=6, radius=0)
+    sim.foes = lambda: [boss, imp]
+    h = types.SimpleNamespace(pos=(10, 10))
+    on = sim._melee_on(h, 1)
+    check(boss in on and imp not in on, "a boss next to him counts for kiting; a ranged monster doesn't")
+
+
 def test_runeword_bases():
     """Home: plain socketed bases that are elite (tier III) or ethereal go to the stash's Spares
     tab; other plain gear is sold with the magic and rare items, and each socketed item sold
@@ -1760,6 +1789,7 @@ if __name__ == "__main__":
     test_no_casting_across_a_railing()
     test_no_stun_lock()
     test_codex()
+    test_boss_arena_middle()
     test_runeword_bases()
     test_stash_tabs()
     test_rare_cores()

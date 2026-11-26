@@ -661,8 +661,10 @@ class Sim:
     EMERGENCY_AT = 30           # life %: a rejuvenation potion first, if he has one
 
     def _melee_on(self, h, r=1):
-        """Awake melee monsters within r cells of him (their size counted)."""
-        return [m for m in self.foes() if getattr(m, "aware", False) and getattr(m, "range", 1) <= 1
+        """Awake melee monsters within r cells of him (their size counted). An act boss counts
+        whatever his range: Mephisto, Diablo and Baal all strike in close as well."""
+        return [m for m in self.foes() if getattr(m, "aware", False)
+                and (getattr(m, "range", 1) <= 1 or getattr(m, "rift_boss", False) or getattr(m, "boss", None))
                 and chebyshev(m.pos, h.pos) <= r + getattr(m, "radius", 0)]
 
     def _quaff(self, h):
@@ -732,14 +734,18 @@ class Sim:
     def _back_off(self, h, s):
         """A few steps to the open cell farthest from the monsters next to him."""
         g = self.w.grid
-        foes = [m for m in self.foes() if chebyshev(m.pos, h.pos) <= 8]
+        foes = [m for m in self.foes() if chebyshev(m.pos, h.pos) <= 8 + getattr(m, "radius", 0)]
+        far = 6 if any(getattr(m, "radius", 0) for m in foes) else 4    # (a big one: farther off)
         best, bd = None, -1
-        for dx in range(-4, 5):
-            for dy in range(-4, 5):
+        for dx in range(-far, far + 1):
+            for dy in range(-far, far + 1):
                 c = (h.x + dx, h.y + dy)
                 if c == h.pos or not g.walkable(*c) or c in self.occ:
                     continue
-                d = min([chebyshev(c, m.pos) for m in foes] or [99])
+                if not self.reachable(h.pos, c):
+                    continue
+                # (from the edge of each monster's body, not its middle)
+                d = min([chebyshev(c, m.pos) - getattr(m, "radius", 0) for m in foes] or [99])
                 if d > bd:
                     best, bd = c, d
         if best is None or bd <= 1:
